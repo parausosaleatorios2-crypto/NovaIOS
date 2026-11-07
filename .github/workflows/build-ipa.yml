@@ -9,6 +9,8 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 240
+    permissions:
+      contents: write   # publicar o IPA na pagina de Releases
     steps:
       - uses: actions/checkout@v4
 
@@ -81,6 +83,27 @@ jobs:
           cp -R build/dd/Build/Products/Release-iphoneos/NovaEditor.app out/Payload/
           cd out && zip -qry NovaEditor-unsigned.ipa Payload
           ls -lh NovaEditor-unsigned.ipa
+
+      # O IPA (~150 MB) passa do limite de 100 MB por arquivo do git, entao vai
+      # para a pagina de Releases: sempre o mesmo link, baixavel pelo celular.
+      - name: Publicar IPA em Releases (ipa-latest)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=ipa-latest
+          FX=$(( $(ls Shaders/fx_*.metal | wc -l) ))
+          {
+            echo "IPA sem assinatura do commit ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC'))."
+            echo
+            echo "Efeitos compilados: ${FX}."
+            echo
+            echo "Instale pelo eSign (ele assina no aparelho)."
+          } > notes.md
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" out/NovaEditor-unsigned.ipa \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "NovaEditor IPA (último build)" --notes-file notes.md --latest
 
       - uses: actions/upload-artifact@v4
         with:
