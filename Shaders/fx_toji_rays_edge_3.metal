@@ -27,8 +27,8 @@ struct toji_rays_edge_3Params {
 
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
-    float4 src(float2 uv){ return inputImg.sample(__nv_smp, uv); }
-    float4 eTex(float2 uv){ return edge.sample(__nv_smp, uv); }
+    static float4 src(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+    static float4 eTex(float2 uv){ return edge.sample(__nv_smp, uv); }
 
 fragment float4 fx_toji_rays_edge_3(
     NovaVertexOut       in   [[stage_in]],

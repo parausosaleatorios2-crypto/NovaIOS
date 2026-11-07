@@ -33,7 +33,7 @@ static float4 newLayer( float4 a, float4 b) {
     }
 
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -41,19 +41,19 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
    /////////////////////////
     
-   float rand(float2 p)
+   static float rand(float2 p)
     {
         float t = floor(u.progress * 20.) / 10.;
         return fract(sin(dot(p, float2(t * 12.9898, t * 78.233))) * 43758.5453);
     }
     
-    float noise(float2 uv, float blockiness)
+    static float noise(float2 uv, float blockiness)
     {   
         float2 lv = fract(uv);
         float2 id = floor(uv);
@@ -68,7 +68,7 @@ static float4 newLayer( float4 a, float4 b) {
         return mix(mix(n1, n2, u.x), mix(n3, n4, u.x), u.y);
     }
     
-    float fbm(float2 uv, int count, float blockiness, float complexity)
+    static float fbm(float2 uv, int count, float blockiness, float complexity)
     {
         float val = 0.0;
         float amp = 0.5;

@@ -19,19 +19,19 @@ struct toji_paint_brush_stylizerParams {
 
 // --- funcoes auxiliares do efeito
 // Random hash function
-        float hash12(float2 p) {
+        static float hash12(float2 p) {
             float3 p3  = fract(float3(p.xyx) * .1031);
             p3 += dot(p3, p3.yzx + 33.33);
             return fract((p3.x + p3.y) * p3.z);
         }
 
         // Sample texture
-        float3 getSource(float2 uv) {
+        static float3 getSource(float2 uv) {
             return inputImg.sample(__nv_smp, uv).rgb;
         }
 
         // Get intensity/luma for gradient calculation
-        float getGray(float3 c) {
+        static float getGray(float3 c) {
             return dot(c, float3(0.299, 0.587, 0.114));
         }
 

@@ -28,19 +28,19 @@ struct toji_skexnxxisolinev2Params {
 
 // --- funcoes auxiliares do efeito
 static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
-        float2 hash( float2 p ) // replace this by something better
+        static float2 hash( float2 p ) // replace this by something better
         {
         	p = float2( dot(p,float2(127.1,311.7)), dot(p,float2(269.5,183.3)) );
         	return -1.0 + 2.0*fract(sin(p)*43758.5453123);
         }
         
-        float noise( in float2 p )
+        static float noise( in float2 p )
         {
             const float K1 = 0.366025404; // (sqrt(3)-1)/2;
             const float K2 = 0.211324865; // (3-sqrt(3))/6;

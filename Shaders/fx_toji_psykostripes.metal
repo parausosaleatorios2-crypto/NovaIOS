@@ -39,14 +39,14 @@ static float2 getResolution(){
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
       return s;
     }
-    float gray(float4 c){ return dot(c.rgb, float3(0.299,0.587,0.114)); }
-    float2x2 rot2(float a){ float c=cos(a), s=sin(a); return float2x2(c,-s,s,c); }
+    static float gray(float4 c){ return dot(c.rgb, float3(0.299,0.587,0.114)); }
+    static float2x2 rot2(float a){ float c=cos(a), s=sin(a); return float2x2(c,-s,s,c); }
 
-    float getLuma(float2 uv) {
+    static float getLuma(float2 uv) {
       return gray(inputImg.sample(__nv_smp, uv));
     }
 
-    float sobel(float2 uv, float2 pixel, float w) {
+    static float sobel(float2 uv, float2 pixel, float w) {
       float2 p = pixel * w;
       float t00 = getLuma(uv + p * float2(-1, -1));
       float t10 = getLuma(uv + p * float2( 0, -1));

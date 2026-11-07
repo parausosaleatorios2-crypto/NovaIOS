@@ -25,11 +25,11 @@ struct toji_AdamagedotsParams {
 
 // --- funcoes auxiliares do efeito
 // Procedural film damage dots
-    float4 src(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+    static float4 src(float2 uv){ return inputImg.sample(__nv_smp, uv); }
 
-    float hash11(float n){ return fract(sin(n)*43758.5453123); }
-    float hash12(float2 p){ return fract(sin(dot(p, float2(127.1,311.7)) + u.seed)*43758.5453); }
-    float2  hash22(float2 p){
+    static float hash11(float n){ return fract(sin(n)*43758.5453123); }
+    static float hash12(float2 p){ return fract(sin(dot(p, float2(127.1,311.7)) + u.seed)*43758.5453); }
+    static float2  hash22(float2 p){
       float n = sin(dot(p, float2(12.9898,78.233)) + u.seed);
       return fract(float2(262144.0, 32768.0) * n);
     }

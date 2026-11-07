@@ -27,7 +27,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -35,7 +35,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -43,26 +43,26 @@ static float4 newLayer( float4 a, float4 b) {
     
    /////////////////////////
    
-          float hash11(float a)
+          static float hash11(float a)
         {
             return fract(53.156*sin(a*45.45))-.5;
         }
-        float dispnoise(float a)
+        static float dispnoise(float a)
         {
             float a1 = hash11(floor(a)),a2=hash11(ceil(a));
             return .03*mix(a1,a2,pow(fract(a),8.));
         }
-        float noise(float a)
+        static float noise(float a)
         {
             float a1 = hash11(floor(a)),a2=hash11(ceil(a));
             return mix(a1+.5,a2+.5,pow(fract(a),50.));
         }
         
-        float hash21(float2 a)
+        static float hash21(float2 a)
         {
             return fract(sin(dot(a,float2(12.9898,78.233))+u.progress)*43758.5453);
         }
-        float perlin(float2 a)
+        static float perlin(float2 a)
         {
             a*=float2(100.,500.);
             float a1 = hash21(floor(a));
@@ -73,7 +73,7 @@ static float4 newLayer( float4 a, float4 b) {
         }
         
         
-        float4 grade(float4 color)
+        static float4 grade(float4 color)
         {
          	color = pow(color,float4(2.2));
             color*= float4(1.3,.7,.89,1);

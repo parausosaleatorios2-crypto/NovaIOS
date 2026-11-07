@@ -30,16 +30,16 @@ struct toji_pixel_pollyParams {
     // We test nearby candidate pieces and use the one whose inverse mapping
     // yields a valid original-triangle membership.
 
-    float hash12(float2 p){
+    static float hash12(float2 p){
       float3 p3 = fract(float3(p.xyx) * 0.1031);
       p3 += dot(p3, p3.yzx + 33.33);
       return fract((p3.x + p3.y) * p3.z);
     }
 
-    float2x2 r2(float a){ float s = sin(a), c = cos(a); return float2x2(c,-s,s,c); }
+    static float2x2 r2(float a){ float s = sin(a), c = cos(a); return float2x2(c,-s,s,c); }
 
     // Decide triangle inside mask for a square cell, local coord q in [0,1)
-    bool triMask(float2 q, bool diag){
+    static bool triMask(float2 q, bool diag){
       // Small epsilon to avoid edge flicker differences across backends
       float e = 1e-5;
       if(!diag){
@@ -49,16 +49,16 @@ struct toji_pixel_pollyParams {
       }
     }
 
-    float2 toPx(float2 uv){ return uv * __nv_getTexSize(inputImg_info.size); }
-    float2 toUv(float2 px){ float2 s = __nv_getTexSize(inputImg_info.size); return px / max(s, float2(1.0)); }
+    static float2 toPx(float2 uv){ return uv * __nv_getTexSize(inputImg_info.size); }
+    static float2 toUv(float2 px){ float2 s = __nv_getTexSize(inputImg_info.size); return px / max(s, float2(1.0)); }
 
-    float4 sampleSafe(float2 uv){
+    static float4 sampleSafe(float2 uv){
       return inputImg.sample(__nv_smp, clamp(uv, 0.0, 1.0));
     }
 
     struct PieceParams { float2 disp; float rot; float2 pivotUv; bool diag; float scale; float depth; };
 
-    PieceParams getPiece(float2 cid, float t, float g){
+    static PieceParams getPiece(float2 cid, float t, float g){
       PieceParams P;
       float2 texSize = __nv_getTexSize(inputImg_info.size);
       float rnd1 = hash12(cid + float(u.seed));
@@ -90,7 +90,7 @@ struct toji_pixel_pollyParams {
     }
 
     // Try inverse for a candidate cell id; return color.rgb and encoded depth in alpha; ok flag
-    float4 tryCandidate(float2 cidC, float t, float g, float2 uvNow, out bool ok){
+    static float4 tryCandidate(float2 cidC, float t, float g, float2 uvNow, out bool ok){
       PieceParams P = getPiece(cidC, t, g);
       // inverse transform: current -> original uv0
       float2 uv0 = uvNow - P.disp;

@@ -24,7 +24,7 @@ struct toji_jpegqualityParams {
 
     const float PI = 3.141592653589793;
 
-    float3 rgb2ybr(float3 rgb){
+    static float3 rgb2ybr(float3 rgb){
       // Y, Cb, Cr in [0,1]
       float3 ybr = float3(0.299,0.587,0.114) * rgb.r +
                  float3(0.0,0.0,0.0);
@@ -33,7 +33,7 @@ struct toji_jpegqualityParams {
       float cr = (rgb.r - y) * 0.713 + 0.5;
       return float3(y, cb, cr);
     }
-    float3 ybr2rgb(float3 ybr){
+    static float3 ybr2rgb(float3 ybr){
       float y=ybr.x, cb=ybr.y-0.5, cr=ybr.z-0.5;
       float r = y + 1.403*cr;
       float b = y + 1.773*cb;
@@ -41,10 +41,10 @@ struct toji_jpegqualityParams {
       return clamp(float3(r,g,b), 0.0, 1.0);
     }
 
-    float aScale(float k){ return (k==0.0)? 1.0/sqrt(2.0) : 1.0; }
+    static float aScale(float k){ return (k==0.0)? 1.0/sqrt(2.0) : 1.0; }
 
     // JPEG-like luminance quant matrix (subset via function)
-    float qLuma(int u, int v){
+    static float qLuma(int u, int v){
       // Values from standard table
       int idx = v*8 + u;
       int qv[64];
@@ -61,7 +61,7 @@ struct toji_jpegqualityParams {
     }
 
     // Kept coefficient mask for Low/Medium/High u.detail
-    bool keepCoeff(int u, int v, int mode){
+    static bool keepCoeff(int u, int v, int mode){
       if(mode==0){ // Low: (0,0),(1,0),(0,1)
         return (u==0 && v==0) || (u==1 && v==0) || (u==0 && v==1);
       } else if(mode==1){ // Medium: add (1,1),(2,0),(0,2)

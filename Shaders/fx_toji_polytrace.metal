@@ -31,17 +31,17 @@ struct toji_polytraceParams {
     const int MaxPoints   = 12; // candidate set size (keep small for mobile)
 
     // Lightweight hash
-    float hash21(float2 p){ return fract(sin(dot(p, float2(127.1,311.7)) + u.seed*53.0) * 43758.5453); }
-    float2 hash22(float2 p){ return float2(hash21(p), hash21(p*1.37+19.7)); }
+    static float hash21(float2 p){ return fract(sin(dot(p, float2(127.1,311.7)) + u.seed*53.0) * 43758.5453); }
+    static float2 hash22(float2 p){ return float2(hash21(p), hash21(p*1.37+19.7)); }
 
     // Pixel->UV mapping (normalized by screen size)
-    float4 fetchColorPx(float2 posPx){
+    static float4 fetchColorPx(float2 posPx){
       float2 uv = clamp(posPx / max(eng.acScreenSize, float2(1.0)), 0.0, 1.0);
       return inputImg.sample(__nv_smp, uv);
     }
 
     // Value used for gradient (simple modified luminance for contrast guidance)
-    float computeValue(float2 posPx){
+    static float computeValue(float2 posPx){
       float4 c = fetchColorPx(posPx);
       // Slight non-linear mix to enhance midtones without copying any external code
       float lum = dot(c.rgb, float3(0.2126, 0.7152, 0.0722));
@@ -51,7 +51,7 @@ struct toji_polytraceParams {
     }
 
     // Central-difference gradient in pixel space
-    float2 computeGradientPx(float2 posPx, float eps){
+    static float2 computeGradientPx(float2 posPx, float eps){
       float he = max(eps*0.5, 0.5);
       float2 dx = float2(he, 0.0);
       float2 dy = float2(0.0, he);
@@ -61,7 +61,7 @@ struct toji_polytraceParams {
     }
 
     // Generate one candidate point for a given grid cell (x,y)
-    float2 generatePoint(int2 cell, float tileSize){
+    static float2 generatePoint(int2 cell, float tileSize){
       float2 cellF = float2(cell);
       float2 rnd = hash22(cellF);
       // Hex-like offset pattern, plus u.jitter
@@ -80,7 +80,7 @@ struct toji_polytraceParams {
     }
 
     // Helpers for triangle selection (kept local/global for GLES friendliness)
-    bool pointInTri(float2 p, float2 a, float2 b, float2 c){
+    static bool pointInTri(float2 p, float2 a, float2 b, float2 c){
       float2 v0=b-a, v1=c-a, v2=p-a;
       float d00=dot(v0,v0), d01=dot(v0,v1), d02=dot(v0,v2);
       float d11=dot(v1,v1), d12=dot(v1,v2);
@@ -90,7 +90,7 @@ struct toji_polytraceParams {
       return (u>=0.0)&&(v>=0.0)&&((u+v)<1.0);
     }
 
-    float2 isectLines(float2 p1, float2 d1, float2 p2, float2 d2){
+    static float2 isectLines(float2 p1, float2 d1, float2 p2, float2 d2){
       float det = d1.x*d2.y - d1.y*d2.x;
       float2 df = p2 - p1;
       float t = (df.x*d2.y - df.y*d2.x) / max(abs(det), 1e-6);
@@ -99,7 +99,7 @@ struct toji_polytraceParams {
 
     float2 gPts[MaxPoints];
     float gDist[MaxPoints];
-    bool circumEmpty(int i1,int i2,int i3){
+    static bool circumEmpty(int i1,int i2,int i3){
       float2 c = isectLines((gPts[i1]+gPts[i2])*0.5, (gPts[i2]-gPts[i1]).yx*float2(1.0,-1.0),
                           (gPts[i1]+gPts[i3])*0.5, (gPts[i3]-gPts[i1]).yx*float2(1.0,-1.0));
       float r = length(gPts[i1]-c);

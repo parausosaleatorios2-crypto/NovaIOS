@@ -26,11 +26,11 @@ struct toji_s_glow_auraParams {
         
         #define PI 3.14159265359
 
-        float getLuma(float3 rgb) {
+        static float getLuma(float3 rgb) {
             return dot(rgb, float3(0.2126, 0.7152, 0.0722));
         }
 
-        float3 auraPalette(float t) {
+        static float3 auraPalette(float t) {
             // Base cycling colors
             float3 col = 0.5 + 0.5 * cos(6.28318 * (t + float3(0.0, 0.33, 0.67)));
             

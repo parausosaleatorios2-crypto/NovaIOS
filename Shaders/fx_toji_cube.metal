@@ -26,7 +26,7 @@ struct toji_cubeParams {
 
 // --- funcoes auxiliares do efeito
 // returns t and normal
-        float4 iBox( in float3 ro, in float3 rd, in float4x4 txx, in float4x4 txi, in float3 rad )
+        static float4 iBox( in float3 ro, in float3 rd, in float4x4 txx, in float4x4 txi, in float3 rad )
         {
             // convert from ray to box space
             float3 rdd = (txx*float4(rd,0.0)).xyz;
@@ -54,7 +54,7 @@ struct toji_cubeParams {
             return float4( tN, nor );
         }
 
-        float sBox( in float3 ro, in float3 rd, in float4x4 txx, in float3 rad )
+        static float sBox( in float3 ro, in float3 rd, in float4x4 txx, in float3 rad )
         {
             float3 rdd = (txx*float4(rd,0.0)).xyz;
             float3 roo = (txx*float4(ro,1.0)).xyz;
@@ -73,7 +73,7 @@ struct toji_cubeParams {
             return tN;
         }
 
-        float4x4 rotationAxisAngle( float3 v, float angle )
+        static float4x4 rotationAxisAngle( float3 v, float angle )
         {
             float s = sin( angle );
             float c = cos( angle );
@@ -85,7 +85,7 @@ struct toji_cubeParams {
                          0.0,                0.0,                0.0,                1.0 );
         }
 
-        float4x4 translate( float x, float y, float z )
+        static float4x4 translate( float x, float y, float z )
         {
             return float4x4( 1.0, 0.0, 0.0, 0.0,
                          0.0, 1.0, 0.0, 0.0,
@@ -93,7 +93,7 @@ struct toji_cubeParams {
                          x,   y,   z,   1.0 );
         }
 
-        float4x4 __nv_inverse(in float4x4 m)
+        static float4x4 __nv_inverse(in float4x4 m)
         {
             return float4x4(
                 m[0][0], m[1][0], m[2][0], 0.0,

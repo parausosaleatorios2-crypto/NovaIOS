@@ -28,7 +28,7 @@ static float3 hash3(float2 p) {
       return fract(sin(q) * 43758.5453);
     }
 
-    float gradientNoise(float2 p) {
+    static float gradientNoise(float2 p) {
       float2 i = floor(p);
       float2 f = fract(p);
       float2 u = f * f * (3.0 - 2.0 * f);
@@ -50,7 +50,7 @@ static float3 hash3(float2 p) {
       return 0.5 + 0.5 * n;
     }
 
-    float fbm(float2 p) {
+    static float fbm(float2 p) {
       float v = 0.0;
       float amp = 0.5;
       float freq = 1.0;

@@ -27,11 +27,11 @@ struct toji_skexnxxsconstellationParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) {
+    static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -39,7 +39,7 @@ struct toji_skexnxxsconstellationParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -50,15 +50,15 @@ struct toji_skexnxxsconstellationParams {
         #define s(a,b,c) smoothstep(a,b,c)
         #define S(a, b, t) smoothstep(a, b, t)
         
-        float rand(float2 co) {
+        static float rand(float2 co) {
             return fract(cos(__nv_mod(dot(co.xy+0.12,float2(12.9898,78.233)), 3.14))*43758.5453);
         }
-        float3 rand3(float2 co){
+        static float3 rand3(float2 co){
         	float t=rand(co);
         	float z=rand(co+t);
         	return float3(t,z,rand(co+z));
         }
-        float3 getpoint(float2 id){
+        static float3 getpoint(float2 id){
                 float EVO = u.autop? u.PROGRESS+(eng.acTime*1.5) : u.PROGRESS;
         	float3 r=rand3(id);
         	float3 ou=float3(
@@ -69,7 +69,7 @@ struct toji_skexnxxsconstellationParams {
         	return ou*0.45+0.5;
         }
         
-        float line(float2 uv, float2 p, float2 p2){
+        static float line(float2 uv, float2 p, float2 p2){
         	float2 n=uv-p;
         	float2 w=p2-p;
         	float r=clamp(dot(n,w)/dot(w,w),0.,1.);
@@ -79,20 +79,20 @@ struct toji_skexnxxsconstellationParams {
         
         //////////////////////////
         
-        float N21(float2 p)
+        static float N21(float2 p)
         {
             p = fract(p*float2(651.34, 237.73));
             p += dot(p, p + 23.45);
             return fract(p.x*p.y);
         }
         
-        float2 N22(float2 p)
+        static float2 N22(float2 p)
         {
             float n = N21(p);
             return float2(n, N21(p+n));
         }
         
-        float2 GetGridPoint(float2 id, float2 offs)
+        static float2 GetGridPoint(float2 id, float2 offs)
         {
             float EVOX = u.autop? u.PROGRESS+(eng.acTime*1.5) : u.PROGRESS;
             float2 n = N22(id + offs) * EVOX;
@@ -100,7 +100,7 @@ struct toji_skexnxxsconstellationParams {
             return offs + sin(n) * .3;
         }
         
-        float DistToLine(float2 p, float2 a, float2 b)
+        static float DistToLine(float2 p, float2 a, float2 b)
         {
             float2 pa = p-a;
             float2 ba = b-a;
@@ -108,7 +108,7 @@ struct toji_skexnxxsconstellationParams {
             return length(pa - ba*t);
         }
         
-        float LineX(float2 p, float2 a, float2 b)
+        static float LineX(float2 p, float2 a, float2 b)
         {
             float d = DistToLine(p, a, b);
             float m = S(.05, .005, d);

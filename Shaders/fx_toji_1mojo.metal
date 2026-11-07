@@ -31,7 +31,7 @@ struct toji_1mojoParams {
         // Professional blockbuster look with enhanced skin tones
         
         // Utility functions
-        float3 rgb2hsv(float3 c) {
+        static float3 rgb2hsv(float3 c) {
             float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
             float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
             float4 q = mix(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
@@ -41,14 +41,14 @@ struct toji_1mojoParams {
             return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
         }
         
-        float3 hsv2rgb(float3 c) {
+        static float3 hsv2rgb(float3 c) {
             float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
             return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
         }
         
         // Skin tone detection
-        bool isSkinTone(float3 rgb) {
+        static bool isSkinTone(float3 rgb) {
             float3 hsv = rgb2hsv(rgb);
             float h = hsv.x; // Already in 0-1 range
             float s = hsv.y;
@@ -64,7 +64,7 @@ struct toji_1mojoParams {
         }
         
         // Mojo color transformation
-        float3 applyMojo(float3 rgb) {
+        static float3 applyMojo(float3 rgb) {
             float mojoStrength = u.mojo * 0.01;
             
             // Apply u.exposure (always applied, not dependent on u.mojo strength)
@@ -171,7 +171,7 @@ struct toji_1mojoParams {
         }
         
         // Highlight protection
-        float3 protectHighlights(float3 rgb) {
+        static float3 protectHighlights(float3 rgb) {
             if (u.preserveHighlights) {
                 float maxChannel = max(max(rgb.r, rgb.g), rgb.b);
                 if (maxChannel > 0.95) {

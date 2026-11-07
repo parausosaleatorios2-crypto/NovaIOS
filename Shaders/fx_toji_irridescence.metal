@@ -28,7 +28,7 @@ static float random (in float2 st) {
 
         // 2D Noise based on Morgan McGuire @morgan3d
         // https://www.shadertoy.com/view/4dS3Wd
-        float noise (float2 st) {
+        static float noise (float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
 
@@ -54,7 +54,7 @@ static float random (in float2 st) {
         //#define u.GAIN 0.452
         //#define u.LACUNARITY 4.012
 
-        float fbm(float2 st) {
+        static float fbm(float2 st) {
             float luma = u.LUMA;
             float amplitude = u.AMP;
             float frequency = u.FREQ;

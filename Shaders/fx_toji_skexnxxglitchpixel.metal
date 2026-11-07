@@ -25,7 +25,7 @@ struct toji_skexnxxglitchpixelParams {
 static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -33,18 +33,18 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
    /////////////////////////
     
-   float hash(float2 p) {
+   static float hash(float2 p) {
     	float h = dot(p,float2(127.1,311.7));
     	return -1.0 + 2.0*fract(sin(h)*43758.5453123);
     }
     
-    float noise(float2 p) {
+    static float noise(float2 p) {
     	float2 i = floor(p);
     	float2 f = fract(p);
     
@@ -56,7 +56,7 @@ static float4 newLayer( float4 a, float4 b) {
     		hash( i + float2(1.0,1.0) ), u.x), u.y);
     }
     
-    float noise(float2 p, int oct) {
+    static float noise(float2 p, int oct) {
     	float2x2 m = float2x2( 1.6,  1.2, -1.2,  1.6 );
     	float f  = 0.0;
     

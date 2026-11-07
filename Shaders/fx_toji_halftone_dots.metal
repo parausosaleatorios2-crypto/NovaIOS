@@ -31,12 +31,12 @@ struct toji_halftone_dotsParams {
 
     const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-    float greyScale(float3 c){ return dot(c, LUMA); }
+    static float greyScale(float3 c){ return dot(c, LUMA); }
 
-    float2x2 rot(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
+    static float2x2 rot(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
 
     // Simple 3x3 box smooth of luminance controlled by u.smoothSource
-    float smoothLum(float2 uv){
+    static float smoothLum(float2 uv){
       if(u.smoothSource <= 0.0) return greyScale(inputImg.sample(__nv_smp, uv).rgb);
       float2 texel = 1.0 / __nv_getTexSize(inputImg_info.size);
       float r = clamp(u.smoothSource, 0.0, 2.0);
@@ -53,7 +53,7 @@ struct toji_halftone_dotsParams {
     }
 
     // Dot screen pattern (returns roughly -4..+4 like the Shadertoy version*4)
-    float dotScreen(float2 uv, float angle, float scale, float relWidth){
+    static float dotScreen(float2 uv, float angle, float scale, float relWidth){
       // shift in pixels -> UV
       float2 shiftPx = float2(u.shiftX, -u.shiftY);
       float2 uvShift = uv + shiftPx / eng.acScreenSize;

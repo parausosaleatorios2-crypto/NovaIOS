@@ -25,7 +25,7 @@ struct toji_fillParams {
         // - Wipe in from u.start and u.end with u.feather, matching wipe2.xml math.
         // - Blend like solidcolor.xml with Normal/Multiply/Screen and opacity.
 
-        float smoothstepRev(float edge0, float edge1, float x) {
+        static float smoothstepRev(float edge0, float edge1, float x) {
             if(edge0 == edge1) return step(edge0, x);
             else return smoothstep(edge0, edge1, x);
         }

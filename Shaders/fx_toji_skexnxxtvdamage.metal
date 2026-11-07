@@ -33,7 +33,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
 
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -43,19 +43,19 @@ static float2x2 rot2m(float a){
     // Noise generation functions borrowed from: 
     // https://github.com/ashima/webgl-noise/blob/master/src/noise2D.glsl
     
-    float3 mod289(float3 x) {
+    static float3 mod289(float3 x) {
       return x - floor(x * (1.0 / 289.0)) * 289.0;
     }
     
-    float2 mod289(float2 x) {
+    static float2 mod289(float2 x) {
       return x - floor(x * (1.0 / 289.0)) * 289.0;
     }
     
-    float3 permute(float3 x) {
+    static float3 permute(float3 x) {
       return mod289(((x*34.0)+1.0)*x);
     }
     
-    float snoise(float2 v)
+    static float snoise(float2 v)
       {
       const float4 C = float4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
                           0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
@@ -104,7 +104,7 @@ static float2x2 rot2m(float a){
       return 130.0 * dot(m, g);
     }
     
-    float staticV(float2 syamjaidtz) {
+    static float staticV(float2 syamjaidtz) {
         float staticHeight = snoise(float2(9.0,1.0*1.2+3.0))*0.3+5.0;
         float staticAmount = snoise(float2(1.0,1.0*1.2-6.0))*0.1+0.3;
         float staticStrength = snoise(float2(-9.75,1.0*0.6-3.0))*2.0+2.0;

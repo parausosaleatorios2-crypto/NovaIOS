@@ -45,7 +45,7 @@ struct toji_FastadjustParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
         
-        float3 colorTemperatureToRGB(const in float u.temperature){
+        static float3 colorTemperatureToRGB(const in float u.temperature){
             float3x3 m = (u.temperature <= 6500.0) ? float3x3(float3(0.0, -2902.1955373783176, -8257.7997278925690),
                                                   float3(0.0, 1669.5803561666639, 2575.2827530017594),
                                                   float3(1.0, 1.3302673723350029, 1.8993753891711275)) :
@@ -55,7 +55,7 @@ const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
             return mix(clamp(float3(m[0] / (float3(clamp(u.temperature, 1000.0, 40000.0)) + m[1]) + m[2]), float3(0.0), float3(1.0)), float3(1.0), smoothstep(1000.0, 0.0, u.temperature));
         }
         
-        float3 rotUV( float3 yuv, float degrees ) {
+        static float3 rotUV( float3 yuv, float degrees ) {
             float rad = degrees * 0.0174533;
             float3x3 rmat = float3x3(
                 1.0,  0.0,       0.0,
@@ -65,7 +65,7 @@ const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
             return yuv * rmat;
         }
 
-        float3 hsv2rgb(float3 c)
+        static float3 hsv2rgb(float3 c)
         {
             float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);

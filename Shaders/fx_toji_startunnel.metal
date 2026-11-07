@@ -36,13 +36,13 @@ struct toji_startunnelParams {
 // Star Tunnel - camera pose + auto motion blur (based on @P_Malin)
     // AM official style: fixed loops, only builtins
 
-    float Random(float x){
+    static float Random(float x){
       return fract(sin(x * 123.456) * 23.4567 + sin(x * 345.678) * 45.6789 + sin(x * 456.789) * 56.789);
     }
 
-    float3 RotateX(float3 v, float a){ float s=sin(a), c=cos(a); return float3(v.x, c*v.y + s*v.z, -s*v.y + c*v.z); }
-    float3 RotateY(float3 v, float a){ float s=sin(a), c=cos(a); return float3(c*v.x + s*v.z, v.y, -s*v.x + c*v.z); }
-    float3 RotateZ(float3 v, float a){ float s=sin(a), c=cos(a); return float3(c*v.x + s*v.y, -s*v.x + c*v.y, v.z); }
+    static float3 RotateX(float3 v, float a){ float s=sin(a), c=cos(a); return float3(v.x, c*v.y + s*v.z, -s*v.y + c*v.z); }
+    static float3 RotateY(float3 v, float a){ float s=sin(a), c=cos(a); return float3(c*v.x + s*v.z, v.y, -s*v.x + c*v.z); }
+    static float3 RotateZ(float3 v, float a){ float s=sin(a), c=cos(a); return float3(c*v.x + s*v.y, -s*v.x + c*v.y, v.z); }
 
     // Tunables (kept as constants for stability)
     const float fSteps = 121.0;
@@ -52,7 +52,7 @@ struct toji_startunnelParams {
     const float fRepeatMax = 2.0;
     const float fDepthFade = 0.8;
 
-    float3 GetParticlePos(float3 vRayDir, float fZPos, float fSeed){
+    static float3 GetParticlePos(float3 vRayDir, float fZPos, float fSeed){
       float fAngle = __nv_atan(vRayDir.x, vRayDir.y);
       float fAngleFraction = fract(fAngle / (6.28318530718));
       float fSegment = floor(fAngleFraction * fSteps + fSeed) + 0.5 - fSeed;
@@ -66,7 +66,7 @@ struct toji_startunnelParams {
       return float3( sin(fParticleAngle) * fRadius, cos(fParticleAngle) * fRadius, fParticleZ );
     }
 
-    float3 GetParticleColour(float3 vParticlePos, float fParticleSize, float3 vRayDir, float particleLength, float u.brightness){
+    static float3 GetParticleColour(float3 vParticlePos, float fParticleSize, float3 vRayDir, float particleLength, float u.brightness){
       float2 vNormDir = normalize(vRayDir.xy);
       float d1 = dot(vParticlePos.xy, vNormDir.xy) / max(length(vRayDir.xy), 1e-5);
       float3 vClosest2d = vRayDir * d1;
@@ -81,7 +81,7 @@ struct toji_startunnelParams {
       return float3(fShade);
     }
 
-    float4 GetParticleEx(float3 vRayDir, float fZPos, float fSeed){
+    static float4 GetParticleEx(float3 vRayDir, float fZPos, float fSeed){
       float fAngle = __nv_atan(vRayDir.x, vRayDir.y);
       float fAngleFraction = fract(fAngle / (6.28318530718));
       float fSegment = floor(fAngleFraction * fSteps + fSeed) + 0.5 - fSeed;
@@ -98,7 +98,7 @@ struct toji_startunnelParams {
       return float4(pos, id);
     }
 
-    float3 Starfield(float3 vRayDir, float fZPos, float fSeed, float fParticleSize, float particleLength, float u.brightness){
+    static float3 Starfield(float3 vRayDir, float fZPos, float fSeed, float fParticleSize, float particleLength, float u.brightness){
       float3 sysRad = radians(u.sysRotDeg);
       float ax = sysRad.x + radians(u.sysRotSpeedX) * eng.acTime;
       float ay = sysRad.y + radians(u.sysRotSpeedY) * eng.acTime;

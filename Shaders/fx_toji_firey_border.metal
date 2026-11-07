@@ -22,14 +22,14 @@ struct toji_firey_borderParams {
 
 // --- funcoes auxiliares do efeito
 // --- NOISE FUNCTIONS ---
-        float hash(float2 p) {
+        static float hash(float2 p) {
             p = fract(p * float2(123.34, 456.21));
             p += dot(p, p + 45.32);
             return fract(p.x * p.y);
         }
 
         // Value Noise with Smoothstep
-        float noise(float2 p) {
+        static float noise(float2 p) {
             float2 i = floor(p);
             float2 f = fract(p);
             f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // Quintic
@@ -43,7 +43,7 @@ struct toji_firey_borderParams {
         }
 
         // Fractal Brownian Motion
-        float fbm(float2 p) {
+        static float fbm(float2 p) {
             float f = 0.0;
             float amp = 0.5;
             for(int i = 0; i < 4; i++) {

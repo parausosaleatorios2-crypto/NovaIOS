@@ -26,7 +26,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
         
-        float2 computeUVnew( float2 uv, float k, float kcube){
+        static float2 computeUVnew( float2 uv, float k, float kcube){
     
                 float2 offsetScale = float2(1., 1.);
                 if( eng.acScreenSize.y > eng.acScreenSize.x ) {
@@ -52,7 +52,7 @@ static float2x2 rot2m(float a){
     
     }
     
-        float2 computeUV( float2 uv, float k, float kcube){
+        static float2 computeUV( float2 uv, float k, float kcube){
     
         float2 t = uv - .5;
         float r2 = t.x * t.x + t.y * t.y;

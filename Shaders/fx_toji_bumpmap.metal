@@ -36,19 +36,19 @@ struct toji_bumpmapParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float lighting(float3 p, float3 n) {
+        static float lighting(float3 p, float3 n) {
             float3 lightPos = float3(u.lightDir.x/2.0, -u.lightDir.y/2.0, u.lightDepth*2.0) / 1000.0;
             float3 l = normalize(lightPos-p);
             return dot(n,l);
         }
 
-        float directionalLighting(float3 p, float3 n) {
+        static float directionalLighting(float3 p, float3 n) {
             float3 lightPos = float3(u.lightDir.x/2.0, -u.lightDir.y/2.0, u.lightDepth*2.0) / 1000.0;
             float3 l = normalize(lightPos);
             return dot(n,l);
         }
 
-        float4 applyShading(float4 u.texColor, float3 p, float3 n, float d ) {
+        static float4 applyShading(float4 u.texColor, float3 p, float3 n, float d ) {
             float4 result = float4(0.);
             float a = smoothstep(30.0,9.,d);
             a *= smoothstep(0.3,0.2,n.z);
@@ -81,7 +81,7 @@ const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
             return result;
         }
 
-        float2 mapTexture( float2 texCoord, float rate ) {
+        static float2 mapTexture( float2 texCoord, float rate ) {
             float texRad = u.texAngle * 0.0174533;
             float texCos = cos(texRad);
             float texSin = sin(texRad);

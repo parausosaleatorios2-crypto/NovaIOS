@@ -36,7 +36,7 @@ static float2x2 rot2(float a) {
 
         const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float colorDiff( float3 a, float3 b ) {
+        static float colorDiff( float3 a, float3 b ) {
             float3 d = abs(a-b);
             return d.r + d.g + d.b;
         }

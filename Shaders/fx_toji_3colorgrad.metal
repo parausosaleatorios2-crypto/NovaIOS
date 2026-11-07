@@ -30,7 +30,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -38,7 +38,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -47,14 +47,14 @@ static float4 newLayer( float4 a, float4 b) {
    /////////////////////////
         const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
    
-        float3 hsv2rgb(float3 c)
+        static float3 hsv2rgb(float3 c)
         {
             float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
             return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
         }
 
-        float3 rgb2hsv(float3 c)
+        static float3 rgb2hsv(float3 c)
         {
             float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
             float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));

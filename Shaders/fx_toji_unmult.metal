@@ -23,22 +23,22 @@ struct toji_unmultParams {
 
 // --- funcoes auxiliares do efeito
 // Utility
-        float3 toLinear(float3 c){ return pow(max(c, 0.0), float3(2.2)); }
-        float3 toSRGB(float3 c){ return pow(max(c, 0.0), float3(1.0/2.2)); }
+        static float3 toLinear(float3 c){ return pow(max(c, 0.0), float3(2.2)); }
+        static float3 toSRGB(float3 c){ return pow(max(c, 0.0), float3(1.0/2.2)); }
 
         // Sample helpers
-        float4 sampleImg(AC_ImageInfo img, float2 uv){ return img.texture.sample(__nv_smp, uv); }
+        static float4 sampleImg(AC_ImageInfo img, float2 uv){ return img.texture.sample(__nv_smp, uv); }
 
-        float max3(float3 v){ return max(v.r, max(v.g, v.b)); }
+        static float max3(float3 v){ return max(v.r, max(v.g, v.b)); }
 
-        float getBaseAlpha(float3 srgb, float thr, float soft, float gamma){
+        static float getBaseAlpha(float3 srgb, float thr, float soft, float gamma){
             float m = max3(srgb);
             float a = smoothstep(thr, thr + soft, m);
             a = pow(clamp(a, 0.0, 1.0), gamma);
             return a;
         }
 
-        float featherAlpha(AC_ImageInfo img, float2 uv, float baseA, float2 px, float feather){
+        static float featherAlpha(AC_ImageInfo img, float2 uv, float baseA, float2 px, float feather){
             if (feather <= 0.0001) return baseA;
             float f = clamp(feather, 0.0, 10.0);
             float2 off = px * f;
@@ -57,7 +57,7 @@ struct toji_unmultParams {
             return mix(baseA, avg, 0.75);
         }
 
-        float cleanupAlpha(AC_ImageInfo img, float2 uv, float2 px, float pixels){
+        static float cleanupAlpha(AC_ImageInfo img, float2 uv, float2 px, float pixels){
             float p = abs(pixels);
             if (p < 0.001) return max3(sampleImg(img, uv).rgb);
             float2 off = px * p;

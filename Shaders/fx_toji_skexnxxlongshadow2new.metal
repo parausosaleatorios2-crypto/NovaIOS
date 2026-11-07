@@ -35,7 +35,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
         }
 
-        float projectAndClampDist(float2 a, float2 b) {
+        static float projectAndClampDist(float2 a, float2 b) {
             return clamp(dot(a,b)/dot(b,b),0.0,1.0);
         }
 

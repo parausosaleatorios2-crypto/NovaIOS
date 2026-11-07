@@ -20,13 +20,13 @@ struct toji_1ghostParams {
 // --- funcoes auxiliares do efeito
 static float2 getResolution(){ float2 s=__nv_getTexSize(inputImg_info.size); if(s.x<=0.0||s.y<=0.0) s=float2(1920.0,1080.0); return s; }
     const float PI=3.14159265358979323846;
-    float luma(float3 c){ return dot(c, float3(0.299,0.587,0.114)); }
+    static float luma(float3 c){ return dot(c, float3(0.299,0.587,0.114)); }
 
-    float4 sampleLayer(float2 uv01){ return inputImg.sample(__nv_smp, uv01); }
+    static float4 sampleLayer(float2 uv01){ return inputImg.sample(__nv_smp, uv01); }
 
-    float clamp01(float x){ return clamp(x,0.0,1.0); }
+    static float clamp01(float x){ return clamp(x,0.0,1.0); }
 
-    float3 applyType(float2 uv, float3 src){
+    static float3 applyType(float2 uv, float3 src){
       if(u.ghostType==0){ return src; }
       if(u.ghostType==1){ float g=1.0 - luma(src); return float3(g); }
       if(u.ghostType==2){ return float3(1.0) - src; }

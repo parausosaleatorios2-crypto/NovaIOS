@@ -35,7 +35,7 @@ def split_top(src):
                 k = src.find('\n', j + 1)
                 j = n if k < 0 else k
             pre = src[start:i]
-            if pre.strip():
+            if pre:
                 items.append(pre)
             items.append(src[i:j + 1])
             i = start = j + 1
@@ -70,7 +70,7 @@ def split_top(src):
             items.append(src[start:i + 1])
             start = i + 1
         i += 1
-    if src[start:].strip():
+    if src[start:]:
         items.append(src[start:])
     return items
 

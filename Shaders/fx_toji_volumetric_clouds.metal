@@ -22,7 +22,7 @@ struct toji_volumetric_cloudsParams {
 // --- funcoes auxiliares do efeito
 #define STEPS 50
 
-        float noise( in float3 x )
+        static float noise( in float3 x )
         {
             float3 p = floor(x);
             float3 f = fract(x);
@@ -33,7 +33,7 @@ struct toji_volumetric_cloudsParams {
             return mix( rg.x, rg.y, f.z );
         }
 
-		float fbm( float3 p ) {
+		static float fbm( float3 p ) {
             return noise(p)/2.
                 + noise(p*2.)/4.
                 + noise(p*4.)/8.
@@ -41,11 +41,11 @@ struct toji_volumetric_cloudsParams {
                 ;
         }
 
-        float4 comp( float4 bg, float4 fg ) {
+        static float4 comp( float4 bg, float4 fg ) {
             return bg * (1.-fg.a) + fg;
         }
 
-        float calcDensity(float3 p) {
+        static float calcDensity(float3 p) {
             //p.y *= 1.;
             float density = max(0.,fbm(p) - u.densityParam);
             return density;

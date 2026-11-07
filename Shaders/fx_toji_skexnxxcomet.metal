@@ -33,7 +33,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -44,7 +44,7 @@ static float2x2 rot2m(float a){
     #define PI 3.14159
     #define	TAU 6.28318
     
-    float vDrop(float2 uv,float t)
+    static float vDrop(float2 uv,float t)
     {
         uv.x = uv.x*128.0;						// H-Count
         float dx = fract(uv.x);

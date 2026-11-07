@@ -30,11 +30,11 @@ struct toji_halftone_dots2Params {
     // Dark areas -> larger dots, Light areas -> smaller dots
 
     const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
-    float greyScale(float3 c){ return dot(c, LUMA); }
-    float2x2 rot(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
+    static float greyScale(float3 c){ return dot(c, LUMA); }
+    static float2x2 rot(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
 
     // Optional 3x3 luminance smooth to avoid flicker at high frequency
-    float smoothLum(float2 uv){
+    static float smoothLum(float2 uv){
       if(u.smoothSource <= 0.0) return greyScale(inputImg.sample(__nv_smp, uv).rgb);
       float2 texel = 1.0 / __nv_getTexSize(inputImg_info.size);
       float r = clamp(u.smoothSource, 0.0, 2.0);

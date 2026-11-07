@@ -26,7 +26,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -34,7 +34,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
 
@@ -47,7 +47,7 @@ static float4 newLayer( float4 a, float4 b) {
     #define phase 0.0
     #define progress (1.57 * u.progressx)
     
-     float rand(float co) { return fract(sin(co*(91.3458+u.deltax)) * 47453.5453); }
+     static float rand(float co) { return fract(sin(co*(91.3458+u.deltax)) * 47453.5453); }
 
 fragment float4 fx_toji_skexnxxpixelsorter(
     NovaVertexOut       in   [[stage_in]],

@@ -47,7 +47,7 @@ struct toji_1saberParams {
 
 // --- funcoes auxiliares do efeito
 static float2 random2( float2 p ) { return fract(sin(float2(dot(p,float2(127.1,311.7)),dot(p,float2(269.5,183.3))))*43758.5453); }
-        float2 noise (in float2 st) {
+        static float2 noise (in float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
             float2 a = random2(i);
@@ -57,14 +57,14 @@ static float2 random2( float2 p ) { return fract(sin(float2(dot(p,float2(127.1,3
             float2 u = f;
             return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
         }
-        float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float4 mod289(float4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
-        float4 permute(float4 x) { return mod289(((x*34.0)+1.0)*x); }
-        float4 taylorInvSqrt(float4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-        float rand(float2 co){ return fract(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453); }
-        float snoise(float3 v){
+        static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float4 mod289(float4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
+        static float4 permute(float4 x) { return mod289(((x*34.0)+1.0)*x); }
+        static float4 taylorInvSqrt(float4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+        static float rand(float2 co){ return fract(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453); }
+        static float snoise(float3 v){
           const float2  C = float2(1.0/6.0, 1.0/3.0);
           const float4  D = float4(0.0, 0.5, 1.0, 2.0);
           float3 i  = floor(v + dot(v, C.yyy));
@@ -103,10 +103,10 @@ static float2 random2( float2 p ) { return fract(sin(float2(dot(p,float2(127.1,3
           m = m * m;
           return 42.0 * dot( m*m, float4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
         }
-        float turbulence (in float2 st, in int OCTAVES, in float2 parallax, in float u.evolution) {
+        static float turbulence (in float2 st, in int OCTAVES, in float2 parallax, in float u.evolution) {
             float value = 0.0; float amplitude = .5; for (int i = 0; i < OCTAVES; i++) { value += amplitude * abs(snoise(float3(st,u.evolution))); st *= 2.; st += parallax; amplitude *= .5; } return value;
         }
-        float2x2 rot2d(float a) { float s = sin(a); float c = cos(a); return float2x2(c,s,-s,c); }
+        static float2x2 rot2d(float a) { float s = sin(a); float c = cos(a); return float2x2(c,s,-s,c); }
 
 fragment float4 fx_toji_1saber(
     NovaVertexOut       in   [[stage_in]],

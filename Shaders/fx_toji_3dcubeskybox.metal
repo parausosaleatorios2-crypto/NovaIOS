@@ -34,7 +34,7 @@ struct toji_3dcubeskyboxParams {
 varying float4x4 invOrient;
         varying float4x4 skyRotM;
 
-        float4x4 __nv_inverse(in float4x4 m)
+        static float4x4 __nv_inverse(in float4x4 m)
         {
             return float4x4(
                 m[0][0], m[1][0], m[2][0], 0.0,
@@ -46,7 +46,7 @@ varying float4x4 invOrient;
                 1.0 );
         }
 
-        float4x4 rotationAxisAngle( float3 v, float angle )
+        static float4x4 rotationAxisAngle( float3 v, float angle )
         {
             float s = sin( angle );
             float c = cos( angle );

@@ -34,13 +34,13 @@ struct toji_s_warp_waves2Params {
         
         #define PI 3.14159265359
 
-        float2 applyWrap(float2 uv, int mode) {
+        static float2 applyWrap(float2 uv, int mode) {
             if (mode == 1) return fract(uv); 
             if (mode == 2) return abs(__nv_mod(uv - 1.0, 2.0) - 1.0); 
             return uv;
         }
 
-        float2 getWaveOffset(float2 p, float amp, float freq, float angle, float dispAngle, float pStart, float pSpeed, float time, float aspect) {
+        static float2 getWaveOffset(float2 p, float amp, float freq, float angle, float dispAngle, float pStart, float pSpeed, float time, float aspect) {
             float rad = angle * (PI / 180.0);
             float dispRad = dispAngle * (PI / 180.0);
             

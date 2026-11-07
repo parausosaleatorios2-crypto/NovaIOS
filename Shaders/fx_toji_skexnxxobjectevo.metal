@@ -37,14 +37,14 @@ struct toji_skexnxxobjectevoParams {
 };
 
 // --- funcoes auxiliares do efeito
-//float2 projectAndClamp(float2 a, float2 b) {
+//static float2 projectAndClamp(float2 a, float2 b) {
         //    return clamp(dot(a,b)/dot(b,b),0.0,1.0) * b;
         //}
         float2 project(float2 a, float2 b) {
             return (dot(a,b)/dot(b,b)) * b;
         }
 
-        float smoothstepRev(float edge0, float edge1, float x) {
+        static float smoothstepRev(float edge0, float edge1, float x) {
             if(edge0 == edge1) return step(edge0, x);
             else return smoothstep(edge0, edge1, x);
         }

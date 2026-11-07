@@ -20,11 +20,11 @@ struct toji_plasmav2Params {
     // - Fixed-iteration FBM (6 octaves)
     // - No dynamic loops/arrays; only AM built-ins
 
-    float rand3(float3 st){
+    static float rand3(float3 st){
       return fract(sin(dot(st, float3(12.9898, 78.233, 45.543))) * 43758.5453123);
     }
 
-    float noise3(float3 st){
+    static float noise3(float3 st){
       float3 i=floor(st); float3 f=fract(st);
       float3 u=f*f*(3.0-2.0*f);
       float a=rand3(i);
@@ -40,7 +40,7 @@ struct toji_plasmav2Params {
       return mix(bottom, top, u.z);
     }
 
-    float fbm6(float3 st){
+    static float fbm6(float3 st){
       float v=0.0; float amp=0.5;
       v += amp * noise3(st); st*=2.0; amp*=0.5;
       v += amp * noise3(st); st*=2.0; amp*=0.5;

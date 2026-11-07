@@ -26,45 +26,45 @@ struct toji_filtersParams {
 // --- funcoes auxiliares do efeito
 // Advanced CC Filters - Hand-crafted cinematic looks
 
-        float3 saturateCol(float3 col, float sat) {
+        static float3 saturateCol(float3 col, float sat) {
             float grey = dot(col, float3(0.2126, 0.7152, 0.0722));
             return mix(float3(grey), col, sat);
         }
 
-        float3 applyContrast(float3 col, float con) {
+        static float3 applyContrast(float3 col, float con) {
             return (col - 0.5) * con + 0.5;
         }
 
         // --- Procedural Textures ---
-        float hash(float2 p) {
+        static float hash(float2 p) {
             return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
         }
 
-        float noise(float2 p) {
+        static float noise(float2 p) {
             float2 i = floor(p); float2 f = fract(p);
             f = f * f * (3.0 - 2.0 * f);
             return mix(mix(hash(i), hash(i + float2(1,0)), f.x),
                        mix(hash(i + float2(0,1)), hash(i + float2(1,1)), f.x), f.y);
         }
 
-        float getGrain(float2 uv, float t) {
+        static float getGrain(float2 uv, float t) {
             return hash(uv + t);
         }
 
-        float getScratches(float2 uv, float t) {
+        static float getScratches(float2 uv, float t) {
             float x = uv.x * 200.0;
             float r = hash(float2(floor(x), floor(t * 10.0)));
             if (r > 0.99) return smoothstep(0.1, 0.0, abs(fract(x) - 0.5));
             return 0.0;
         }
 
-        float getDust(float2 uv, float t) {
+        static float getDust(float2 uv, float t) {
             float2 p = uv * 50.0;
             float n = noise(p + t * 5.0);
             return step(0.98, n) * hash(uv + t);
         }
 
-        float3 getLightLeaks(float2 uv, float t) {
+        static float3 getLightLeaks(float2 uv, float t) {
             float2 p = uv + float2(t * 0.1, sin(t * 0.5) * 0.2);
             float n = noise(p * 2.0);
             float3 c1 = float4(1.0, 0.4, 0.2, 1.0).rgb * smoothstep(0.4, 0.8, n);
@@ -72,35 +72,35 @@ struct toji_filtersParams {
             return (c1 + c2) * 0.5;
         }
 
-        float3 applyBloom(float3 col, float str) {
+        static float3 applyBloom(float3 col, float str) {
             float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
             float3 highlight = col * smoothstep(0.6, 1.0, luma);
             return col + highlight * str * 2.0;
         }
 
-        float3 applyVignette(float3 col, float2 uv, float str) {
+        static float3 applyVignette(float3 col, float2 uv, float str) {
             float d = distance(uv, float2(0.5));
             return col * smoothstep(0.8, 0.4 + (1.0 - str) * 0.4, d);
         }
 
-        float3 getGlitch(float2 uv, float t, float str) {
+        static float3 getGlitch(float2 uv, float t, float str) {
             float2 gUv = uv;
             float gNoise = hash(float2(floor(t * 10.0), floor(uv.y * 10.0)));
             if (gNoise > 0.98) gUv.x += (hash(float2(t)) - 0.5) * 0.05 * str;
             return inputImg.sample(__nv_smp, gUv).rgb;
         }
 
-        float getLensDirt(float2 uv, float t) {
+        static float getLensDirt(float2 uv, float t) {
             float dirt = noise(uv * 10.0 + t * 0.05);
             return smoothstep(0.7, 1.0, dirt) * 0.1;
         }
 
-        float3 applyLetterbox(float3 col, float2 uv, float str) {
+        static float3 applyLetterbox(float3 col, float2 uv, float str) {
             float mask = step(0.1 * str, uv.y) * step(uv.y, 1.0 - 0.1 * str);
             return col * mask;
         }
 
-        float getStatic(float2 uv, float t) {
+        static float getStatic(float2 uv, float t) {
             return hash(uv + t * 20.0);
         }
 

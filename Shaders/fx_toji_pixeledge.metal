@@ -21,7 +21,7 @@ struct toji_pixeledgeParams {
 
 // --- funcoes auxiliares do efeito
 // Pixelate Edge Detection with 3-Color Gradient
-        float3 rgb2gray(float3 c) { return float3(dot(c, float3(0.299, 0.587, 0.114))); }
+        static float3 rgb2gray(float3 c) { return float3(dot(c, float3(0.299, 0.587, 0.114))); }
 
 fragment float4 fx_toji_pixeledge(
     NovaVertexOut       in   [[stage_in]],

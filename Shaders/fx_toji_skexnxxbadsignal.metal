@@ -32,17 +32,17 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
 
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
-        float greyScale(in float3 col) {
+        static float greyScale(in float3 col) {
             return dot(col, float3(0.2126, 0.7152, 0.0722));
         }
     
    /////////////////////////
     
-   float noise(float2 p)
+   static float noise(float2 p)
     {
     	float s;
     	if(u.typeX == 0) { s = black.sample(__nv_smp, float2(1.,2.*cos(1.0))*0.1*8. + p*1.).x; }
@@ -51,13 +51,13 @@ static float2x2 rot2m(float a){
     	return s;
     }
     
-    float onOff(float a, float b, float c)
+    static float onOff(float a, float b, float c)
     {
     	float PROGO = u.autop? u.progressx + (eng.acTime*0.5) : u.progressx;
     	return step(c, sin(PROGO + a*cos(PROGO*b)));
     }
     
-    float ramp(float y, float start, float end)
+    static float ramp(float y, float start, float end)
     {
     	float inside = step(start,y) - step(end,y);
     	float fact = (y-start)/(end-start)*inside;
@@ -65,14 +65,14 @@ static float2x2 rot2m(float a){
     	
     }
     
-    float stripes(float2 uv)
+    static float stripes(float2 uv)
     {
     	float EVO = u.autod? u.progressd + (eng.acTime*1.25) : u.progressd;
     	float noi = noise(uv*float2(0.5,1.) + float2(1.,3.));
     	return ramp(__nv_mod(uv.y*4. + EVO/2.+sin(EVO + sin(EVO*0.63)), 1.),0.5,0.6)*noi;
     }
     
-    float3 getVideo(float2 uv)
+    static float3 getVideo(float2 uv)
     {
     	float2 look = uv;
     	float PROG = u.autop? u.progressx + (eng.acTime*0.5) : u.progressx;
@@ -85,7 +85,7 @@ static float2x2 rot2m(float a){
     	return video;
     }
     
-    float2 screenDistort(float2 uv)
+    static float2 screenDistort(float2 uv)
     {
     	uv -= float2(.5,.5);
     	uv = uv*1.2*(1./1.2+2.*uv.x*uv.x*uv.y*uv.y);

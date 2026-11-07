@@ -30,14 +30,14 @@ struct toji_AwiggleParams {
 static float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
 
     // Hash and value noise
-    float hash(float n){ return fract(sin(n)*43758.5453123); }
-    float noise1(float x){
+    static float hash(float n){ return fract(sin(n)*43758.5453123); }
+    static float noise1(float x){
       float i = floor(x), f = fract(x);
       float u = f*f*(3.0-2.0*f);
       return mix(hash(i+u.seed), hash(i+1.0+u.seed), u);
     }
     // Fractal brownian motion
-    float fbm(float x, float oct, float rough){
+    static float fbm(float x, float oct, float rough){
       float a = 1.0, f = 1.0, sum = 0.0, norm = 0.0;
       for(int i=0;i<8;i++){
         if(float(i) >= oct) break;
@@ -49,10 +49,10 @@ static float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); 
       return (norm>0.0)? sum/norm : 0.0;
     }
 
-    float2x2 rot2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
+    static float2x2 rot2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
 
     // Mirror-edge UV helper
-    float2 mirror(float2 uv){ return abs(fract(uv*0.5+0.5)*2.0-1.0); }
+    static float2 mirror(float2 uv){ return abs(fract(uv*0.5+0.5)*2.0-1.0); }
 
 fragment float4 fx_toji_Awiggle(
     NovaVertexOut       in   [[stage_in]],

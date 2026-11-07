@@ -37,12 +37,12 @@ static float sdLine( in float2 p, in float2 a, in float2 b )
             return length( pa - ba*h );
         }
 
-        float2 projectAndClamp(float2 a, float2 b) {
+        static float2 projectAndClamp(float2 a, float2 b) {
             return clamp(dot(a,b)/dot(b,b),0.0,1.0) * b;
         }
 
         // 2D Random
-        float random (float2 st) {
+        static float random (float2 st) {
             return fract(sin(dot(st.xy,
                                  float2(12.9898,78.233)))
                          * 43758.5453123);
@@ -50,7 +50,7 @@ static float sdLine( in float2 p, in float2 a, in float2 b )
 
         // 2D Noise based on Morgan McGuire @morgan3d
         // https://www.shadertoy.com/view/4dS3Wd
-        float noise (float2 st) {
+        static float noise (float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
 
@@ -86,7 +86,7 @@ static float sdLine( in float2 p, in float2 a, in float2 b )
         //    return n;
         //}
 
-        float fractNoise (float2 st, int u.octaves) {
+        static float fractNoise (float2 st, int u.octaves) {
             st *= 4.;
             float result = noise(st);
             if ( u.octaves >= 2 )
@@ -101,11 +101,11 @@ static float sdLine( in float2 p, in float2 a, in float2 b )
         }
 
 
-        float2 l2s( float2 v, float4x4 eng.acLTS ) {
+        static float2 l2s( float2 v, float4x4 eng.acLTS ) {
             return (float4(v,0.,1.)*eng.acLTS).xy;
         }
 
-        float3 lightning( float2 st, float2 a, float2 b, float scale, float u.seed, float width, float u.limit ) {
+        static float3 lightning( float2 st, float2 a, float2 b, float scale, float u.seed, float width, float u.limit ) {
 
             float2 ab = b - a;
             float2 n = normalize(ab).yx;

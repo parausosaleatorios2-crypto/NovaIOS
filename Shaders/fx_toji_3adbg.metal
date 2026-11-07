@@ -65,22 +65,22 @@ struct toji_3adbgParams {
 
 // --- funcoes auxiliares do efeito
 // Utility: get layer size, fallback to 1920x1080 when empty
-    float2 getResolution() {
+    static float2 getResolution() {
       float2 s = __nv_getTexSize(inputImg_info.size);
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
       return s;
     }
 
     const float PI = 3.14159265358979323846;
-    float radiansf(float d){ return d * (PI / 180.0); }
+    static float radiansf(float d){ return d * (PI / 180.0); }
 
     // Rotation helpers
-    float3x3 rotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
-    float3x3 rotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
-    float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
+    static float3x3 rotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
+    static float3x3 rotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
+    static float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
 
     // Equirect mapping from direction
-    float2 dirToEquirectUV(float3 d) {
+    static float2 dirToEquirectUV(float3 d) {
       d = normalize(d);
       float u = __nv_atan(d.x, d.z) / (2.0*PI) + 0.5;
       float v = asin(clamp(d.y,-1.0,1.0)) / PI + 0.5;
@@ -94,7 +94,7 @@ struct toji_3adbgParams {
       bool hit;
     };
 
-    Hit intersectPlane(float3 ro, float3 rd, float3 center, float3x3 R, float2 halfSize) {
+    static Hit intersectPlane(float3 ro, float3 rd, float3 center, float3x3 R, float2 halfSize) {
       float3 n = R * float3(0.0, 0.0, 1.0); // Plane faces +Z in local space
       float denom = dot(rd, n);
       Hit h; h.t = -1.0; h.uv = float2(0.0); h.hit = false;
@@ -125,13 +125,13 @@ struct toji_3adbgParams {
       bool hit;
     };
 
-    bool within(float3 p, float3 c, float3 hw, int axis){
+    static bool within(float3 p, float3 c, float3 hw, int axis){
       if(axis==0 || axis==1) return abs(p.y - c.y) <= hw.y && abs(p.z - c.z) <= hw.z;
       if(axis==2 || axis==3) return abs(p.x - c.x) <= hw.x && abs(p.z - c.z) <= hw.z;
       return abs(p.x - c.x) <= hw.x && abs(p.y - c.y) <= hw.y;
     }
 
-    BoxHit intersectRoom(float3 ro, float3 rd, float3 c, float3 hw){
+    static BoxHit intersectRoom(float3 ro, float3 rd, float3 c, float3 hw){
       BoxHit h; h.t = 1e20; h.p = float3(0.0); h.face = -1; h.hit = false;
       // +X and -X planes
       if (abs(rd.x) > 1e-6) {
@@ -176,7 +176,7 @@ struct toji_3adbgParams {
     }
 
     // Sample plane content: either current layer (mapped via eng.acLayerToScreen) or composition behind
-    float4 samplePlane(float2 uv01){
+    static float4 samplePlane(float2 uv01){
       if (u.planeSource == 1) {
         // Sample composition behind this layer directly in [0,1] UV space
         return comp.sample(__nv_smp, uv01);

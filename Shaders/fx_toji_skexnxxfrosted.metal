@@ -24,7 +24,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -35,7 +35,7 @@ static float2x2 rot2m(float a){
         // float dist = 4.0; // how far to sample from
         // float u.progressa = 6.; // how many times to sample, more = smoother
         
-        float rand(float2 uv){
+        static float rand(float2 uv){
          return fract(sin(dot(uv, float2(12.9898,78.233)))*43578.5453);   
         }
 

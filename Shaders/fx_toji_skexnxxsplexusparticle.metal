@@ -32,7 +32,7 @@ struct toji_skexnxxsplexusparticleParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -40,7 +40,7 @@ struct toji_skexnxxsplexusparticleParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -48,25 +48,25 @@ struct toji_skexnxxsplexusparticleParams {
     
    #define S(a,b,t) smoothstep(a,b,t)
     
-    float DistLine(float2 p, float2 a, float2 b) {
+    static float DistLine(float2 p, float2 a, float2 b) {
         float2 pa = p-a;
         float2 ba = b-a;
         float t = clamp(dot(pa, ba)/dot(ba, ba), 0., 1.);
         return length(pa-ba*t);
     }
     
-    float N21(float2 p) {
+    static float N21(float2 p) {
         p = fract(p*float2(233.34, 851.73));
         p += dot(p, p+23.45);
         return fract(p.x*p.y);
     }
     
-    float2 N22(float2 p) {
+    static float2 N22(float2 p) {
         float n = N21(p);
         return float2(n, N21(p+n));
     }
     
-    float2 GetPos (float2 id, float2 offs) {
+    static float2 GetPos (float2 id, float2 offs) {
         float xnxx = u.autop? u.progressb + (eng.acTime*2.0) : u.progressb;
         float2 n = N22(id+offs) * xnxx;
         // float2 n = N22(id+offs)* u.progressb;
@@ -74,7 +74,7 @@ struct toji_skexnxxsplexusparticleParams {
         return offs+sin(n)*.4;
     }
     
-    float Line(float2 p, float2 a, float2 b) {
+    static float Line(float2 p, float2 a, float2 b) {
         float d = DistLine(p,a,b); // distance to the line segment
         float m = S(.03,.01,d); // cut out the line
         float d2 = length(a-b);
@@ -82,7 +82,7 @@ struct toji_skexnxxsplexusparticleParams {
         return m;
     }
     
-    float Layer (float2 uv) {
+    static float Layer (float2 uv) {
         float m = 0.0;
         float2 gv = fract(uv)-.5;
         float2 id = floor(uv);

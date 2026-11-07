@@ -27,7 +27,7 @@ static float random (in float2 st) {
                 43758.5453123);
         }
 
-        float2 rand2v(float2 co) {
+        static float2 rand2v(float2 co) {
             return float2(random(co),random(co+float2(361.312,173.019)));
         }
 

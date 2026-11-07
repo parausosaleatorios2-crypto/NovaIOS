@@ -26,19 +26,19 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
    /////////////////////////
     
-   float Hash( float2 p)
+   static float Hash( float2 p)
     {
     	float3 p2 = float3(p.xy,1.0);
         return fract(sin(dot(p2,float3(37.1,61.7, 12.4)))*3758.5453123);
     }
     
-    float noise(in float2 p)
+    static float noise(in float2 p)
     {
         float2 i = floor(p);
     	float2 f = fract(p);
@@ -49,7 +49,7 @@ static float2x2 rot2m(float a){
     		f.y);
     }
     
-    float fbm(float2 p) 
+    static float fbm(float2 p) 
     {
     	float v = 0.0;
     	v += noise(p*1.)*.5;

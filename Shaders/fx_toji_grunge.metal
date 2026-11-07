@@ -176,17 +176,17 @@ struct toji_grungeParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float2x2 rot2(float a) {
+        static float2x2 rot2(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2(c,s,-s,c);
         }
 
-        float4 composite( float4 a, float4 b) {
+        static float4 composite( float4 a, float4 b) {
             return a * (1. - b.a) + b;
         }
 
-        float sampleGrain(float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert) {
+        static float sampleGrain(float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert) {
 
             uv -= 0.5;
             uv *= rot2(angle*0.0174533);
@@ -265,7 +265,7 @@ const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
         }
 
-        float2 applyDisplace(float2 displace, float4 blurColor, float2 offset, bool fromCtr, int region, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 texOffset) {
+        static float2 applyDisplace(float2 displace, float4 blurColor, float2 offset, bool fromCtr, int region, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 texOffset) {
 
             float p;
             if( region == 1) {  // Edge
@@ -287,7 +287,7 @@ const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
             return displace + (offset * float2(1.,-1.) / 2000.) * g * p;
         }
 
-        float4 blendGrain(float4 baseColor, float4 originalColor, float4 blurColor, float4 color, float alpha, int blendMode, int region, float spread, float rawChoke, float burn, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert, bool light, float lightAngle) {
+        static float4 blendGrain(float4 baseColor, float4 originalColor, float4 blurColor, float4 color, float alpha, int blendMode, int region, float spread, float rawChoke, float burn, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert, bool light, float lightAngle) {
 
             float choke = clamp(rawChoke,0.,0.999);
 

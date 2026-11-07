@@ -31,7 +31,7 @@ static float4x4 rotationAxisAngle( float3 v, float angle )
                          0.0,                0.0,                0.0,                1.0 );
         }
 
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 

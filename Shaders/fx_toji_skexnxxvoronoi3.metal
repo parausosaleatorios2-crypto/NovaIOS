@@ -28,19 +28,19 @@ struct toji_skexnxxvoronoi3Params {
 
 // --- funcoes auxiliares do efeito
 static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
-        float max_abs(float2 p)
+        static float max_abs(float2 p)
         {
             return max(abs(p.x), abs(p.y));
         }
         
         
-        float2 voronoi_noise_randomVector(float2 UV, float2 offset)
+        static float2 voronoi_noise_randomVector(float2 UV, float2 offset)
         {
         	float2x2 m = 	float2x2(15.27, 47.63, 99.41, 89.98);
         	UV = fract(sin(UV* m) * 46839.32);
@@ -48,7 +48,7 @@ static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
         	return float2(sin(UV.y * +offset.x*cos(iTime/3.)) * 0.5 + 0.5, cos(UV.x * offset.y*sin(iTime/20.)) * 0.5 + 0.5);
         }
         
-        void ChebychevVoronoi(float2 UV, float2 AngleOffset, float2 CellDensity, out float Out, out float Cells, out float Lines,out float Points)
+        static void ChebychevVoronoi(float2 UV, float2 AngleOffset, float2 CellDensity, out float Out, out float Cells, out float Lines,out float Points)
         {
         	float2 g = floor(UV * CellDensity);
         	float2 f = fract(UV * CellDensity);

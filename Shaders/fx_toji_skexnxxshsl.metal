@@ -42,7 +42,7 @@ struct toji_skexnxxshslParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -50,7 +50,7 @@ struct toji_skexnxxshslParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -61,7 +61,7 @@ struct toji_skexnxxshslParams {
     
    /////////////////////////
    
-   float3 RGB2HSL(float3 rgb) {
+   static float3 RGB2HSL(float3 rgb) {
         float h = 0.0, s = 0.0, l = 0.0;
         float r = rgb.r;
         float g = rgb.g;
@@ -92,7 +92,7 @@ struct toji_skexnxxshslParams {
         return float3(h, s, l);
     }
     
-    float hueToRgb(float p, float q, float t) {
+    static float hueToRgb(float p, float q, float t) {
         if (t < 0.0)
             t += 1.0;
         if (t > 1.0)
@@ -106,7 +106,7 @@ struct toji_skexnxxshslParams {
         return p;
     }
     
-    float3 HSL2RGB(float3 hsl) {
+    static float3 HSL2RGB(float3 hsl) {
         float r, g, b;
         float h = hsl.x / 360.0;
         if (hsl.y == 0.0) {
@@ -121,7 +121,7 @@ struct toji_skexnxxshslParams {
         return float3(r, g, b);
     }
     
-    float3 pixel_adjust(float h, float hue, float saturation, float brightness, float left_left, float left, float right, float right_right, float3 delta_hsb) {
+    static float3 pixel_adjust(float h, float hue, float saturation, float brightness, float left_left, float left, float right, float right_right, float3 delta_hsb) {
         if (left_left < left && left > right && right < right_right) {
             if (h >= left && h <= 360.0) {
                 delta_hsb.x += hue;

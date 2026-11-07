@@ -41,7 +41,7 @@ static float2 random2( float2 p ) {
         
         // 2D multiplanar sharp noise, loosely based on Morgan McGuire @morgan3d
         // https://www.shadertoy.com/view/4dS3Wd
-        float2 noise (in float2 st) {
+        static float2 noise (in float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
 
@@ -65,22 +65,22 @@ static float2 random2( float2 p ) {
                     (d - b) * u.x * u.y;
         }
 
-        float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float4 mod289(float4 x) {
+        static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float4 mod289(float4 x) {
           return x - floor(x * (1.0 / 289.0)) * 289.0;
         }
-        float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
-        float4 permute(float4 x) {
+        static float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
+        static float4 permute(float4 x) {
              return mod289(((x*34.0)+1.0)*x);
         }
 
-        float4 taylorInvSqrt(float4 r)
+        static float4 taylorInvSqrt(float4 r)
         {
           return 1.79284291400159 - 0.85373472095314 * r;
         }
 
-        float snoise(float3 v)
+        static float snoise(float3 v)
           {
           const float2  C = float2(1.0/6.0, 1.0/3.0) ;
           const float4  D = float4(0.0, 0.5, 1.0, 2.0);
@@ -155,7 +155,7 @@ static float2 random2( float2 p ) {
                                         dot(p2,x2), dot(p3,x3) ) );
         }
 
-        float turbulence (in float2 st, in int OCTAVES, in float2 parallax, in float u.evolution) {
+        static float turbulence (in float2 st, in int OCTAVES, in float2 parallax, in float u.evolution) {
             // Initial values
             float value = 0.0;
             float amplitude = .5;
@@ -172,7 +172,7 @@ static float2 random2( float2 p ) {
         }
 
         
-        float2x2 rot2d(float a) {
+        static float2x2 rot2d(float a) {
             float s = sin(a);
             float c = cos(a);
             return float2x2(c,s,-s,c);

@@ -28,11 +28,11 @@ const float PI = 3.14159;
         const float2 hexRatio = float2(1.0, 1.73);
         const float2 hexRatioNorm = normalize(hexRatio);
 
-        float hexDist(float2 p) {
+        static float hexDist(float2 p) {
             return max(dot(abs(p), hexRatioNorm), abs(p.x));
         }
 
-        void hexTile(float2 st, out float2 uv, out float2 huv, out float2 id) {
+        static void hexTile(float2 st, out float2 uv, out float2 huv, out float2 id) {
             float2 grid = __nv_mod(st, hexRatio)-hexRatio/2.;
             float2 offsetGrid = __nv_mod(st-hexRatio/2., hexRatio)-hexRatio/2.;
             uv = length(grid) < length(offsetGrid) ? grid : offsetGrid;
@@ -40,7 +40,7 @@ const float PI = 3.14159;
             id = float2(st.x-uv.x, st.y-uv.y);
         }
 
-        float2x2 rot(float a) {
+        static float2x2 rot(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2(
@@ -49,11 +49,11 @@ const float PI = 3.14159;
             );
         }
 
-        float2 l2s( float2 v, float4x4 eng.acLTS ) {
+        static float2 l2s( float2 v, float4x4 eng.acLTS ) {
             return (float4(v,0.,1.)*eng.acLTS).xy;
         }
 
-        float rand(float2 co)
+        static float rand(float2 co)
         {
             float a = 719.310;
             float b = 178.233;

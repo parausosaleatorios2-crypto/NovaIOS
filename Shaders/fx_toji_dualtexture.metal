@@ -30,7 +30,7 @@ static float2 wrapUV(float2 p) {
             }
         }
 
-        float2 pickChannels(float4 c) {
+        static float2 pickChannels(float4 c) {
             // u.channelPair: 0 RG, 1 RB, 2 GB
             if (u.channelPair == 0) {
                 return c.rg;

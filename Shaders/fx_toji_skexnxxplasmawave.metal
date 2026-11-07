@@ -31,7 +31,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -83,26 +83,26 @@ static float2x2 rot2m(float a){
       
       #define drawPeriodicLine(freq, width, t) drawCrispLine(freq / 2.0, width, abs(__nv_mod(t, freq) - (freq) / 2.0))
       
-      float drawGridLines(float axis)   
+      static float drawGridLines(float axis)   
       {
           return   drawCrispLine(0.0, axisWidth, axis)
                  + drawPeriodicLine(majorLineFrequency, majorLineWidth, axis)
                  + drawPeriodicLine(minorLineFrequency, minorLineWidth, axis);
       }
       
-      float drawGrid(float2 space)
+      static float drawGrid(float2 space)
       {
           return min(1., drawGridLines(space.x)
                         +drawGridLines(space.y));
       }
       
       // probably can optimize w/ noise, but currently using fourier transform
-      float random(float t)
+      static float random(float t)
       {
           return (cos(t) + cos(t * 1.3 + 1.3) + cos(t * 1.4 + 1.4)) / 3.0;   
       }
       
-      float getPlasmaY(float x, float horizontalFade, float offset)   
+      static float getPlasmaY(float x, float horizontalFade, float offset)   
       {
           return random(x * lineFrequency + u.progressa * lineSpeed) * horizontalFade * lineAmplitude + offset;
       }

@@ -25,13 +25,13 @@ struct toji_coloradjustParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-    float3 rgb2yuv(float3 c){
+    static float3 rgb2yuv(float3 c){
       float y = dot(c, LUMA);
       float u = c.b - y;
       float v = c.r - y;
       return float3(y,u,v);
     }
-    float3 yuv2rgb(float3 yuv){
+    static float3 yuv2rgb(float3 yuv){
       float y = yuv.x; float u = yuv.y; float v = yuv.z;
       float r = v + y;
       float b = u + y;
@@ -39,7 +39,7 @@ const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
       return clamp(float3(r,g,b), 0.0, 1.0);
     }
 
-    void accumStats(float3 c, inout float3 sum, inout float3 sum2, inout float3 minv, inout float3 maxv){
+    static void accumStats(float3 c, inout float3 sum, inout float3 sum2, inout float3 minv, inout float3 maxv){
       sum += c; sum2 += c*c; minv = min(minv, c); maxv = max(maxv, c);
     }
 

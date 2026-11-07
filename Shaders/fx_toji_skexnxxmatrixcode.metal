@@ -32,7 +32,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -42,13 +42,13 @@ static float2x2 rot2m(float a){
     #define FALLERS 14.0
     #define FALLERHEIGHT 12.0
     
-    float2 rand(float2 uv) {
+    static float2 rand(float2 uv) {
         return floor(abs(__nv_mod(cos(
             uv * 652.6345 + uv.yx * 534.375 +
             0.5 * 0.0000005 * dot(uv, float2(0.364, 0.934))), 0.001)) * 16000.0);
     }
     
-    float fallerSpeed(float col, float faller) {
+    static float fallerSpeed(float col, float faller) {
         return __nv_mod(cos(col * 363.435  + faller * 234.323), 0.1) * 1.0 + 0.3;
     }
 

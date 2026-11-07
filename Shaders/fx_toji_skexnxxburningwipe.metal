@@ -29,7 +29,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -37,7 +37,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -45,13 +45,13 @@ static float4 newLayer( float4 a, float4 b) {
     
    /////////////////////////
    
-        float Hash( float2 p)
+        static float Hash( float2 p)
         {
         	float3 p2 = float3(p.xy,u.deltad);
             return fract(sin(dot(p2,float3(37.1,61.7, 12.4)))*3758.5453123);
         }
         
-        float noise(in float2 p)
+        static float noise(in float2 p)
         {
             float2 i = floor(p);
         	float2 f = fract(p);
@@ -62,7 +62,7 @@ static float4 newLayer( float4 a, float4 b) {
         		f.y);
         }
         
-        float fbm(float2 p) 
+        static float fbm(float2 p) 
         {
         	float v = 0.0;
         	v += noise(p*1.)*.5;

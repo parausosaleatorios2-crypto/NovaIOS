@@ -29,7 +29,7 @@ struct toji_depth_displacementParams {
 
     const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-    float getDepth(float2 uv){
+    static float getDepth(float2 uv){
       float4 d = inputImg.sample(__nv_smp, uv);
       float v;
       if(u.depthChannel==0){ v = dot(d.rgb, LUMA); }
@@ -42,7 +42,7 @@ struct toji_depth_displacementParams {
 
     // Build a simple 3D-like view vector from position and Euler rotation
     // u.rotX=pitch, u.rotY=yaw, u.rotZ=roll (degrees)
-    float3 eulerToForward(float rx, float ry){
+    static float3 eulerToForward(float rx, float ry){
       float cx = cos(rx), sx = sin(rx);
       float cy = cos(ry), sy = sin(ry);
       // Start with forward along -Z, rotate by pitch (X) then yaw (Y)

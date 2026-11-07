@@ -33,10 +33,10 @@ struct toji_glitch_proParams {
 // --- funcoes auxiliares do efeito
 // Precision Glitch (Shadertoy-style) -> Alight Motion port
 
-    float random(float2 st) {
+    static float random(float2 st) {
       return fract(sin(dot(st.xy, float2(12.9898, 78.233))) * 43758.5453123);
     }
-    float2 random2(float2 st) {
+    static float2 random2(float2 st) {
       return float2( random(st), random(st + float2(1.0, 1.0)) );
     }
 

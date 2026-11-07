@@ -22,11 +22,11 @@ struct toji_bendParams {
 // --- funcoes auxiliares do efeito
 #define DEG2RAD 0.01745329251994329576923690768489
 
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 
-        float2 bend(float2 p, float a, float l, float w, bool vertical) {
+        static float2 bend(float2 p, float a, float l, float w, bool vertical) {
 
            if( abs(a)<0.001 )
            {

@@ -33,7 +33,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -41,7 +41,7 @@ static float2x2 rot2m(float a){
     
    /////////////////////////
    
-   float wave(float x, float y) 
+   static float wave(float x, float y) 
     {
         return sin(10.0*x+10.0*y) / 5.0 +
                sin(20.0*x+15.0*y) / 3.0 +

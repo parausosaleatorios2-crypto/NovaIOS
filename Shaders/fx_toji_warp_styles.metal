@@ -26,7 +26,7 @@ struct toji_warp_stylesParams {
         
         #define PI 3.14159265359
 
-        float2 applyTile(float2 uv, int mode) {
+        static float2 applyTile(float2 uv, int mode) {
             if (mode == 1) { // Repeat
                 return fract(uv);
             } else if (mode == 2) { // Mirror

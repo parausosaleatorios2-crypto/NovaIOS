@@ -29,11 +29,11 @@ struct toji_turbulent_displaceParams {
 
 // --- funcoes auxiliares do efeito
 // Utility random and value noise
-        float random(float2 st) {
+        static float random(float2 st) {
             return fract(sin(dot(st.xy, float2(12.9898,78.233))) * 43758.5453123);
         }
 
-        float valueNoise(float2 st) {
+        static float valueNoise(float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
             float a = random(i);
@@ -45,7 +45,7 @@ struct toji_turbulent_displaceParams {
         }
 
         // Fractal Brownian Motion (FBM)
-        float fbm(float2 p, float oct, float lac, float g) {
+        static float fbm(float2 p, float oct, float lac, float g) {
             float sum = 0.0;
             float amp = 0.5;
             float freq = 1.0;
@@ -59,7 +59,7 @@ struct toji_turbulent_displaceParams {
         }
 
         // Curl noise from fbm via finite differences
-        float2 curl(float2 p, float oct, float lac, float g) {
+        static float2 curl(float2 p, float oct, float lac, float g) {
             float eps = 0.001;
             float n1 = fbm(p + float2(0.0, eps), oct, lac, g);
             float n2 = fbm(p - float2(0.0, eps), oct, lac, g);
@@ -70,7 +70,7 @@ struct toji_turbulent_displaceParams {
             return float2(dy, -dx); // 2D curl
         }
 
-        float2 wrapUV(float2 uv) {
+        static float2 wrapUV(float2 uv) {
             if (u.wrapMode == 1) {
                 // Repeat
                 return fract(uv);

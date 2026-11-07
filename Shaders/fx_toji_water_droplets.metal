@@ -33,25 +33,25 @@ struct toji_water_dropletsParams {
     const float PI = 3.141592653589793;
 
     // Small hash helpers (no texture required)
-    float hash11(float p) {
+    static float hash11(float p) {
       p = fract(p * 0.1031);
       p *= p + 33.33;
       p *= p + p;
       return fract(p);
     }
-    float hash21(float2 p) {
+    static float hash21(float2 p) {
       float3 p3 = fract(float3(p.xyx) * 0.1031);
       p3 += dot(p3, p3.yzx + 33.33);
       return fract((p3.x + p3.y) * p3.z);
     }
-    float2 hash22(float2 p) {
+    static float2 hash22(float2 p) {
       float n = hash21(p);
       float m = hash21(p + 17.17);
       return float2(n, m);
     }
 
     // Droplet height field
-    float getDropletHeight(float2 uv) {
+    static float getDropletHeight(float2 uv) {
       float timeVal = (eng.acTime + u.seed) * u.timeSpeed;
       float height = 0.0;
 
@@ -94,7 +94,7 @@ struct toji_water_dropletsParams {
     }
 
     // Compute surface normal from height field
-    float3 getDropletNormal(float2 uv) {
+    static float3 getDropletNormal(float2 uv) {
       float off = u.normalOffset;
       float3 ofs = float3(-off, 0.0, off);
 

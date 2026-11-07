@@ -28,7 +28,7 @@ precision float;
         #define TAU 6.28318530718
         #define MAX_ITER 12
 
-        float waterHighlight(float2 p, float time, float foaminess, float u.detail) {
+        static float waterHighlight(float2 p, float time, float foaminess, float u.detail) {
             float2 i = float2(p);
             float c = 0.0;
             float foaminess_factor = mix(1.0, 6.0, foaminess);

@@ -31,7 +31,7 @@ static float2x2 rot(float a){
       return float2x2(c, s, -s, c);
     }
 
-    float fx(float2 uv,float fadetime,float tt){
+    static float fx(float2 uv,float fadetime,float tt){
       float light = 0.05;
       float rip = 0.5+sin(length(uv)*u.rippleFreq+tt)*0.5;
       rip = 1.0+rip*u.rippleAmt;

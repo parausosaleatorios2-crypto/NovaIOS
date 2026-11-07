@@ -32,7 +32,7 @@ static float4 getSample( float a, float r ) {
             return inputImg.sample(__nv_smp, sampleCoord);
         }
 
-        float smoothStep(float edge0, float edge1, float t) {
+        static float smoothStep(float edge0, float edge1, float t) {
             if(edge0 == edge1) return 1.0;
             return smoothstep(edge0, edge1, t);
         }

@@ -27,7 +27,7 @@ static float2x2 rot(float a) {
             );
         }
         
-        float sminCubic( float a, float b, float k )
+        static float sminCubic( float a, float b, float k )
         {
             float h = max( k-abs(a-b), 0.0 )/k;
             return min( a, b ) - h*h*h*k*(1.0/6.0);

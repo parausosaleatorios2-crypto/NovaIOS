@@ -32,7 +32,7 @@ static float2 getResolution(){
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
       return s;
     }
-    float rand(float2 co){ return fract(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453); }
+    static float rand(float2 co){ return fract(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453); }
 
 fragment float4 fx_toji_bcc_led(
     NovaVertexOut       in   [[stage_in]],

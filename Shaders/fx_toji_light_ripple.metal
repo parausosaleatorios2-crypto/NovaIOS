@@ -25,7 +25,7 @@ struct toji_light_rippleParams {
 precision float;
 
     // Calculate the height of the ripple at a given point
-    float getHeight(float2 p) {
+    static float getHeight(float2 p) {
         float dist = length(p);
         // A decaying sine wave expanding from the center
         float decay = smoothstep(1.0, 0.1, dist);

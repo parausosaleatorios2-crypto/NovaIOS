@@ -26,25 +26,25 @@ static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 
-        float circle(float2 st, float2 center, float r) {
+        static float circle(float2 st, float2 center, float r) {
             return smoothstep(r,r-.001,length(st-center));
         }
 
-        float smoothCircle(float2 st, float2 center, float r, float innerRad) {
+        static float smoothCircle(float2 st, float2 center, float r, float innerRad) {
             return smoothstep(r,innerRad,length(st-center));
         }
 
-        float bokeh(float2 st, float2 center, float r, float feather) {
+        static float bokeh(float2 st, float2 center, float r, float feather) {
             return smoothstep(r,r*(1.-feather),length(st-center)) - smoothstep(r*(1.-feather),r*(1.-feather*2.),length(st-center)) + smoothstep(r,r*(1.-feather*2.),length(st-center))*1.608;
         }
 
-        float ring(float2 st, float2 center, float r, float feather) {
+        static float ring(float2 st, float2 center, float r, float feather) {
             float dist = length(st-center);
             return smoothstep(r,r*(1.-feather),length(st-center)) - smoothstep(r*(1.-feather),r*(1.-feather*2.),dist) + smoothstep(0.,r,dist)*0.880*smoothstep(r+feather/2.,r,dist);
         }
 
 
-        float star(float2 st, float2 center, float r, float insideRadiusScale, float points) {
+        static float star(float2 st, float2 center, float r, float insideRadiusScale, float points) {
             float2 dc = st-center;
             float ir = r*insideRadiusScale;
             float a = (__nv_atan(dc.x, dc.y)+3.14159)/2.;
@@ -54,11 +54,11 @@ static float2 l2s( float2 v ) {
             return clamp((p*1.264+a)*p*p,0.,1.);
         }
 
-        float combine(float p, float q) {
+        static float combine(float p, float q) {
             return p+q;
         }
 
-        float lensFlare(float2 st, float2 center, float2 offset, float r, float u.shine, float points) {
+        static float lensFlare(float2 st, float2 center, float2 offset, float r, float u.shine, float points) {
             float2 pos = offset;
             float2 offs = pos-center;
             float2 opp = center-offs;

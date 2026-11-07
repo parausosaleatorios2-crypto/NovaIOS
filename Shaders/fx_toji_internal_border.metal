@@ -45,13 +45,13 @@ struct toji_internal_borderParams {
 #define MULTISAMPLE 1.0
         #define MAX_RADIUS 16383.0
 
-        float2 encodeFloat(float v) {
+        static float2 encodeFloat(float v) {
             float2 enc = fract(float2(1.0, 255.0)*v);
             enc.x -= enc.y/255.0;
             return enc;
         }
 
-        float decodeFloat(float2 v) {
+        static float decodeFloat(float2 v) {
             return dot(v,float2(1.0,1.0/255.0));
         }
 

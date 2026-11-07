@@ -26,7 +26,7 @@ static float3 rgb2hsv(float3 c) {
             return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
         }
 
-        float3 hsv2rgb(float3 c) {
+        static float3 hsv2rgb(float3 c) {
             float4 K = float4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
             return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);

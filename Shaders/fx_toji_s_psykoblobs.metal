@@ -25,7 +25,7 @@ static float hash(float2 p) {
       return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453123);
     }
 
-    float smoothNoise(float2 p) {
+    static float smoothNoise(float2 p) {
       float2 i = floor(p);
       float2 f = fract(p);
       f = f * f * (3.0 - 2.0 * f); 
@@ -34,7 +34,7 @@ static float hash(float2 p) {
       return mix(bottom, top, f.y);
     }
 
-    float fbm(float2 p) {
+    static float fbm(float2 p) {
       float v = 0.0;
       float a = 0.5;
       float2 shift = float2(100.0);
@@ -46,7 +46,7 @@ static float hash(float2 p) {
       return v;
     }
 
-    float gray(float3 c){ return dot(c, float3(0.299, 0.587, 0.114)); }
+    static float gray(float3 c){ return dot(c, float3(0.299, 0.587, 0.114)); }
 
 fragment float4 fx_toji_s_psykoblobs(
     NovaVertexOut       in   [[stage_in]],

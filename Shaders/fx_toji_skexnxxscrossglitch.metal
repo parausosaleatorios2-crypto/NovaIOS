@@ -30,11 +30,11 @@ struct toji_skexnxxscrossglitchParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) {
+    static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -42,7 +42,7 @@ struct toji_skexnxxscrossglitchParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -58,33 +58,33 @@ struct toji_skexnxxscrossglitchParams {
           //               https://github.com/ashima/webgl-noise
           //
 
-        float random (float2 st) {
+        static float random (float2 st) {
             return fract(sin(dot(st.xy,
               float2(12.9898,78.233))) *  43758.5453123);
         }
         
-        float rand(float2 n) { 
+        static float rand(float2 n) { 
             return fract(sin(dot(n, float2(12.9898, 4.1414))) * 43758.5453);
         }
           
-          float3 mod289(float3 x) {
+          static float3 mod289(float3 x) {
             return x - floor(x * (1.0 / 289.0)) * 289.0;
           }
 
-          float4 mod289(float4 x) {
+          static float4 mod289(float4 x) {
             return x - floor(x * (1.0 / 289.0)) * 289.0;
           }
 
-          float4 permute(float4 x) {
+          static float4 permute(float4 x) {
                return mod289(((x*34.0)+1.0)*x);
           }
 
-          float4 taylorInvSqrt(float4 r)
+          static float4 taylorInvSqrt(float4 r)
           {
             return 1.79284291400159 - 0.85373472095314 * r;
           }
 
-          float snoise3(float3 v)
+          static float snoise3(float3 v)
             {
             const float2  C = float2(1.0/6.0, 1.0/3.0) ;
             const float4  D = float4(0.0, 0.5, 1.0, 2.0);

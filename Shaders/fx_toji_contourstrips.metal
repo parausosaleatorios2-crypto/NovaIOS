@@ -32,7 +32,7 @@ static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
         
-        float2x2 rot2d(float a) {
+        static float2x2 rot2d(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2( c, -s, s, c );
@@ -40,19 +40,19 @@ static float2 l2s( float2 v ) {
 
         const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
         
-        float2 perpCCW(float2 v) {
+        static float2 perpCCW(float2 v) {
             return float2(v.y,-v.x);
         }
 
-        float2 perpCW(float2 v) {
+        static float2 perpCW(float2 v) {
             return float2(-v.y,v.x);
         }
         
-        float4 composite( float4 a, float4 b) {
+        static float4 composite( float4 a, float4 b) {
             return a * (1. - b.a) + b;
         }
         
-        float4 premult( float4 c ) {
+        static float4 premult( float4 c ) {
             return float4(c.rgb * c.a, c.a);
         }
 

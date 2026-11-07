@@ -31,16 +31,16 @@ struct toji_skexnxxsbubbleParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
         float2 uv;
         
-        float2 hash2a(float2 x,float anim)
+        static float2 hash2a(float2 x,float anim)
         {
         	float r = 523.0*sin(dot(x, float2(53.3158, 43.6143)));
             float xa1=fract(anim);
@@ -59,7 +59,7 @@ struct toji_skexnxxsbubbleParams {
         	return (mix(z1,z2,xa1)+mix(z3,z4,xa2))*0.5;
         }
         
-        float hashNull(float2 x)
+        static float hashNull(float2 x)
         {
             float r = fract(523.0*sin(dot(x, float2(53.3158, 43.6143))));
             return r;
@@ -68,9 +68,9 @@ struct toji_skexnxxsbubbleParams {
         float4 NC0=float4(0.0,157.0,113.0,270.0);
         float4 NC1=float4(1.0,158.0,114.0,271.0);
         
-        float4 hash4( float4 n ) { return fract(sin(n)*753.5453123); }
-        float2 hash2( float2 n ) { return fract(sin(n)*753.5453123); }
-        float noise2( float2 x )
+        static float4 hash4( float4 n ) { return fract(sin(n)*753.5453123); }
+        static float2 hash2( float2 n ) { return fract(sin(n)*753.5453123); }
+        static float noise2( float2 x )
         {
             float2 p = floor(x);
             float2 f = fract(x);
@@ -81,7 +81,7 @@ struct toji_skexnxxsbubbleParams {
             return mix(s1.x,s1.y,f.y);
         }
         
-        float noise3( float3 x )
+        static float noise3( float3 x )
         {
             float3 p = floor(x);
             float3 f = fract(x);
@@ -92,7 +92,7 @@ struct toji_skexnxxsbubbleParams {
             return mix(mix(s1.x,s1.y,f.y),mix(s1.z,s1.w,f.y),f.z);
         }
         
-        float4 booble(float2 te,float2 pos,float numCells)
+        static float4 booble(float2 te,float2 pos,float numCells)
         {
             float d=dot(te, te);
         
@@ -129,7 +129,7 @@ struct toji_skexnxxsbubbleParams {
         	return float4(color*max(min(f1+f2,1.0),-0.5)+float4(zb3)*f3-float4(zb4)*(f2*0.5+f1)*0.5);
         }
         
-        float4 Cells(float2 p,float2 move, in float numCells,in float count,float blur)
+        static float4 Cells(float2 p,float2 move, in float numCells,in float count,float blur)
         {
             float2 inp=p+move;
         	inp *= numCells;

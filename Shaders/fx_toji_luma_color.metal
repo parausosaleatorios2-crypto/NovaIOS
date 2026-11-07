@@ -28,7 +28,7 @@ struct toji_luma_colorParams {
     const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
     // Simple YUV-like chroma for distance that's less sensitive to brightness
-    float2 chroma(float3 c){
+    static float2 chroma(float3 c){
       float y = dot(c, LUMA);
       return float2(c.b - y, c.r - y);
     }

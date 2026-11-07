@@ -25,20 +25,20 @@ struct toji_shatter_breakParams {
 
 // --- funcoes auxiliares do efeito
 // Hash function
-    float hash(float2 p) {
+    static float hash(float2 p) {
         float3 p3  = fract(float3(p.xyx) * .1031);
         p3 += dot(p3, p3.yzx + 33.33);
         return fract((p3.x + p3.y) * p3.z);
     }
     
-    float2x2 rot2(float a){ float s = sin(a), c = cos(a); return float2x2(c,-s,s,c); }
+    static float2x2 rot2(float a){ float s = sin(a), c = cos(a); return float2x2(c,-s,s,c); }
     
     // 3D Rotations
-    float3x3 rotX(float a) { float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
-    float3x3 rotY(float a) { float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
-    float3x3 rotZ(float a) { float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
+    static float3x3 rotX(float a) { float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
+    static float3x3 rotY(float a) { float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
+    static float3x3 rotZ(float a) { float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
     
-    float3x3 transpose3(float3x3 m) {
+    static float3x3 transpose3(float3x3 m) {
         return float3x3(
             m[0][0], m[1][0], m[2][0],
             m[0][1], m[1][1], m[2][1],
@@ -46,13 +46,13 @@ struct toji_shatter_breakParams {
         );
     }
     
-    float3x3 getRot3D(float3 r) {
+    static float3x3 getRot3D(float3 r) {
         float3 rad = radians(r);
         return rotY(rad.y) * rotX(rad.x) * rotZ(rad.z);
     }
 
     // Ray intersections
-    float iSphere(float3 ro, float3 rd, float r) {
+    static float iSphere(float3 ro, float3 rd, float r) {
         float b = dot(ro, rd);
         float c = dot(ro, ro) - r*r;
         float h = b*b - c;
@@ -60,7 +60,7 @@ struct toji_shatter_breakParams {
         return -b - sqrt(h);
     }
 
-    float2 iBox(float3 ro, float3 rd, float3 boxSize, out float3 outNormal) {
+    static float2 iBox(float3 ro, float3 rd, float3 boxSize, out float3 outNormal) {
         float3 m = 1.0 / rd;
         float3 n = m * ro;
         float3 k = abs(m) * boxSize;
@@ -87,7 +87,7 @@ struct toji_shatter_breakParams {
     // Generate shard physics
     // cid: Cell ID
     // k: Sub-piece index (0 or 1)
-    Shard getShard(float2 cid, int k, float t, float g) {
+    static Shard getShard(float2 cid, int k, float t, float g) {
         Shard S;
         
         float2 cellCenter = (cid + 0.5) * g;
@@ -137,7 +137,7 @@ struct toji_shatter_breakParams {
     
     // Inverse check
     // Returns color if uv0 maps to this piece
-    float4 checkPiece(float2 cidC, int k, float t, float g, float2 uvNow, out bool found, out float dOut) {
+    static float4 checkPiece(float2 cidC, int k, float t, float g, float2 uvNow, out bool found, out float dOut) {
         Shard S = getShard(cidC, k, t, g);
         float aspect = eng.acScreenSize.x / eng.acScreenSize.y;
         

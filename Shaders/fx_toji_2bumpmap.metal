@@ -32,9 +32,9 @@ struct toji_2bumpmapParams {
 // --- funcoes auxiliares do efeito
 const float3 W = float3(0.2126, 0.7152, 0.0722);
 
-    float luma(float3 c){ return dot(c, W); }
+    static float luma(float3 c){ return dot(c, W); }
 
-    float heightAt(float2 uv){
+    static float heightAt(float2 uv){
       if (u.heightSource == 1) {
         float4 h = heightMap.sample(__nv_smp, uv);
         return luma(h.rgb) * u.heightScale;
@@ -43,7 +43,7 @@ const float3 W = float3(0.2126, 0.7152, 0.0722);
       return luma(s.rgb) * u.heightScale;
     }
 
-    float3 computeNormal(float2 uv, float2 texel, float radius){
+    static float3 computeNormal(float2 uv, float2 texel, float radius){
       float r = radius;
       if (u.quality == 1) {
         // Sobel (8 taps)
@@ -70,7 +70,7 @@ const float3 W = float3(0.2126, 0.7152, 0.0722);
       }
     }
 
-    float shininessFromRoughness(float r){
+    static float shininessFromRoughness(float r){
       // Map u.roughness 0..1 to shininess ~ 256..8 (inverse relation)
       return mix(256.0, 8.0, clamp(r, 0.0, 1.0));
     }

@@ -34,7 +34,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -42,7 +42,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -53,7 +53,7 @@ static float4 newLayer( float4 a, float4 b) {
         #define PI 3.14159
         #define TAU 6.28318
         
-        float3 spunk(float2 uv)
+        static float3 spunk(float2 uv)
         {
           float3 col = float3(u.color1.rgb);    // Drop Colour
           // float3 col = float3(.55,0.35,1.225);    // Drop Colour

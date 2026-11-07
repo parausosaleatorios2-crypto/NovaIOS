@@ -36,7 +36,7 @@ struct toji_energybeamParams {
 
 // --- funcoes auxiliares do efeito
 // 2D Random
-        float random (float2 st) {
+        static float random (float2 st) {
             return fract(sin(dot(st.xy,
                                  float2(12.9898,78.233)))
                          * 43758.5453123);
@@ -44,7 +44,7 @@ struct toji_energybeamParams {
 
         // 2D Noise based on Morgan McGuire @morgan3d
         // https://www.shadertoy.com/view/4dS3Wd
-        float noise (float2 st) {
+        static float noise (float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
 
@@ -64,14 +64,14 @@ struct toji_energybeamParams {
         }
 
 
-        float sdSegment( in float2 p, in float2 a, in float2 b )
+        static float sdSegment( in float2 p, in float2 a, in float2 b )
         {
             float2 pa = p-a, ba = b-a;
             float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );
             return length( pa - ba*h );
         }
 
-        float4 colorForPhase( float2 st, float phase, float2 a, float2 v ) {
+        static float4 colorForPhase( float2 st, float phase, float2 a, float2 v ) {
         
             float low = 0.5 + phase - u.clip/2.0;
             float high = low + u.clip;

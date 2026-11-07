@@ -37,7 +37,7 @@ struct toji_s3d_extrudeParams {
 // --- funcoes auxiliares do efeito
 varying float4x4 rotateAndOrient;
 
-        float4x4 rotationAxisAngle( float3 v, float angle )
+        static float4x4 rotationAxisAngle( float3 v, float angle )
         {
             float s = sin( angle );
             float c = cos( angle );

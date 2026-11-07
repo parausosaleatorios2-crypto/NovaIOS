@@ -21,7 +21,7 @@ struct toji_halftonecmykParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float halftone(float a, float4 mask) {
+        static float halftone(float a, float4 mask) {
 
             float rad = a * 0.0174533;
             float2x2 rot = float2x2(cos(rad),-sin(rad),sin(rad),cos(rad));

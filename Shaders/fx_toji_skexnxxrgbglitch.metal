@@ -26,22 +26,22 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
    /////////////////////////
     
-   float random2d(float2 n) { 
+   static float random2d(float2 n) { 
         return fract(sin(dot(n, float2(12.9898, 4.1414))) * 43758.5453);
     }
     
-    float randomRange (in float2 seed, in float min, in float max) {
+    static float randomRange (in float2 seed, in float min, in float max) {
     		return min + random2d(seed) * (max - min);
     }
     
     // return 1 if v inside 1d range
-    float insideRange(float v, float bottom, float top) {
+    static float insideRange(float v, float bottom, float top) {
        return step(bottom, v) - step(top, v);
     }
     

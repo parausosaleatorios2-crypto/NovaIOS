@@ -39,15 +39,15 @@ struct toji_DeepGlow_EnhancedParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-       float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-               float2 l2s( float2 v ) { return (float4(v,0.0,1.)*eng.acLayerToScreen).xy; }
+       static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+               static float2 l2s( float2 v ) { return (float4(v,0.0,1.)*eng.acLayerToScreen).xy; }
     
-       float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b; }
+       static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b; }
     
-         float blendScreen(float base, float blend) {
+         static float blendScreen(float base, float blend) {
              return 1.0 - ((1.0 - base) * (1.0 - blend)); }
          
-       float3 blendScreen(float3 base, float3 blend) {
+       static float3 blendScreen(float3 base, float3 blend) {
          return float3( blendScreen(base.r, blend.r), blendScreen(base.g, blend.g), blendScreen(base.b, blend.b) ); }
 
 fragment float4 fx_toji_DeepGlow_Enhanced(

@@ -28,7 +28,7 @@ static float4 newLayer( float4 a, float4 b) {
        return a * (1. - b.a) + b;
        }
     
-      float2x2 rot2m(float a){
+      static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -36,7 +36,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -44,8 +44,8 @@ static float4 newLayer( float4 a, float4 b) {
     
     #define scale 1.7 * u.scalex
     
-    float hash( float2 p ) {return fract(sin(dot(p,float2(127.1,311.7)))*43758.5453123);} //Pseudo-random
-    float smoothNoise( in float2 p) { //Bilinearly interpolated noise (4 samples)
+    static float hash( float2 p ) {return fract(sin(dot(p,float2(127.1,311.7)))*43758.5453123);} //Pseudo-random
+    static float smoothNoise( in float2 p) { //Bilinearly interpolated noise (4 samples)
         float2 i = floor( p ); float2 f = fract( p );	
     	float2 u = f*f*(3.0-2.0*f);
         float a = hash( i + float2(0.0,0.0) );
@@ -55,14 +55,14 @@ static float4 newLayer( float4 a, float4 b) {
         return float(a+(b-a)*u.x+(c-a)*u.y+(a-b-c+d)*u.x*u.y)/4.;
     }
     //Funciton to make the noise continuous while wrapping around u.angle 
-    float rotatedMirror(float t, float r){
+    static float rotatedMirror(float t, float r){
         //t : 0->1
         t = fract(t+r);
         return 2.*abs(t-0.5);
     }
     //Some continous radial perlin noise
     const float2x2 m2 = float2x2(0.90,0.44,-0.44,0.90);
-    float radialPerlinNoise(float t, float d){
+    static float radialPerlinNoise(float t, float d){
         const float BUMP_MAP_UV_SCALE = 44.2;
         d = pow(d,0.01); //Impression of speed : stretch noise as the distance increases.
         float dOffset = -floor(u.progressa*10.)*0.1; //Time drift (animation)
@@ -77,7 +77,7 @@ static float4 newLayer( float4 a, float4 b) {
         return (f1+0.5*f2+0.25*f3+0.125*f4)*3.;
     }
     //Colorize function (transforms BW Intensity to u.color)
-    float3 colorize(float f){
+    static float3 colorize(float f){
         f = clamp(f*.95,0.0,1.0);
         float3 c = mix(float3(0,0,0), float3(u.color.rgb), f); //Red-Yellow Gradient
              c = mix(c, float3(1,1,1), f*4.-3.0);      //While highlights

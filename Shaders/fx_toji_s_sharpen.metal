@@ -30,12 +30,12 @@ struct toji_s_sharpenParams {
         
         const float SmallDetailSize = 0.1;
 
-        float getLuma(float3 rgb) {
+        static float getLuma(float3 rgb) {
             return dot(rgb, float3(0.299, 0.587, 0.114));
         }
 
         // Gaussian 5x5 approximation
-        float3 blur(float2 uv, float radius) {
+        static float3 blur(float2 uv, float radius) {
             float2 res = eng.acScreenSize;
             float3 col = float3(0.0);
             float total = 0.0;

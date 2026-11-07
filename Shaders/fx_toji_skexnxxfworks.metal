@@ -35,7 +35,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -48,16 +48,16 @@ static float2x2 rot2m(float a){
     
     // int u.SPARKS = int(SPARKSS);
     
-    float n21(float2 n) {
+    static float n21(float2 n) {
         return fract(sin(dot(n, float2(12.9898, 4.1414))) * 43758.5453);
     }
     
-    float2 randomSpark(float noise) {
+    static float2 randomSpark(float noise) {
         float2 v0 = float2((noise - .5) * 13., (fract(noise * 123.) - .5) * 15.);
         return v0;
     }
     
-    float2 circularSpark(float i, float noiseId, float noiseSpark) {
+    static float2 circularSpark(float i, float noiseId, float noiseSpark) {
         noiseId = fract(noiseId * 7897654.45);
         float a = (PI2 / u.SPARKS) * i;
         float speed = 10.*clamp(noiseId, .7, 1.);
@@ -68,14 +68,14 @@ static float2x2 rot2m(float a){
     }
     
     
-    float2 rocket(float2 start, float t) {
+    static float2 rocket(float2 start, float t) {
         float y = t;
         float x = sin(y*10.+cos(t*3.))*.1;
         float2 p = start + float2(x, y * 8.);
         return p;
     }
     
-    float3 firework(float2 uv, float index, float pauseTime) {
+    static float3 firework(float2 uv, float index, float pauseTime) {
         float3 col = float3(0.);
     
     

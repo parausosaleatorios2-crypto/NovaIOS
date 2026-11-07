@@ -29,17 +29,17 @@ struct toji_edgecolorizeParams {
         // Port of a Shadertoy-style pre-blur + Sobel edge detector with directional colorization.
         // Controls: u.edgeSmooth (pre-blur radius), u.subpixelSmooth, u.edgeThreshold, u.brightness, u.rotateColors, 4 directional colors, u.bgColor, u.opacity.
 
-        float luminance(float3 c){
+        static float luminance(float3 c){
             return dot(c, float3(0.2126, 0.7152, 0.0722));
         }
 
         // Sample source at a given UV
-        float3 sampleSrc(float2 uv){
+        static float3 sampleSrc(float2 uv){
             return inputImg.sample(__nv_smp, uv).rgb;
         }
 
         // 3x3 Gaussian blur luminance with adjustable radius (in UV space scaled by pixel size)
-        float getBlurredLuminance(float2 uv, float2 texel, float radius){
+        static float getBlurredLuminance(float2 uv, float2 texel, float radius){
             // Gaussian-like kernel (1 2 1; 2 4 2; 1 2 1), weight 16
             // We keep a slight normalization factor to mimic the Shadertoy reference
             const float3x3 k = float3x3(
@@ -60,7 +60,7 @@ struct toji_edgecolorizeParams {
             return acc / w;
         }
 
-        void sobelOnBlur(float2 uv, float2 texel, float radius, out float gx, out float gy){
+        static void sobelOnBlur(float2 uv, float2 texel, float radius, out float gx, out float gy){
             // Precompute blurred luminance over 3x3 neighborhood
             float lum[9];
             int idx = 0;
@@ -89,12 +89,12 @@ struct toji_edgecolorizeParams {
         }
 
         // Rotate a 2D vector by angle (radians)
-        float2 rotate(float2 v, float a){
+        static float2 rotate(float2 v, float a){
             float s = sin(a), c = cos(a);
             return float2x2(c, -s, s, c) * v;
         }
 
-        float3 directionalColor(float2 grad, float mag, float th, float angle){
+        static float3 directionalColor(float2 grad, float mag, float th, float angle){
             if(mag <= th) return u.bgColor.rgb; // below threshold -> background
 
             // Normalize gradient
@@ -122,7 +122,7 @@ struct toji_edgecolorizeParams {
             return mixCol * mag * u.brightness;
         }
 
-        float3 evalEdgeColor(float2 uv, float2 texel){
+        static float3 evalEdgeColor(float2 uv, float2 texel){
             float4 src4 = inputImg.sample(__nv_smp, uv);
             float3 baseCol = u.bgColor.rgb;
             float gx, gy;

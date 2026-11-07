@@ -26,7 +26,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -34,7 +34,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -46,18 +46,18 @@ static float4 newLayer( float4 a, float4 b) {
         
         float Seed;
         
-        void srand (float t)
+        static void srand (float t)
         {
             Seed = 0.5 + (sin (t*59.0) + sin (t*73.0) + sin (t*97.0))/6.0;
         }
             
-        float rand()
+        static float rand()
         {
             Seed = 0.25 + 0.5*Seed + 0.25*sin (12345.0 * Seed);
             return Seed;
         }
         
-        float2 dripPos (float fTime, out float fAge)
+        static float2 dripPos (float fTime, out float fAge)
         {
             float t = floor (fTime*0.1);
             srand (t);

@@ -19,8 +19,8 @@ struct toji_rays_edge_detectParams {
 
 // --- funcoes auxiliares do efeito
 const float3 W = float3(0.2126,0.7152,0.0722);
-    float4 s(float2 uv){ return inputImg.sample(__nv_smp, uv); }
-    float lum(float3 c){ return dot(c,W); }
+    static float4 s(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+    static float lum(float3 c){ return dot(c,W); }
 
 fragment float4 fx_toji_rays_edge_detect(
     NovaVertexOut       in   [[stage_in]],

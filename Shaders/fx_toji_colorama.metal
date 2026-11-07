@@ -29,22 +29,22 @@ struct toji_coloramaParams {
 // Perlin/fractal noise HSV colorizer — AM port of provided Shadertoy
 
     // Hash helpers without uint bit tricks (for GLES compatibility)
-    float hash11(float n) {
+    static float hash11(float n) {
       return fract(sin(n) * 43758.5453123);
     }
-    float hash21(float2 p) {
+    static float hash21(float2 p) {
       return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
     }
-    float hash31(float3 p) {
+    static float hash31(float3 p) {
       return fract(sin(dot(p, float3(127.1, 311.7, 74.7))) * 43758.5453123);
     }
 
     // Random unit vectors
-    float2 randVec2(float2 p){
+    static float2 randVec2(float2 p){
       float a = hash21(p) * 6.28318530718; // 2*pi
       return float2(cos(a), sin(a));
     }
-    float3 randVec3(float3 p){
+    static float3 randVec3(float3 p){
       float a = hash31(p);
       float b = hash31(p + 17.17);
       float theta = a * 6.28318530718;
@@ -53,11 +53,11 @@ struct toji_coloramaParams {
     }
 
     // Quintic smoother like in the code (x*x*x*((6x-15)x+10))
-    float2 smooth2(float2 x){ return x*x*x*((6.0*x - 15.0)*x + 10.0); }
-    float3 smooth3(float3 x){ return x*x*x*((6.0*x - 15.0)*x + 10.0); }
+    static float2 smooth2(float2 x){ return x*x*x*((6.0*x - 15.0)*x + 10.0); }
+    static float3 smooth3(float3 x){ return x*x*x*((6.0*x - 15.0)*x + 10.0); }
 
     // 2D Perlin
-    float perlin2(float2 p){
+    static float perlin2(float2 p){
       float2 ip = floor(p);
       float2 f = fract(p);
       float2 u = smooth2(f);
@@ -80,7 +80,7 @@ struct toji_coloramaParams {
     }
 
     // 3D Perlin
-    float perlin3(float3 p){
+    static float perlin3(float3 p){
       float3 ip = floor(p);
       float3 f = fract(p);
       float3 u = smooth3(f);
@@ -115,7 +115,7 @@ struct toji_coloramaParams {
     }
 
     // Fractal sum (FBM) with adjustable u.lacunarity/u.gain
-    float fbm2(float2 p, int oct){
+    static float fbm2(float2 p, int oct){
       float sum = 0.0;
       float amp = 1.0;
       float tot = 0.0;
@@ -129,7 +129,7 @@ struct toji_coloramaParams {
       }
       return sum / max(tot, 1e-6);
     }
-    float fbm3(float3 p, int oct){
+    static float fbm3(float3 p, int oct){
       float sum = 0.0;
       float amp = 1.0;
       float tot = 0.0;
@@ -144,7 +144,7 @@ struct toji_coloramaParams {
       return sum / max(tot, 1e-6);
     }
 
-    float3 hsv2rgb(float3 c){
+    static float3 hsv2rgb(float3 c){
       float4 K = float4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
       float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
       return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);

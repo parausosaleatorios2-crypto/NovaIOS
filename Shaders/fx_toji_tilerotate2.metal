@@ -24,7 +24,7 @@ struct toji_tilerotate2Params {
 // --- funcoes auxiliares do efeito
 #define l2s(v) ((float4(v,0.,1.)*eng.acLayerToScreen).xy)
 
-        float rand(float2 co)
+        static float rand(float2 co)
         {
             float a = 719.310;
             float b = 178.233;

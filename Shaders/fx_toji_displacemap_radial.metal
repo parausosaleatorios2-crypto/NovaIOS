@@ -24,7 +24,7 @@ struct toji_displacemap_radialParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float2x2 rot(float a) {
+        static float2x2 rot(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2(

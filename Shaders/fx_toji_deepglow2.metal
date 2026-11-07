@@ -47,13 +47,13 @@ struct toji_deepglow2Params {
     const float PI = 3.14159265358979323846;
 
     // sRGB <-> Linear helpers for more natural glow blending
-    float3 srgbToLinear(float3 srgb){
+    static float3 srgbToLinear(float3 srgb){
       float3 cut = step(float3(0.04045), srgb);
       float3 low = srgb / 12.92;
       float3 high = pow((srgb + 0.055) / 1.055, float3(2.4));
       return mix(low, high, cut);
     }
-    float3 linearToSrgb(float3 lin){
+    static float3 linearToSrgb(float3 lin){
       float3 cut = step(float3(0.0031308), lin);
       float3 low = lin * 12.92;
       float3 high = 1.055 * pow(lin, float3(1.0/2.4)) - 0.055;
@@ -61,7 +61,7 @@ struct toji_deepglow2Params {
     }
 
     // Compute blur tap using incremental Gaussian as in gaussianblur.xml
-    float4 blurInternal(sampler2D tex, float2 texOffset, float2 st, float numBlurPixelsPerSide)
+    static float4 blurInternal(sampler2D tex, float2 texOffset, float2 st, float numBlurPixelsPerSide)
     {
       if(numBlurPixelsPerSide <= 0.0) return tex.sample(__nv_smp, st);
 
@@ -96,12 +96,12 @@ struct toji_deepglow2Params {
       return avgValue / max(coefficientSum, 1e-6);
     }
 
-    float tapsForQualityF(float q){
+    static float tapsForQualityF(float q){
       return (q < 1.5) ? 8.0 : ((q < 2.5) ? 14.0 : 20.0);
     }
 
     // Luminance for thresholding
-    float luminance(float3 c){ return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+    static float luminance(float3 c){ return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 fragment float4 fx_toji_deepglow2(
     NovaVertexOut       in   [[stage_in]],

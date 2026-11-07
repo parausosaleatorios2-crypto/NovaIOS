@@ -20,16 +20,16 @@ struct toji_skexnxxsnewditheringParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
         
         // Converts a single linear channel to srgb
-        float linear_to_srgb(float channel) {
+        static float linear_to_srgb(float channel) {
             if(channel <= 0.0031308)
                 return 12.92 * channel;
             else
@@ -37,7 +37,7 @@ struct toji_skexnxxsnewditheringParams {
         }
         
         // Converts a single srgb channel to rgb
-        float srgb_to_linear(float channel) {
+        static float srgb_to_linear(float channel) {
             if (channel <= 0.04045)
                 return channel / 12.92;
             else
@@ -45,7 +45,7 @@ struct toji_skexnxxsnewditheringParams {
         }
         
         // Converts a linear rgb color to a srgb color (exact, not approximated)
-        float3 rgb_to_srgb(float3 rgb) {
+        static float3 rgb_to_srgb(float3 rgb) {
             return float3(
                 linear_to_srgb(rgb.r),
                 linear_to_srgb(rgb.g),
@@ -54,7 +54,7 @@ struct toji_skexnxxsnewditheringParams {
         }
         
         // Converts a srgb color to a linear rgb color (exact, not approximated)
-        float3 srgb_to_rgb(float3 srgb) {
+        static float3 srgb_to_rgb(float3 srgb) {
             return float3(
                 srgb_to_linear(srgb.r),
                 srgb_to_linear(srgb.g),
@@ -62,32 +62,32 @@ struct toji_skexnxxsnewditheringParams {
             );
         }
         
-        float bayer2(float2 v)
+        static float bayer2(float2 v)
         {
             v=floor(v);
          return fract(v.y*v.y*.75+v.x*.5);   
         }
-        float bayer4(float2 v)
+        static float bayer4(float2 v)
         {
             return bayer2(.5*v)*.25+bayer2(v);
         }
-        float bayer8(float2 v)
+        static float bayer8(float2 v)
         {
             return bayer4(.5*v)*.25+bayer2(v);
         }
-        float bayer16(float2 v)
+        static float bayer16(float2 v)
         {
             return bayer8(.5*v)*.25+bayer2(v);
         }
-        float bayer32(float2 v)
+        static float bayer32(float2 v)
         {
             return bayer16(.5*v)*.25+bayer2(v);
         }
-        float bayer64(float2 v)
+        static float bayer64(float2 v)
         {
             return bayer32(.5*v)*.25+bayer2(v);
         }
-        float bayer128(float2 v)
+        static float bayer128(float2 v)
         {
             return bayer64(.5*v)*.25+bayer2(v);
         }

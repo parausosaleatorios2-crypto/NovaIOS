@@ -40,8 +40,8 @@ static float2 getResolution(){
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
       return s;
     }
-    float2 hash2(float n){ return fract(sin(float2(n, n + 1.0)) * 43758.5453); }
-    float intersectSphere(float3 ro, float3 rd, float3 center, float radius){
+    static float2 hash2(float n){ return fract(sin(float2(n, n + 1.0)) * 43758.5453); }
+    static float intersectSphere(float3 ro, float3 rd, float3 center, float radius){
       float3 oc = ro - center;
       float b = dot(oc, rd);
       float c = dot(oc, oc) - radius * radius;

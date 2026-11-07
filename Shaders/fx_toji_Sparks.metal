@@ -34,11 +34,11 @@ struct toji_SparksParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) {
+    static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -46,7 +46,7 @@ struct toji_SparksParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -81,18 +81,18 @@ struct toji_SparksParams {
         // #define u.ALPHA_MOD 0.9
         // #define u.LAYERS_COUNT 15
         
-          float hash1_2(in float2 x)
+          static float hash1_2(in float2 x)
         {
          	return fract(sin(dot(x, float2(52.127, 61.2871))) * 521.582);   
         }
         
-        float2 hash2_2(in float2 x)
+        static float2 hash2_2(in float2 x)
         {
             return fract(sin(x * float2x2(20.52, 24.1994, 70.291, 80.171)) * 492.194);
         }
         
         //Simple interpolated noise
-        float2 noise2_2(float2 uv)
+        static float2 noise2_2(float2 uv)
         {
             //float2 f = fract(uv);
             float2 f = smoothstep(0.0, 1.0, fract(uv));
@@ -114,7 +114,7 @@ struct toji_SparksParams {
         }
         
         //Simple interpolated noise
-        float noise1_2(in float2 uv)
+        static float noise1_2(in float2 uv)
         {
             float2 f = fract(uv);
             //float2 f = smoothstep(0.0, 1.0, fract(uv));
@@ -139,7 +139,7 @@ struct toji_SparksParams {
         //////////////////////////
         
         
-        float layeredNoise1_2(in float2 uv, in float sizeMod, in float alphaMod, in int layers, in float animation)
+        static float layeredNoise1_2(in float2 uv, in float sizeMod, in float alphaMod, in int layers, in float animation)
         {
          	float noise = 0.0;
             float alpha = 1.0;
@@ -160,7 +160,7 @@ struct toji_SparksParams {
         }
         
         //Rotates point around 0,0
-        float2 rotate(in float2 point, in float deg)
+        static float2 rotate(in float2 point, in float deg)
         {
          	float s = sin(deg);
             float c = cos(deg);
@@ -168,7 +168,7 @@ struct toji_SparksParams {
         }
         
         //Cell center from point on the grid
-        float2 voronoiPointFromRoot(in float2 root, in float deg)
+        static float2 voronoiPointFromRoot(in float2 root, in float deg)
         {
           	float2 point = hash2_2(root) - 0.5;
             float s = sin(deg);
@@ -179,18 +179,18 @@ struct toji_SparksParams {
         }
         
         //Voronoi cell point rotation degrees
-        float degFromRootUV(in float2 uv)
+        static float degFromRootUV(in float2 uv)
         {
          	return u.PROGRESS * ANIMATION_SPEED * (hash1_2(uv) - 0.5) * 2.0;   
         }
         
-        float2 randomAround2_2(in float2 point, in float2 range, in float2 uv)
+        static float2 randomAround2_2(in float2 point, in float2 range, in float2 uv)
         {
          	return point + (hash2_2(uv) - 0.5) * range;
         }
         
         
-        float3 fireParticles(in float2 uv, in float2 originalUV)
+        static float3 fireParticles(in float2 uv, in float2 originalUV)
         {
             float3 particles = float3(0.0);
             float2 rootUV = floor(uv);
@@ -228,7 +228,7 @@ struct toji_SparksParams {
         
         
         //Layering particles to imitate 3D view
-        float3 layeredParticles(in float2 uv, in float sizeMod, in float alphaMod, in int layers, in float smoke) 
+        static float3 layeredParticles(in float2 uv, in float sizeMod, in float alphaMod, in int layers, in float smoke) 
         { 
             float3 particles = float3(0);
             float size = 1.0;

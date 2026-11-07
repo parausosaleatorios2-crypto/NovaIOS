@@ -34,7 +34,7 @@ struct toji_starfield3Params {
         #define distfading 0.730
         #define saturation 0.450
 
-        float hash(float2 p) {
+        static float hash(float2 p) {
             return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
         }
 

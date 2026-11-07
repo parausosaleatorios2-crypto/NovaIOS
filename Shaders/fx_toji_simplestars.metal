@@ -27,20 +27,20 @@ static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 
-        float rand(float2 co){
+        static float rand(float2 co){
             return fract(sin(dot(co.xy ,float2(12.9898,78.233))) * 43758.5453);
         }
 
-        float2 rand2(float2 co){
+        static float2 rand2(float2 co){
             return float2(rand(co), rand(co+float2(3.7321,9.2517)*float2(7.1231,6.9377)));
         }
 
-        float star(float2 st, float size, float feather) {
+        static float star(float2 st, float size, float feather) {
             float adjFeather = size * feather;
             return smoothstep(1.0-size-adjFeather,1.0-size,sin(st.x*20.)*sin(st.y*20.));
         }
 
-        float stars(float2 st, float2 parallax, float depth, float size, float feather) {
+        static float stars(float2 st, float2 parallax, float depth, float size, float feather) {
             float p = 0.;
 
             size *= 0.001;

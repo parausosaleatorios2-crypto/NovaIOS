@@ -30,7 +30,7 @@ struct toji_skexnxxsrainydewParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -38,7 +38,7 @@ struct toji_skexnxxsrainydewParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.0,1.0)*eng.acLayerToScreen).xy;
     }
     
@@ -47,26 +47,26 @@ struct toji_skexnxxsrainydewParams {
     
    /////////////////////////
        
-    float3 N13(float p) {
+    static float3 N13(float p) {
         //  from DAVE HOSKINS
        float3 p3 = fract(float3(p) * float3(0.1031,.11369,.13787));
        p3 += dot(p3, p3.yzx + 19.19);
        return fract(float3((p3.x + p3.y)*p3.z, (p3.x+p3.z)*p3.y, (p3.y+p3.z)*p3.x));
     }
     
-    float4 N14(float t) {
+    static float4 N14(float t) {
     	return fract(sin(t*float4(123.0, 1024.0, 1456.0, 264.0))*float4(6547.0, 345.0, 8799.0, 1564.0));
     }
-    float N(float t) {
+    static float N(float t) {
         return fract(sin(t*12345.564)*7658.76);
     }
     
-    float Saw(float b, float t) {
+    static float Saw(float b, float t) {
     	return S(0.0, b, t)*S(1.0, b, t);
     }
     
     
-    float2 DropLayer2(float2 uv, float t) {
+    static float2 DropLayer2(float2 uv, float t) {
         float2 UV = uv;
         
         uv.y += t*0.75;
@@ -114,7 +114,7 @@ struct toji_skexnxxsrainydewParams {
         return float2(m, trail);
     }
     
-    float StaticDrops(float2 uv, float t) {
+    static float StaticDrops(float2 uv, float t) {
     	uv *= 40.0;
         
         float2 id = floor(uv);
@@ -129,7 +129,7 @@ struct toji_skexnxxsrainydewParams {
         return c;
     }
     
-    float2 Drops(float2 uv, float t, float l0, float l1, float l2) {
+    static float2 Drops(float2 uv, float t, float l0, float l1, float l2) {
         float s = StaticDrops(uv*u.scalex, t)*l0; 
         float2 m1 = DropLayer2(uv*u.scaley, t)*l1;
         float2 m2 = DropLayer2(uv*u.scalez, t)*l2;

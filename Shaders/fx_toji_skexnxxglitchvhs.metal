@@ -25,31 +25,31 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
    /////////////////////////
     
-   float sat( float t ) {
+   static float sat( float t ) {
     	return clamp( t, 0.0, 1.0 );
     }
     
-    float2 sat( float2 t ) {
+    static float2 sat( float2 t ) {
     	return clamp( t, 0.0, 1.0 );
     }
     
     //remaps inteval [a;b] to [0;1]
-    float remap  ( float t, float a, float b ) {
+    static float remap  ( float t, float a, float b ) {
     	return sat( (t - a) / (b - a) );
     }
     
     //note: /\ t=[0;0.5;1], y=[0;1;0]
-    float linterp( float t ) {
+    static float linterp( float t ) {
     	return sat( 1.0 - abs( 2.0*t - 1.0 ) );
     }
     
-    float3 spectrum_offset( float t ) {
+    static float3 spectrum_offset( float t ) {
         float t0 = 3.0 * t - 1.5;
     	return clamp( float3( -t0, 1.0-abs(t0), t0), 0.0, 1.0);
         /*
@@ -64,20 +64,20 @@ static float2x2 rot2m(float a){
     }
     
     //note: [0;1]
-    float rand( float2 n ) {
+    static float rand( float2 n ) {
       return fract(sin(dot(n.xy, float2(12.9898, 78.233)))* 43758.5453);
     }
     
     //note: [-1;1]
-    float srand( float2 n ) {
+    static float srand( float2 n ) {
     	return rand(n) * 2.0 - 1.0;
     }
     
-    float mytrunc( float x, float num_levels )
+    static float mytrunc( float x, float num_levels )
     {
     	return floor(x*num_levels) / num_levels;
     }
-    float2 mytrunc( float2 x, float num_levels )
+    static float2 mytrunc( float2 x, float num_levels )
     {
     	return floor(x*num_levels) / num_levels;
     }

@@ -24,7 +24,7 @@ struct toji_pro_lens_flareParams {
 
 // --- funcoes auxiliares do efeito
 // Utility: Rotate Hue of a color
-        float3 hueShift(float3 col, float shift) {
+        static float3 hueShift(float3 col, float shift) {
             float3 P = float3(0.55735) * dot(float3(0.55735), col);
             float3 U = col - P;
             float3 V = cross(float3(0.55735), U);
@@ -33,10 +33,10 @@ struct toji_pro_lens_flareParams {
         }
 
         // Utility: Noise for pseudo-randomness
-        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        static float hash(float n) { return fract(sin(n) * 43758.5453123); }
 
         // Procedural Lens Flare
-        float3 lensFlare(float2 uv, float2 pos) {
+        static float3 lensFlare(float2 uv, float2 pos) {
             float2 main = uv - pos;
             float dist = length(main);
             float ang = __nv_atan(main.y, main.x);

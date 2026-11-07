@@ -28,7 +28,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -41,7 +41,7 @@ static float2x2 rot2m(float a){
       float2x2 rot = float2x2(cos(GOLDEN_ANGLE), sin(GOLDEN_ANGLE), -sin(GOLDEN_ANGLE), cos(GOLDEN_ANGLE));
       
       //-------------------------------------------------------------------------------------------
-      float3 Bokeh(sampler2D tex, float2 uv, float radius)
+      static float3 Bokeh(sampler2D tex, float2 uv, float radius)
       {
           float3 acc = float3(0), div = acc;
           float r = u.RADIUS;

@@ -31,19 +31,19 @@ precision float;
         #define MAT_WALL 5.0
 
         // Rotation matrix
-        float2x2 Rot(float a) {
+        static float2x2 Rot(float a) {
             float s = sin(a), c = cos(a);
             return float2x2(c, -s, s, c);
         }
 
         // SDF Box
-        float sdBox(float3 p, float3 b) {
+        static float sdBox(float3 p, float3 b) {
             float3 q = abs(p) - b;
             return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
         }
 
         // Scene Map
-        float2 map(float3 p) {
+        static float2 map(float3 p) {
             float2 res = float2(MAX_DIST, MAT_NONE);
             
             // 1. Room Geometry
@@ -96,7 +96,7 @@ precision float;
         }
 
         // Raymarch
-        float2 rayMarch(float3 ro, float3 rd) {
+        static float2 rayMarch(float3 ro, float3 rd) {
             float dO = 0.0;
             float m = MAT_NONE;
             
@@ -111,7 +111,7 @@ precision float;
         }
 
         // Normals
-        float3 getNormal(float3 p) {
+        static float3 getNormal(float3 p) {
             float d = map(p).x;
             float2 e = float2(0.001, 0);
             float3 n = d - float3(
@@ -122,7 +122,7 @@ precision float;
         }
 
         // Soft Shadows
-        float getShadow(float3 p, float3 l, float k) {
+        static float getShadow(float3 p, float3 l, float k) {
             float res = 1.0;
             float t = 0.02;
             for(int i=0; i<20; i++) { // Reduced steps for mobile

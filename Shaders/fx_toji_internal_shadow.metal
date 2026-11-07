@@ -21,7 +21,7 @@ struct toji_internal_shadowParams {
 // --- funcoes auxiliares do efeito
 #define MULTISAMPLE 1.0
 
-        float4 blurInternal(sampler2D texture, float2 texOffset, float2 st, float rate)
+        static float4 blurInternal(sampler2D texture, float2 texOffset, float2 st, float rate)
         {
             if(u.sigma <= 0.0) {
                 if(st.x >= 0.0 && st.x <= 1.0 && st.y >= 0.0 && st.y <= 1.0)

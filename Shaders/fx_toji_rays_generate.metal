@@ -22,8 +22,8 @@ struct toji_rays_generateParams {
 
 // --- funcoes auxiliares do efeito
 static float4 s(float2 uv){ return inputImg.sample(__nv_smp, uv); }
-    float rnd(float2 p){ return fract(sin(dot(p,float2(12.9898,78.233)))*43758.5453); }
-    float4 blur(float2 uv, float r){ if(r<=0.0) return s(uv); float2 px=1.0/eng.acScreenSize; float4 c=s(uv)*4.0; c+=s(uv+float2(px.x,0.0))*2.0; c+=s(uv-float2(px.x,0.0))*2.0; c+=s(uv+float2(0.0,px.y))*2.0; c+=s(uv-float2(0.0,px.y))*2.0; c+=s(uv+float2(px.x,px.y)); c+=s(uv+float2(-px.x,px.y)); c+=s(uv+float2(px.x,-px.y)); c+=s(uv+float2(-px.x,-px.y)); return c/14.0; }
+    static float rnd(float2 p){ return fract(sin(dot(p,float2(12.9898,78.233)))*43758.5453); }
+    static float4 blur(float2 uv, float r){ if(r<=0.0) return s(uv); float2 px=1.0/eng.acScreenSize; float4 c=s(uv)*4.0; c+=s(uv+float2(px.x,0.0))*2.0; c+=s(uv-float2(px.x,0.0))*2.0; c+=s(uv+float2(0.0,px.y))*2.0; c+=s(uv-float2(0.0,px.y))*2.0; c+=s(uv+float2(px.x,px.y)); c+=s(uv+float2(-px.x,px.y)); c+=s(uv+float2(px.x,-px.y)); c+=s(uv+float2(-px.x,-px.y)); return c/14.0; }
 
 fragment float4 fx_toji_rays_generate(
     NovaVertexOut       in   [[stage_in]],

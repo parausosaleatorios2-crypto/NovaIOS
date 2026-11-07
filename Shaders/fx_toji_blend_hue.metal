@@ -20,7 +20,7 @@ static float3 hsv2rgb(float3 c)
             return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
         }
 
-        float3 rgb2hsv(float3 c)
+        static float3 rgb2hsv(float3 c)
         {
             float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
             float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));

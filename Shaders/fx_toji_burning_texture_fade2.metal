@@ -27,18 +27,18 @@ struct toji_burning_texture_fade2Params {
         // Original by Krzysztof Kondrak @k_kondrak; this port exposes u.progress and u.feather.
 
         // Hash random
-        float r(float2 p){
+        static float r(float2 p){
             return fract(cos(p.x*42.98 + p.y*43.23) * 1127.53);
         }
         // Smoothed interpolation noise
-        float n(float2 p){
+        static float n(float2 p){
             float2 fn = floor(p);
             float2 sn = smoothstep(float2(0.0), float2(1.0), fract(p));
             float h1 = mix(r(fn), r(fn + float2(1.0,0.0)), sn.x);
             float h2 = mix(r(fn + float2(0.0,1.0)), r(fn + float2(1.0)), sn.x);
             return mix(h1, h2, sn.y);
         }
-        float noiseFBM(float2 p){
+        static float noiseFBM(float2 p){
             return n(p/32.0) * 0.58 +
                    n(p/16.0) * 0.20 +
                    n(p/8.0)  * 0.10 +
@@ -48,7 +48,7 @@ struct toji_burning_texture_fade2Params {
         }
 
         // Smokey/Hellish background using optional bgTex, animated by u.time parameters
-        float3 backgroundTex(float2 pos){
+        static float3 backgroundTex(float2 pos){
             // Map ShaderToy iTime*0.01 to controllable u.time/u.bgSpeed
             float2 offset = float2(0.0, u.bgSpeed * u.time);
             float3 color = float3(1.0);

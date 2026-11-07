@@ -26,7 +26,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -34,7 +34,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -42,19 +42,19 @@ static float4 newLayer( float4 a, float4 b) {
     
    /////////////////////////
    
-   float3 mod289(float3 x) {
+   static float3 mod289(float3 x) {
       return x - floor(x * (1.0 / 289.0)) * 289.0;
     }
     
-    float2 mod289(float2 x) {
+    static float2 mod289(float2 x) {
       return x - floor(x * (1.0 / 289.0)) * 289.0;
     }
     
-    float3 permute(float3 x) {
+    static float3 permute(float3 x) {
       return mod289(((x*34.0)+1.0)*x);
     }
     
-    float snoise(float2 v)
+    static float snoise(float2 v)
       {
       const float4 C = float4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
                           0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
@@ -90,7 +90,7 @@ static float4 newLayer( float4 a, float4 b) {
       return 130.0 * dot(m, g);
     }
     
-    float rand(float2 co)
+    static float rand(float2 co)
     {
        return fract(sin(dot(co.xy,float2(12.9898,78.233))) * 43758.5453);
     }

@@ -21,10 +21,10 @@ struct toji_AcaneralensblurParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265358979323846;
 
-    float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
+    static float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
 
     // Incremental Gaussian blur helper (separable)
-    float4 blurInternal(sampler2D tex, float2 texOffset, float2 st, float numBlurPixelsPerSide)
+    static float4 blurInternal(sampler2D tex, float2 texOffset, float2 st, float numBlurPixelsPerSide)
     {
       if(numBlurPixelsPerSide <= 0.0) return sampleTex(tex, st);
 
@@ -58,7 +58,7 @@ const float PI = 3.14159265358979323846;
       return avgValue / max(coefficientSum, 1e-6);
     }
 
-    float tapsForQualityF(float q){
+    static float tapsForQualityF(float q){
       return (q < 1.5) ? 6.0 : ((q < 2.5) ? 10.0 : 14.0);
     }
 

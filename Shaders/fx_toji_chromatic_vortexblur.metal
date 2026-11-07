@@ -22,7 +22,7 @@ struct toji_chromatic_vortexblurParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
       
-        float4 getBlurred(float channelStrength) {
+        static float4 getBlurred(float channelStrength) {
           float2 texelSize = 1.0 / __nv_getTexSize(inputImg_info.size);
           float Radius = u.radius;
           float T = channelStrength;

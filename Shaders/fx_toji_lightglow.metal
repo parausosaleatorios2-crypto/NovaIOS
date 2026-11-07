@@ -23,11 +23,11 @@ struct toji_lightglowParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float4 composite( float4 a, float4 b) {
+        static float4 composite( float4 a, float4 b) {
             return a * (1. - b.a) + b;
         }
 
-        float4 blurInternal(float2 texOffset, float2 st, float numBlurPixelsPerSide)
+        static float4 blurInternal(float2 texOffset, float2 st, float numBlurPixelsPerSide)
         {
             if(u.strength <= 0.0)
                 return float4(0,0,0,0);

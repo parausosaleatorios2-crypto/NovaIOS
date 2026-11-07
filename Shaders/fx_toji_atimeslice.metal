@@ -21,8 +21,8 @@ struct toji_atimesliceParams {
 
 // --- funcoes auxiliares do efeito
 static float4 getFromColor(float2 coord){ return inputImg.sample(__nv_smp, coord); }
-    float4 getToColor(float2 coord){ return inputImg2.sample(__nv_smp, coord); }
-    float4 getMask(float2 coord){ return mask.sample(__nv_smp, coord); }
+    static float4 getToColor(float2 coord){ return inputImg2.sample(__nv_smp, coord); }
+    static float4 getMask(float2 coord){ return mask.sample(__nv_smp, coord); }
 
 fragment float4 fx_toji_atimeslice(
     NovaVertexOut       in   [[stage_in]],

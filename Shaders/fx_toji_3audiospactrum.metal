@@ -32,21 +32,21 @@ struct toji_3audiospactrumParams {
     // Bars and dots around a horizontal baseline. No background fill.
 
     // Hash for deterministic u.jitter
-    float hash11(float n){ return fract(sin(n * 127.1 + 311.7) * 43758.5453); }
+    static float hash11(float n){ return fract(sin(n * 127.1 + 311.7) * 43758.5453); }
 
     // Smooth rectangle (x-axis) and circle (for dots)
-    float smoothRect(float x, float halfW){
+    static float smoothRect(float x, float halfW){
       return 1.0 - smoothstep(halfW - 1e-4, halfW + 1e-4, abs(x));
     }
-    float smoothLine(float y, float halfT){
+    static float smoothLine(float y, float halfT){
       return 1.0 - smoothstep(halfT - 1e-4, halfT + 1e-4, abs(y));
     }
-    float smoothCircle(float2 p, float r){
+    static float smoothCircle(float2 p, float r){
       float d = length(p);
       return 1.0 - smoothstep(r - 1e-4, r + 1e-4, d);
     }
 
-    float bandAmp(float i, float N){
+    static float bandAmp(float i, float N){
       float base = pow(u.audio_level, u.reactivity); // global level with u.reactivity curve
       float rnd = (hash11(i + u.seed) * 2.0 - 1.0) * u.jitter; // symmetric u.jitter
       float wob = 0.5 + 0.5 * sin(eng.acTime * (2.5 * u.speed) + i * 0.9);

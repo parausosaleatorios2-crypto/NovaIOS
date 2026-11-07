@@ -25,12 +25,12 @@ struct toji_perfect_sliceParams {
 #define PI 3.14159265359
     
     // --- Helper Functions ---
-    float hash(float n) { 
+    static float hash(float n) { 
         return fract(sin(n) * 43758.5453123); 
     }
     
     // Rotation Matrix
-    float2x2 rot(float a) {
+    static float2x2 rot(float a) {
         float s = sin(a), c = cos(a);
         return float2x2(c, -s, s, c);
     }
@@ -44,7 +44,7 @@ struct toji_perfect_sliceParams {
     
     // CORE FUNCTION: Defines the geometry of the cuts
     // This is used for both drawing the lines AND calculating physics.
-    ShardInfo getShardInfo(float2 p, float numCuts, float cutRadius) {
+    static ShardInfo getShardInfo(float2 p, float numCuts, float cutRadius) {
         float id = 0.0;
         float2 moveAcc = float2(0.0);
         float minDist = 100.0;
@@ -92,7 +92,7 @@ struct toji_perfect_sliceParams {
     }
     
     // Function to visualize the swipe animation of the sword
-    float drawSwipe(float2 p, float2 n, float off, float t, float hashSeed) {
+    static float drawSwipe(float2 p, float2 n, float off, float t, float hashSeed) {
         float2 tangent = float2(-n.y, n.x);
         float posAlongLine = dot(p, tangent);
         float dir = step(0.5, hash(hashSeed)) * 2.0 - 1.0; 

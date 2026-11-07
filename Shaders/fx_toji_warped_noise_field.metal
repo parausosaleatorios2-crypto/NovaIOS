@@ -26,11 +26,11 @@ struct toji_warped_noise_fieldParams {
         const float PI = 3.14159265358979323846264;
 
         /* 3D Simplex noise from IQ (public domain-ish) */
-        float3 mod289(float3 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float4 mod289(float4 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float4 permute(float4 x){ return mod289(((x*34.0)+1.0)*x); }
-        float4 taylorInvSqrt(float4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
-        float snoise(float3 v){
+        static float3 mod289(float3 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float4 mod289(float4 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float4 permute(float4 x){ return mod289(((x*34.0)+1.0)*x); }
+        static float4 taylorInvSqrt(float4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+        static float snoise(float3 v){
             const float2  C = float2(1.0/6.0, 1.0/3.0) ;
             const float4  D = float4(0.0, 0.5, 1.0, 2.0);
             // First corner
@@ -86,7 +86,7 @@ struct toji_warped_noise_fieldParams {
         }
 
         // Approximate derivatives by finite differences
-        float4 snoiseWithDerivatives(float3 p, float e){
+        static float4 snoiseWithDerivatives(float3 p, float e){
             float n  = snoise(p);
             float3 ex = float3(e,0.0,0.0);
             float3 ey = float3(0.0,e,0.0);

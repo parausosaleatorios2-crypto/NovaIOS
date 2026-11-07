@@ -41,12 +41,12 @@ struct toji_3wipeplasmaParams {
     // where the field exceeds a threshold. Output remains transparent elsewhere.
 
     const float PI = 3.14159265358979323846;
-    float hash11(float n){ return fract(sin(n * 127.1 + 311.7) * 43758.5453123); }
+    static float hash11(float n){ return fract(sin(n * 127.1 + 311.7) * 43758.5453123); }
 
-    float2x2 rot(float a){ float c = cos(a), s = sin(a); return float2x2(c,-s,s,c); }
+    static float2x2 rot(float a){ float c = cos(a), s = sin(a); return float2x2(c,-s,s,c); }
 
     // Base plasma using trigonometric composition
-    float plasmaBase(float2 p, float t){
+    static float plasmaBase(float2 p, float t){
       float val = 0.0;
       val += sin(p.x + t);
       val += sin(p.y + t*1.13);
@@ -55,7 +55,7 @@ struct toji_3wipeplasmaParams {
     }
 
     // fBm with sinusoidal basis: cheaper than true noise, good for plasma look
-    float fbmPlasma(float2 p, float t, int oct){
+    static float fbmPlasma(float2 p, float t, int oct){
       float sum = 0.0;
       float amp = 0.5;
       float freq = 1.0;

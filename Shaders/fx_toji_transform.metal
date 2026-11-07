@@ -27,11 +27,11 @@ static float2x2 rot2(float a) {
             return float2x2(c, -s, s, c);
         }
         
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 
-        float4 composite( float4 a, float4 b) {
+        static float4 composite( float4 a, float4 b) {
             return a * (1. - b.a) + b;
         }
 

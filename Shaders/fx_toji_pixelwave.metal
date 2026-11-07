@@ -23,17 +23,17 @@ struct toji_pixelwaveParams {
 
 // --- funcoes auxiliares do efeito
 // Utility functions
-        float2 pixelate(float2 uv, float u.pixelSize) {
+        static float2 pixelate(float2 uv, float u.pixelSize) {
             return floor(uv * u.pixelSize) / u.pixelSize;
         }
         
-        float wave(float2 uv, float freq, float amp, float time, float2 dir) {
+        static float wave(float2 uv, float freq, float amp, float time, float2 dir) {
             float x = uv.x * dir.x + uv.y * dir.y;
             return sin(x * freq + time) * amp;
         }
         
         // Overlay blend mode
-        float3 blendOverlay(float3 base, float3 blend) {
+        static float3 blendOverlay(float3 base, float3 blend) {
             return mix(
                 2.0 * base * blend,
                 1.0 - 2.0 * (1.0 - base) * (1.0 - blend),

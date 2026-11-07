@@ -27,8 +27,8 @@ static float2 clampMirror(float2 uv){
       }
       return uv;
     }
-    float4 sample(float2 uv){ return inputImg.sample(__nv_smp, clampMirror(uv)); }
-    float4 blurBox(float2 uv, float radiusPx){
+    static float4 sample(float2 uv){ return inputImg.sample(__nv_smp, clampMirror(uv)); }
+    static float4 blurBox(float2 uv, float radiusPx){
       if(radiusPx<=0.0) return sample(uv);
       float2 texel = 1.0/__nv_getTexSize(inputImg_info.size);
       int r = int(max(1.0,radiusPx));
@@ -41,8 +41,8 @@ static float2 clampMirror(float2 uv){
       }
       return acc/max(1.0,w);
     }
-    float gaussW(float x, float sigma){ return exp(-(x*x)/(2.0*sigma*sigma)); }
-    float4 blurGaussian(float2 uv, float radiusPx){
+    static float gaussW(float x, float sigma){ return exp(-(x*x)/(2.0*sigma*sigma)); }
+    static float4 blurGaussian(float2 uv, float radiusPx){
       if(radiusPx<=0.0) return sample(uv);
       float2 texel = 1.0/__nv_getTexSize(inputImg_info.size);
       int r = int(max(1.0,radiusPx));
@@ -56,7 +56,7 @@ static float2 clampMirror(float2 uv){
       }
       return acc/max(0.0001,wsum);
     }
-    float4 blurTriangle(float2 uv, float radiusPx, int iterations){
+    static float4 blurTriangle(float2 uv, float radiusPx, int iterations){
       float4 c = sample(uv);
       float4 outC = c;
       for(int it=0; it<4; it++){

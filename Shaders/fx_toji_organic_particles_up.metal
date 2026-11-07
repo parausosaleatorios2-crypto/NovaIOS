@@ -25,11 +25,11 @@ struct toji_organic_particles_upParams {
 // --- funcoes auxiliares do efeito
 // Procedural upward organic particles (Buffer A port)
 
-    float rand(float2 co){
+    static float rand(float2 co){
       return fract(sin(dot(co.xy ,float2(12.9898,78.233))) * 43758.5453);
     }
 
-    float organicWave(float y, float id) {
+    static float organicWave(float y, float id) {
       float freq1 = rand(float2(id + u.seedOffset, 5.0)) * 3.0 + 2.0;
       float amp1  = rand(float2(id + u.seedOffset, 6.0)) * 0.04;
       float freq2 = rand(float2(id + u.seedOffset, 7.0)) * 10.0 + 8.0;
@@ -38,7 +38,7 @@ struct toji_organic_particles_upParams {
       return sin(y * freq1 + id) * amp1 + sin(y * freq2 + id) * amp2 + drift * 0.02;
     }
 
-    float3 createParticle(float2 uv, float id, float aspect) {
+    static float3 createParticle(float2 uv, float id, float aspect) {
       float initial_x      = rand(float2(id + u.seedOffset, 1.0));
       float speed          = mix(0.04, 0.12, rand(float2(id + u.seedOffset, 2.0))) * u.speedScale;
       float phase          = rand(float2(id + u.seedOffset, 3.0)) * 200.0;

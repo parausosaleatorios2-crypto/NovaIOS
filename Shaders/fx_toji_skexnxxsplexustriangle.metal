@@ -33,23 +33,23 @@ struct toji_skexnxxsplexustriangleParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
         #define S(a, b, t) smoothstep(a, b, t)
         
-        float distLine(float2 p, float2 a, float2 b){
+        static float distLine(float2 p, float2 a, float2 b){
         	float2 pa = p - a;
             float2 ba = b - a;
             float t = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
             return length(pa - ba*t);
         }
         
-        float line(float2 p, float2 a, float2 b){
+        static float line(float2 p, float2 a, float2 b){
         	float d = distLine(p, a, b);
             float m = S(0.03, 0.01, d);
             float d2 =  length(a - b);
@@ -57,7 +57,7 @@ struct toji_skexnxxsplexustriangleParams {
             return m;
         }
         
-        float distTriangle(in float2 p, in float2 p0, in float2 p1, in float2 p2 )
+        static float distTriangle(in float2 p, in float2 p0, in float2 p1, in float2 p2 )
         {
         	float2 e0 = p1 - p0;
         	float2 e1 = p2 - p1;
@@ -79,7 +79,7 @@ struct toji_skexnxxsplexustriangleParams {
         	return -sqrt(d.x)*sign(d.y);
         }
         
-        float triangle(float2 p, float2 a, float2 b, float2 c){
+        static float triangle(float2 p, float2 a, float2 b, float2 c){
         	float d = distTriangle(p, a, b, c);
             float m = S(0.03, 0.01, d);
             float d2 =  length(a - b);
@@ -87,24 +87,24 @@ struct toji_skexnxxsplexustriangleParams {
             return m;
         }
         
-        float N21(float2 p){
+        static float N21(float2 p){
         	p = fract(p * float2(233.34, 851.73));
             p += dot(p, p + 23.45);
             return fract(p.x * p.y);
         }
         
-        float2 N22(float2 p){
+        static float2 N22(float2 p){
         	float n = N21(p);
             return float2(n, N21(p + n));
         }
         
-        float2 getPos(float2 id, float2 offset){
+        static float2 getPos(float2 id, float2 offset){
             float FEVO = u.autoe? u.XXA+(eng.acTime*0.5) : u.XXA;
             float2 n = N22(id + offset) * FEVO;
             return offset + sin(n) * 0.4;
         }
         
-        float layer(float2 uv){
+        static float layer(float2 uv){
         	float2 gv = fract(uv) - 0.5;
             float2 id = floor(uv);
         

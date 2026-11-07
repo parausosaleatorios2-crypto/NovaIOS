@@ -17,7 +17,7 @@ struct toji_unsharp_gauss_hParams {
 
 // --- funcoes auxiliares do efeito
 static float4 s(float2 uv){ return inputImg.sample(__nv_smp, uv); }
-    float w(float x, float sigma){ return exp(-(x*x)/(2.0*sigma*sigma)); }
+    static float w(float x, float sigma){ return exp(-(x*x)/(2.0*sigma*sigma)); }
 
 fragment float4 fx_toji_unsharp_gauss_h(
     NovaVertexOut       in   [[stage_in]],

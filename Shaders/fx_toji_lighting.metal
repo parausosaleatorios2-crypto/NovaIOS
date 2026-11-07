@@ -28,7 +28,7 @@ struct toji_lightingParams {
     // iTime -> eng.acTime
     // fragCoord -> in.acScreenNorm * eng.acScreenSize
 
-    float hash11(float p)
+    static float hash11(float p)
     {
         p = fract(p * 0.1031);
         p *= p + 33.33;
@@ -36,21 +36,21 @@ struct toji_lightingParams {
         return fract(p);
     }
 
-    float hash12(float2 p)
+    static float hash12(float2 p)
     {
         float3 p3 = fract(float3(p.xyx) * 0.1031);
         p3 += dot(p3, p3.yzx + 33.33);
         return fract((p3.x + p3.y) * p3.z);
     }
 
-    float2x2 rotate2d(float theta)
+    static float2x2 rotate2d(float theta)
     {
         float c = cos(theta);
         float s = sin(theta);
         return float2x2(c, -s, s, c);
     }
 
-    float noise2(float2 p)
+    static float noise2(float2 p)
     {
         float2 ip = floor(p);
         float2 fp = fract(p);
@@ -62,7 +62,7 @@ struct toji_lightingParams {
         return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
     }
 
-    float fbm(float2 p, int octaveCount, float rotAngle)
+    static float fbm(float2 p, int octaveCount, float rotAngle)
     {
         float value = 0.0;
         float amplitude = 0.5;
@@ -77,7 +77,7 @@ struct toji_lightingParams {
         return value;
     }
 
-    void imagePass(out float4 __nv_out, float2 fragCoord)
+    static void imagePass(out float4 __nv_out, float2 fragCoord)
     {
         float2 iResolution = eng.acScreenSize;
         // Normalized pixel coordinates (from -1 to 1), aspect-corrected

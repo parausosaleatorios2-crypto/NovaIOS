@@ -26,30 +26,30 @@ precision float;
         #define PI 3.14159265
 
         // Helpers
-        float hash21(float2 p) {
+        static float hash21(float2 p) {
             float3 p3  = fract(float3(p.xyx) * .1031);
             p3 += dot(p3, p3.yzx + 33.33);
             return fract((p3.x + p3.y) * p3.z);
         }
 
-        float2x2 rot(float a) {
+        static float2x2 rot(float a) {
             float s = sin(a);
             float c = cos(a);
             return float2x2(c, -s, s, c);
         }
 
-        float sdBox(float3 p, float3 b) {
+        static float sdBox(float3 p, float3 b) {
             float3 q = abs(p) - b;
             return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
         }
 
-        float sdRoundBox(float3 p, float3 b, float r) {
+        static float sdRoundBox(float3 p, float3 b, float r) {
             float3 q = abs(p) - b;
             return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
         }
 
         // Scene Logic
-        float2 map(float3 p) {
+        static float2 map(float3 p) {
             float2 res = float2(100.0, 0.0);
             
             // 1. Wooden Table
@@ -88,7 +88,7 @@ precision float;
             return res;
         }
 
-        float rayMarch(float3 ro, float3 rd, out float m) {
+        static float rayMarch(float3 ro, float3 rd, out float m) {
             float dO = 0.0;
             m = 0.0;
             for(int i=0; i<MAX_STEPS; i++) {
@@ -101,7 +101,7 @@ precision float;
             return dO;
         }
 
-        float3 getNormal(float3 p) {
+        static float3 getNormal(float3 p) {
             float d = map(p).x;
             float2 e = float2(0.001, 0);
             float3 n = d - float3(
@@ -111,7 +111,7 @@ precision float;
             return normalize(n);
         }
 
-        float3 getWood(float2 uv) {
+        static float3 getWood(float2 uv) {
             float n = sin(uv.x * 20.0 + sin(uv.y * 50.0) * 2.0);
             return float3(0.3, 0.15, 0.05) * (0.8 + 0.2 * n);
         }

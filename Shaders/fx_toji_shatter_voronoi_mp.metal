@@ -36,14 +36,14 @@ struct toji_shatter_voronoi_mpParams {
     const float PI = 3.14159265358979323846;
 
     // Hash helpers
-    float hash11(float n){ return fract(sin(n)*43758.5453123); }
-    float hash21(float2 p){ return fract(1e4*sin(17.0*p.x + 0.1*p.y)*(0.1+abs(sin(13.0*p.y+7.0*p.x)))); }
+    static float hash11(float n){ return fract(sin(n)*43758.5453123); }
+    static float hash21(float2 p){ return fract(1e4*sin(17.0*p.x + 0.1*p.y)*(0.1+abs(sin(13.0*p.y+7.0*p.x)))); }
 
     // Rot2
-    float2x2 r2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
+    static float2x2 r2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
 
     // Voronoi: return nearest distance and ID; also second-nearest distance for edge width
-    float4 voronoi(float2 uv, float u.cellScale, float randAmt){
+    static float4 voronoi(float2 uv, float u.cellScale, float randAmt){
       float2 g = uv * u.cellScale;
       float2 i = floor(g);
       float2 f = fract(g);
@@ -68,7 +68,7 @@ struct toji_shatter_voronoi_mpParams {
     }
 
     // Simple separable blur (incremental Gaussian) on edge mask
-    float4 blurInternal(sampler2D tex, float2 texOffset, float2 st, float numBlurPixelsPerSide){
+    static float4 blurInternal(sampler2D tex, float2 texOffset, float2 st, float numBlurPixelsPerSide){
       float adjSigma = numBlurPixelsPerSide / 2.14596602;
       const float PIc = 3.14159265;
       float3 incG;

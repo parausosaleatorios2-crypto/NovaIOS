@@ -40,24 +40,24 @@ struct toji_newhalfParams {
 
 // --- funcoes auxiliares do efeito
 // Helpers
-    float2 getResolution(){
+    static float2 getResolution(){
       float2 s = __nv_getTexSize(inputImg_info.size);
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
       return s;
     }
-    float2 rot(float2 p, float a){
+    static float2 rot(float2 p, float a){
       float c = cos(a);
       float s = sin(a);
       return float2(p.x * c - p.y * s, p.x * s + p.y * c);
     }
-    float applyToneF(float v, float u.contrast, float u.brightness){
+    static float applyToneF(float v, float u.contrast, float u.brightness){
       v = (v - 0.5) * u.contrast + 0.5 + u.brightness;
       return clamp(v, 0.0, 1.0);
     }
-    float colorDist(float3 a, float3 b){ return length(a - b); }
+    static float colorDist(float3 a, float3 b){ return length(a - b); }
 
     // Sobel edge detector (luminance-based)
-    float sobelEdge(float2 uv, float2 px){
+    static float sobelEdge(float2 uv, float2 px){
       // sample 3x3 luminances
       float tl = dot(inputImg.sample(__nv_smp, clamp(uv + float2(-px.x, -px.y), float2(0.0), float2(1.0))).rgb, float3(0.2126,0.7152,0.0722));
       float  l = dot(inputImg.sample(__nv_smp, clamp(uv + float2(0.0, -px.y), float2(0.0), float2(1.0))).rgb, float3(0.2126,0.7152,0.0722));
@@ -76,7 +76,7 @@ struct toji_newhalfParams {
     }
 
     // simple box blur of mask (3x3)
-    float blurMask(float2 uv, float2 px, float radius){
+    static float blurMask(float2 uv, float2 px, float radius){
       // radius expressed as number of px steps; use small kernel around uv
       float s = 0.0;
       float count = 0.0;

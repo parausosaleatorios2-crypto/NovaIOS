@@ -24,13 +24,13 @@ struct toji_starpannelParams {
 
     const float PI = 3.14159265358979323846264;
 
-    float2x2 ROT(float a){
+    static float2x2 ROT(float a){
       float c = cos(a), s = sin(a);
       return float2x2(c, s, -s, c);
     }
 
     // Matt Taylor ACES approx (tonemapping)
-    float3 aces_approx(float3 v) {
+    static float3 aces_approx(float3 v) {
       v = max(v, 0.0);
       v *= 0.6;
       float a = 2.51;
@@ -49,35 +49,35 @@ struct toji_starpannelParams {
     const float2  pathA = float2(0.31, 0.41);
     const float2  pathB = float2(1.0, 0.7071067811865476); // sqrt(0.5)
 
-    float3 offsetf(float z) {
+    static float3 offsetf(float z) {
       return float3(pathB * sin(pathA*z), z);
     }
 
-    float3 doffsetf(float z) {
+    static float3 doffsetf(float z) {
       return float3(pathA*pathB * cos(pathA*z), 1.0);
     }
 
-    float3 ddoffsetf(float z) {
+    static float3 ddoffsetf(float z) {
       return float3(-pathA*pathA*pathB * sin(pathA*z), 0.0);
     }
 
-    float4 alphaBlend(float4 back, float4 front) {
+    static float4 alphaBlend(float4 back, float4 front) {
       float w = front.w + back.w*(1.0-front.w);
       float3 xyz = (front.xyz*front.w + back.xyz*back.w*(1.0-front.w)) / max(w, 1e-6);
       return (w > 0.0) ? float4(xyz, w) : float4(0.0);
     }
 
-    float pmin(float a, float b, float k) {
+    static float pmin(float a, float b, float k) {
       float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0);
       return mix(b, a, h) - k*h*(1.0-h);
     }
 
-    float pabs(float a, float k) {
+    static float pabs(float a, float k) {
       return -pmin(a, -a, k);
     }
 
     // 5-pointed star SDF (tweaked inner rounding)
-    float star5(float2 p, float r, float rf, float sm) {
+    static float star5(float2 p, float r, float rf, float sm) {
       p = -p;
       const float2 k1 = float2(0.809016994375, -0.587785252292);
       const float2 k2 = float2(-k1.x, k1.y);
@@ -91,11 +91,11 @@ struct toji_starpannelParams {
       return length(p - ba*h) * sign(p.y*ba.x - p.x*ba.y);
     }
 
-    float3 palette(float n) {
+    static float3 palette(float n) {
       return 0.5 + 0.5 * sin(float3(0.0, 1.0, 2.0) + n);
     }
 
-    float4 plane(float3 ro, float3 rd, float3 pp, float3 npp, float pd, float3 cp, float3 off, float n) {
+    static float4 plane(float3 ro, float3 rd, float3 pp, float3 npp, float pd, float3 cp, float3 off, float n) {
       float aa = 3.0 * pd * distance(pp.xy, npp.xy);
       float4 col = float4(0.0);
       float2 p2 = pp.xy;
@@ -119,7 +119,7 @@ struct toji_starpannelParams {
       return col;
     }
 
-    float3 colorfn(float3 ww, float3 uu, float3 vv, float3 ro, float2 p, float2 iResolution) {
+    static float3 colorfn(float3 ww, float3 uu, float3 vv, float3 ro, float2 p, float2 iResolution) {
       float2 np = p + 1.0/iResolution.xy;
       float rdd = 1.75; // 2.0-0.25
 

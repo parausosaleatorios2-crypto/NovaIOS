@@ -38,11 +38,11 @@ static float2x2 rot2(float a) {
             return float2x2(c,s,-s,c);
         }
 
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
         
-        float4 composite(float4 a, float4 b) {
+        static float4 composite(float4 a, float4 b) {
             return a * (1.-b.a) + b;
         }
 
@@ -55,7 +55,7 @@ static float2x2 rot2(float a) {
         #define CYL_DIST (cyl.z)
 
         /// 1D function x: cylFun(t); y: normal at that point.
-        float2 curlFun(float t, float maxt, float3 cyl) {
+        static float2 curlFun(float t, float maxt, float3 cyl) {
             float2 ret = float2(t, 1.0);
             if (t < CYL_DIST - u.radius)
                 return ret;                    /// Before the curl
@@ -78,7 +78,7 @@ static float2x2 rot2(float a) {
             return ret.x < maxt ? ret : float2(-1.0);  /// Front face curve
         }
 
-        float2 curlFunFront(float t, float maxt, float3 cyl) {
+        static float2 curlFunFront(float t, float maxt, float3 cyl) {
             float2 ret = float2(t, 1.0);
             if (t < CYL_DIST - u.radius)
                 return ret;                    /// Before the curl
@@ -98,7 +98,7 @@ static float2x2 rot2(float a) {
             return ret.x < maxt ? ret : float2(-1.0);  /// Front face curve
         }
 
-        float4 blendColor( float4 base, float4 color, int mode, float p) {
+        static float4 blendColor( float4 base, float4 color, int mode, float p) {
             if( mode == 1 ) {           // Multiply
                 float3 aa = base.rgb / max(base.a,0.00001);
                 float3 bb = color.rgb / max(color.a,0.00001);

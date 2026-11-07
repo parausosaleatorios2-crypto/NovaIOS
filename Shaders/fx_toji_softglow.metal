@@ -24,7 +24,7 @@ struct toji_softglowParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float4 composite( float4 a, float4 b) {
+        static float4 composite( float4 a, float4 b) {
             return a * (1. - b.a) + b;
         }
 

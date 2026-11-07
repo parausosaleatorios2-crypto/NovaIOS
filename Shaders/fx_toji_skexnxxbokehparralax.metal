@@ -32,7 +32,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -42,27 +42,27 @@ static float2x2 rot2m(float a){
    
    const float MATH_PI	= float( 3.14159265359 );
     
-    void Rotate( inout float2 p, float a ) 
+    static void Rotate( inout float2 p, float a ) 
     {
     	p = cos( a ) * p + sin( a ) * float2( p.y, -p.x );
     }
     
-    float Circle( float2 p, float r )
+    static float Circle( float2 p, float r )
     {
         return ( length( p / r ) - 1.0 ) * r;
     }
     
-    float Rand( float2 c )
+    static float Rand( float2 c )
     {
     	return fract( sin( dot( c.xy, float2( 12.9898, 78.233 ) ) ) * 43758.5453 );
     }
     
-    float saturate( float x )
+    static float saturate( float x )
     {
     	return clamp( x, 0.0, 1.0 );
     }
     
-    void BokehLayer( inout float3 color, float2 p, float3 c )   
+    static void BokehLayer( inout float3 color, float2 p, float3 c )   
     {
         float wrap = 450.0;    
         if ( __nv_mod(floor( p.y / wrap + 0.5 ), 2.0) == 0.0 )

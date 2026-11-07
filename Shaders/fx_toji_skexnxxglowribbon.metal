@@ -34,18 +34,18 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
 
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
             
    /////////////////////////
     
-    float squared(float value) { return value * value; }
+    static float squared(float value) { return value * value; }
     
-    float getAmp(float frequency) { return black.sample(__nv_smp, float2(frequency / 512.0, 0)).x; }
+    static float getAmp(float frequency) { return black.sample(__nv_smp, float2(frequency / 512.0, 0)).x; }
     
-    float getWeight(float f) {
+    static float getWeight(float f) {
         return (+ getAmp(f-2.0) + getAmp(f-1.0) + getAmp(f+2.0) + getAmp(f+1.0) + getAmp(f)) / 5.0; }
 
 fragment float4 fx_toji_skexnxxglowribbon(

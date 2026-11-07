@@ -26,7 +26,7 @@ struct toji_spectralmapParams {
 // --- funcoes auxiliares do efeito
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-        float mapChannel(float p, float f) {
+        static float mapChannel(float p, float f) {
             float t = __nv_mod(p+10., 1.);
             return clamp(abs(t-0.5)*4. - f, 0., 1.);
         }

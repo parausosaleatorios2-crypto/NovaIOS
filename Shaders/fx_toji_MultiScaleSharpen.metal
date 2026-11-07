@@ -31,11 +31,11 @@ struct toji_MultiScaleSharpenParams {
     const float3 kI = float3(0.596, -0.275, -0.321);
     const float3 kQ = float3(0.212, -0.523, 0.311);
 
-    float3 rgb2yiq(float3 rgb) {
+    static float3 rgb2yiq(float3 rgb) {
         return float3(dot(rgb, kY), dot(rgb, kI), dot(rgb, kQ));
     }
 
-    float3 yiq2rgb(float3 yiq) {
+    static float3 yiq2rgb(float3 yiq) {
         float3 rgb;
         rgb.r = yiq.x + 0.956 * yiq.y + 0.621 * yiq.z;
         rgb.g = yiq.x - 0.272 * yiq.y - 0.647 * yiq.z;
@@ -44,7 +44,7 @@ struct toji_MultiScaleSharpenParams {
     }
 
     // Simple 4-tap blur for performance
-    float3 getBlur(float2 uv, float radius) {
+    static float3 getBlur(float2 uv, float radius) {
         float2 off = float2(radius) / eng.acScreenSize;
         float3 acc = inputImg.sample(__nv_smp, uv + float2(-off.x, -off.y)).rgb;
         acc += inputImg.sample(__nv_smp, uv + float2( off.x, -off.y)).rgb;

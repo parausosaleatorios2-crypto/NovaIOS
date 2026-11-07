@@ -23,7 +23,7 @@ static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 
-        float gsmooth(float low, float high, float value) {
+        static float gsmooth(float low, float high, float value) {
             float p = clamp((value-low)/(high-low),0.,1.);
             p -= 1.0;
             return pow(2.71828,-((p*p)/0.125));

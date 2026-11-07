@@ -18,14 +18,14 @@ struct toji_hand_drawnParams {
 
 // --- funcoes auxiliares do efeito
 // Simple hash function for noise
-        float hash(float2 p) {
+        static float hash(float2 p) {
             p = fract(p * float2(123.34, 456.21));
             p += dot(p, p + 45.32);
             return fract(p.x * p.y);
         }
 
         // 2D Value Noise
-        float noise(float2 p) {
+        static float noise(float2 p) {
             float2 i = floor(p);
             float2 f = fract(p);
             f = f * f * (3.0 - 2.0 * f);

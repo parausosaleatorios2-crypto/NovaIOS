@@ -28,21 +28,21 @@ struct toji_turbulence2Params {
 
 // --- funcoes auxiliares do efeito
 static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float4 mod289(float4 x) {
+        static float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float4 mod289(float4 x) {
           return x - floor(x * (1.0 / 289.0)) * 289.0;
         }
-        float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
-        float4 permute(float4 x) {
+        static float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
+        static float4 permute(float4 x) {
              return mod289(((x*34.0)+1.0)*x);
         }
 
-        float4 taylorInvSqrt(float4 r)
+        static float4 taylorInvSqrt(float4 r)
         {
           return 1.79284291400159 - 0.85373472095314 * r;
         }
 
-        float snoise(float3 v)
+        static float snoise(float3 v)
           {
           const float2  C = float2(1.0/6.0, 1.0/3.0) ;
           const float4  D = float4(0.0, 0.5, 1.0, 2.0);
@@ -117,7 +117,7 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
                                         dot(p2,x2), dot(p3,x3) ) );
         }
 
-        float snoise(float2 v) {
+        static float snoise(float2 v) {
 
             // Precompute values for skewed triangular grid
             const float4 C = float4(0.211324865405187,
@@ -176,7 +176,7 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             return 130.0 * dot(m, g);
         }
 
-        float turbulence (in float2 st, in int OCTAVES, in float2 parallax, in float u.evolution) {
+        static float turbulence (in float2 st, in int OCTAVES, in float2 parallax, in float u.evolution) {
             // Initial values
             float value = 0.0;
             float amplitude = .5;

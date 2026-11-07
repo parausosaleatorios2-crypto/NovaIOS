@@ -26,7 +26,7 @@ struct toji_heatmap_perlin_noiseParams {
 
 // --- funcoes auxiliares do efeito
 // Hash 3D pour le bruit de Perlin 3D
-        float3 hash33(float3 p) {
+        static float3 hash33(float3 p) {
             p = float3(dot(p, float3(127.1, 311.7, 74.7)),
                      dot(p, float3(269.5, 183.3, 246.1)),
                      dot(p, float3(113.5, 271.9, 124.6)));
@@ -34,7 +34,7 @@ struct toji_heatmap_perlin_noiseParams {
         }
 
         // Bruit de Perlin 3D propre
-        float perlinNoise3D(float3 p) {
+        static float perlinNoise3D(float3 p) {
             float3 pi = floor(p);
             float3 pf = p - pi;
             
@@ -74,7 +74,7 @@ struct toji_heatmap_perlin_noiseParams {
         }
 
         // FBm 3D avec animation temporelle intégrée
-        float fbm3D(float3 p, int octaves) {
+        static float fbm3D(float3 p, int octaves) {
             float value = 0.0;
             float amplitude = 0.8;
             float frequency = 0.13;

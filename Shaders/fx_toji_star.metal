@@ -28,7 +28,7 @@ struct toji_starParams {
         
         #define l2s(v) ((float4(v,0.,1.)*eng.acLayerToScreen).xy)
 
-        float star(float2 st, float2 center, float r, float insideRadiusScale, float points) {
+        static float star(float2 st, float2 center, float r, float insideRadiusScale, float points) {
             float2 dc = st-center;
             float ir = r*insideRadiusScale;
             float a = (__nv_atan(dc.x, dc.y)+3.14159)/2.;

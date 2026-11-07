@@ -28,7 +28,7 @@ static float3 rotUV( float3 yuv, float degrees ) {
             return yuv * rmat;
         }
 
-        float3 hsv2rgb(float3 c)
+        static float3 hsv2rgb(float3 c)
         {
             float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);

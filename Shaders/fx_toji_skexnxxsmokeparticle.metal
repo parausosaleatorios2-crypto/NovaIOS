@@ -31,7 +31,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -42,11 +42,11 @@ static float2x2 rot2m(float a){
       #define bpm 128.
       #define beat floor(u.progressa*bpm/60.)
       #define ttime u.progressa*bpm/60.
-      float2x2 r(float a){
+      static float2x2 r(float a){
       float c=cos(a),s=sin(a);
       return float2x2(c,-s,s,c);
       }
-      float fig(float2 uv){
+      static float fig(float2 uv){
           uv*=r(-3.1415*.9);
       return min(1.,.1/abs( (__nv_atan(uv.x, uv.y)/2.*3.1415)-sin(- ttime+(min(.6,length(uv)))*3.141592*8.)));
       }

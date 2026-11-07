@@ -35,21 +35,21 @@ struct toji_omino_glassParams {
 
 // --- funcoes auxiliares do efeito
 static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-        float4 mod289(float4 x) {
+        static float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        static float4 mod289(float4 x) {
           return x - floor(x * (1.0 / 289.0)) * 289.0;
         }
-        float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
-        float4 permute(float4 x) {
+        static float3 permute(float3 x) { return mod289(((x*34.0)+1.0)*x); }
+        static float4 permute(float4 x) {
              return mod289(((x*34.0)+1.0)*x);
         }
 
-        float4 taylorInvSqrt(float4 r)
+        static float4 taylorInvSqrt(float4 r)
         {
           return 1.79284291400159 - 0.85373472095314 * r;
         }
 
-        float snoise(float3 v)
+        static float snoise(float3 v)
           {
           const float2  C = float2(1.0/6.0, 1.0/3.0) ;
           const float4  D = float4(0.0, 0.5, 1.0, 2.0);
@@ -124,7 +124,7 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
                                         dot(p2,x2), dot(p3,x3) ) );
         }
 
-        float snoise(float2 v) {
+        static float snoise(float2 v) {
 
             // Precompute values for skewed triangular grid
             const float4 C = float4(0.211324865405187,
@@ -183,13 +183,13 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             return 130.0 * dot(m, g);
         }
 
-        float2x2 rot2(float a) {
+        static float2x2 rot2(float a) {
             float s = sin(a);
             float c = cos(a);
             return float2x2(c,-s,s,c);
         }
 
-        float turbulence (float2 st, int OCTAVES, float2 parallax, float u.evolution) {
+        static float turbulence (float2 st, int OCTAVES, float2 parallax, float u.evolution) {
             // Initial values
             float value = 0.0;
             float amplitude = .5;
@@ -209,11 +209,11 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 
         const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
         
-        float4 sampleNearestDistort(float2 p) {
+        static float4 sampleNearestDistort(float2 p) {
             return surfBuf.sample(__nv_smp, p/eng.acScreenSize);
         }
         
-        float sampleDistortLuma(float2 p) {
+        static float sampleDistortLuma(float2 p) {
             float4 samp = surfBuf.sample(__nv_smp, p/eng.acScreenSize);
             float luma = dot( samp.rgb, luminanceWeighting );
             if( u.strength>0.0 ) {
@@ -226,14 +226,14 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             return luma;
         }
         
-        float4 sampleLinearSrc(float2 p, float4 texColor) {
+        static float4 sampleLinearSrc(float2 p, float4 texColor) {
             float4 tc = texColor * (1.-u.tintcolor.a) + float4(u.tintcolor.rgb,1.)*u.tintcolor.a;
             float4 c = comp.sample(__nv_smp, p/eng.acScreenSize);
             c = mix(c,tc/max(0.0001,tc.a)*c,u.blend*tc.a);
             return c;
         }
         
-        float4 pluckColor(float4 texColor, float2 xy,float4 rgb)
+        static float4 pluckColor(float4 texColor, float2 xy,float4 rgb)
         {
             //if(wrap > 0)
             //    xy = __nv_mod(xy, eng.acScreenSize);
@@ -242,7 +242,7 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             return c;
         }
 
-        float4 chromatizePixel(float2 xy,float2 offset,float4 texColor)
+        static float4 chromatizePixel(float2 xy,float2 offset,float4 texColor)
         {
             float4 result = float4(0,0,0,0);
             result += pluckColor(texColor, xy - offset * 1.5,float4(.2,0,0,0.2));
@@ -255,19 +255,19 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
             return result;
         }
         
-        float lighting(float3 p, float3 n) {
+        static float lighting(float3 p, float3 n) {
             float3 lightPos = float3(u.lightDir.x/2.0, -u.lightDir.y/2.0, -u.lightDepth*2.0);
             float3 l = normalize(lightPos-p);
             return dot(n,l);
         }
 
-        float directionalLighting(float3 p, float3 n) {
+        static float directionalLighting(float3 p, float3 n) {
             float3 lightPos = float3(u.lightDir.x/2.0, -u.lightDir.y/2.0, -u.lightDepth*2.0);
             float3 l = normalize(lightPos);
             return dot(n,l);
         }
 
-        float4 applyShading(float4 texColor, float3 p, float3 n ) {
+        static float4 applyShading(float4 texColor, float3 p, float3 n ) {
             float shine = u.lightShine;
             float ambient = u.lightAmbient;
             float spec = u.lightSpec;
@@ -296,7 +296,7 @@ static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         }
 
 
-        float4 evaluatePixelXy(float2 srcXy, float4 texColor) {
+        static float4 evaluatePixelXy(float2 srcXy, float4 texColor) {
             float2 imageSize = eng.acScreenSize;
             
             float2 slope = float2(0.);

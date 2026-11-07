@@ -32,7 +32,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -43,14 +43,14 @@ static float2x2 rot2m(float a){
    const float PI = 3.141592654;
     
     // Noise from IQ
-    float2 hash( float2 p )
+    static float2 hash( float2 p )
     {
     	p = float2( dot(p,float2(127.1,311.7)),
     			 dot(p,float2(269.5,183.3)) );
     	return -1.0 + 2.0*fract(sin(p)*43758.5453123);
     }
     
-    float noise( in float2 p )
+    static float noise( in float2 p )
     {
     	const float K1 = 0.366025404;
     	const float K2 = 0.211324865;
@@ -71,7 +71,7 @@ static float2x2 rot2m(float a){
     
     const float2x2 m = float2x2( 0.80,  0.60, -0.60,  0.80 );
     
-    float fbm4( in float2 p )
+    static float fbm4( in float2 p )
     {
         float f = 0.0;
         f += 0.5000*noise( p ); p = m*p*2.02;
@@ -81,7 +81,7 @@ static float2x2 rot2m(float a){
         return f;
     }
     
-    float fbm6( in float2 p )
+    static float fbm6( in float2 p )
     {
         float f = 0.0;
         f += 0.5000*noise( p ); p = m*p*2.02;
@@ -93,7 +93,7 @@ static float2x2 rot2m(float a){
         return f;
     }
     
-    float4x4 CreatePerspectiveMatrix(in float fov, in float aspect, in float near, in float far)
+    static float4x4 CreatePerspectiveMatrix(in float fov, in float aspect, in float near, in float far)
     {
         float4x4 m = float4x4(0.0);
         float u.angle = (fov / 180.0) * PI;
@@ -106,7 +106,7 @@ static float2x2 rot2m(float a){
         return m;
     }
     
-    float4x4 CamControl( float3 eye, float pitch)
+    static float4x4 CamControl( float3 eye, float pitch)
     {
         float cosPitch = cos(pitch);
         float sinPitch = sin(pitch);

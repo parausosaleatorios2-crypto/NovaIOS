@@ -35,7 +35,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -45,7 +45,7 @@ static float2x2 rot2m(float a){
     
     #define PI 3.14159265358979
     
-    float derivative(float2 p)
+    static float derivative(float2 p)
     {
         float2 dx = float2(0,0);
         float2 dy = float2(0,0);

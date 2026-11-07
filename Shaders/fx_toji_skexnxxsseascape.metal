@@ -34,11 +34,11 @@ struct toji_skexnxxsseascapeParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) {
+    static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -46,7 +46,7 @@ struct toji_skexnxxsseascapeParams {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -80,7 +80,7 @@ struct toji_skexnxxsseascapeParams {
         
         float2x2 octave_m = float2x2(1.7,1.2,-1.2,1.4);
         
-        float3 rgb2hsv(float3 c)
+        static float3 rgb2hsv(float3 c)
         {
             float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
             float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
@@ -91,14 +91,14 @@ struct toji_skexnxxsseascapeParams {
             return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
         }
         
-        float3 hsv2rgb(float3 c)
+        static float3 hsv2rgb(float3 c)
         {
             float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
             return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
         }
         
-        float3x3 fromEuler(float3 ang) {
+        static float3x3 fromEuler(float3 ang) {
         	float2 a1 = float2(sin(ang.x),cos(ang.x));
             float2 a2 = float2(sin(ang.y),cos(ang.y));
             float2 a3 = float2(sin(ang.z),cos(ang.z));
@@ -109,12 +109,12 @@ struct toji_skexnxxsseascapeParams {
         	return m;
         }
         
-        float hash( float2 p ) {
+        static float hash( float2 p ) {
             float h = dot(p,float2(127.1,311.7));	
             return fract(sin(h)*83758.5453123);
         }
         
-        float noise( in float2 p ) {
+        static float noise( in float2 p ) {
             float2 i = floor( p );
             float2 f = fract( p );	
         
@@ -130,16 +130,16 @@ struct toji_skexnxxsseascapeParams {
                         u.y);
         }
         
-        float diffuse(float3 n,float3 l,float p) {
+        static float diffuse(float3 n,float3 l,float p) {
             return pow(dot(n,l) * 0.4 + 0.6,p);
         }
         
-        float specular(float3 n,float3 l,float3 e,float s) {    
+        static float specular(float3 n,float3 l,float3 e,float s) {    
             float nrm = (s + 8.0) / (3.1415 * 8.0);
             return pow(max(dot(reflect(e,n),l),0.0),s) * nrm;
         }
         
-        float3 getSkyColor(float3 e) {
+        static float3 getSkyColor(float3 e) {
             e.y = max(e.y,0.0);
             float3 ret;
             ret.x = pow(1.0-e.y,2.0);
@@ -149,7 +149,7 @@ struct toji_skexnxxsseascapeParams {
             return ret;
         }
         
-        float sea_octave(float2 uv, float choppy) {
+        static float sea_octave(float2 uv, float choppy) {
             uv += noise(uv);
             float2 wv = 1.0-abs(sin(uv)); 
             float2 swv = abs(cos(uv));  
@@ -157,7 +157,7 @@ struct toji_skexnxxsseascapeParams {
             return pow(1.0-pow(wv.x * wv.y,0.65),choppy);
         }
         
-        float map(float3 p) {
+        static float map(float3 p) {
             float freq = u.SEA_FREQ;
             float amp = u.SEA_HEIGHT;
             float choppy = u.SEA_CHOPPY;
@@ -177,7 +177,7 @@ struct toji_skexnxxsseascapeParams {
             return p.y - h;
         }
         
-        float map_detailed(float3 p) {
+        static float map_detailed(float3 p) {
             float freq = u.SEA_FREQ;
             float amp = u.SEA_HEIGHT;
             float choppy = u.SEA_CHOPPY;
@@ -198,7 +198,7 @@ struct toji_skexnxxsseascapeParams {
             }
             return p.y - h;
         }
-        float3 getSeaColor(float3 p, float3 n, float3 l, float3 eye, float3 dist) {  
+        static float3 getSeaColor(float3 p, float3 n, float3 l, float3 eye, float3 dist) {  
             float fresnel = 1.0 - max(dot(n,-eye),0.0);
             fresnel = pow(fresnel,3.0) * 0.45;
                 
@@ -217,7 +217,7 @@ struct toji_skexnxxsseascapeParams {
             return color;
         }
         
-        float3 getNormal(float3 p, float eps) {
+        static float3 getNormal(float3 p, float eps) {
             float3 n;
             n.y = map_detailed(p); // bteitler: Detailed height relative to surface, temporarily here to save a variable?
             n.x = map_detailed(float3(p.x+eps,p.y,p.z)) - n.y; // bteitler approximate X gradient as change in height along X axis delta
@@ -228,12 +228,12 @@ struct toji_skexnxxsseascapeParams {
         }
         
         
-        float isKeyPressed(float key)
+        static float isKeyPressed(float key)
         {
         	return inputImg.sample(__nv_smp, float2(key, 1.0)).x;
         }
         
-        float heightMapTracing(float3 ori, float3 dir, out float3 p) {  
+        static float heightMapTracing(float3 ori, float3 dir, out float3 p) {  
             float tm = 0.0;
             float tx = 500.0; // bteitler: a really far distance, this could likely be tweaked a bit as desired
         

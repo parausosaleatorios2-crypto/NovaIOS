@@ -22,7 +22,7 @@ struct toji_warpgeidParams {
 
 // --- funcoes auxiliares do efeito
 // Helper function for 2D rotation
-    float2x2 rotate2d(float angle){
+    static float2x2 rotate2d(float angle){
         return float2x2(cos(angle), -sin(angle),
                     sin(angle), cos(angle));
     }

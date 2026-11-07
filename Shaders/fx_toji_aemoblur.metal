@@ -37,9 +37,9 @@ struct toji_aemoblurParams {
 
 // --- funcoes auxiliares do efeito
 // Helpers for AE-like integration
-        float3 toLinear(float3 c){ return pow(max(c, 0.0), float3(2.2)); }
-        float3 toSRGB(float3 c){ return pow(max(c, 0.0), float3(1.0/2.2)); }
-        float halton(int i, int b){
+        static float3 toLinear(float3 c){ return pow(max(c, 0.0), float3(2.2)); }
+        static float3 toSRGB(float3 c){ return pow(max(c, 0.0), float3(1.0/2.2)); }
+        static float halton(int i, int b){
             // GLSL ES 1.00 does not support the integer modulo operator '%'.
             // Use float mod() to extract base-b digits for the Halton sequence.
             float f = 1.0; 
@@ -54,7 +54,7 @@ struct toji_aemoblurParams {
             }
             return r;
         }
-        float shutterWeight(float t, int shape, float curve, float sigma){
+        static float shutterWeight(float t, int shape, float curve, float sigma){
             t = clamp(t, -0.5, 0.5);
             float x = abs(t*2.0);
             if(shape==0) return 1.0;                          // Box

@@ -39,7 +39,7 @@ static float4 xstreak() {
             return c;
         }
         
-        float4 ystreak() {
+        static float4 ystreak() {
             float texelSize = 1.0 / eng.acScreenSize.y;
             float dist = u.strength * 0.05;
             int nSamples = int(clamp(dist/texelSize,1.01,100.01));
@@ -62,7 +62,7 @@ static float4 xstreak() {
             return c;
         }
         
-        float4 composite( float4 a, float4 b) {
+        static float4 composite( float4 a, float4 b) {
             return a * (1. - b.a) + b;
         }
 

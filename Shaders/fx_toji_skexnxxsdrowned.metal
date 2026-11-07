@@ -27,9 +27,9 @@ struct toji_skexnxxsdrownedParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
@@ -42,14 +42,14 @@ struct toji_skexnxxsdrownedParams {
         #define PLANE		float4 (0.0, 1.0, 0.0, 1.0)
         #define BOTTOM		float4 (0.0, 1.0, 0.0, 4.0)
         
-        float4 texture3D (sampler2D tex, float3 pt, float3 pn, float u.scale) {
+        static float4 texture3D (sampler2D tex, float3 pt, float3 pn, float u.scale) {
         	return 
         		tex.sample(__nv_smp, pt.xy/u.scale) * abs (pn.z) +
         		tex.sample(__nv_smp, pt.xz/u.scale) * abs (pn.y) +
         		tex.sample(__nv_smp, pt.zy/u.scale) * abs (pn.x);
         }
         
-        float3x3 rotate_x (float fi) {
+        static float3x3 rotate_x (float fi) {
         	float cfi = cos (fi);
         	float sfi = sin (fi);
         	return float3x3 (
@@ -58,7 +58,7 @@ struct toji_skexnxxsdrownedParams {
         		0.0, sfi, cfi);
         }
         
-        float3x3 rotate_y (float fi) {
+        static float3x3 rotate_y (float fi) {
         	float cfi = cos (fi);
         	float sfi = sin (fi);
         	return float3x3 (
@@ -67,7 +67,7 @@ struct toji_skexnxxsdrownedParams {
         		-sfi, 0.0, cfi);
         }
         
-        float3x3 rotate_z (float fi) {
+        static float3x3 rotate_z (float fi) {
         	float cfi = cos (fi);
         	float sfi = sin (fi);
         	return float3x3 (
@@ -76,11 +76,11 @@ struct toji_skexnxxsdrownedParams {
         		0.0, 0.0, 1.0);
         }
         
-        float4 noise3v (float2 p) {
+        static float4 noise3v (float2 p) {
         	return noisexx.sample(__nv_smp, p);
         }
         
-        float4 fbm3v (float2 p) {
+        static float4 fbm3v (float2 p) {
         	float4 f = float4 (0.0);
         	f += (float4 (0.5000) * noise3v (p)); p *= float2 (2.01);
         	f += (float4 (0.2500) * noise3v (p)); p *= float2 (2.02);
@@ -90,19 +90,19 @@ struct toji_skexnxxsdrownedParams {
         	return f;
         }
         
-        float dplane (float3 pt, float4 pl) {
+        static float dplane (float3 pt, float4 pl) {
         	return dot (pl.xyz, pt) + pl.w;
         }	
         
-        float map (float3 pt) {
+        static float map (float3 pt) {
         	return dplane (pt, PLANE);
         }
         
-        float map2 (float3 pt) {
+        static float map2 (float3 pt) {
         	return dplane (pt, BOTTOM);
         }
         
-        float march (float3 ro, float3 rd) {
+        static float march (float3 ro, float3 rd) {
         	float t = 0.0;
         	float d = 0.0;
         	float3 pt = float3 (0.0);
@@ -118,7 +118,7 @@ struct toji_skexnxxsdrownedParams {
         	return d <= EPSILON ? t : MAX_DIST;
         }
         
-        float march2 (float3 ro, float3 rd) {
+        static float march2 (float3 ro, float3 rd) {
         	float t = 0.0;
         	float d = 0.0;
         	float3 pt = float3 (0.0);
@@ -134,7 +134,7 @@ struct toji_skexnxxsdrownedParams {
         	return d <= EPSILON ? t : MAX_DIST;
         }
         
-        float fresnel_step (float3 I, float3 N, float3 f) {
+        static float fresnel_step (float3 I, float3 N, float3 f) {
         	return clamp(f.x + f.y * pow (1.0 + dot (I, N), f.z), 0.0, 1.0);
         }
     //////////////////////////

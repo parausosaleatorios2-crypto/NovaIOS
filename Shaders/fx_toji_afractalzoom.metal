@@ -28,9 +28,9 @@ struct toji_afractalzoomParams {
 // --- funcoes auxiliares do efeito
 // Fractal Zoom Trails: multi-sample zoom smear toward a center
 
-    float3 sampleRGB(float2 uv){ return inputImg.sample(__nv_smp, uv).rgb; }
+    static float3 sampleRGB(float2 uv){ return inputImg.sample(__nv_smp, uv).rgb; }
 
-    float2x2 rot(float a){ float c=cos(a), s=sin(a); return float2x2(c,-s,s,c); }
+    static float2x2 rot(float a){ float c=cos(a), s=sin(a); return float2x2(c,-s,s,c); }
 
 fragment float4 fx_toji_afractalzoom(
     NovaVertexOut       in   [[stage_in]],

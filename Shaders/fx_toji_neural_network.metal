@@ -28,11 +28,11 @@ static float dfLine(float2 start, float2 end, float2 uv) {
             return distance(start + line * clamp(frac, 0.0, 1.0), uv);
         }
 
-        float hash(float2 p) {
+        static float hash(float2 p) {
             return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123);
         }
 
-        float map(float2 uv, float2 mouse, float t, float time, float iterCount) {
+        static float map(float2 uv, float2 mouse, float t, float time, float iterCount) {
             float col = 0.0;
             float2 end = float2(0.3, 0.3);
             float2 p = mouse;
@@ -67,7 +67,7 @@ static float dfLine(float2 start, float2 end, float2 uv) {
             return col;
         }
 
-        float4 tanh_approx(float4 x) {
+        static float4 tanh_approx(float4 x) {
             float4 e = exp(2.0 * x);
             return (e - 1.0) / (e + 1.0);
         }

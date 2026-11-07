@@ -33,7 +33,7 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -41,19 +41,19 @@ static float2x2 rot2m(float a){
     
    /////////////////////////
    
-        float rnd(float2 p)
+        static float rnd(float2 p)
       {
           float f = fract(sin(dot(p, float2(12.1234, 72.8392) )*45123.2));
        return f;   
       }
       
-      float rnd(float w)
+      static float rnd(float w)
       {
           float f = fract(sin(w)*1000.);
        return f;   
       }
       
-      float regShape(float2 p, int N)
+      static float regShape(float2 p, int N)
       {
        float f;
           
@@ -65,7 +65,7 @@ static float2x2 rot2m(float a){
           
           return f;
       }
-      float3 circle(float2 p, float size, float decay, float3 color,float3 color2, float dist, float2 mouse)
+      static float3 circle(float2 p, float size, float decay, float3 color,float3 color2, float dist, float2 mouse)
       {
        	 
           
@@ -95,7 +95,7 @@ static float2x2 rot2m(float a){
           return f-0.01;
       }
       
-      float sun(float2 p, float2 mouse)
+      static float sun(float2 p, float2 mouse)
       {
        float f;
           

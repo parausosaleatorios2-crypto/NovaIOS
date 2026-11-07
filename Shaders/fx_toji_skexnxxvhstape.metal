@@ -29,7 +29,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -37,7 +37,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -48,7 +48,7 @@ static float4 newLayer( float4 a, float4 b) {
           #define t u.progressa
         
         //random hash
-        float4 hash42(float2 p){
+        static float4 hash42(float2 p){
             
         	float4 p4 = fract(float4(p.xyxy) * float4(443.8975,397.2973, 491.1871, 470.7827));
             p4 += dot(p4.wzxy, p4+19.19);
@@ -56,12 +56,12 @@ static float4 newLayer( float4 a, float4 b) {
         }
         
         
-        float hash( float n ){
+        static float hash( float n ){
             return fract(sin(n)*43758.5453123);
         }
         
  
-        float n( in float3 x ){
+        static float n( in float3 x ){
             float3 p = floor(x);
             float3 f = fract(x);
             f = f*f*(3.0-2.0*f);
@@ -74,7 +74,7 @@ static float4 newLayer( float4 a, float4 b) {
         }
         
         //tape noise
-        float nn(float2 p){
+        static float nn(float2 p){
         
         
             float y = p.y;

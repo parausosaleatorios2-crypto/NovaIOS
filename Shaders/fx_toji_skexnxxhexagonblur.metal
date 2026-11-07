@@ -20,17 +20,17 @@ struct toji_skexnxxhexagonblurParams {
 
 // --- funcoes auxiliares do efeito
 static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.,1.)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
         // const int u.NUM_SAMPLES = 16;
-        float3 srgb2lin(float3 c) { return c*c; }
-        float3 lin2srgb(float3 c) { return sqrt(c); }
+        static float3 srgb2lin(float3 c) { return c*c; }
+        static float3 lin2srgb(float3 c) { return sqrt(c); }
         
-        float hash12n(float2 p)
+        static float hash12n(float2 p)
         {
         	p  = fract(p * float2(5.3987, 5.4421));
             p += dot(p.yx, p.xy + float2(21.5351, 14.3137));

@@ -25,12 +25,12 @@ struct toji_s_warp_puffParams {
         
         #define PI 3.14159265359
 
-        float getLuma(float3 color) {
+        static float getLuma(float3 color) {
             return dot(color, float3(0.299, 0.587, 0.114));
         }
 
         // Helper: Sample the "Lens" with u.smoothness
-        float getSmoothLuma(AC_ImageInfo img, float2 uv, float smoothVal) {
+        static float getSmoothLuma(AC_ImageInfo img, float2 uv, float smoothVal) {
             float luma = 0.0;
             float samples = 0.0;
             float blurRadius = smoothVal * 0.01; // Scale factor for Alight Motion
@@ -45,13 +45,13 @@ struct toji_s_warp_puffParams {
             return luma / samples;
         }
 
-        float2 applyWrap(float2 uv, int mode) {
+        static float2 applyWrap(float2 uv, int mode) {
             if (mode == 1) return fract(uv); 
             if (mode == 2) return abs(__nv_mod(uv - 1.0, 2.0) - 1.0); 
             return uv;
         }
 
-        float2 rotate(float2 v, float a) {
+        static float2 rotate(float2 v, float a) {
             float s = sin(a), c = cos(a);
             return float2(v.x * c - v.y * s, v.x * s + v.y * c);
         }

@@ -27,14 +27,14 @@ struct toji_guassianmaskParams {
     // Pass 2: Composite using circular mask with feather
 
     // Convert u.center: accept either normalized (0..1) or pixels (>2)
-    float2 normCenter(float2 c){
+    static float2 normCenter(float2 c){
       if(c.x > 2.0 || c.y > 2.0){
         return c / eng.acScreenSize; // px -> norm
       }
       return c;
     }
 
-    float4 blur1D(sampler2D tex, float2 uv, float2 dirPx, float u.radiusPx){
+    static float4 blur1D(sampler2D tex, float2 uv, float2 dirPx, float u.radiusPx){
       float sigma = max(u.radiusPx, 1e-4) / 2.14596602;
       const float PIc = 3.14159265;
       float3 incG; incG.x = 1.0/(sqrt(2.0*PIc)*max(sigma,1e-4)); incG.y = exp(-0.5/(sigma*sigma)); incG.z = incG.y*incG.y;
@@ -51,8 +51,8 @@ struct toji_guassianmaskParams {
       return acc / max(wsum,1e-6);
     }
 
-    float3 blend_screen(float3 a, float3 b){ return 1.0 - (1.0-a)*(1.0-b); }
-    float3 blend_overlay(float3 base, float3 over){ return mix(2.0*base*over, 1.0 - 2.0*(1.0-base)*(1.0-over), step(0.5, base)); }
+    static float3 blend_screen(float3 a, float3 b){ return 1.0 - (1.0-a)*(1.0-b); }
+    static float3 blend_overlay(float3 base, float3 over){ return mix(2.0*base*over, 1.0 - 2.0*(1.0-base)*(1.0-over), step(0.5, base)); }
 
 fragment float4 fx_toji_guassianmask(
     NovaVertexOut       in   [[stage_in]],

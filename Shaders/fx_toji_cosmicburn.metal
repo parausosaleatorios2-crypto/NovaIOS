@@ -62,8 +62,8 @@ struct toji_cosmicburnParams {
     // fragCoord -> in.acScreenNorm * eng.acScreenSize
 
     // Hash and value noise (for edge roughness & heat ripple)
-    float r2(float2 p){ return fract(sin(dot(p, float2(12.9898,78.233))) * 43758.5453123); }
-    float vnoise2(float2 p){
+    static float r2(float2 p){ return fract(sin(dot(p, float2(12.9898,78.233))) * 43758.5453123); }
+    static float vnoise2(float2 p){
       float2 i=floor(p), f=fract(p);
       float2 u=f*f*(3.0-2.0*f);
       float n00=r2(i);
@@ -75,7 +75,7 @@ struct toji_cosmicburnParams {
       return mix(nx0,nx1,u.y);
     }
 
-    float3 firePalette(float w){
+    static float3 firePalette(float w){
       // w in [0..1] near ring -> hotter
       float3 c = float3(0.0);
       c += float3(1.0, 0.15, 0.05) * pow(w, 0.7);   // deep red
@@ -84,7 +84,7 @@ struct toji_cosmicburnParams {
       return saturate(c);
     }
 
-    float starShape(float2 uv, float r, float u.points, float u.inner){
+    static float starShape(float2 uv, float r, float u.points, float u.inner){
       float a = __nv_atan(uv.y, uv.x);
       float d = length(uv);
       float pi = 3.141592653589793;
@@ -94,13 +94,13 @@ struct toji_cosmicburnParams {
       return d - r * k;
     }
 
-    float plasmaLayer(float2 uv, float scale, float speed, float shift){
+    static float plasmaLayer(float2 uv, float scale, float speed, float shift){
       float t = eng.acTime * u.timeSpeed;
       return sin(uv.x*scale + t*speed + shift) * 0.01 +
              cos(uv.y*scale - t*speed*1.3 + shift*1.7) * 0.01;
     }
 
-    float3 palette(float x){
+    static float3 palette(float x){
       // Rainbow cosine palette around offsets similar to the Shadertoy code
       float t = eng.acTime * u.timeSpeed;
       return 0.5 + 0.5 * cos(6.2831853 * (float3(0.25,0.4,0.6) + t + x));

@@ -23,17 +23,17 @@ struct toji_fracture_wipeParams {
 
 // --- funcoes auxiliares do efeito
 // Simple hash/noise for procedural generation
-        float hash(float2 p) {
+        static float hash(float2 p) {
             return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
         }
 
-        float2 h2(float2 p) {
+        static float2 h2(float2 p) {
             float n = hash(p);
             return float2(n, hash(p + float2(15.23, 37.11)));
         }
 
         // Adapted Voronoi Border algorithm
-        float voroBorder(float2 x, out float2 id, out float2 mr) {
+        static float voroBorder(float2 x, out float2 id, out float2 mr) {
             float2 n = floor(x);
             float2 f = fract(x);
             float2 mg = float2(0.0);

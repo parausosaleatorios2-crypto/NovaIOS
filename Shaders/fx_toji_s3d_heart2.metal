@@ -38,7 +38,7 @@ struct toji_s3d_heart2Params {
 // --- funcoes auxiliares do efeito
 varying float4x4 orientAndRotate;
 
-        float4x4 rotationAxisAngle( float3 v, float angle )
+        static float4x4 rotationAxisAngle( float3 v, float angle )
         {
             float s = sin( angle );
             float c = cos( angle );

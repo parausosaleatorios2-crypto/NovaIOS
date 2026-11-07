@@ -30,17 +30,17 @@ struct toji_AmimpactParams {
 
 // --- funcoes auxiliares do efeito
 static float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
-    float2x2 rot2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
-    float2 mirror(float2 uv){ return abs(fract(uv*0.5+0.5)*2.0-1.0); }
+    static float2x2 rot2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
+    static float2 mirror(float2 uv){ return abs(fract(uv*0.5+0.5)*2.0-1.0); }
 
-    float envelope(float t, float freq, float damp, float dur){
+    static float envelope(float t, float freq, float damp, float dur){
       if(t < 0.0) return 0.0;
       if(t > dur) return 0.0;
       float w = 6.28318530718 * freq;
       return exp(-damp * t) * sin(w * t);
     }
 
-    float repeatTime(float time, float trig, bool en, float period){
+    static float repeatTime(float time, float trig, bool en, float period){
       if(!en) return time - trig;
       float tau = time - trig;
       if(period <= 0.0) return tau;

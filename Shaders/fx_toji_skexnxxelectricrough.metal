@@ -32,7 +32,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -40,7 +40,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -50,7 +50,7 @@ static float4 newLayer( float4 a, float4 b) {
    
         #define PHASE_POWER 1.0
         
-        float2 hash2( float2 p )
+        static float2 hash2( float2 p )
         {
         	// texture based white noise
         	return iChannel0.sample(__nv_smp, (p+0.5)/256.0).xy;
@@ -59,7 +59,7 @@ static float4 newLayer( float4 a, float4 b) {
         	//return fract(sin(float2(dot(p,float2(127.1,311.7)),dot(p,float2(269.5,183.3))))*43758.5453);
         }
         
-        float4 voronoi( in float2 x )
+        static float4 voronoi( in float2 x )
         {
             float2 n = floor(x);
             float2 f = fract(x);

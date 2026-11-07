@@ -27,7 +27,7 @@ struct toji_s_glowParams {
         #define PI 3.14159265359
         #define GOLDEN_ANGLE 2.3999632
 
-        float dither(float2 uv) {
+        static float dither(float2 uv) {
             return fract(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453) * 0.004;
         }
 

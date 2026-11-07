@@ -31,7 +31,7 @@ struct toji_eye_split_bendParams {
     // - Split (px) sets the height manually (keyframe as needed)
 
     // Helper: perpendicular
-    float2 perp(float2 v){ return float2(-v.y, v.x); }
+    static float2 perp(float2 v){ return float2(-v.y, v.x); }
 
 fragment float4 fx_toji_eye_split_bend(
     NovaVertexOut       in   [[stage_in]],

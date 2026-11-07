@@ -23,9 +23,9 @@ struct toji_skexnxxsraindropsfloorParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) { return a * (1.0 - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.0,1.0)*eng.acLayerToScreen).xy; }
+    static float4 newLayer( float4 a, float4 b) { return a * (1.0 - b.a) + b;  }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.0,1.0)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
@@ -38,14 +38,14 @@ struct toji_skexnxxsraindropsfloorParams {
         // #define u.RANSIZE 0.7
         // #define u.RAINSPEED 0.3
         
-        float hash12(float2 p)
+        static float hash12(float2 p)
         {
         	float3 p3  = fract(float3(p.xyx) * HASHSCALE1);
             p3 += dot(p3, p3.yzx + 19.19);
             return fract((p3.x + p3.y) * p3.z);
         }
         
-        float2 hash22(float2 p)
+        static float2 hash22(float2 p)
         {
         	float3 p3 = fract(float3(p.xyx) * HASHSCALE3);
             p3 += dot(p3, p3.yzx+19.19);

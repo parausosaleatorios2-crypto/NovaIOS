@@ -39,27 +39,27 @@ static float rand2(float2 co){
             return fract(sin(dot(co.xy ,float2(12.9898,78.233))) * 43758.5453);
         }
 
-        float rand3 (float3 v) {
+        static float rand3 (float3 v) {
             return fract(sin(dot(v,float3(12.9898,78.233,193.71)))*43758.5453123);
         }
 
-        float rand4 (float4 v) {
+        static float rand4 (float4 v) {
             return fract(sin(dot(v,float4(12.9898,78.233,193.71,397.318)))*43758.5453123);
         }
 
-        float2 randVec2(float3 v) {
+        static float2 randVec2(float3 v) {
             return float2( rand4(float4(v,5.124)), rand4(float4(v,3.0)));
         }
 
-        float3 randVec3(float3 v) {
+        static float3 randVec3(float3 v) {
             return float3( rand4(float4(v,5.124)), rand4(float4(v,7.23464)), rand4(float4(v,3.0)));
         }
         
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
         
-        float2x2 rot(float a) {
+        static float2x2 rot(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2(
@@ -68,14 +68,14 @@ static float rand2(float2 co){
             );
         }
         
-        float3 hsv2rgb(float3 c)
+        static float3 hsv2rgb(float3 c)
         {
             float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
             float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
             return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
         }
 
-        float3 rgb2hsv(float3 c)
+        static float3 rgb2hsv(float3 c)
         {
             float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
             float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
@@ -86,7 +86,7 @@ static float rand2(float2 co){
             return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
         }
         
-        float4 mixColors(float4 a, float4 b, float t) {
+        static float4 mixColors(float4 a, float4 b, float t) {
             float4 result;
             if( u.interpHue ) {
                 result = float4(hsv2rgb(mix(rgb2hsv(a.rgb),rgb2hsv(b.rgb),t)),mix(a.a,b.a,t));
@@ -96,7 +96,7 @@ static float rand2(float2 co){
             return result;
         }
         
-        float4 getColor(float3 id, float layerDepth) {
+        static float4 getColor(float3 id, float layerDepth) {
             float4 result;
             if( u.coloring==0 ) {
                 result = float4(0.);
@@ -123,7 +123,7 @@ static float rand2(float2 co){
             return result;
         }
 
-        float4 shapeGrid(float2 st, float layer, float layerDepth) {
+        static float4 shapeGrid(float2 st, float layer, float layerDepth) {
             st *= 10.;
             float2 uv = fract(st);
             float3 id = float3(floor(st),layer);

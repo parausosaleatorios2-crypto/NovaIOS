@@ -30,13 +30,13 @@ struct toji_s_warp_magnifyParams {
         
         #define PI 3.14159265359
 
-        float2 rotate(float2 v, float angle) {
+        static float2 rotate(float2 v, float angle) {
             float s = sin(angle);
             float c = cos(angle);
             return float2(v.x * c - v.y * s, v.x * s + v.y * c);
         }
 
-        float2 applyWrap(float2 uv, int mode) {
+        static float2 applyWrap(float2 uv, int mode) {
             if (mode == 1) return fract(uv); // Tile
             if (mode == 2) return abs(__nv_mod(uv - 1.0, 2.0) - 1.0); // Reflect
             return uv; // No wrap

@@ -22,11 +22,11 @@ struct toji_cartoon_outlineParams {
 // --- funcoes auxiliares do efeito
 // Cartoon Outline Effect - Creates black outline around edges
         
-        float3 rgb2gray(float3 c) {
+        static float3 rgb2gray(float3 c) {
             return float3(dot(c, float3(0.299, 0.587, 0.114)));
         }
         
-        float sobelEdge(float2 uv, float threshold) {
+        static float sobelEdge(float2 uv, float threshold) {
             float s = u.outlineWidth * 0.001;
             
             // Sobel edge detection kernel
@@ -55,7 +55,7 @@ struct toji_cartoon_outlineParams {
             return smoothstep(threshold, threshold * 2.0, edge);
         }
         
-        float advancedEdge(float2 uv, float threshold) {
+        static float advancedEdge(float2 uv, float threshold) {
             float edge1 = sobelEdge(uv, threshold);
             
             // Additional edge detection for better outline quality

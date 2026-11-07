@@ -29,7 +29,7 @@ static float random (in float2 st) {
 
         // Based on Morgan McGuire @morgan3d
         // https://www.shadertoy.com/view/4dS3Wd
-        float noise (float2 st) {
+        static float noise (float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);
 
@@ -46,7 +46,7 @@ static float random (in float2 st) {
                     (d - b) * u.x * u.y;
         }
 
-        float fbm (float2 st, float2 parallax, int octaveCount, float intens) {
+        static float fbm (float2 st, float2 parallax, int octaveCount, float intens) {
             // Initial values
             float value = 0.;
             float amplitude = 0.5;
@@ -63,7 +63,7 @@ static float random (in float2 st) {
         }
 
 
-        float2 rand2v(float2 co) {
+        static float2 rand2v(float2 co) {
             return float2(noise(co),noise(co+float2(613.312,736.019)));
         }
 

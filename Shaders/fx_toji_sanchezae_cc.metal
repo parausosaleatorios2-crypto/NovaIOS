@@ -22,16 +22,16 @@ struct toji_sanchezae_ccParams {
 
 // --- funcoes auxiliares do efeito
 // sanchezae_cc: Cinematic color correction
-        float3 applyTint(float3 color, float3 shadows, float3 highlights, float strength) {
+        static float3 applyTint(float3 color, float3 shadows, float3 highlights, float strength) {
             float lum = dot(color, float3(0.299, 0.587, 0.114));
             float3 tint = mix(shadows, highlights, smoothstep(0.2, 0.8, lum));
             return mix(color, tint, strength);
         }
-        float vignetteMask(float2 uv, float strength) {
+        static float vignetteMask(float2 uv, float strength) {
             float d = distance(uv, float2(0.5));
             return 1.0 - smoothstep(0.5-strength*0.5, 0.75-strength*0.5, d);
         }
-        float3 bloomPass(sampler2D tex, float2 uv, float strength) {
+        static float3 bloomPass(sampler2D tex, float2 uv, float strength) {
             float3 sum = float3(0.0);
             float w = 0.0;
             for (int x = -2; x <= 2; ++x)
@@ -42,7 +42,7 @@ struct toji_sanchezae_ccParams {
             }
             return mix(float3(0.0), sum/w, strength);
         }
-        float3 clarityPass(sampler2D tex, float2 uv, float strength) {
+        static float3 clarityPass(sampler2D tex, float2 uv, float strength) {
             float3 orig = tex.sample(__nv_smp, uv).rgb;
             float3 sharp = orig * 2.0 - 0.25 * (
                 tex.sample(__nv_smp, uv + float2(0.002,0)).rgb +

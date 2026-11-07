@@ -27,11 +27,11 @@ struct toji_3d_point_cloudParams {
 // --- funcoes auxiliares do efeito
 // Math Helpers
         const float PI = 3.14159265358;
-        float deg2rad(float d){ return d * (PI / 180.0); }
+        static float deg2rad(float d){ return d * (PI / 180.0); }
         
-        float3x3 getRotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
-        float3x3 getRotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
-        float3x3 getRotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
+        static float3x3 getRotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
+        static float3x3 getRotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
+        static float3x3 getRotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
 
 fragment float4 fx_toji_3d_point_cloud(
     NovaVertexOut       in   [[stage_in]],

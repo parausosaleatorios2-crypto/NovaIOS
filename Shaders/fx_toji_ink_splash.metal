@@ -23,14 +23,14 @@ struct toji_ink_splashParams {
 
 // --- funcoes auxiliares do efeito
 // Random hash function
-        float hash(float2 p) {
+        static float hash(float2 p) {
             p = fract(p * float2(123.34, 456.21));
             p += dot(p, p + 45.32);
             return fract(p.x * p.y);
         }
 
         // 2D Value Noise
-        float noise(float2 p) {
+        static float noise(float2 p) {
             float2 i = floor(p);
             float2 f = fract(p);
             f = f * f * (3.0 - 2.0 * f);
@@ -42,7 +42,7 @@ struct toji_ink_splashParams {
         }
 
         // Fractal Brownian Motion (6 octaves)
-        float fbm(float2 p) {
+        static float fbm(float2 p) {
             float total = 0.0;
             float amp = 0.5;
             // Rotation matrix to reduce grid artifacts

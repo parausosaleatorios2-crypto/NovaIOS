@@ -32,23 +32,23 @@ static float2x2 rot2m(float a){
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
    /////////////////////////
     
-   float rand(float2 n) {
+   static float rand(float2 n) {
         return fract(sin(cos(dot(n, float2(12.9898,12.1414)))) * 83758.5453);
     }
     
-    float noise(float2 n) {
+    static float noise(float2 n) {
         const float2 d = float2(0.0, 1.0);
         float2 b = floor(n), f = smoothstep(float2(0.0), float2(1.0), fract(n));
         return mix(mix(rand(b), rand(b + d.yx), f.x), mix(rand(b + d.xy), rand(b + d.yy), f.x), f.y);
     }
     
-    float fbm(float2 n) {
+    static float fbm(float2 n) {
         float total = 0.0, amplitude = 1.0;
         for (int i = 0; i <5; i++) {
             total += noise(n) * amplitude;

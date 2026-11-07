@@ -21,7 +21,7 @@ struct toji_curlParams {
 // --- funcoes auxiliares do efeito
 #define PI 3.1415926536
 
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 

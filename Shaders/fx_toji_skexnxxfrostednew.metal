@@ -21,7 +21,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -29,7 +29,7 @@ static float4 newLayer( float4 a, float4 b) {
 	return float2x2(c, -s, s, c);
     }
     
-    float2 l2s( float2 v ) {
+    static float2 l2s( float2 v ) {
         return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
     }
     
@@ -37,11 +37,11 @@ static float4 newLayer( float4 a, float4 b) {
     
    /////////////////////////
    
-        float random2 (in float2 st) {
+        static float random2 (in float2 st) {
             return fract(sin(dot(st.xy,float2(12.9898,78.233)))* 43758.5453123);
         }
         
-        // float2 myPatternx(in float2 uvx){
+        // static float2 myPatternx(in float2 uvx){
             // float2 uv2x = uvx;
             // uv2x.x = uv2x.x + 0.1 * (random2(uvx));
             // return uv2x - uvx;

@@ -23,10 +23,10 @@ struct toji_fbm_time_displace_fadeParams {
 // Port of provided ShaderToy-style effect (manual u.time control)
         // Original concepts: fbm noise, displacement, u.time-based fade
 
-        float random(float2 _st){
+        static float random(float2 _st){
             return fract(sin(dot(_st.xy, float2(12.9898,78.233))) * 43758.5453123);
         }
-        float noise2d(float2 _st){
+        static float noise2d(float2 _st){
             float2 i = floor(_st);
             float2 f = fract(_st);
             float a = random(i);
@@ -37,7 +37,7 @@ struct toji_fbm_time_displace_fadeParams {
             return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
         }
         #define NUM_OCTAVES 5
-        float fbm(float2 _st){
+        static float fbm(float2 _st){
             float v = 0.0;
             float a = 0.5;
             float2 shift = float2(100.0);
@@ -49,7 +49,7 @@ struct toji_fbm_time_displace_fadeParams {
             }
             return v;
         }
-        float workingPow3(float x){ return x * x * x; }
+        static float workingPow3(float x){ return x * x * x; }
 
 fragment float4 fx_toji_fbm_time_displace_fade(
     NovaVertexOut       in   [[stage_in]],

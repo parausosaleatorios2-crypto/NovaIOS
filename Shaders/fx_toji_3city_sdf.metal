@@ -36,7 +36,7 @@ struct toji_3city_sdfParams {
 // Shadertoy port: bind eng.acTime as iTime and input size as iResolution
 
     // Helpers and bindings
-    float2 getResolution() {
+    static float2 getResolution() {
       float2 s = __nv_getTexSize(inputImg_info.size);
       // Fallback to 1920x1080 if size is zero (no content), to avoid div by zero
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
@@ -46,8 +46,8 @@ struct toji_3city_sdfParams {
     // Sample env texture with equirectangular mapping from direction 
     const float PI = 3.14159265358979323846; 
     // GLSL ES 1.00 helper (some runtimes lack radians())
-    float deg2rad(float d){ return d * (PI / 180.0); }
-    float2 dirToEquirect(float3 d) {
+    static float deg2rad(float d){ return d * (PI / 180.0); }
+    static float2 dirToEquirect(float3 d) {
       d = normalize(d);
       float phi = __nv_atan(d.z, d.x);
       float theta = acos(clamp(d.y, -1.0, 1.0));
@@ -69,61 +69,61 @@ struct toji_3city_sdfParams {
 
     float marchCount = 0.0;
 
-    float v31(float3 a){ return a.x + a.y * 37.0 + a.z * 521.0; }
-    float v21(float2 a){ return a.x + a.y * 37.0; }
-    float Hash11(float a){ return fract(sin(a)*10403.9); }
-    float Hash21(float2 uv){ float f = uv.x + uv.y * 37.0; return fract(sin(f)*104003.9); }
-    float2 Hash22(float2 uv){ float f = uv.x + uv.y * 37.0; return fract(cos(f)*float2(10003.579, 37049.7)); }
-    float2 Hash12(float f){ return fract(cos(f)*float2(10003.579, 37049.7)); }
-    float Hash1d(float u){ return fract(sin(u)*143.9); }
-    float Hash2d(float2 uv){ float f = uv.x + uv.y * 37.0; return fract(sin(f)*104003.9); }
-    float Hash3d(float3 uv){ float f = uv.x + uv.y * 37.0 + uv.z * 521.0; return fract(sin(f)*110003.9); }
-    float mixP(float f0, float f1, float a){ return mix(f0, f1, a*a*(3.0-2.0*a)); }
+    static float v31(float3 a){ return a.x + a.y * 37.0 + a.z * 521.0; }
+    static float v21(float2 a){ return a.x + a.y * 37.0; }
+    static float Hash11(float a){ return fract(sin(a)*10403.9); }
+    static float Hash21(float2 uv){ float f = uv.x + uv.y * 37.0; return fract(sin(f)*104003.9); }
+    static float2 Hash22(float2 uv){ float f = uv.x + uv.y * 37.0; return fract(cos(f)*float2(10003.579, 37049.7)); }
+    static float2 Hash12(float f){ return fract(cos(f)*float2(10003.579, 37049.7)); }
+    static float Hash1d(float u){ return fract(sin(u)*143.9); }
+    static float Hash2d(float2 uv){ float f = uv.x + uv.y * 37.0; return fract(sin(f)*104003.9); }
+    static float Hash3d(float3 uv){ float f = uv.x + uv.y * 37.0 + uv.z * 521.0; return fract(sin(f)*110003.9); }
+    static float mixP(float f0, float f1, float a){ return mix(f0, f1, a*a*(3.0-2.0*a)); }
     const float2 zeroOne = float2(0.0, 1.0);
-    float noise2d(float2 uv){ float2 fr = fract(uv.xy); float2 fl = floor(uv.xy); float h00 = Hash2d(fl); float h10 = Hash2d(fl + zeroOne.yx); float h01 = Hash2d(fl + zeroOne); float h11 = Hash2d(fl + zeroOne.yy); return mixP(mixP(h00, h10, fr.x), mixP(h01, h11, fr.x), fr.y); }
-    float noise(float3 uv){ float3 fr = fract(uv.xyz); float3 fl = floor(uv.xyz); float h000 = Hash3d(fl); float h100 = Hash3d(fl + zeroOne.yxx); float h010 = Hash3d(fl + zeroOne.xyx); float h110 = Hash3d(fl + zeroOne.yyx); float h001 = Hash3d(fl + zeroOne.xxy); float h101 = Hash3d(fl + zeroOne.yxy); float h011 = Hash3d(fl + zeroOne.xyy); float h111 = Hash3d(fl + zeroOne.yyy); return mixP( mixP(mixP(h000, h100, fr.x), mixP(h010, h110, fr.x), fr.y), mixP(mixP(h001, h101, fr.x), mixP(h011, h111, fr.x), fr.y), fr.z); }
+    static float noise2d(float2 uv){ float2 fr = fract(uv.xy); float2 fl = floor(uv.xy); float h00 = Hash2d(fl); float h10 = Hash2d(fl + zeroOne.yx); float h01 = Hash2d(fl + zeroOne); float h11 = Hash2d(fl + zeroOne.yy); return mixP(mixP(h00, h10, fr.x), mixP(h01, h11, fr.x), fr.y); }
+    static float noise(float3 uv){ float3 fr = fract(uv.xyz); float3 fl = floor(uv.xyz); float h000 = Hash3d(fl); float h100 = Hash3d(fl + zeroOne.yxx); float h010 = Hash3d(fl + zeroOne.xyx); float h110 = Hash3d(fl + zeroOne.yyx); float h001 = Hash3d(fl + zeroOne.xxy); float h101 = Hash3d(fl + zeroOne.yxy); float h011 = Hash3d(fl + zeroOne.xyy); float h111 = Hash3d(fl + zeroOne.yyy); return mixP( mixP(mixP(h000, h100, fr.x), mixP(h010, h110, fr.x), fr.y), mixP(mixP(h001, h101, fr.x), mixP(h011, h111, fr.x), fr.y), fr.z); }
 
-    float3 saturate(float3 a) { return clamp(a, 0.0, 1.0); }
-    float2 saturate(float2 a) { return clamp(a, 0.0, 1.0); }
-    float saturate(float a) { return clamp(a, 0.0, 1.0); }
+    static float3 saturate(float3 a) { return clamp(a, 0.0, 1.0); }
+    static float2 saturate(float2 a) { return clamp(a, 0.0, 1.0); }
+    static float saturate(float a) { return clamp(a, 0.0, 1.0); }
 
-    float3 GetSunColorSmall(float3 rayDir, float3 sunDir){ float3 localRay = normalize(rayDir); float dist = 1.0 - (dot(localRay, sunDir) * 0.5 + 0.5); float sunIntensity = 0.05 / dist; sunIntensity += exp(-dist*150.0)*7000.0; sunIntensity = min(sunIntensity, 40000.0); return sunCol * sunIntensity*0.025; }
+    static float3 GetSunColorSmall(float3 rayDir, float3 sunDir){ float3 localRay = normalize(rayDir); float dist = 1.0 - (dot(localRay, sunDir) * 0.5 + 0.5); float sunIntensity = 0.05 / dist; sunIntensity += exp(-dist*150.0)*7000.0; sunIntensity = min(sunIntensity, 40000.0); return sunCol * sunIntensity*0.025; }
 
-    float3 GetEnvMap(float3 rayDir, float3 sunDir){ float3 finalColor = mix(horizonCol, skyCol, pow(saturate(rayDir.y), 0.47))*0.95; float n = noise2d(rayDir.xz/max(0.0001,rayDir.y)*1.0); n += noise2d(rayDir.xz/max(0.0001,rayDir.y)*2.0)*0.5; n += noise2d(rayDir.xz/max(0.0001,rayDir.y)*4.0)*0.25; n += noise2d(rayDir.xz/max(0.0001,rayDir.y)*8.0)*0.125; n = pow(abs(n), 3.0); n = mix(n * 0.2, n, saturate(abs(rayDir.y * 8.0))); finalColor = mix(finalColor, (float3(1.0)+sunCol*10.0)*0.75*saturate((rayDir.y+0.2)*5.0), saturate(n*0.125)); finalColor += GetSunColorSmall(rayDir, sunDir); return finalColor; }
+    static float3 GetEnvMap(float3 rayDir, float3 sunDir){ float3 finalColor = mix(horizonCol, skyCol, pow(saturate(rayDir.y), 0.47))*0.95; float n = noise2d(rayDir.xz/max(0.0001,rayDir.y)*1.0); n += noise2d(rayDir.xz/max(0.0001,rayDir.y)*2.0)*0.5; n += noise2d(rayDir.xz/max(0.0001,rayDir.y)*4.0)*0.25; n += noise2d(rayDir.xz/max(0.0001,rayDir.y)*8.0)*0.125; n = pow(abs(n), 3.0); n = mix(n * 0.2, n, saturate(abs(rayDir.y * 8.0))); finalColor = mix(finalColor, (float3(1.0)+sunCol*10.0)*0.75*saturate((rayDir.y+0.2)*5.0), saturate(n*0.125)); finalColor += GetSunColorSmall(rayDir, sunDir); return finalColor; }
 
-    float3 GetEnvMapSkyline(float3 rayDir, float3 sunDir, float height){ float3 finalColor = GetEnvMap(rayDir, sunDir); float radial = __nv_atan(rayDir.z, rayDir.x)*4.0; float skyline = floor((sin(5.3456*radial) + sin(1.234*radial)+ sin(2.177*radial))*0.6); radial *= 4.0; skyline += floor((sin(5.0*radial) + sin(1.234*radial)+ sin(2.177*radial))*0.6)*0.1; float mask = saturate((rayDir.y*8.0 - skyline-2.5+height)*24.0); float vert = sign(sin(radial*32.0))*0.5+0.5; float hor = sign(sin(rayDir.y*256.0))*0.5+0.5; mask = saturate(mask + (1.0-hor*vert)*0.05); finalColor = mix(finalColor * float3(0.1,0.07,0.05), finalColor, mask); return finalColor; }
+    static float3 GetEnvMapSkyline(float3 rayDir, float3 sunDir, float height){ float3 finalColor = GetEnvMap(rayDir, sunDir); float radial = __nv_atan(rayDir.z, rayDir.x)*4.0; float skyline = floor((sin(5.3456*radial) + sin(1.234*radial)+ sin(2.177*radial))*0.6); radial *= 4.0; skyline += floor((sin(5.0*radial) + sin(1.234*radial)+ sin(2.177*radial))*0.6)*0.1; float mask = saturate((rayDir.y*8.0 - skyline-2.5+height)*24.0); float vert = sign(sin(radial*32.0))*0.5+0.5; float hor = sign(sin(rayDir.y*256.0))*0.5+0.5; mask = saturate(mask + (1.0-hor*vert)*0.05); finalColor = mix(finalColor * float3(0.1,0.07,0.05), finalColor, mask); return finalColor; }
 
-    float2 matmin(float2 a, float2 b){ if (a.x < b.x) return a; else return b; }
+    static float2 matmin(float2 a, float2 b){ if (a.x < b.x) return a; else return b; }
 
-    float sdBox(float3 p, float3 radius){ float3 dist = abs(p) - radius; return min(max(dist.x, max(dist.y, dist.z)), 0.0) + length(max(dist, 0.0)); }
-    float cylCap(float3 p, float r, float lenRad){ float a = length(p.xy) - r; a = max(a, abs(p.z) - lenRad); return a; }
-    float smin(float a, float b, float k){ return log2(exp2(k*a)+exp2(k*b))/k; }
-    float Repeat(float a, float len){ return __nv_mod(a, len) - 0.5 * len; }
+    static float sdBox(float3 p, float3 radius){ float3 dist = abs(p) - radius; return min(max(dist.x, max(dist.y, dist.z)), 0.0) + length(max(dist, 0.0)); }
+    static float cylCap(float3 p, float r, float lenRad){ float a = length(p.xy) - r; a = max(a, abs(p.z) - lenRad); return a; }
+    static float smin(float a, float b, float k){ return log2(exp2(k*a)+exp2(k*b))/k; }
+    static float Repeat(float a, float len){ return __nv_mod(a, len) - 0.5 * len; }
 
-    float2 Car(float3 baseCenter, float unique){ float car = sdBox(baseCenter + float3(0.0, -0.008, 0.001), float3(0.01, 0.00225, 0.0275)); car = smin(car, sdBox(baseCenter + float3(0.0, -0.016, 0.008), float3(0.005, 0.0005, 0.01)), -160.0); float3 wMirror = baseCenter + float3(0.0, -0.005, 0.0); wMirror.z = abs(wMirror.z)-0.02; float wheels = cylCap((wMirror).zyx, 0.004, 0.0135); float2 distAndMat = float2(wheels, 3.0); distAndMat = matmin(distAndMat, float2(car, 100000.0 + unique)); return distAndMat; }
+    static float2 Car(float3 baseCenter, float unique){ float car = sdBox(baseCenter + float3(0.0, -0.008, 0.001), float3(0.01, 0.00225, 0.0275)); car = smin(car, sdBox(baseCenter + float3(0.0, -0.016, 0.008), float3(0.005, 0.0005, 0.01)), -160.0); float3 wMirror = baseCenter + float3(0.0, -0.005, 0.0); wMirror.z = abs(wMirror.z)-0.02; float wheels = cylCap((wMirror).zyx, 0.004, 0.0135); float2 distAndMat = float2(wheels, 3.0); distAndMat = matmin(distAndMat, float2(car, 100000.0 + unique)); return distAndMat; }
 
     float voxelPad = 0.2;
-    float2 CityBlock(float3 p, float2 pint){ float4 rand; rand.xy = Hash22(pint); rand.zw = Hash22(rand.xy); float2 rand2 = Hash22(rand.zw); float baseRad = 0.2 + (rand.x) * 0.1; baseRad = floor(baseRad * 20.0+0.5)/20.0; float3 baseCenter = p - float3(0.5, 0.0, 0.5); float height = rand.w*rand.z + 0.1; float downtown = saturate(4.0 / length(pint.xy)); height *= downtown; height *= 1.5+(baseRad-0.15)*20.0; height += 0.1; height = floor(height*20.0)*0.05; float d = sdBox(baseCenter, float3(baseRad, height, baseRad)); d = min(d, p.y); float height2 = max(0.0, rand.y * 2.0 - 1.0) * downtown; height2 = floor(height2*20.0)*0.05; rand2 = floor(rand2*20.0)*0.05; d = min(d, sdBox(baseCenter - float3(0.0, height, 0.0), float3(baseRad, height2 - rand2.y, baseRad*0.4))); d = min(d, sdBox(baseCenter - float3(0.0, height, 0.0), float3(baseRad*0.4, height2 - rand2.x, baseRad))); if (rand2.y > 0.25){ d = min(d, sdBox(baseCenter - float3(0.0, height, 0.0), float3(baseRad*0.8, height2, baseRad*0.8))); float topWidth = baseRad; if (height2 > 0.0) topWidth = baseRad * 0.8; d = max(d, -sdBox(baseCenter - float3(0.0, height+height2, 0.0), float3(topWidth-0.0125, 0.015, topWidth-0.0125))); }
+    static float2 CityBlock(float3 p, float2 pint){ float4 rand; rand.xy = Hash22(pint); rand.zw = Hash22(rand.xy); float2 rand2 = Hash22(rand.zw); float baseRad = 0.2 + (rand.x) * 0.1; baseRad = floor(baseRad * 20.0+0.5)/20.0; float3 baseCenter = p - float3(0.5, 0.0, 0.5); float height = rand.w*rand.z + 0.1; float downtown = saturate(4.0 / length(pint.xy)); height *= downtown; height *= 1.5+(baseRad-0.15)*20.0; height += 0.1; height = floor(height*20.0)*0.05; float d = sdBox(baseCenter, float3(baseRad, height, baseRad)); d = min(d, p.y); float height2 = max(0.0, rand.y * 2.0 - 1.0) * downtown; height2 = floor(height2*20.0)*0.05; rand2 = floor(rand2*20.0)*0.05; d = min(d, sdBox(baseCenter - float3(0.0, height, 0.0), float3(baseRad, height2 - rand2.y, baseRad*0.4))); d = min(d, sdBox(baseCenter - float3(0.0, height, 0.0), float3(baseRad*0.4, height2 - rand2.x, baseRad))); if (rand2.y > 0.25){ d = min(d, sdBox(baseCenter - float3(0.0, height, 0.0), float3(baseRad*0.8, height2, baseRad*0.8))); float topWidth = baseRad; if (height2 > 0.0) topWidth = baseRad * 0.8; d = max(d, -sdBox(baseCenter - float3(0.0, height+height2, 0.0), float3(topWidth-0.0125, 0.015, topWidth-0.0125))); }
     else { if (height2 > 0.0) d = min(d, cylCap((baseCenter - float3(0.0, height, 0.0)).xzy, baseRad*0.8, height2)); }
     d = min(d, sdBox(baseCenter - float3((rand.x-0.5)*baseRad, height+height2, (rand.y-0.5)*baseRad), float3(baseRad*0.3*rand.z, 0.1*rand2.y, baseRad*0.3*rand2.x+0.025)));
     float3 boxPos = baseCenter - float3((rand2.x-0.5)*baseRad, height+height2, (rand2.y-0.5)*baseRad); float big = sign(boxPos.x); boxPos.x = abs(boxPos.x)-0.02 - baseRad*0.3*rand.w; d = min(d, sdBox(boxPos, float3(baseRad*0.3*rand.w, 0.07*rand.y, baseRad*0.2*rand.x + big*0.025)));
     if (rand.y < 0.04){ d = min(d, length(baseCenter - float3(0.0, height, 0.0)) - baseRad*0.8); }
     float2 distAndMat = float2(d, 0.0); distAndMat = matmin(distAndMat, float2(sdBox(baseCenter, float3(0.35, 0.005, 0.35)), 1.0)); return distAndMat; }
 
-    float2 DistanceToObject(float3 p){ float3 rep = p; rep.xz = fract(p.xz); float2 distAndMat = CityBlock(rep, floor(p.xz)); float3 p2 = p; rep.xyz = p2; float carTime = localTime*0.2; float crossStreet = 1.0; float repeatDist = 0.25; if (abs(fract(rep.x)-0.5) < 0.35){ p2.x += 0.05; p2.xz = p2.zx * float2(-1.0,1.0); rep.xz = p2.xz; crossStreet = 0.0; repeatDist = 0.1; }
+    static float2 DistanceToObject(float3 p){ float3 rep = p; rep.xz = fract(p.xz); float2 distAndMat = CityBlock(rep, floor(p.xz)); float3 p2 = p; rep.xyz = p2; float carTime = localTime*0.2; float crossStreet = 1.0; float repeatDist = 0.25; if (abs(fract(rep.x)-0.5) < 0.35){ p2.x += 0.05; p2.xz = p2.zx * float2(-1.0,1.0); rep.xz = p2.xz; crossStreet = 0.0; repeatDist = 0.1; }
       rep.z += floor(p2.x); rep.x = Repeat(p2.x - 0.5, 1.0); rep.z = rep.z*sign(rep.x); rep.x = (rep.x*sign(rep.x))-0.09; rep.z -= carTime * crossStreet; float uniqueID = floor(rep.z/repeatDist); rep.z = Repeat(rep.z, repeatDist); rep.x += (Hash11(uniqueID)*0.075-0.01); float frontBack = Hash11(uniqueID*0.987)*0.18-0.09; frontBack *= sin(localTime*2.0 + uniqueID); rep.z += frontBack * crossStreet; float2 carDist = Car(rep, uniqueID); distAndMat = matmin(distAndMat, carDist); return distAndMat; }
 
-    void CalcWindows(float2 block, float3 pos, inout float3 texColor, inout float windowRef, inout float3 normal){ float3 hue = float3(Hash21(block)*0.8, Hash21(block*7.89)*0.4, Hash21(block*37.89)*0.5); texColor += hue*0.4; texColor *= 0.75; float window = 0.0; window = max(window, mix(0.2, 1.0, floor(fract(pos.y*20.0-0.35)*2.0+0.1))); if (pos.y < 0.05) window = 1.0; float winWidth = Hash21(block*4.321)*2.0; if ((winWidth < 1.3) && (winWidth >= 1.0)) winWidth = 1.3; window = max(window, mix(0.2, 1.0, floor(fract(pos.x * 40.0+0.05)*winWidth))); window = max(window, mix(0.2, 1.0, floor(fract(pos.z * 40.0+0.05)*winWidth))); if (window < 0.5){ windowRef += 1.0; } window *= Hash21(block*1.123); texColor *= window; float wave = floor(sin((pos.y*40.0-0.1)*PI)*0.505-0.5)+1.0; normal.y -= max(-1.0, min(1.0, -wave*0.5)); float pits = min(1.0, abs(sin((pos.z*80.0)*PI))*4.0)-1.0; normal.z += pits*0.25; pits = min(1.0, abs(sin((pos.x*80.0)*PI))*4.0)-1.0; normal.x += pits*0.25; }
+    static void CalcWindows(float2 block, float3 pos, inout float3 texColor, inout float windowRef, inout float3 normal){ float3 hue = float3(Hash21(block)*0.8, Hash21(block*7.89)*0.4, Hash21(block*37.89)*0.5); texColor += hue*0.4; texColor *= 0.75; float window = 0.0; window = max(window, mix(0.2, 1.0, floor(fract(pos.y*20.0-0.35)*2.0+0.1))); if (pos.y < 0.05) window = 1.0; float winWidth = Hash21(block*4.321)*2.0; if ((winWidth < 1.3) && (winWidth >= 1.0)) winWidth = 1.3; window = max(window, mix(0.2, 1.0, floor(fract(pos.x * 40.0+0.05)*winWidth))); window = max(window, mix(0.2, 1.0, floor(fract(pos.z * 40.0+0.05)*winWidth))); if (window < 0.5){ windowRef += 1.0; } window *= Hash21(block*1.123); texColor *= window; float wave = floor(sin((pos.y*40.0-0.1)*PI)*0.505-0.5)+1.0; normal.y -= max(-1.0, min(1.0, -wave*0.5)); float pits = min(1.0, abs(sin((pos.z*80.0)*PI))*4.0)-1.0; normal.z += pits*0.25; pits = min(1.0, abs(sin((pos.x*80.0)*PI))*4.0)-1.0; normal.x += pits*0.25; }
 
     // Rotation helpers
-    float3x3 rotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
-    float3x3 rotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
-    float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
+    static float3x3 rotX(float a){ float c=cos(a), s=sin(a); return float3x3(1,0,0, 0,c,-s, 0,s,c); }
+    static float3x3 rotY(float a){ float c=cos(a), s=sin(a); return float3x3(c,0,s, 0,1,0, -s,0,c); }
+    static float3x3 rotZ(float a){ float c=cos(a), s=sin(a); return float3x3(c,-s,0, s,c,0, 0,0,1); }
 
     // Sample input content directly in [0,1] UV space (no screen mapping)
-    float4 sampleLayer(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+    static float4 sampleLayer(float2 uv){ return inputImg.sample(__nv_smp, uv); }
 
-    float3 RayTrace(in float2 fragCoord){
+    static float3 RayTrace(in float2 fragCoord){
       marchCount = 0.0;
       sunCol = float3(258.0, 248.0, 200.0) / 3555.0;
       sunDir = normalize(float3(0.93, 1.0, 1.0));

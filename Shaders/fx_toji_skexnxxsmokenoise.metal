@@ -26,7 +26,7 @@ static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     
-    float2x2 rot2m(float a){
+    static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);
@@ -36,24 +36,24 @@ static float4 newLayer( float4 a, float4 b) {
     
    /////////////////////////
     
-   float random(float x) {
+   static float random(float x) {
      
         return fract(sin(x) * 10000.);
         
     }
     
-    float noise(float2 p) {
+    static float noise(float2 p) {
         
      	return random(p.x + p.y * 10000.);
         
     }
     
-    float2 sw(float2 p) { return float2(floor(p.x), floor(p.y)); }
-    float2 se(float2 p) { return float2(ceil(p.x), floor(p.y)); }
-    float2 nw(float2 p) { return float2(floor(p.x), ceil(p.y)); }
-    float2 ne(float2 p) { return float2(ceil(p.x), ceil(p.y)); }
+    static float2 sw(float2 p) { return float2(floor(p.x), floor(p.y)); }
+    static float2 se(float2 p) { return float2(ceil(p.x), floor(p.y)); }
+    static float2 nw(float2 p) { return float2(floor(p.x), ceil(p.y)); }
+    static float2 ne(float2 p) { return float2(ceil(p.x), ceil(p.y)); }
     
-    float smoothNoise(float2 p) {
+    static float smoothNoise(float2 p) {
      
         float2 interp = smoothstep(0., 1., fract(p));
         float s = mix(noise(sw(p)), noise(se(p)), interp.x);
@@ -62,7 +62,7 @@ static float4 newLayer( float4 a, float4 b) {
         
     }
     
-    float fractalNoise(float2 p) {
+    static float fractalNoise(float2 p) {
      
         float n = 0.;
         n += smoothNoise(p);

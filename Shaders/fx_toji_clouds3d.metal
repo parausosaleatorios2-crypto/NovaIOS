@@ -37,8 +37,8 @@ struct toji_clouds3dParams {
 
     #define fragCoord __nv_fragCoord.xy
 
-    float hash(float n) { return fract(cos(n) * 114514.1919); }
-    float noise(in float3 x) {
+    static float hash(float n) { return fract(cos(n) * 114514.1919); }
+    static float noise(in float3 x) {
         float3 p = floor(x);
         float3 f = smoothstep(0.0, 1.0, fract(x));
         float n = p.x + p.y * 10.0 + p.z * 100.0;
@@ -46,7 +46,7 @@ struct toji_clouds3dParams {
             mix(mix(hash(n + 0.0), hash(n + 1.0), f.x), mix(hash(n + 10.0), hash(n + 11.0), f.x), f.y),
             mix(mix(hash(n + 100.0), hash(n + 101.0), f.x), mix(hash(n + 110.0), hash(n + 111.0), f.x), f.y), f.z);
     }
-    float fbm(float3 p) {
+    static float fbm(float3 p) {
         float f = 0.5000 * noise(p);
         p = float3x3(0.00, 1.60, 1.20, -1.60, 0.72, -0.96, -1.20, -0.96, 1.28) * p;
         f += 0.2500 * noise(p);

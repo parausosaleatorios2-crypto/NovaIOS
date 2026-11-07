@@ -37,25 +37,25 @@ struct toji_skexnxxshexagonlensParams {
 
 // --- funcoes auxiliares do efeito
 //////////////////////////
-    float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
-    float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
-    float2 l2s( float2 v ) { return (float4(v,0.0,1.0)*eng.acLayerToScreen).xy; }
+    static float4 newLayer( float4 a, float4 b) { return a * (1. - b.a) + b;  }
+    static float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
+    static float2 l2s( float2 v ) { return (float4(v,0.0,1.0)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy
     
    /////////////////////////
    
-        float rnd(float w){
+        static float rnd(float w){
             //Use bluenoise texture for fast lds random values in range [0,1]
             return noisexx.sample(__nv_smp, float2(w)).r;
         }
         
-        float regularPolygon(float2 p, int N){// Produces a regular polygon defined by N points on the unit circle.
+        static float regularPolygon(float2 p, int N){// Produces a regular polygon defined by N points on the unit circle.
             float a=__nv_atan(p.x, p.y)+0.2;
             float b=6.28319/float(N);
             return smoothstep(0.5,0.51, cos(floor(0.5+a/b)*b-a)*length(p.xy));        
         }
         
-        float renderSmallCircle(float2 pos, float2 ltpos, float dist, float2 offsetFromCenter, float size)
+        static float renderSmallCircle(float2 pos, float2 ltpos, float dist, float2 offsetFromCenter, float size)
         {
         	float2 coord = pos - ltpos * dist/2.0 + offsetFromCenter;
         	float radiusVal =  u.XXA / length(coord)*size;
@@ -63,7 +63,7 @@ struct toji_skexnxxshexagonlensParams {
         	return radiusVal;
         }
         
-        float renderBigCircle(float2 pos, float2 ltpos, float dist, float2 offsetFromCenter, float size)
+        static float renderBigCircle(float2 pos, float2 ltpos, float dist, float2 offsetFromCenter, float size)
         {
         	float2 coord = pos + ltpos*dist + offsetFromCenter;
         	float radiusVal =  u.XXB - pow(length(coord), size * 1.4);
@@ -71,14 +71,14 @@ struct toji_skexnxxshexagonlensParams {
         	return radiusVal;	
         }
         
-        float renderRing(float r, float offsetFromCenter, float fade)
+        static float renderRing(float r, float offsetFromCenter, float fade)
         {
         	float radiusVal = 0.001 - pow(r - offsetFromCenter, 1.0/fade) + sin(r * 30.0);
         	radiusVal = max(radiusVal, 0.0);//filter negative vals.
         	return radiusVal * u.XXC;
         }
         
-        float renderHexagon(float2 uv, float2 lightPos, float2 offsetFromCenter, 
+        static float renderHexagon(float2 uv, float2 lightPos, float2 offsetFromCenter, 
         	float hexagonIntervalDist, float size)
         {
         	const int hexagonPoints = 6;
@@ -88,7 +88,7 @@ struct toji_skexnxxshexagonlensParams {
         	return hexValue;
         }
         
-        float3 chromaticAberration(float3 color, float2 pos, float2 ltpos, int iter)
+        static float3 chromaticAberration(float3 color, float2 pos, float2 ltpos, int iter)
         {   // NOTE: This function still needs some work.
         
         	float intensity = u.XXD;//adjust as needed.
@@ -103,7 +103,7 @@ struct toji_skexnxxshexagonlensParams {
         	return col * (1.0 - amount * 0.5);
         }
         
-        float3 LensHighlight(float2 pos, float2 lightPos, float3 color, float size, float dist, int i)
+        static float3 LensHighlight(float2 pos, float2 lightPos, float3 color, float size, float dist, int i)
         {   
             // Create a big circle, ring, small circle, and hexagon and control blending with a float4.
         	const float4 blend_val = 0.01 * float4(2500.0, 20.0, 1.50, 2000.0);//adjust as necessary per-object.
@@ -136,7 +136,7 @@ struct toji_skexnxxshexagonlensParams {
          	return (smallCircle + bigCircle + ring + hexagon) * color;
         }
         
-        float3 Lensflare(float2 currPos, float2 lightPos, float distToLight)
+        static float3 Lensflare(float2 currPos, float2 lightPos, float distToLight)
         {
         
         	float3 flareColor = float3(0.0);
@@ -168,7 +168,7 @@ struct toji_skexnxxshexagonlensParams {
         
         	return flareColor;
         }
-        float scaleDepth(float depth)
+        static float scaleDepth(float depth)
         {// Intended to map values in range d = (0,1] to range (1,0] to rolloff values by distance.
         	return exp(-abs(depth * 1.0 * 0.01));
         }

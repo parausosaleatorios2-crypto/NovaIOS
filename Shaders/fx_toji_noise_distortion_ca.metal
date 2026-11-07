@@ -24,13 +24,13 @@ struct toji_noise_distortion_caParams {
 
 // --- funcoes auxiliares do efeito
 // Simple 2D Hash function
-        float2 hash2(float2 p) {
+        static float2 hash2(float2 p) {
             p = float2(dot(p, float2(127.1, 311.7)), dot(p, float2(269.5, 183.3)));
             return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
         }
 
         // 2D Gradient Noise
-        float noise(float2 p) {
+        static float noise(float2 p) {
             float2 i = floor(p);
             float2 f = fract(p);
 

@@ -23,7 +23,7 @@ static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
         
-        float2x2 rot2d( float a ) {
+        static float2x2 rot2d( float a ) {
             return float2x2(
                 cos(a), -sin(a),
                 sin(a), cos(a)

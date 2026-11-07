@@ -36,7 +36,7 @@ struct toji_s3d_triprismParams {
 // --- funcoes auxiliares do efeito
 varying float4x4 invOrient;
 
-        float4x4 __nv_inverse(in float4x4 m)
+        static float4x4 __nv_inverse(in float4x4 m)
         {
             return float4x4(
                 m[0][0], m[1][0], m[2][0], 0.0,

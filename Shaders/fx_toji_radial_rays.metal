@@ -30,11 +30,11 @@ struct toji_radial_raysParams {
 // --- funcoes auxiliares do efeito
 #define PI 3.1415926536
 
-        float2 l2s( float2 v ) {
+        static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 
-        float rays(float2 st, float pixelSize, float u.feather, float width, float count, float u.innerRadius, float u.outerRadius, float u.radialFeather, float u.bendStrength, float u.bendFrequency, float u.bendPhase, float u.angle) {
+        static float rays(float2 st, float pixelSize, float u.feather, float width, float count, float u.innerRadius, float u.outerRadius, float u.radialFeather, float u.bendStrength, float u.bendFrequency, float u.bendPhase, float u.angle) {
             float r = length(st);
             float theta = (__nv_atan(st.x, st.y)+u.angle)/(2.0*PI);
             theta += sin(r*u.bendFrequency+u.bendPhase)*u.bendStrength;

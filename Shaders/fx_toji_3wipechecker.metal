@@ -31,7 +31,7 @@ struct toji_3wipecheckerParams {
 // Checkerboard wipe using rotated squares in a grid.
     // Reveals the source where the wipe progresses; unrevealed can be transparent or filled.
 
-    float2x2 rot(float a){ float c=cos(a), s=sin(a); return float2x2(c,-s,s,c); }
+    static float2x2 rot(float a){ float c=cos(a), s=sin(a); return float2x2(c,-s,s,c); }
 
 fragment float4 fx_toji_3wipechecker(
     NovaVertexOut       in   [[stage_in]],
