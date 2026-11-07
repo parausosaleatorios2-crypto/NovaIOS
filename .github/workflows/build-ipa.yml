@@ -24,11 +24,7 @@ jobs:
         run: |
           mkdir -p build/air build/err Shaders-excluidos
           : > build/falhas.txt
-          ls Shaders/*.metal | xargs -P 6 -I{} sh -c '
-            f="{}"; n=$(basename "$f" .metal)
-            xcrun -sdk iphoneos metal -c -std=metal3.0 -target air64-apple-ios17.0 \
-              -IShaders "$f" -o "build/air/$n.air" 2> "build/err/$n.txt" \
-              && rm -f "build/err/$n.txt" || echo "$f" >> build/falhas.txt'
+          ls Shaders/*.metal | xargs -P 6 -n 1 sh Tools/compilar-shader.sh
           for core in NovaBlend NovaFullscreen; do
             if grep -q "/$core.metal" build/falhas.txt; then
               echo "::error::Shader base $core falhou"; cat "build/err/$core.txt"; exit 1
