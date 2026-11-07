@@ -61,6 +61,12 @@ struct EngineUniforms {
     float2 acVelocity;
 };
 
+// Dialeto Alight Motion: tamanho e transformacao de cada textura (= NovaTexInfo do Swift).
+struct NovaTexInfo {
+    float2   size;
+    float4x4 transform;
+};
+
 struct NovaVertexOut {
     float4 position [[position]];
     float2 uv;

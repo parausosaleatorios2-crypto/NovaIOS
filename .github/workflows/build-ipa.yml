@@ -23,7 +23,7 @@ jobs:
       - name: Compilar shaders um a um (separar os quebrados)
         run: |
           mkdir -p build/air build/err Shaders-excluidos
-          : > build/falhas.txt
+          : > build/falhas.txt; : > build/reparados.txt
           ls Shaders/*.metal | xargs -P 6 -n 1 sh Tools/compilar-shader.sh
           for core in NovaBlend NovaFullscreen; do
             if grep -q "/$core.metal" build/falhas.txt; then
@@ -32,11 +32,13 @@ jobs:
           done
           TOTAL=$(ls Shaders/fx_*.metal | wc -l | tr -d ' ')
           FAIL=$(wc -l < build/falhas.txt | tr -d ' ')
-          echo "Shaders fx: $TOTAL, com erro: $FAIL"
+          REP=$(wc -l < build/reparados.txt | tr -d ' ')
+          echo "Shaders fx: $TOTAL, reparados: $REP, com erro: $FAIL"
+          cat build/err/*.rep.txt > build/erros-reparados.txt 2>/dev/null || true
           cat build/err/*.txt > build/erros-shaders.txt 2>/dev/null || true
-          grep -ohE "error: .*" build/erros-shaders.txt | sed -E "s/'[^']*'/X/g" | sort | uniq -c | sort -rn | head -40 || true
+          grep -ohE "error: .*" build/erros-reparados.txt | sed -E "s/'[^']*'/X/g" | sort | uniq -c | sort -rn | head -40 || true
           while read -r f; do [ -n "$f" ] && mv "$f" Shaders-excluidos/; done < build/falhas.txt
-          echo "### Shaders: $((TOTAL-FAIL)) de $TOTAL compilaram" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Shaders: $((TOTAL-FAIL)) de $TOTAL compilaram ($REP reparados)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Instalar XcodeGen
         run: brew install xcodegen
@@ -77,3 +79,5 @@ jobs:
             build/xcodebuild.log
             build/falhas.txt
             build/erros-shaders.txt
+            build/erros-reparados.txt
+            build/reparados.txt

@@ -7,6 +7,7 @@
 //
 
 import AVFoundation
+import VideoToolbox
 import CoreVideo
 import Metal
 import MetalKit

@@ -227,7 +227,7 @@ public final class EffectRenderer {
                 align(16)
                 if case .vec3(let s) = v { push(s.x); push(s.y); push(s.z) }
                 else { for i in 0..<3 { push(p.defaultValue.count > i ? p.defaultValue[i] : 0) } }
-                push(0)   // float3 ocupa 16 bytes no MSL
+                push(Float(0))   // float3 ocupa 16 bytes no MSL
             default:
                 align(16)
                 if case .vec4(let s) = v { push(s.x); push(s.y); push(s.z); push(s.w) }
