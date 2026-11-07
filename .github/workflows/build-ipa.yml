@@ -59,6 +59,22 @@ jobs:
           test -f "$APP/NovaEditor" || { echo "::error::app sem executavel"; exit 1; }
           test -f "$APP/default.metallib" || { echo "::error::app sem metallib"; exit 1; }
 
+      - name: Validar bundle para instalacao
+        run: |
+          APP=build/dd/Build/Products/Release-iphoneos/NovaEditor.app
+          ls "$APP" | head -50
+          test ! -e "$APP/Resources" || { echo "::error::pasta Resources na raiz do .app quebra a assinatura"; exit 1; }
+          test -d "$APP/effects" || { echo "::error::effects fora da raiz do .app"; exit 1; }
+          test -f "$APP/i18n/en.json" || { echo "::error::i18n/en.json fora da raiz do .app"; exit 1; }
+          test -f "$APP/Assets.car" || { echo "::error::sem Assets.car (icone)"; exit 1; }
+          ls "$APP" | grep -i appicon || { echo "::error::sem arquivos AppIcon"; exit 1; }
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIcons" "$APP/Info.plist"
+          find "$APP" -type l | head -5
+          # assinatura ad-hoc numa copia: e o que o eSign faz com o certificado dele
+          rm -rf /tmp/teste && mkdir /tmp/teste && cp -R "$APP" /tmp/teste/
+          codesign --force --sign - --timestamp=none /tmp/teste/NovaEditor.app
+          codesign --verify --deep --strict --verbose=2 /tmp/teste/NovaEditor.app
+
       - name: Empacotar IPA
         run: |
           mkdir -p out/Payload

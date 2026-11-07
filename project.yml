@@ -41,9 +41,105 @@ targets:
       - path: Sources
       - path: Shaders
         # Os .metal entram na fase de compilacao de fontes, nao em recursos.
-      - path: Resources
+      # Cada pasta de Resources vai para a RAIZ do .app (o Swift procura
+      # "effects", "i18n"... ali). Uma pasta chamada "Resources" na raiz de um
+      # app iOS faz o codesign tratar o bundle como de macOS e a instalacao falha.
+      - path: Resources/assistente
         type: folder
         buildPhase: resources
+      - path: Resources/bccdb
+        type: folder
+        buildPhase: resources
+      - path: Resources/effects
+        type: folder
+        buildPhase: resources
+      - path: Resources/element3d
+        type: folder
+        buildPhase: resources
+      - path: Resources/extensoes
+        type: folder
+        buildPhase: resources
+      - path: Resources/filmdamage
+        type: folder
+        buildPhase: resources
+      - path: Resources/flicker
+        type: folder
+        buildPhase: resources
+      - path: Resources/fonts
+        type: folder
+        buildPhase: resources
+      - path: Resources/grunge
+        type: folder
+        buildPhase: resources
+      - path: Resources/i18n
+        type: folder
+        buildPhase: resources
+      - path: Resources/ia
+        type: folder
+        buildPhase: resources
+      - path: Resources/licencas
+        type: folder
+        buildPhase: resources
+      - path: Resources/looks
+        type: folder
+        buildPhase: resources
+      - path: Resources/mblooks
+        type: folder
+        buildPhase: resources
+      - path: Resources/nodebling
+        type: folder
+        buildPhase: resources
+      - path: Resources/nodevideo-minis
+        type: folder
+        buildPhase: resources
+      - path: Resources/opticalflares
+        type: folder
+        buildPhase: resources
+      - path: Resources/presets
+        type: folder
+        buildPhase: resources
+      - path: Resources/ransom-letters
+        type: folder
+        buildPhase: resources
+      - path: Resources/resource
+        type: folder
+        buildPhase: resources
+      - path: Resources/sglow
+        type: folder
+        buildPhase: resources
+      - path: Resources/shake
+        type: folder
+        buildPhase: resources
+      - path: Resources/ssharpen
+        type: folder
+        buildPhase: resources
+      - path: Resources/swarpbubble
+        type: folder
+        buildPhase: resources
+      - path: Resources/templates
+        type: folder
+        buildPhase: resources
+      - path: Resources/testimg.png
+        buildPhase: resources
+      - path: Resources/textures
+        type: folder
+        buildPhase: resources
+      - path: Resources/unichromab
+        type: folder
+        buildPhase: resources
+      - path: Resources/univhs
+        type: folder
+        buildPhase: resources
+      - path: Resources/vhs
+        type: folder
+        buildPhase: resources
+      - path: Resources/vibrance
+        type: folder
+        buildPhase: resources
+      - path: Resources/wavewarp
+        type: folder
+        buildPhase: resources
+      - path: Assets/Assets.xcassets
     info:
       path: Info.plist
       properties:
@@ -98,6 +194,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.novavision.editor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone e iPad
         # Preencha com o seu time. Sem isto nao ha assinatura e nao ha IPA.
         DEVELOPMENT_TEAM: ""
