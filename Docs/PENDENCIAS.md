@@ -72,10 +72,25 @@ Nenhum endpoint foi documentado — só as URLs base, extraídas dos pools de st
 
 ## 4. Código por escrever
 
-### 4.1 Provedor de conteúdo das camadas — **bloqueia o preview**
-`Compositor` precisa de um `LayerContentProvider` que entregue a textura de cada
-camada: vídeo (via `VideoDecoder`), imagem, texto renderizado, forma, sólido.
-Sem ele o preview só limpa o fundo. **É o próximo item na fila.**
+### 4.1 Provedor de conteúdo das camadas — **feito (2026-11-07)**
+`Sources/NovaEngine/LayerContent.swift` (`MediaContentProvider`) entrega ao
+`Compositor` a textura de cada camada: vídeo (`VideoDecoder`), imagem (com a
+orientação EXIF), texto renderizado (UIKit), sólido. Mídia que falta entra como
+barras coloridas, como no Android. O `PreviewSurface` desenha o quadro do
+`Compositor`; o editor importa fotos e vídeos da galeria (`MediaImport.swift`,
+cópia para `media/`) e exporta (`ExportView.swift` + `AudioMux.swift`: vídeo
+H.264/HEVC, HEVC com alfa em .mov, som das camadas de vídeo, salvar na galeria e
+compartilhar).
+
+Conferido no APK com o REA (JADX): `com.novaeditor.model.LayerContent` tem os
+tipos Media (MediaKind IMAGE/VIDEO, uri, sourceInPointUs, sourceDurationUs,
+speed, muted, gain, reversed, emLaco), Text, Solid, Shape, Audio, Camera, Luz,
+Nulo, Group, Model3D, Midi, Osso e Adjustment; o export roda em
+`com.novaeditor.export.ServicoDeExportacao` (ações CANCELAR e TERMINAR).
+
+Falta: forma vetorial (hoje desenha como sólido), mídia invertida/em laço/
+remapeamento de tempo, ganho de áudio, decodificação sequencial na exportação
+(hoje busca quadro a quadro: mais lento).
 
 ### 4.2 Renderização de texto
 Texto com os animadores do AE (seletores de faixa, oscilante, expressão) —

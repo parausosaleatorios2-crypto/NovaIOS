@@ -13,6 +13,7 @@
 
 import SwiftUI
 import MetalKit
+import PhotosUI
 
 public struct EditorView: View {
     @State private var project: NovaProject
@@ -22,12 +23,36 @@ public struct EditorView: View {
     @State private var layout: EditorLayout = .nova
     @State private var sheet: EditorSheet?
     @State private var installedExtensions: Set<String> = []   // vazio: nenhuma instalada
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showPicker = false
+    @State private var importing = false
+    @State private var aviso: String?
+    @State private var novoTexto = ""
+    @State private var pedindoTexto = false
+    @State private var manifests: [String: EffectManifest] = [:]
 
     @Environment(\.dismiss) private var dismiss
 
-    public init(project: NovaProject) { _project = State(initialValue: project) }
+    /// Pasta do projeto (project.json + media/).
+    private let folder: URL
+    private let onSave: (NovaProject) -> Void
+    private var mediaRoot: URL { folder.appendingPathComponent(NovaProjectIO.mediaFolder) }
+
+    public init(project: NovaProject, folder: URL, onSave: @escaping (NovaProject) -> Void) {
+        _project = State(initialValue: project)
+        self.folder = folder
+        self.onSave = onSave
+    }
 
     private var comp: Composition { project.mainComposition ?? Composition() }
+
+    /// Altera a composicao principal e grava o projeto.
+    private func editComp(_ change: (inout Composition) -> Void) {
+        guard let i = project.compositions.firstIndex(where: { $0.id == project.mainCompositionID })
+                ?? project.compositions.indices.first else { return }
+        change(&project.compositions[i])
+        onSave(project)
+    }
 
     public var body: some View {
         GeometryReader { geo in
@@ -52,11 +77,143 @@ public struct EditorView: View {
         .preferredColorScheme(.dark)
         .sheet(item: $sheet) { s in
             switch s {
-            case .efeitos:  EffectBrowserView { _ in sheet = nil }
+            case .efeitos:  EffectBrowserView { e in aplicarEfeito(e); sheet = nil }
             case .layout:   LayoutPickerSheet(selected: $layout)
-            case .exportar: ExportSheet(composition: comp)
+            case .exportar: ExportSheet(composition: comp, mediaRoot: mediaRoot, manifests: manifests)
             case .info(let t, let m): InfoSheet(titulo: t, mensagem: m)
             }
+        }
+        .photosPicker(isPresented: $showPicker, selection: $pickerItems,
+                      maxSelectionCount: nil, selectionBehavior: .ordered,
+                      matching: .any(of: [.images, .videos]),
+                      preferredItemEncoding: .current)
+        .onChange(of: pickerItems) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await importar(items) }
+        }
+        .alert("Texto".loc, isPresented: $pedindoTexto) {
+            TextField("Digite o texto".loc, text: $novoTexto)
+            Button("Cancelar".loc, role: .cancel) {}
+            Button("Adicionar".loc) { adicionarTexto(novoTexto) }
+        }
+        .task(id: playing) { await tocar() }
+        .task(id: effectIDs) { carregarManifestos() }
+        .overlay(alignment: .top) {
+            if importing || aviso != nil {
+                Text(importing ? "Carregando mídia…".loc : (aviso ?? ""))
+                    .font(.system(size: 11)).foregroundStyle(NovaTheme.text)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Capsule().fill(NovaTheme.surface))
+                    .padding(.top, 48)
+                    .onTapGesture { aviso = nil }
+            }
+        }
+    }
+
+    // MARK: acoes
+
+    private func importar(_ items: [PhotosPickerItem]) async {
+        importing = true
+        let start = time
+        let r = await MediaImporter.importItems(items, into: mediaRoot,
+                                                composition: comp, start: start)
+        pickerItems = []
+        importing = false
+        guard !r.layers.isEmpty else {
+            aviso = r.failures.first ?? "Nada foi adicionado".loc
+            return
+        }
+        editComp { c in
+            for l in r.layers { c.add(l) }
+            // «A composicao termina onde a ultima camada termina» (Alight Motion).
+            let fim = c.layers.map(\.endTime).max() ?? c.duration
+            c.duration = max(c.duration, fim)
+        }
+        selectedLayer = r.layers.last?.id
+        if r.failures.isEmpty {
+            aviso = "Adicionar {0} mídias".loc.replacingOccurrences(of: "{0}", with: "\(r.layers.count)")
+        } else {
+            aviso = "Entraram {0} de {1}: {2}".loc
+                .replacingOccurrences(of: "{0}", with: "\(r.layers.count)")
+                .replacingOccurrences(of: "{1}", with: "\(items.count)")
+                .replacingOccurrences(of: "{2}", with: r.failures.first ?? "")
+        }
+        Task { try? await Task.sleep(nanoseconds: 3_000_000_000); aviso = nil }
+    }
+
+    private func adicionarTexto(_ t: String) {
+        let texto = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !texto.isEmpty else { return }
+        var l = Layer(name: String(texto.prefix(24)), kind: .text)
+        l.text = texto
+        let fs = Float(comp.height) / 10
+        l.fontSize = fs
+        l.textColor = SIMD4(1, 1, 1, 1)
+        let m = MediaContentProvider.measureText(texto, fontName: nil, size: CGFloat(fs))
+        let size = SIMD2(Float(m.width), Float(m.height))
+        l.size = size
+        l.transform.anchorPoint = Animated(size / 2)
+        l.transform.position = Animated(comp.size / 2)
+        l.startTime = time
+        l.duration = max(1, min(5, comp.duration - time))
+        novoTexto = ""
+        editComp { $0.add(l) }
+        selectedLayer = l.id
+    }
+
+    private func adicionarSolido() {
+        var l = Layer(name: "Sólido".loc, kind: .solid)
+        l.solidColor = SIMD4(0.39, 0.33, 0.95, 1)
+        l.size = comp.size
+        l.transform.anchorPoint = Animated(comp.size / 2)
+        l.transform.position = Animated(comp.size / 2)
+        l.startTime = time
+        l.duration = max(1, comp.duration - time)
+        editComp { $0.add(l) }
+        selectedLayer = l.id
+    }
+
+    private func excluirSelecionada() {
+        guard let id = selectedLayer else { return }
+        editComp { $0.remove(id: id) }
+        selectedLayer = nil
+    }
+
+    private func aplicarEfeito(_ e: EffectIndexEntry) {
+        guard let id = selectedLayer ?? comp.layers.first?.id else {
+            aviso = "Adicione uma camada antes do efeito.".loc
+            return
+        }
+        editComp { c in
+            if let i = c.layers.firstIndex(where: { $0.id == id }) {
+                c.layers[i].effects.append(AppliedEffect(effectID: e.id))
+            }
+        }
+    }
+
+    private var effectIDs: [String] {
+        Array(Set(comp.layers.flatMap { $0.effects.map(\.effectID) })).sorted()
+    }
+
+    private func carregarManifestos() {
+        var out: [String: EffectManifest] = [:]
+        for id in effectIDs {
+            if let m = try? EffectRegistry.shared.manifest(id: id) { out[id] = m }
+        }
+        manifests = out
+    }
+
+    /// Avanca o tempo enquanto toca, no ritmo da composicao.
+    private func tocar() async {
+        guard playing else { return }
+        if time >= comp.duration { time = 0 }
+        let inicio = Date()
+        let t0 = time
+        while playing && !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: UInt64(1_000_000_000 / max(comp.frameRate, 1)))
+            let t = t0 + Float(Date().timeIntervalSince(inicio))
+            if t >= comp.duration { time = comp.duration; playing = false; break }
+            time = t
         }
     }
 
@@ -88,7 +245,7 @@ public struct EditorView: View {
     private var preview: some View {
         ZStack {
             CheckerboardBackground()
-            PreviewSurface(composition: comp, time: time)
+            PreviewSurface(composition: comp, time: time, mediaRoot: mediaRoot, manifests: manifests)
                 .aspectRatio(CGFloat(comp.width) / CGFloat(comp.height), contentMode: .fit)
                 .overlay(Rectangle().strokeBorder(NovaTheme.selection, lineWidth: 1))
                 .padding(14)
@@ -110,6 +267,28 @@ public struct EditorView: View {
             botao("forward.frame.fill") { time = min(comp.duration, time + comp.frameDuration) }
             botao("forward.end.fill") { time = comp.duration }
             Spacer()
+            if selectedLayer != nil {
+                Button(role: .destructive) { excluirSelecionada() } label: {
+                    Image(systemName: "trash").font(.system(size: 13))
+                        .foregroundStyle(NovaTheme.warning)
+                }
+            }
+            Menu {
+                Button { showPicker = true } label: {
+                    Label("Mídia".loc, systemImage: "photo.on.rectangle")
+                }
+                Button { pedindoTexto = true } label: {
+                    Label("Texto".loc, systemImage: "textformat")
+                }
+                Button { adicionarSolido() } label: {
+                    Label("Sólido".loc, systemImage: "square.fill")
+                }
+            } label: {
+                Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(NovaTheme.accent)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(NovaTheme.accent.opacity(0.16)))
+            }
             Text(timecode(time)).font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(NovaTheme.dim)
         }
@@ -157,6 +336,7 @@ public struct EditorView: View {
                 Button {
                     switch item.id {
                     case "efeitos": sheet = .efeitos
+                    case "biblioteca": showPicker = true
                     case "layout":  sheet = .layout
                     default:
                         sheet = .info(item.label.loc, locked

@@ -209,6 +209,14 @@ public struct Layer: Codable, Sendable, Identifiable, Equatable {
     public var text: String?
     public var solidColor: SIMD4<Float>?
     public var size: SIMD2<Float>?
+    /// Texto: tamanho em pt da composicao, fonte (nil = do sistema) e cor.
+    public var fontSize: Float?
+    public var fontName: String?
+    public var textColor: SIMD4<Float>?
+    /// Midia: som desligado (como `muted` no LayerContent.Media do Android).
+    public var muted: Bool?
+    /// Duracao da fonte em segundos (video), para limitar o trim.
+    public var sourceDuration: Float?
 
     public var endTime: Float { startTime + duration }
 

@@ -146,7 +146,10 @@ struct InicioTab: View {
                 } else {
                     VStack(spacing: 8) {
                         ForEach(store.projects.prefix(4)) { p in
-                            ProjetoRow(project: p)
+                            NavigationLink {
+                                EditorView(project: p, folder: store.folder(for: p),
+                                           onSave: { store.save($0) })
+                            } label: { ProjetoRow(project: p) }
                         }
                     }.padding(.horizontal, 16)
                 }
@@ -190,7 +193,7 @@ struct ProjetosTab: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(store.filtered(busca)) { p in
-                            NavigationLink { EditorView(project: p) } label: {
+                            NavigationLink { EditorView(project: p, folder: store.folder(for: p), onSave: { store.save($0) }) } label: {
                                 ProjetoRow(project: p)
                             }.buttonStyle(.plain)
                         }

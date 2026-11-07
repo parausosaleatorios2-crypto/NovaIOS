@@ -5,6 +5,10 @@
 //  A superficie Metal onde a composicao e desenhada. Usa MTKView por UIViewRepresentable:
 //  SwiftUI sozinho nao da acesso ao drawable.
 //
+//  Cada mudanca de tempo ou de composicao pede um quadro ao Compositor; se um
+//  quadro ainda esta sendo montado, guarda so o pedido mais recente (a previa
+//  pula quadros em vez de acumular atraso).
+//
 
 import SwiftUI
 import MetalKit
@@ -13,10 +17,15 @@ import os
 public struct PreviewSurface: UIViewRepresentable {
     let composition: Composition
     let time: Float
+    let mediaRoot: URL
+    let manifests: [String: EffectManifest]
 
-    public init(composition: Composition, time: Float) {
+    public init(composition: Composition, time: Float, mediaRoot: URL,
+                manifests: [String: EffectManifest] = [:]) {
         self.composition = composition
         self.time = time
+        self.mediaRoot = mediaRoot
+        self.manifests = manifests
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
@@ -25,7 +34,7 @@ public struct PreviewSurface: UIViewRepresentable {
         let v = MTKView()
         v.device = MTLCreateSystemDefaultDevice()
         v.colorPixelFormat = .bgra8Unorm
-        v.framebufferOnly = false
+        v.framebufferOnly = true
         v.isOpaque = false
         v.backgroundColor = .clear
         v.enableSetNeedsDisplay = true
@@ -36,33 +45,83 @@ public struct PreviewSurface: UIViewRepresentable {
     }
 
     public func updateUIView(_ v: MTKView, context: Context) {
-        context.coordinator.composition = composition
-        context.coordinator.time = time
-        v.setNeedsDisplay()
+        context.coordinator.request(composition, time: time,
+                                    mediaRoot: mediaRoot, manifests: manifests)
     }
 
     public final class Coordinator: NSObject, MTKViewDelegate {
-        var composition: Composition?
-        var time: Float = 0
-        private var queue: MTLCommandQueue?
+        private weak var view: MTKView?
+        private var device: MTLDevice?
+        private var compositor: Compositor?
+        private var provider: MediaContentProvider?
+        private var frame: MTLTexture?
+        private var rendering = false
+        private var pending: (Composition, Float)?
+        private var manifests: [String: EffectManifest] = [:]
         private let log = Logger(subsystem: "com.novavision.editor", category: "Preview")
 
-        func attach(view: MTKView) { queue = view.device?.makeCommandQueue() }
+        /// Ultimo aviso do Compositor (camada que falhou), para a tela mostrar.
+        public private(set) var lastWarning: String?
 
-        public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+        func attach(view: MTKView) {
+            self.view = view
+            self.device = view.device
+        }
+
+        func request(_ comp: Composition, time: Float, mediaRoot: URL,
+                     manifests: [String: EffectManifest]) {
+            guard let device else { return }
+            self.manifests = manifests
+            if provider?.mediaRoot != mediaRoot {
+                provider = MediaContentProvider(mediaRoot: mediaRoot, device: device)
+                compositor?.contentProvider = provider
+            }
+            if rendering { pending = (comp, time); return }
+            rendering = true
+            Task { @MainActor in
+                await self.render(comp, time: time)
+            }
+        }
+
+        @MainActor
+        private func render(_ comp: Composition, time: Float) async {
+            do {
+                if compositor == nil, let device {
+                    let r = try EffectRenderer(device: device)
+                    let c = try Compositor(renderer: r)
+                    c.contentProvider = provider
+                    compositor = c
+                }
+                if let compositor {
+                    let tex = try await compositor.renderFrame(comp, at: time, manifests: manifests)
+                    if let old = frame { compositor.release(old) }
+                    frame = tex
+                    lastWarning = compositor.lastFrameWarnings.first
+                    view?.setNeedsDisplay()
+                }
+            } catch {
+                lastWarning = error.localizedDescription
+                log.error("quadro da previa falhou: \(error.localizedDescription, privacy: .public)")
+            }
+            rendering = false
+            if let p = pending {
+                pending = nil
+                rendering = true
+                await render(p.0, time: p.1)
+            }
+        }
+
+        public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+            view.setNeedsDisplay()
+        }
 
         public func draw(in view: MTKView) {
-            guard let d = view.currentDrawable,
-                  let rp = view.currentRenderPassDescriptor,
-                  let cb = queue?.makeCommandBuffer() else { return }
-            // Por enquanto so limpa com a cor de fundo da composicao.
-            // O Compositor entra aqui quando o provedor de conteudo das camadas
-            // estiver escrito — veja Docs/PENDENCIAS.md.
-            let bg = composition?.backgroundColor ?? SIMD4<Float>(0, 0, 0, 1)
-            rp.colorAttachments[0].loadAction = .clear
-            rp.colorAttachments[0].clearColor = MTLClearColor(
-                red: Double(bg.x), green: Double(bg.y), blue: Double(bg.z), alpha: Double(bg.w))
-            cb.makeRenderCommandEncoder(descriptor: rp)?.endEncoding()
+            guard let d = view.currentDrawable, let compositor,
+                  let cb = compositor.makeCommandBuffer() else { return }
+            if let frame {
+                do { try compositor.encodeCopy(frame, to: d.texture, in: cb) }
+                catch { log.error("copia para a tela falhou: \(error.localizedDescription, privacy: .public)") }
+            }
             cb.present(d)
             cb.commit()
         }

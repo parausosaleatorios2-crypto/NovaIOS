@@ -71,6 +71,11 @@ public final class ProjectStore: ObservableObject {
         }
     }
 
+    /// Pasta do projeto em disco (project.json + media/).
+    public func folder(for p: NovaProject) -> URL {
+        Self.root.appendingPathComponent(safeName(p.name), isDirectory: true)
+    }
+
     public func save(_ p: NovaProject) {
         let dir = Self.root.appendingPathComponent(safeName(p.name), isDirectory: true)
         do {
