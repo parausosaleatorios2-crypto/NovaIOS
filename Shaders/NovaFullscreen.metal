@@ -19,12 +19,14 @@ vertex NovaVertexOut nova_fullscreen_vertex(uint vid [[vertex_id]])
     NovaVertexOut out;
     out.position     = float4(pos[vid], 0.0, 1.0);
     out.uv           = uv[vid];
+    out.acScreenNorm = uv[vid];
+    out.acLayerNorm  = uv[vid];
     out.vs_TEXCOORD0 = uv[vid];
-    out.vs_TEXCOORD1 = uv[vid];
-    out.vs_TEXCOORD2 = uv[vid];
-    out.vs_TEXCOORD3 = uv[vid];
-    out.vs_TEXCOORD4 = uv[vid];
-    out.vs_TEXCOORD5 = uv[vid];
+    out.vs_TEXCOORD1 = float4(uv[vid], 0.0, 1.0);
+    out.vs_TEXCOORD2 = float4(uv[vid], 0.0, 1.0);
+    out.vs_TEXCOORD3 = float4(uv[vid], 0.0, 1.0);
+    out.vs_TEXCOORD4 = float4(uv[vid], 0.0, 1.0);
+    out.vs_TEXCOORD5 = float4(uv[vid], 0.0, 1.0);
     out.vs_COLOR0    = float4(1.0);
     return out;
 }

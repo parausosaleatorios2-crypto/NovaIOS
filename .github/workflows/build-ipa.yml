@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 150
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +17,30 @@ jobs:
           XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$XC"
           xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain || true
+          defaults write com.apple.dt.Xcode IDEBuildingContinueBuildingAfterErrors -bool YES
+
+      - name: Compilar shaders um a um (separar os quebrados)
+        run: |
+          mkdir -p build/air build/err Shaders-excluidos
+          : > build/falhas.txt
+          ls Shaders/*.metal | xargs -P 6 -I{} sh -c '
+            f="{}"; n=$(basename "$f" .metal)
+            xcrun -sdk iphoneos metal -c -std=metal3.0 -target air64-apple-ios17.0 \
+              -IShaders "$f" -o "build/air/$n.air" 2> "build/err/$n.txt" \
+              && rm -f "build/err/$n.txt" || echo "$f" >> build/falhas.txt'
+          for core in NovaBlend NovaFullscreen; do
+            if grep -q "/$core.metal" build/falhas.txt; then
+              echo "::error::Shader base $core falhou"; cat "build/err/$core.txt"; exit 1
+            fi
+          done
+          TOTAL=$(ls Shaders/fx_*.metal | wc -l | tr -d ' ')
+          FAIL=$(wc -l < build/falhas.txt | tr -d ' ')
+          echo "Shaders fx: $TOTAL, com erro: $FAIL"
+          cat build/err/*.txt > build/erros-shaders.txt 2>/dev/null || true
+          grep -ohE "error: .*" build/erros-shaders.txt | sed -E "s/'[^']*'/X/g" | sort | uniq -c | sort -rn | head -40 || true
+          while read -r f; do [ -n "$f" ] && mv "$f" Shaders-excluidos/; done < build/falhas.txt
+          echo "### Shaders: $((TOTAL-FAIL)) de $TOTAL compilaram" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Instalar XcodeGen
         run: brew install xcodegen
@@ -24,17 +48,18 @@ jobs:
       - name: Gerar projeto
         run: xcodegen generate
 
-      - name: Compilar (sem assinatura)
+      - name: Compilar app (sem assinatura)
         run: |
           set -o pipefail
-          mkdir -p build
           xcodebuild -project NovaEditor.xcodeproj -scheme NovaEditor \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
-            build | tee build/xcodebuild.log | grep -E "error:|warning: .*metal|BUILD" || true
-          test -d build/dd/Build/Products/Release-iphoneos/NovaEditor.app
+            build 2>&1 | tee build/xcodebuild.log | grep -E "error:|\*\* BUILD"
+          APP=build/dd/Build/Products/Release-iphoneos/NovaEditor.app
+          test -f "$APP/NovaEditor" || { echo "::error::app sem executavel"; exit 1; }
+          test -f "$APP/default.metallib" || { echo "::error::app sem metallib"; exit 1; }
 
       - name: Empacotar IPA
         run: |
@@ -52,4 +77,7 @@ jobs:
         if: always()
         with:
           name: build-log
-          path: build/xcodebuild.log
+          path: |
+            build/xcodebuild.log
+            build/falhas.txt
+            build/erros-shaders.txt

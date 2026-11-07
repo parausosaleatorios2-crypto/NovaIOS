@@ -65,3 +65,13 @@ inline float2 __nv_acPontoNoBuffer(float2 p) { return p; }
 inline float2x2 __nv_matCompMult(float2x2 a, float2x2 b){ return float2x2(a[0]*b[0], a[1]*b[1]); }
 inline float3x3 __nv_matCompMult(float3x3 a, float3x3 b){ return float3x3(a[0]*b[0], a[1]*b[1], a[2]*b[2]); }
 inline float4x4 __nv_matCompMult(float4x4 a, float4x4 b){ return float4x4(a[0]*b[0], a[1]*b[1], a[2]*b[2], a[3]*b[3]); }
+
+// GLSL radians()/degrees(): o MSL nao tem.
+inline float  radians(float d)  { return d * 0.017453292519943295f; }
+inline float2 radians(float2 d) { return d * 0.017453292519943295f; }
+inline float3 radians(float3 d) { return d * 0.017453292519943295f; }
+inline float4 radians(float4 d) { return d * 0.017453292519943295f; }
+inline float  degrees(float r)  { return r * 57.29577951308232f; }
+inline float2 degrees(float2 r) { return r * 57.29577951308232f; }
+inline float3 degrees(float3 r) { return r * 57.29577951308232f; }
+inline float4 degrees(float4 r) { return r * 57.29577951308232f; }

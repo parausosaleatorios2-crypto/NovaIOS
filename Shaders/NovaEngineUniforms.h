@@ -64,4 +64,14 @@ struct EngineUniforms {
 struct NovaVertexOut {
     float4 position [[position]];
     float2 uv;
+    // Varyings do dialeto Alight Motion / HLSLcc usados pelos efeitos traduzidos.
+    float2 acScreenNorm;
+    float2 acLayerNorm;
+    float2 vs_TEXCOORD0;
+    float4 vs_TEXCOORD1;
+    float4 vs_TEXCOORD2;
+    float4 vs_TEXCOORD3;
+    float4 vs_TEXCOORD4;
+    float4 vs_TEXCOORD5;
+    float4 vs_COLOR0;
 };
