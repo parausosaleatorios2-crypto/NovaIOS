@@ -1,0 +1,942 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/grain — o Grain do Node Video (definição `_Grain`), portado com os passes do C# (0.916).
+  Gerado por tools/nodepassesc/montar.py a partir de tools/nodepassesc/modelos/ (não editar à mão: editar o modelo).
+
+  O que o `NodeVideo.AE.AEGrain::Render` faz (lido no il2cpp):
+  1. guarda um RenderTexture 128 × 128 (ARGB32, sRGB num projeto linear), filtro Bilinear, wrap REPEAT;
+  2. `_scale` (Vector2), `_amount`, `_intensity` como globais; `_NoiseParameters` = (12,9898; 78,233; 43758,5453) —
+     o hash `fract(sin(dot(p, xy)) * z)`, que o porte automático deixava em zero (sai preto);
+  3. Blit no RT 128 com o passe 1 do shader se `_colored`, senão o 0: um filtro passa-alta 5 × 5 do hash numa grade de
+     128 que anda com o tempo (o RT ARGB32 corta o que dá negativo);
+  4. `_texture0` = o RT; Blit da camada para a saída com o passe 2: cor + cor × ruído × Intensidade ×
+     (1 − (1 − Quantidade) × √luma) × 30, com o ruído lido em (uv − 0,5) × Escala, repetido.
+
+  AQUI: o passe 0 é o 0/1 do Node, conta por conta, num buffer fixo de 128 × 128 em sRGB (o RT do Node); o passe 1 é
+  o 2 do Node, com a camada lida como o RT dele (linear × alfa) e o REPEAT feito à mão (o buffer do motor fica preso na
+  borda), filtro linear entre os 4 texels como a GPU faz com o sRGB. Na tela (`stage="screen"`), como o Node.
+  Diferente do Node: o Nova compõe em gama (o alfa parcial sobre o fundo).
+-->
+<effect
+    id="nv.effect.nodevideo-effect-grain"
+    name="Effect Grain (NV)"
+    name-en="Effect Grain (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect/grain': film grain that moves with time, sized by the composition."
+    desc-en="NodeVideo effect 'NodeVideo/Effect/grain': film grain that moves with time, sized by the composition."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,grain,noise,film"
+    stage="screen">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <!-- O RT 128 × 128 do AEGrain. -->
+        <texture id="ruido" src="buffer" width="128" height="128" format="srgb" precision="highp" />
+        <switch id="_colored" label="Colored" default="false" />
+        <slider id="_amount" label="Amount" default="0.8" min="0" max="1" step="0.01" />
+        <slider id="_intensity" label="Intensity" default="0.2" min="0" max="1" step="0.01" />
+        <point id="_scale" label="Scale" spinner="true" vetor="true" defaultX="6.0" defaultY="6.0" min="0.0"
+            max="100.0" step="0.1" />
+    </params>
+
+    <passes>
+        <pass target="ruido" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// ---- comum aos portes de classe C# do Node (tools/nodepassesc/comum.glsl, colado pelo montar.py) ----
+// Os RTs do Node: cor PRÉ-multiplicada em luz LINEAR, sRGB de 8 bits, de pé (a linha 0 é a base). O Nova guarda a
+// camada reta, em gama; no buffer de camada (`acEntradaDePe` = 0) a linha 0 é o topo.
+vec3 nvLinear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 nvSrgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+// O UV do Node (Y para cima) do pixel que este passe escreve na saída do Nova.
+vec2 nvUvDePe() {
+    return acEntradaDePe == 1 ? acScreenNorm : vec2(acScreenNorm.x, 1.0 - acScreenNorm.y);
+}
+// O texel da camada em `uv` do Node (de pé), como o RT do Node o guarda: linear × alfa.
+vec4 nvFonte(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 p = ivec2(clamp(floor(uv * vec2(T)), vec2(0.0), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    vec4 c = texelFetch(inputImg, p, 0);
+    return vec4(nvLinear(c.rgb) * c.a, c.a);
+}
+// A camada lida com filtro linear em `uv` do Node, como o `texture(_SourceTex, uv)` dele (o filtro em luz linear, a
+// borda presa).
+vec4 nvFonteFiltrada(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 q = uv * vec2(T) - 0.5;
+    vec2 f = fract(q);
+    ivec2 b = ivec2(floor(q));
+    vec4 a00 = nvFonte((vec2(b) + 0.5) / vec2(T));
+    vec4 a10 = nvFonte((vec2(b + ivec2(1, 0)) + 0.5) / vec2(T));
+    vec4 a01 = nvFonte((vec2(b + ivec2(0, 1)) + 0.5) / vec2(T));
+    vec4 a11 = nvFonte((vec2(b + ivec2(1, 1)) + 0.5) / vec2(T));
+    return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
+}
+// O RT de saída do Node (pré-multiplicado, linear, preso em 0..1 pelo ARGB32) de volta à cor reta em gama do Nova.
+vec4 nvVolta(vec4 o) {
+    o = clamp(o, 0.0, 1.0);
+    if (o.a <= 0.0) return vec4(0.0);
+    return vec4(nvSrgb(o.rgb / o.a), o.a);
+}
+// ---- fim do comum ----
+#define _NoiseParameters vec3(12.9898005, 78.2330017, 43758.5469)
+
+// O programa 0 do shader NodeVideo/Effect/grain do Node, conta por conta (tools/nodepassesc/montar.py).
+vec4 ruidoCinza(vec2 vs_TEXCOORD0)
+{
+    vec4 SV_Target0 = vec4(0.0);
+    vec4 u_xlat0;
+    bool u_xlatb0;
+    vec4 u_xlat1;
+    vec4 u_xlat2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    vec4 u_xlat5;
+    vec4 u_xlat6;
+    vec3 u_xlat7;
+    vec2 u_xlat9;
+    float u_xlat12;
+    float u_xlat14;
+    vec2 u_xlat15;
+    float u_xlat16;
+    vec2 u_xlat17;
+    float u_xlat21;
+    float u_xlat23;
+    float u_xlat24;
+
+    u_xlat0.x = acTime * 10.0;
+    u_xlatb0 = u_xlat0.x>=(-u_xlat0.x);
+    u_xlat0.xy = (bool(u_xlatb0)) ? vec2(10.0, 0.100000001) : vec2(-10.0, -0.100000001);
+    u_xlat7.x = u_xlat0.y * acTime;
+    u_xlat7.x = fract(u_xlat7.x);
+    u_xlat0.x = u_xlat7.x * u_xlat0.x;
+    u_xlat0.y = fract(u_xlat0.x);
+    u_xlat0.x = float(0.0);
+    u_xlat0.z = float(-2.0);
+    u_xlat0.w = float(-1.0);
+    u_xlat1 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + u_xlat0.xyyx;
+    u_xlat2 = u_xlat0.yzyw + u_xlat1.xyxy;
+    u_xlat3 = u_xlat0.zywy + u_xlat1.zwzw;
+    u_xlat21 = dot(u_xlat2.xy, _NoiseParameters.xxyz.yz);
+    u_xlat2.x = dot(u_xlat2.zw, _NoiseParameters.xxyz.yz);
+    u_xlat2.x = sin(u_xlat2.x);
+    u_xlat2.x = u_xlat2.x * _NoiseParameters.xxyz.w;
+    u_xlat21 = sin(u_xlat21);
+    u_xlat21 = u_xlat21 * _NoiseParameters.xxyz.w;
+    u_xlat21 = fract(u_xlat21);
+    u_xlat4 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + u_xlat0.yyyy;
+    u_xlat5 = u_xlat4.zwzw + vec4(-2.0, -2.0, -1.0, -2.0);
+    u_xlat9.x = dot(u_xlat5.xy, _NoiseParameters.xxyz.yz);
+    u_xlat9.y = dot(u_xlat5.zw, _NoiseParameters.xxyz.yz);
+    u_xlat9.xy = sin(u_xlat9.xy);
+    u_xlat2.yz = u_xlat9.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat2.xyz = fract(u_xlat2.xyz);
+    u_xlat9.x = u_xlat2.z * 2.0 + u_xlat2.y;
+    u_xlat9.y = u_xlat21 * 2.0 + u_xlat2.z;
+    u_xlat9.x = u_xlat21 + u_xlat9.x;
+    u_xlat5 = u_xlat4.zwzw + vec4(-2.0, -1.0, -1.0, -1.0);
+    u_xlat23 = dot(u_xlat5.xy, _NoiseParameters.xxyz.yz);
+    u_xlat5.x = dot(u_xlat5.zw, _NoiseParameters.xxyz.yz);
+    u_xlat5.x = sin(u_xlat5.x);
+    u_xlat5.x = u_xlat5.x * _NoiseParameters.xxyz.w;
+    u_xlat5.x = fract(u_xlat5.x);
+    u_xlat23 = sin(u_xlat23);
+    u_xlat23 = u_xlat23 * _NoiseParameters.xxyz.w;
+    u_xlat23 = fract(u_xlat23);
+    u_xlat9.x = u_xlat23 * 2.0 + u_xlat9.x;
+    u_xlat23 = u_xlat5.x * 2.0 + u_xlat23;
+    u_xlat23 = u_xlat2.x + u_xlat23;
+    u_xlat9.x = u_xlat5.x * -12.0 + u_xlat9.x;
+    u_xlat9.x = u_xlat2.x * 2.0 + u_xlat9.x;
+    u_xlat3.x = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat3.y = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat3.xy = sin(u_xlat3.xy);
+    u_xlat3.xy = u_xlat3.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat3.xy = fract(u_xlat3.xy);
+    u_xlat9.x = u_xlat9.x + u_xlat3.x;
+    u_xlat9.x = u_xlat3.y * 2.0 + u_xlat9.x;
+    u_xlat17.x = dot(u_xlat4.zw, _NoiseParameters.xxyz.yz);
+    u_xlat17.x = sin(u_xlat17.x);
+    u_xlat17.x = u_xlat17.x * _NoiseParameters.xxyz.w;
+    u_xlat17.x = fract(u_xlat17.x);
+    u_xlat6 = u_xlat4.zwzw + vec4(1.0, -2.0, 1.0, -1.0);
+    u_xlat24 = dot(u_xlat6.xy, _NoiseParameters.xxyz.yz);
+    u_xlat12 = dot(u_xlat6.zw, _NoiseParameters.xxyz.yz);
+    u_xlat12 = sin(u_xlat12);
+    u_xlat12 = u_xlat12 * _NoiseParameters.xxyz.w;
+    u_xlat12 = fract(u_xlat12);
+    u_xlat24 = sin(u_xlat24);
+    u_xlat24 = u_xlat24 * _NoiseParameters.xxyz.w;
+    u_xlat17.y = fract(u_xlat24);
+    u_xlat9.xy = u_xlat9.xy + u_xlat17.xy;
+    u_xlat21 = u_xlat17.y * 2.0 + u_xlat21;
+    u_xlat16 = u_xlat5.x * 2.0 + u_xlat9.y;
+    u_xlat24 = u_xlat2.x * 2.0 + u_xlat5.x;
+    u_xlat24 = u_xlat12 + u_xlat24;
+    u_xlat24 = u_xlat3.y * 2.0 + u_xlat24;
+    u_xlat24 = u_xlat17.x * -12.0 + u_xlat24;
+    u_xlat16 = u_xlat2.x * -12.0 + u_xlat16;
+    u_xlat16 = u_xlat12 * 2.0 + u_xlat16;
+    u_xlat16 = u_xlat3.y + u_xlat16;
+    u_xlat16 = u_xlat17.x * 2.0 + u_xlat16;
+    u_xlat0.x = float(1.0);
+    u_xlat0.z = float(2.0);
+    u_xlat6 = u_xlat0.xyzy + u_xlat1.zwzw;
+    u_xlat1 = u_xlat0.yxyz + u_xlat1.xyxy;
+    u_xlat0.x = dot(u_xlat6.xy, _NoiseParameters.xxyz.yz);
+    u_xlat0.y = dot(u_xlat6.zw, _NoiseParameters.xxyz.yz);
+    u_xlat0.xy = sin(u_xlat0.xy);
+    u_xlat0.xy = u_xlat0.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat0.xy = fract(u_xlat0.xy);
+    u_xlat14 = u_xlat0.x + u_xlat16;
+    u_xlat14 = u_xlat14 * 0.0833333358;
+    u_xlat14 = u_xlat9.x * 0.0416666679 + u_xlat14;
+    u_xlat6 = u_xlat4.zwzw + vec4(2.0, -2.0, 2.0, -1.0);
+    u_xlat9.x = dot(u_xlat6.xy, _NoiseParameters.xxyz.yz);
+    u_xlat9.y = dot(u_xlat6.zw, _NoiseParameters.xxyz.yz);
+    u_xlat9.xy = sin(u_xlat9.xy);
+    u_xlat9.xy = u_xlat9.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat9.xy = fract(u_xlat9.xy);
+    u_xlat21 = u_xlat21 + u_xlat9.x;
+    u_xlat21 = u_xlat2.x * 2.0 + u_xlat21;
+    u_xlat2.x = u_xlat12 * 2.0 + u_xlat2.x;
+    u_xlat21 = u_xlat12 * -12.0 + u_xlat21;
+    u_xlat21 = u_xlat9.y * 2.0 + u_xlat21;
+    u_xlat2.x = u_xlat9.y + u_xlat2.x;
+    u_xlat2.x = u_xlat17.x * 2.0 + u_xlat2.x;
+    u_xlat2.x = u_xlat0.x * -12.0 + u_xlat2.x;
+    u_xlat2.x = u_xlat0.y * 2.0 + u_xlat2.x;
+    u_xlat21 = u_xlat17.x + u_xlat21;
+    u_xlat21 = u_xlat0.x * 2.0 + u_xlat21;
+    u_xlat21 = u_xlat0.y + u_xlat21;
+    u_xlat14 = u_xlat21 * 0.0416666679 + u_xlat14;
+    u_xlat21 = u_xlat3.x * 2.0 + u_xlat23;
+    u_xlat9.x = u_xlat3.y * 2.0 + u_xlat3.x;
+    u_xlat9.x = u_xlat17.x + u_xlat9.x;
+    u_xlat21 = u_xlat3.y * -12.0 + u_xlat21;
+    u_xlat16 = u_xlat17.x * 2.0 + u_xlat3.y;
+    u_xlat16 = u_xlat0.x + u_xlat16;
+    u_xlat21 = u_xlat17.x * 2.0 + u_xlat21;
+    u_xlat23 = u_xlat0.x * 2.0 + u_xlat17.x;
+    u_xlat0.x = u_xlat0.x * 2.0 + u_xlat24;
+    u_xlat7.x = u_xlat0.y + u_xlat23;
+    u_xlat3 = u_xlat4.zwzw + vec4(-2.0, 1.0, -1.0, 1.0);
+    u_xlat23 = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat3.x = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat3.x = sin(u_xlat3.x);
+    u_xlat3.x = u_xlat3.x * _NoiseParameters.xxyz.w;
+    u_xlat3.x = fract(u_xlat3.x);
+    u_xlat23 = sin(u_xlat23);
+    u_xlat23 = u_xlat23 * _NoiseParameters.xxyz.w;
+    u_xlat23 = fract(u_xlat23);
+    u_xlat21 = u_xlat21 + u_xlat23;
+    u_xlat9.x = u_xlat23 * 2.0 + u_xlat9.x;
+    u_xlat9.x = u_xlat3.x * -12.0 + u_xlat9.x;
+    u_xlat21 = u_xlat3.x * 2.0 + u_xlat21;
+    u_xlat1.x = dot(u_xlat1.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.y = dot(u_xlat1.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.xy = sin(u_xlat1.xy);
+    u_xlat1.xy = u_xlat1.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat1.xy = fract(u_xlat1.xy);
+    u_xlat21 = u_xlat21 + u_xlat1.x;
+    u_xlat14 = u_xlat21 * 0.0833333358 + u_xlat14;
+    u_xlat0.x = u_xlat0.x + u_xlat3.x;
+    u_xlat21 = u_xlat3.x * 2.0 + u_xlat16;
+    u_xlat21 = u_xlat1.x * -12.0 + u_xlat21;
+    u_xlat0.x = u_xlat1.x * 2.0 + u_xlat0.x;
+    u_xlat3 = u_xlat4.zwzw + vec4(1.0, 1.0, 2.0, 1.0);
+    u_xlat15.x = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat15.y = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat15.xy = sin(u_xlat15.xy);
+    u_xlat15.xy = u_xlat15.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat15.xy = fract(u_xlat15.xy);
+    u_xlat0.x = u_xlat0.x + u_xlat15.x;
+    u_xlat0.x = u_xlat0.x * 0.166666672 + u_xlat14;
+    u_xlat14 = u_xlat1.x + u_xlat2.x;
+    u_xlat14 = u_xlat15.x * 2.0 + u_xlat14;
+    u_xlat14 = u_xlat15.y + u_xlat14;
+    u_xlat0.x = u_xlat14 * 0.0833333358 + u_xlat0.x;
+    u_xlat7.y = u_xlat1.x * 2.0 + u_xlat9.x;
+    u_xlat7.x = u_xlat1.x * 2.0 + u_xlat7.x;
+    u_xlat7.x = u_xlat15.x * -12.0 + u_xlat7.x;
+    u_xlat7.z = u_xlat15.x * 2.0 + u_xlat21;
+    u_xlat7.x = u_xlat15.y * 2.0 + u_xlat7.x;
+    u_xlat2 = u_xlat4.zwzw + vec4(-2.0, 2.0, -1.0, 2.0);
+    u_xlat3 = u_xlat4 + vec4(1.0, 2.0, 2.0, 2.0);
+    u_xlat1.x = dot(u_xlat2.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.z = dot(u_xlat2.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.xz = sin(u_xlat1.xz);
+    u_xlat1.xz = u_xlat1.xz * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat1.xz = fract(u_xlat1.xz);
+    u_xlat7.xyz = u_xlat7.xyz + u_xlat1.yxz;
+    u_xlat14 = u_xlat1.z * 2.0 + u_xlat7.y;
+    u_xlat21 = u_xlat1.y * 2.0 + u_xlat7.z;
+    u_xlat14 = u_xlat1.y + u_xlat14;
+    u_xlat0.x = u_xlat14 * 0.0416666679 + u_xlat0.x;
+    u_xlat14 = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.x = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.x = sin(u_xlat1.x);
+    u_xlat1.x = u_xlat1.x * _NoiseParameters.xxyz.w;
+    u_xlat1.x = fract(u_xlat1.x);
+    u_xlat14 = sin(u_xlat14);
+    u_xlat14 = u_xlat14 * _NoiseParameters.xxyz.w;
+    u_xlat14 = fract(u_xlat14);
+    u_xlat21 = u_xlat14 + u_xlat21;
+    u_xlat7.x = u_xlat14 * 2.0 + u_xlat7.x;
+    u_xlat7.x = u_xlat1.x + u_xlat7.x;
+    u_xlat0.x = u_xlat21 * 0.0833333358 + u_xlat0.x;
+    u_xlat0.x = u_xlat7.x * 0.0416666679 + u_xlat0.x;
+    SV_Target0.xyz = u_xlat0.xxx * vec3(0.0625, 0.0625, 0.0625);
+    SV_Target0.w = 1.0;
+    return SV_Target0;
+    return SV_Target0;
+}
+
+// O programa 1 do shader NodeVideo/Effect/grain do Node, conta por conta (tools/nodepassesc/montar.py).
+vec4 ruidoColorido(vec2 vs_TEXCOORD0)
+{
+    vec4 SV_Target0 = vec4(0.0);
+    vec4 u_xlat0;
+    vec3 u_xlat1;
+    bool u_xlatb1;
+    vec4 u_xlat2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    vec4 u_xlat5;
+    vec4 u_xlat6;
+    vec4 u_xlat7;
+    vec4 u_xlat8;
+    vec4 u_xlat9;
+    vec4 u_xlat10;
+    vec4 u_xlat11;
+    vec4 u_xlat12;
+    vec4 u_xlat13;
+    vec4 u_xlat14;
+    vec4 u_xlat15;
+    vec4 u_xlat16;
+    vec3 u_xlat17;
+    vec3 u_xlat18;
+    float u_xlat19;
+    vec3 u_xlat20;
+    vec3 u_xlat23;
+    float u_xlat32;
+    vec2 u_xlat34;
+    vec2 u_xlat35;
+    float u_xlat37;
+    vec2 u_xlat40;
+    vec2 u_xlat42;
+    float u_xlat51;
+    float u_xlat52;
+    float u_xlat54;
+    float u_xlat57;
+    float u_xlat59;
+
+    u_xlat0 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(-2.0, -2.0, -1.0, -1.0);
+    u_xlat1.x = acTime * 10.0;
+    u_xlatb1 = u_xlat1.x>=(-u_xlat1.x);
+    u_xlat1.xy = (bool(u_xlatb1)) ? vec2(10.0, 0.100000001) : vec2(-10.0, -0.100000001);
+    u_xlat18.x = u_xlat1.y * acTime;
+    u_xlat18.x = fract(u_xlat18.x);
+    u_xlat1.x = u_xlat18.x * u_xlat1.x;
+    u_xlat1.x = fract(u_xlat1.x);
+    u_xlat2 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat0;
+    u_xlat18.x = dot(u_xlat2.xy, _NoiseParameters.xxyz.yz);
+    u_xlat18.y = dot(u_xlat2.zw, _NoiseParameters.xxyz.yz);
+    u_xlat18.xy = sin(u_xlat18.xy);
+    u_xlat18.xy = u_xlat18.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat2 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(-1.0, -2.0, 0.0, -2.0);
+    u_xlat3 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat2;
+    u_xlat52 = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat3.x = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat3.x = sin(u_xlat3.x);
+    u_xlat3.x = u_xlat3.x * _NoiseParameters.xxyz.w;
+    u_xlat3.x = fract(u_xlat3.x);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat18.z = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat18.xyz = fract(u_xlat18.xyz);
+    u_xlat18.x = u_xlat18.z * 2.0 + u_xlat18.x;
+    u_xlat18.z = u_xlat3.x * 2.0 + u_xlat18.z;
+    u_xlat18.x = u_xlat3.x + u_xlat18.x;
+    u_xlat4 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(-2.0, -1.0, 0.0, -1.0);
+    u_xlat5 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat4;
+    u_xlat20.x = dot(u_xlat5.xy, _NoiseParameters.xxyz.yz);
+    u_xlat20.y = dot(u_xlat5.zw, _NoiseParameters.xxyz.yz);
+    u_xlat20.xy = sin(u_xlat20.xy);
+    u_xlat20.xy = u_xlat20.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat20.xy = fract(u_xlat20.xy);
+    u_xlat18.x = u_xlat20.x * 2.0 + u_xlat18.x;
+    u_xlat20.x = u_xlat18.y * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat20.y + u_xlat20.x;
+    u_xlat18.x = u_xlat18.y * -12.0 + u_xlat18.x;
+    u_xlat18.x = u_xlat20.y * 2.0 + u_xlat18.x;
+    u_xlat5 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(-2.0, 0.0, -1.0, 0.0);
+    u_xlat6 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat5;
+    u_xlat54 = dot(u_xlat6.xy, _NoiseParameters.xxyz.yz);
+    u_xlat6.x = dot(u_xlat6.zw, _NoiseParameters.xxyz.yz);
+    u_xlat6.x = sin(u_xlat6.x);
+    u_xlat6.x = u_xlat6.x * _NoiseParameters.xxyz.w;
+    u_xlat6.x = fract(u_xlat6.x);
+    u_xlat54 = sin(u_xlat54);
+    u_xlat54 = u_xlat54 * _NoiseParameters.xxyz.w;
+    u_xlat54 = fract(u_xlat54);
+    u_xlat18.x = u_xlat18.x + u_xlat54;
+    u_xlat18.x = u_xlat6.x * 2.0 + u_xlat18.x;
+    u_xlat23.xyz = u_xlat1.xxx * vec3(0.0700000003, 0.109999999, 0.129999995);
+    u_xlat7.xy = vs_TEXCOORD0.xy * vec2(128.0, 128.0) + u_xlat23.zz;
+    u_xlat8 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + u_xlat23.xxyy;
+    u_xlat23.x = dot(u_xlat7.xy, _NoiseParameters.xxyz.yz);
+    u_xlat23.x = sin(u_xlat23.x);
+    u_xlat23.x = u_xlat23.x * _NoiseParameters.xxyz.w;
+    u_xlat23.x = fract(u_xlat23.x);
+    u_xlat7 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(1.0, -2.0, 1.0, -1.0);
+    u_xlat9 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat7;
+    u_xlat40.x = dot(u_xlat9.xy, _NoiseParameters.xxyz.yz);
+    u_xlat40.y = dot(u_xlat9.zw, _NoiseParameters.xxyz.yz);
+    u_xlat40.xy = sin(u_xlat40.xy);
+    u_xlat40.xy = u_xlat40.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat23.yz = fract(u_xlat40.xy);
+    u_xlat18.xz = u_xlat18.xz + u_xlat23.xy;
+    u_xlat3.x = u_xlat23.y * 2.0 + u_xlat3.x;
+    u_xlat52 = u_xlat18.y * 2.0 + u_xlat18.z;
+    u_xlat35.x = u_xlat20.y * 2.0 + u_xlat18.y;
+    u_xlat35.x = u_xlat23.z + u_xlat35.x;
+    u_xlat35.x = u_xlat6.x * 2.0 + u_xlat35.x;
+    u_xlat35.x = u_xlat23.x * -12.0 + u_xlat35.x;
+    u_xlat52 = u_xlat20.y * -12.0 + u_xlat52;
+    u_xlat52 = u_xlat23.z * 2.0 + u_xlat52;
+    u_xlat52 = u_xlat6.x + u_xlat52;
+    u_xlat52 = u_xlat23.x * 2.0 + u_xlat52;
+    u_xlat9 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(1.0, 0.0, 2.0, -2.0);
+    u_xlat10 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat9;
+    u_xlat40.x = dot(u_xlat10.xy, _NoiseParameters.xxyz.yz);
+    u_xlat10.x = dot(u_xlat10.zw, _NoiseParameters.xxyz.yz);
+    u_xlat10.x = sin(u_xlat10.x);
+    u_xlat10.x = u_xlat10.x * _NoiseParameters.xxyz.w;
+    u_xlat10.x = fract(u_xlat10.x);
+    u_xlat3.x = u_xlat3.x + u_xlat10.x;
+    u_xlat3.x = u_xlat20.y * 2.0 + u_xlat3.x;
+    u_xlat37 = u_xlat23.z * 2.0 + u_xlat20.y;
+    u_xlat3.x = u_xlat23.z * -12.0 + u_xlat3.x;
+    u_xlat40.x = sin(u_xlat40.x);
+    u_xlat40.x = u_xlat40.x * _NoiseParameters.xxyz.w;
+    u_xlat23.y = fract(u_xlat40.x);
+    u_xlat52 = u_xlat52 + u_xlat23.y;
+    u_xlat52 = u_xlat52 * 0.0833333358;
+    u_xlat18.x = u_xlat18.x * 0.0416666679 + u_xlat52;
+    u_xlat10 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(2.0, -1.0, 2.0, 0.0);
+    u_xlat11 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat10;
+    u_xlat52 = dot(u_xlat11.xy, _NoiseParameters.xxyz.yz);
+    u_xlat57 = dot(u_xlat11.zw, _NoiseParameters.xxyz.yz);
+    u_xlat57 = sin(u_xlat57);
+    u_xlat57 = u_xlat57 * _NoiseParameters.xxyz.w;
+    u_xlat23.z = fract(u_xlat57);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat52 = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat52 = fract(u_xlat52);
+    u_xlat3.x = u_xlat52 * 2.0 + u_xlat3.x;
+    u_xlat52 = u_xlat52 + u_xlat37;
+    u_xlat52 = u_xlat23.x * 2.0 + u_xlat52;
+    u_xlat52 = u_xlat23.y * -12.0 + u_xlat52;
+    u_xlat52 = u_xlat23.z * 2.0 + u_xlat52;
+    u_xlat3.x = u_xlat23.x + u_xlat3.x;
+    u_xlat3.x = u_xlat23.y * 2.0 + u_xlat3.x;
+    u_xlat3.x = u_xlat23.z + u_xlat3.x;
+    u_xlat18.x = u_xlat3.x * 0.0416666679 + u_xlat18.x;
+    u_xlat3.x = u_xlat54 * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat6.x * 2.0 + u_xlat54;
+    u_xlat3.x = u_xlat6.x * -12.0 + u_xlat3.x;
+    u_xlat20.y = u_xlat23.x * 2.0 + u_xlat6.x;
+    u_xlat3.x = u_xlat23.x * 2.0 + u_xlat3.x;
+    u_xlat20.z = u_xlat23.y * 2.0 + u_xlat23.x;
+    u_xlat35.x = u_xlat23.y * 2.0 + u_xlat35.x;
+    u_xlat20.xyz = u_xlat23.xyz + u_xlat20.xyz;
+    u_xlat6 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(-2.0, 1.0, -1.0, 1.0);
+    u_xlat11 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat6;
+    u_xlat11.x = dot(u_xlat11.xy, _NoiseParameters.xxyz.yz);
+    u_xlat11.y = dot(u_xlat11.zw, _NoiseParameters.xxyz.yz);
+    u_xlat11.xy = sin(u_xlat11.xy);
+    u_xlat11.xy = u_xlat11.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat11.xy = fract(u_xlat11.xy);
+    u_xlat3.x = u_xlat3.x + u_xlat11.x;
+    u_xlat20.x = u_xlat11.x * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat11.y * -12.0 + u_xlat20.x;
+    u_xlat3.x = u_xlat11.y * 2.0 + u_xlat3.x;
+    u_xlat12 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(0.0, 1.0, 1.0, 1.0);
+    u_xlat13 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat12;
+    u_xlat11.x = dot(u_xlat13.xy, _NoiseParameters.xxyz.yz);
+    u_xlat11.z = dot(u_xlat13.zw, _NoiseParameters.xxyz.yz);
+    u_xlat11.xz = sin(u_xlat11.xz);
+    u_xlat11.xz = u_xlat11.xz * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat11.xz = fract(u_xlat11.xz);
+    u_xlat3.x = u_xlat3.x + u_xlat11.x;
+    u_xlat18.x = u_xlat3.x * 0.0833333358 + u_xlat18.x;
+    u_xlat35.x = u_xlat35.x + u_xlat11.y;
+    u_xlat3.x = u_xlat11.y * 2.0 + u_xlat20.y;
+    u_xlat3.x = u_xlat11.x * -12.0 + u_xlat3.x;
+    u_xlat3.x = u_xlat11.z * 2.0 + u_xlat3.x;
+    u_xlat35.x = u_xlat11.x * 2.0 + u_xlat35.x;
+    u_xlat35.x = u_xlat11.z + u_xlat35.x;
+    u_xlat18.x = u_xlat35.x * 0.166666672 + u_xlat18.x;
+    u_xlat35.x = u_xlat52 + u_xlat11.x;
+    u_xlat35.x = u_xlat11.z * 2.0 + u_xlat35.x;
+    u_xlat13 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(2.0, 1.0, -2.0, 2.0);
+    u_xlat14 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat13;
+    u_xlat52 = dot(u_xlat14.xy, _NoiseParameters.xxyz.yz);
+    u_xlat37 = dot(u_xlat14.zw, _NoiseParameters.xxyz.yz);
+    u_xlat37 = sin(u_xlat37);
+    u_xlat37 = u_xlat37 * _NoiseParameters.xxyz.w;
+    u_xlat37 = fract(u_xlat37);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat52 = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat52 = fract(u_xlat52);
+    u_xlat35.x = u_xlat52 + u_xlat35.x;
+    u_xlat18.x = u_xlat35.x * 0.0833333358 + u_xlat18.x;
+    u_xlat35.x = u_xlat11.x * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat11.x * 2.0 + u_xlat20.z;
+    u_xlat20.x = u_xlat11.z * -12.0 + u_xlat20.x;
+    u_xlat35.y = u_xlat52 * 2.0 + u_xlat20.x;
+    u_xlat35.x = u_xlat37 + u_xlat35.x;
+    u_xlat11 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(-1.0, 2.0, 0.0, 2.0);
+    u_xlat14 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat11;
+    u_xlat20.x = dot(u_xlat14.xy, _NoiseParameters.xxyz.yz);
+    u_xlat20.y = dot(u_xlat14.zw, _NoiseParameters.xxyz.yz);
+    u_xlat20.xy = sin(u_xlat20.xy);
+    u_xlat20.xy = u_xlat20.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat20.xy = fract(u_xlat20.xy);
+    u_xlat35.x = u_xlat20.x * 2.0 + u_xlat35.x;
+    u_xlat3.x = u_xlat20.x + u_xlat3.x;
+    u_xlat3.x = u_xlat20.y * 2.0 + u_xlat3.x;
+    u_xlat35.xy = u_xlat35.xy + u_xlat20.yy;
+    u_xlat18.x = u_xlat35.x * 0.0416666679 + u_xlat18.x;
+    u_xlat14 = vs_TEXCOORD0.xyxy * vec4(128.0, 128.0, 128.0, 128.0) + vec4(1.0, 2.0, 2.0, 2.0);
+    u_xlat15 = u_xlat1.xxxx * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat14;
+    u_xlat35.x = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat20.x = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat20.x = sin(u_xlat20.x);
+    u_xlat20.x = u_xlat20.x * _NoiseParameters.xxyz.w;
+    u_xlat20.x = fract(u_xlat20.x);
+    u_xlat35.x = sin(u_xlat35.x);
+    u_xlat35.x = u_xlat35.x * _NoiseParameters.xxyz.w;
+    u_xlat35.x = fract(u_xlat35.x);
+    u_xlat3.x = u_xlat35.x + u_xlat3.x;
+    u_xlat35.x = u_xlat35.x * 2.0 + u_xlat35.y;
+    u_xlat35.x = u_xlat20.x + u_xlat35.x;
+    u_xlat18.x = u_xlat3.x * 0.0833333358 + u_xlat18.x;
+    u_xlat18.x = u_xlat35.x * 0.0416666679 + u_xlat18.x;
+    SV_Target0.z = u_xlat18.x * 0.0625;
+    u_xlat3 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat0;
+    u_xlat0 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat0;
+    u_xlat18.x = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat18.y = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat18.xy = sin(u_xlat18.xy);
+    u_xlat18.xy = u_xlat18.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat3 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat2;
+    u_xlat2 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat2;
+    u_xlat52 = dot(u_xlat3.xy, _NoiseParameters.xxyz.yz);
+    u_xlat3.x = dot(u_xlat3.zw, _NoiseParameters.xxyz.yz);
+    u_xlat3.x = sin(u_xlat3.x);
+    u_xlat3.x = u_xlat3.x * _NoiseParameters.xxyz.w;
+    u_xlat3.x = fract(u_xlat3.x);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat18.z = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat18.xyz = fract(u_xlat18.xyz);
+    u_xlat18.x = u_xlat18.z * 2.0 + u_xlat18.x;
+    u_xlat18.z = u_xlat3.x * 2.0 + u_xlat18.z;
+    u_xlat18.x = u_xlat3.x + u_xlat18.x;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat4;
+    u_xlat4 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat4;
+    u_xlat20.x = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat20.y = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat20.xy = sin(u_xlat20.xy);
+    u_xlat20.xy = u_xlat20.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat20.xy = fract(u_xlat20.xy);
+    u_xlat18.x = u_xlat20.x * 2.0 + u_xlat18.x;
+    u_xlat20.x = u_xlat18.y * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat20.y + u_xlat20.x;
+    u_xlat18.x = u_xlat18.y * -12.0 + u_xlat18.x;
+    u_xlat18.x = u_xlat20.y * 2.0 + u_xlat18.x;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat5;
+    u_xlat5 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat5;
+    u_xlat54 = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat15.x = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat15.x = sin(u_xlat15.x);
+    u_xlat15.x = u_xlat15.x * _NoiseParameters.xxyz.w;
+    u_xlat15.x = fract(u_xlat15.x);
+    u_xlat54 = sin(u_xlat54);
+    u_xlat54 = u_xlat54 * _NoiseParameters.xxyz.w;
+    u_xlat54 = fract(u_xlat54);
+    u_xlat18.x = u_xlat18.x + u_xlat54;
+    u_xlat18.x = u_xlat15.x * 2.0 + u_xlat18.x;
+    u_xlat8.x = dot(u_xlat8.xy, _NoiseParameters.xxyz.yz);
+    u_xlat8.y = dot(u_xlat8.zw, _NoiseParameters.xxyz.yz);
+    u_xlat8.xy = sin(u_xlat8.xy);
+    u_xlat8.xy = u_xlat8.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat8.xy = fract(u_xlat8.xy);
+    u_xlat16 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat7;
+    u_xlat7 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat7;
+    u_xlat42.x = dot(u_xlat16.xy, _NoiseParameters.xxyz.yz);
+    u_xlat42.y = dot(u_xlat16.zw, _NoiseParameters.xxyz.yz);
+    u_xlat42.xy = sin(u_xlat42.xy);
+    u_xlat42.xy = u_xlat42.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat8.zw = fract(u_xlat42.xy);
+    u_xlat18.xz = u_xlat18.xz + u_xlat8.xz;
+    u_xlat3.x = u_xlat8.z * 2.0 + u_xlat3.x;
+    u_xlat52 = u_xlat18.y * 2.0 + u_xlat18.z;
+    u_xlat35.x = u_xlat20.y * 2.0 + u_xlat18.y;
+    u_xlat35.x = u_xlat8.w + u_xlat35.x;
+    u_xlat35.x = u_xlat15.x * 2.0 + u_xlat35.x;
+    u_xlat35.x = u_xlat8.x * -12.0 + u_xlat35.x;
+    u_xlat52 = u_xlat20.y * -12.0 + u_xlat52;
+    u_xlat52 = u_xlat8.w * 2.0 + u_xlat52;
+    u_xlat52 = u_xlat15.x + u_xlat52;
+    u_xlat52 = u_xlat8.x * 2.0 + u_xlat52;
+    u_xlat16 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat9;
+    u_xlat9 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat9;
+    u_xlat42.x = dot(u_xlat16.xy, _NoiseParameters.xxyz.yz);
+    u_xlat32 = dot(u_xlat16.zw, _NoiseParameters.xxyz.yz);
+    u_xlat32 = sin(u_xlat32);
+    u_xlat32 = u_xlat32 * _NoiseParameters.xxyz.w;
+    u_xlat32 = fract(u_xlat32);
+    u_xlat3.x = u_xlat3.x + u_xlat32;
+    u_xlat3.x = u_xlat20.y * 2.0 + u_xlat3.x;
+    u_xlat37 = u_xlat8.w * 2.0 + u_xlat20.y;
+    u_xlat3.x = u_xlat8.w * -12.0 + u_xlat3.x;
+    u_xlat42.x = sin(u_xlat42.x);
+    u_xlat42.x = u_xlat42.x * _NoiseParameters.xxyz.w;
+    u_xlat8.z = fract(u_xlat42.x);
+    u_xlat52 = u_xlat52 + u_xlat8.z;
+    u_xlat52 = u_xlat52 * 0.0833333358;
+    u_xlat18.x = u_xlat18.x * 0.0416666679 + u_xlat52;
+    u_xlat16 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat10;
+    u_xlat10 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat10;
+    u_xlat52 = dot(u_xlat16.xy, _NoiseParameters.xxyz.yz);
+    u_xlat59 = dot(u_xlat16.zw, _NoiseParameters.xxyz.yz);
+    u_xlat59 = sin(u_xlat59);
+    u_xlat59 = u_xlat59 * _NoiseParameters.xxyz.w;
+    u_xlat8.w = fract(u_xlat59);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat52 = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat52 = fract(u_xlat52);
+    u_xlat3.x = u_xlat52 * 2.0 + u_xlat3.x;
+    u_xlat52 = u_xlat52 + u_xlat37;
+    u_xlat52 = u_xlat8.x * 2.0 + u_xlat52;
+    u_xlat52 = u_xlat8.z * -12.0 + u_xlat52;
+    u_xlat52 = u_xlat8.w * 2.0 + u_xlat52;
+    u_xlat3.x = u_xlat8.x + u_xlat3.x;
+    u_xlat3.x = u_xlat8.z * 2.0 + u_xlat3.x;
+    u_xlat3.x = u_xlat8.w + u_xlat3.x;
+    u_xlat18.x = u_xlat3.x * 0.0416666679 + u_xlat18.x;
+    u_xlat3.x = u_xlat54 * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat15.x * 2.0 + u_xlat54;
+    u_xlat3.x = u_xlat15.x * -12.0 + u_xlat3.x;
+    u_xlat20.y = u_xlat8.x * 2.0 + u_xlat15.x;
+    u_xlat3.x = u_xlat8.x * 2.0 + u_xlat3.x;
+    u_xlat20.z = u_xlat8.z * 2.0 + u_xlat8.x;
+    u_xlat35.x = u_xlat8.z * 2.0 + u_xlat35.x;
+    u_xlat20.xyz = u_xlat8.xzw + u_xlat20.xyz;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat6;
+    u_xlat6 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat6;
+    u_xlat8.x = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat8.z = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat8.xz = sin(u_xlat8.xz);
+    u_xlat8.xz = u_xlat8.xz * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat8.xz = fract(u_xlat8.xz);
+    u_xlat3.x = u_xlat3.x + u_xlat8.x;
+    u_xlat20.x = u_xlat8.x * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat8.z * -12.0 + u_xlat20.x;
+    u_xlat3.x = u_xlat8.z * 2.0 + u_xlat3.x;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat12;
+    u_xlat12 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat12;
+    u_xlat8.x = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat8.w = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat8.xw = sin(u_xlat8.xw);
+    u_xlat8.xw = u_xlat8.xw * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat8.xw = fract(u_xlat8.xw);
+    u_xlat3.x = u_xlat3.x + u_xlat8.x;
+    u_xlat18.x = u_xlat3.x * 0.0833333358 + u_xlat18.x;
+    u_xlat35.x = u_xlat35.x + u_xlat8.z;
+    u_xlat3.x = u_xlat8.z * 2.0 + u_xlat20.y;
+    u_xlat3.x = u_xlat8.x * -12.0 + u_xlat3.x;
+    u_xlat3.x = u_xlat8.w * 2.0 + u_xlat3.x;
+    u_xlat35.x = u_xlat8.x * 2.0 + u_xlat35.x;
+    u_xlat35.x = u_xlat8.w + u_xlat35.x;
+    u_xlat18.x = u_xlat35.x * 0.166666672 + u_xlat18.x;
+    u_xlat35.x = u_xlat52 + u_xlat8.x;
+    u_xlat35.x = u_xlat8.w * 2.0 + u_xlat35.x;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat13;
+    u_xlat13 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat13;
+    u_xlat52 = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat37 = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat37 = sin(u_xlat37);
+    u_xlat37 = u_xlat37 * _NoiseParameters.xxyz.w;
+    u_xlat37 = fract(u_xlat37);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat52 = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat52 = fract(u_xlat52);
+    u_xlat35.x = u_xlat52 + u_xlat35.x;
+    u_xlat18.x = u_xlat35.x * 0.0833333358 + u_xlat18.x;
+    u_xlat35.x = u_xlat8.x * 2.0 + u_xlat20.x;
+    u_xlat20.x = u_xlat8.x * 2.0 + u_xlat20.z;
+    u_xlat20.x = u_xlat8.w * -12.0 + u_xlat20.x;
+    u_xlat35.y = u_xlat52 * 2.0 + u_xlat20.x;
+    u_xlat35.x = u_xlat37 + u_xlat35.x;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat11;
+    u_xlat11 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat11;
+    u_xlat20.x = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat20.y = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat20.xy = sin(u_xlat20.xy);
+    u_xlat20.xy = u_xlat20.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat20.xy = fract(u_xlat20.xy);
+    u_xlat35.x = u_xlat20.x * 2.0 + u_xlat35.x;
+    u_xlat3.x = u_xlat20.x + u_xlat3.x;
+    u_xlat3.x = u_xlat20.y * 2.0 + u_xlat3.x;
+    u_xlat35.xy = u_xlat35.xy + u_xlat20.yy;
+    u_xlat18.x = u_xlat35.x * 0.0416666679 + u_xlat18.x;
+    u_xlat15 = u_xlat1.xxxx * vec4(0.0700000003, 0.0700000003, 0.0700000003, 0.0700000003) + u_xlat14;
+    u_xlat14 = u_xlat1.xxxx * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat14;
+    u_xlat1.x = dot(u_xlat15.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.z = dot(u_xlat15.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.xz = sin(u_xlat1.xz);
+    u_xlat1.xz = u_xlat1.xz * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat1.xz = fract(u_xlat1.xz);
+    u_xlat3.x = u_xlat1.x + u_xlat3.x;
+    u_xlat1.x = u_xlat1.x * 2.0 + u_xlat35.y;
+    u_xlat1.x = u_xlat1.z + u_xlat1.x;
+    u_xlat18.x = u_xlat3.x * 0.0833333358 + u_xlat18.x;
+    u_xlat1.x = u_xlat1.x * 0.0416666679 + u_xlat18.x;
+    SV_Target0.x = u_xlat1.x * 0.0625;
+    u_xlat0.x = dot(u_xlat0.xy, _NoiseParameters.xxyz.yz);
+    u_xlat0.y = dot(u_xlat0.zw, _NoiseParameters.xxyz.yz);
+    u_xlat0.xy = sin(u_xlat0.xy);
+    u_xlat0.xy = u_xlat0.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat34.x = dot(u_xlat2.xy, _NoiseParameters.xxyz.yz);
+    u_xlat34.y = dot(u_xlat2.zw, _NoiseParameters.xxyz.yz);
+    u_xlat34.xy = sin(u_xlat34.xy);
+    u_xlat0.zw = u_xlat34.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat0 = fract(u_xlat0);
+    u_xlat0.x = u_xlat0.z * 2.0 + u_xlat0.x;
+    u_xlat34.x = u_xlat0.w * 2.0 + u_xlat0.z;
+    u_xlat0.x = u_xlat0.w + u_xlat0.x;
+    u_xlat1.x = dot(u_xlat4.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.y = dot(u_xlat4.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.xy = sin(u_xlat1.xy);
+    u_xlat1.xy = u_xlat1.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat1.xy = fract(u_xlat1.xy);
+    u_xlat0.x = u_xlat1.x * 2.0 + u_xlat0.x;
+    u_xlat1.x = u_xlat0.y * 2.0 + u_xlat1.x;
+    u_xlat1.x = u_xlat1.y + u_xlat1.x;
+    u_xlat0.x = u_xlat0.y * -12.0 + u_xlat0.x;
+    u_xlat0.x = u_xlat1.y * 2.0 + u_xlat0.x;
+    u_xlat35.x = dot(u_xlat5.xy, _NoiseParameters.xxyz.yz);
+    u_xlat35.y = dot(u_xlat5.zw, _NoiseParameters.xxyz.yz);
+    u_xlat35.xy = sin(u_xlat35.xy);
+    u_xlat35.xy = u_xlat35.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat35.xy = fract(u_xlat35.xy);
+    u_xlat0.x = u_xlat0.x + u_xlat35.x;
+    u_xlat0.x = u_xlat35.y * 2.0 + u_xlat0.x;
+    u_xlat0.x = u_xlat8.y + u_xlat0.x;
+    u_xlat2.x = dot(u_xlat7.xy, _NoiseParameters.xxyz.yz);
+    u_xlat2.y = dot(u_xlat7.zw, _NoiseParameters.xxyz.yz);
+    u_xlat2.xy = sin(u_xlat2.xy);
+    u_xlat2.xy = u_xlat2.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat2.xy = fract(u_xlat2.xy);
+    u_xlat34.x = u_xlat34.x + u_xlat2.x;
+    u_xlat34.y = u_xlat2.x * 2.0 + u_xlat0.w;
+    u_xlat34.x = u_xlat0.y * 2.0 + u_xlat34.x;
+    u_xlat17.x = u_xlat1.y * 2.0 + u_xlat0.y;
+    u_xlat17.x = u_xlat2.y + u_xlat17.x;
+    u_xlat17.x = u_xlat35.y * 2.0 + u_xlat17.x;
+    u_xlat17.x = u_xlat8.y * -12.0 + u_xlat17.x;
+    u_xlat34.x = u_xlat1.y * -12.0 + u_xlat34.x;
+    u_xlat34.x = u_xlat2.y * 2.0 + u_xlat34.x;
+    u_xlat34.x = u_xlat35.y + u_xlat34.x;
+    u_xlat34.x = u_xlat8.y * 2.0 + u_xlat34.x;
+    u_xlat2.x = dot(u_xlat9.xy, _NoiseParameters.xxyz.yz);
+    u_xlat2.z = dot(u_xlat9.zw, _NoiseParameters.xxyz.yz);
+    u_xlat2.xz = sin(u_xlat2.xz);
+    u_xlat2.xz = u_xlat2.xz * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat2.xz = fract(u_xlat2.xz);
+    u_xlat34.xy = u_xlat34.xy + u_xlat2.xz;
+    u_xlat51 = u_xlat1.y * 2.0 + u_xlat34.y;
+    u_xlat18.x = u_xlat2.y * 2.0 + u_xlat1.y;
+    u_xlat51 = u_xlat2.y * -12.0 + u_xlat51;
+    u_xlat34.x = u_xlat34.x * 0.0833333358;
+    u_xlat0.x = u_xlat0.x * 0.0416666679 + u_xlat34.x;
+    u_xlat34.x = dot(u_xlat10.xy, _NoiseParameters.xxyz.yz);
+    u_xlat19 = dot(u_xlat10.zw, _NoiseParameters.xxyz.yz);
+    u_xlat19 = sin(u_xlat19);
+    u_xlat19 = u_xlat19 * _NoiseParameters.xxyz.w;
+    u_xlat2.y = fract(u_xlat19);
+    u_xlat34.x = sin(u_xlat34.x);
+    u_xlat34.x = u_xlat34.x * _NoiseParameters.xxyz.w;
+    u_xlat34.x = fract(u_xlat34.x);
+    u_xlat51 = u_xlat34.x * 2.0 + u_xlat51;
+    u_xlat34.x = u_xlat34.x + u_xlat18.x;
+    u_xlat34.x = u_xlat8.y * 2.0 + u_xlat34.x;
+    u_xlat34.x = u_xlat2.x * -12.0 + u_xlat34.x;
+    u_xlat34.x = u_xlat2.y * 2.0 + u_xlat34.x;
+    u_xlat51 = u_xlat8.y + u_xlat51;
+    u_xlat51 = u_xlat2.x * 2.0 + u_xlat51;
+    u_xlat51 = u_xlat2.y + u_xlat51;
+    u_xlat0.x = u_xlat51 * 0.0416666679 + u_xlat0.x;
+    u_xlat51 = u_xlat35.x * 2.0 + u_xlat1.x;
+    u_xlat1.x = u_xlat35.y * 2.0 + u_xlat35.x;
+    u_xlat1.x = u_xlat8.y + u_xlat1.x;
+    u_xlat51 = u_xlat35.y * -12.0 + u_xlat51;
+    u_xlat18.x = u_xlat8.y * 2.0 + u_xlat35.y;
+    u_xlat51 = u_xlat8.y * 2.0 + u_xlat51;
+    u_xlat18.y = u_xlat2.x * 2.0 + u_xlat8.y;
+    u_xlat17.x = u_xlat2.x * 2.0 + u_xlat17.x;
+    u_xlat18.xy = u_xlat2.xy + u_xlat18.xy;
+    u_xlat52 = dot(u_xlat6.xy, _NoiseParameters.xxyz.yz);
+    u_xlat2.x = dot(u_xlat6.zw, _NoiseParameters.xxyz.yz);
+    u_xlat2.x = sin(u_xlat2.x);
+    u_xlat2.x = u_xlat2.x * _NoiseParameters.xxyz.w;
+    u_xlat2.x = fract(u_xlat2.x);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat52 = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat52 = fract(u_xlat52);
+    u_xlat51 = u_xlat51 + u_xlat52;
+    u_xlat1.x = u_xlat52 * 2.0 + u_xlat1.x;
+    u_xlat1.x = u_xlat2.x * -12.0 + u_xlat1.x;
+    u_xlat51 = u_xlat2.x * 2.0 + u_xlat51;
+    u_xlat52 = dot(u_xlat12.xy, _NoiseParameters.xxyz.yz);
+    u_xlat19 = dot(u_xlat12.zw, _NoiseParameters.xxyz.yz);
+    u_xlat19 = sin(u_xlat19);
+    u_xlat19 = u_xlat19 * _NoiseParameters.xxyz.w;
+    u_xlat19 = fract(u_xlat19);
+    u_xlat52 = sin(u_xlat52);
+    u_xlat52 = u_xlat52 * _NoiseParameters.xxyz.w;
+    u_xlat52 = fract(u_xlat52);
+    u_xlat51 = u_xlat51 + u_xlat52;
+    u_xlat0.x = u_xlat51 * 0.0833333358 + u_xlat0.x;
+    u_xlat17.x = u_xlat17.x + u_xlat2.x;
+    u_xlat51 = u_xlat2.x * 2.0 + u_xlat18.x;
+    u_xlat51 = u_xlat52 * -12.0 + u_xlat51;
+    u_xlat17.z = u_xlat19 * 2.0 + u_xlat51;
+    u_xlat17.x = u_xlat52 * 2.0 + u_xlat17.x;
+    u_xlat17.x = u_xlat19 + u_xlat17.x;
+    u_xlat0.x = u_xlat17.x * 0.166666672 + u_xlat0.x;
+    u_xlat17.x = u_xlat34.x + u_xlat52;
+    u_xlat17.x = u_xlat19 * 2.0 + u_xlat17.x;
+    u_xlat34.x = dot(u_xlat13.xy, _NoiseParameters.xxyz.yz);
+    u_xlat18.x = dot(u_xlat13.zw, _NoiseParameters.xxyz.yz);
+    u_xlat18.x = sin(u_xlat18.x);
+    u_xlat18.x = u_xlat18.x * _NoiseParameters.xxyz.w;
+    u_xlat18.x = fract(u_xlat18.x);
+    u_xlat34.x = sin(u_xlat34.x);
+    u_xlat34.x = u_xlat34.x * _NoiseParameters.xxyz.w;
+    u_xlat34.x = fract(u_xlat34.x);
+    u_xlat17.x = u_xlat34.x + u_xlat17.x;
+    u_xlat0.x = u_xlat17.x * 0.0833333358 + u_xlat0.x;
+    u_xlat17.x = u_xlat52 * 2.0 + u_xlat1.x;
+    u_xlat1.x = u_xlat52 * 2.0 + u_xlat18.y;
+    u_xlat1.x = u_xlat19 * -12.0 + u_xlat1.x;
+    u_xlat17.y = u_xlat34.x * 2.0 + u_xlat1.x;
+    u_xlat17.x = u_xlat18.x + u_xlat17.x;
+    u_xlat1.x = dot(u_xlat11.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.y = dot(u_xlat11.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.xy = sin(u_xlat1.xy);
+    u_xlat1.xy = u_xlat1.xy * vec2(_NoiseParameters.z, _NoiseParameters.z);
+    u_xlat1.xy = fract(u_xlat1.xy);
+    u_xlat17.x = u_xlat1.x * 2.0 + u_xlat17.x;
+    u_xlat17.xyz = u_xlat17.xyz + u_xlat1.yyx;
+    u_xlat51 = u_xlat1.y * 2.0 + u_xlat17.z;
+    u_xlat0.x = u_xlat17.x * 0.0416666679 + u_xlat0.x;
+    u_xlat17.x = dot(u_xlat14.xy, _NoiseParameters.xxyz.yz);
+    u_xlat1.x = dot(u_xlat14.zw, _NoiseParameters.xxyz.yz);
+    u_xlat1.x = sin(u_xlat1.x);
+    u_xlat1.x = u_xlat1.x * _NoiseParameters.xxyz.w;
+    u_xlat1.x = fract(u_xlat1.x);
+    u_xlat17.x = sin(u_xlat17.x);
+    u_xlat17.x = u_xlat17.x * _NoiseParameters.xxyz.w;
+    u_xlat17.x = fract(u_xlat17.x);
+    u_xlat51 = u_xlat17.x + u_xlat51;
+    u_xlat17.x = u_xlat17.x * 2.0 + u_xlat17.y;
+    u_xlat17.x = u_xlat1.x + u_xlat17.x;
+    u_xlat0.x = u_xlat51 * 0.0833333358 + u_xlat0.x;
+    u_xlat0.x = u_xlat17.x * 0.0416666679 + u_xlat0.x;
+    SV_Target0.y = u_xlat0.x * 0.0625;
+    SV_Target0.w = 1.0;
+    return SV_Target0;
+    return SV_Target0;
+}
+
+
+// O RT 128 × 128 com REPEAT e filtro linear (em luz linear: o buffer é sRGB e o texelFetch já decodifica).
+vec4 lerRuido(vec2 uv) {
+    vec2 q = uv * 128.0 - 0.5;
+    vec2 f = fract(q);
+    ivec2 b = ivec2(floor(q));
+    vec4 a00 = texelFetch(ruido, (b & 127), 0);
+    vec4 a10 = texelFetch(ruido, ((b + ivec2(1, 0)) & 127), 0);
+    vec4 a01 = texelFetch(ruido, ((b + ivec2(0, 1)) & 127), 0);
+    vec4 a11 = texelFetch(ruido, ((b + ivec2(1, 1)) & 127), 0);
+    return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
+}
+
+// O programa 2 do shader NodeVideo/Effect/grain do Node, conta por conta (tools/nodepassesc/montar.py).
+vec4 aplicar(vec2 vs_TEXCOORD0)
+{
+    vec4 SV_Target0 = vec4(0.0);
+    vec4 u_xlat0;
+    vec4 u_xlat1;
+    vec3 u_xlat2;
+    bvec2 u_xlatb2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    vec4 u_xlat5;
+    float u_xlat19;
+
+    u_xlat0 = nvFonte( vs_TEXCOORD0.xy);
+    u_xlat1.xy = vs_TEXCOORD0.xy + vec2(-0.5, -0.5);
+    u_xlat1.xy = u_xlat1.xy * vec2(_scale.x, _scale.y);
+    u_xlat1.xyz = lerRuido( u_xlat1.xy).xyz;
+    u_xlat2.xyz = u_xlat0.xyz;
+    u_xlat2.xyz = clamp(u_xlat2.xyz, 0.0, 1.0);
+    u_xlat19 = dot(u_xlat2.xyz, vec3(0.300000012, 0.589999974, 0.109999999));
+    u_xlat19 = sqrt(u_xlat19);
+    u_xlat2.x = (-_amount) + 1.0;
+    u_xlat19 = u_xlat2.x * (-u_xlat19) + 1.0;
+    u_xlat1.xyz = u_xlat0.xyz * u_xlat1.xyz;
+    u_xlat1.xyz = u_xlat1.xyz * vec3(vec3(_intensity, _intensity, _intensity));
+    u_xlat1.xyz = vec3(u_xlat19) * u_xlat1.xyz;
+    u_xlat1.xyz = u_xlat1.xyz * vec3(30.0, 30.0, 30.0) + u_xlat0.xyz;
+    if(0 != 0) {
+        u_xlatb2.xy = equal(ivec4(0, 0, 0, 0), ivec4(1, 1, 0, 0)).xy;
+        u_xlat1.w = u_xlat0.w;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = nvFonte( vs_TEXCOORD0.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat5 = u_xlat0 * u_xlat5;
+        u_xlat3 = u_xlat3 * u_xlat4 + u_xlat5;
+        u_xlat0.x = u_xlat4.x * u_xlat3.w;
+        SV_Target0.w = (u_xlatb2.y) ? u_xlat0.x : u_xlat3.w;
+        SV_Target0.xyz = u_xlat3.xyz;
+    } else {
+        SV_Target0.xyz = u_xlat1.xyz;
+        SV_Target0.w = u_xlat0.w;
+    }
+    return SV_Target0;
+    return SV_Target0;
+}
+
+
+void main() {
+    if (acPass == 0) {
+        // O Blit do Node num RT de 128: vs_TEXCOORD0 = o meio do texel.
+        vec2 uv = gl_FragCoord.xy / 128.0;
+        fragColor = _colored ? ruidoColorido(uv) : ruidoCinza(uv);
+        return;
+    }
+    fragColor = nvVolta(aplicar(nvUvDePe()));
+}
+    ]]></shader>
+</effect>

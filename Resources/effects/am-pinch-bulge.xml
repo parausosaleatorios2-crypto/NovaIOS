@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PINÇAR/SALIÊNCIAS — o Pinch/Bulge do Alight Motion, conta por conta (0.643.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "proximo efeito agora 100% igual do alight motion" — o próximo da fila por uso nas
+  cenas do AM (15 vezes). Mesmos ids, padrões, faixas, passos e marcas do `com.alightcreative.effects.pinchbulge2`
+  (o `pinchbulge`, marcado `deprecated`, tem a mesma conta e os mesmos parâmetros: os dois caem aqui no importador).
+  A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/pinchbulge2.xml` do APK descompactado) e do motor que
+  entrega o centro (`ssl/W.render`: `acLayerCenterNorm` = (location.x ÷ tela.x, (tela.y − location.y) ÷ tela.y)),
+  e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é
+  `python tools/ampinch/comparar.py`: o efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A conta é na TELA, não na camada: o centro é o `location` da camada (Posição − Âncora) mais o Centralizar ÷ 1000
+    em fração da tela (X para a direita, Y para baixo; 1000 = a tela inteira), e o Raio é em alturas da tela (o X é
+    corrigido pelo aspecto da tela). Girar ou escalar a camada não gira nem escala a lente.
+  - Dentro do Raio, com p = distância ÷ Raio:
+      Intensidade > 0 (pinçar): o ponto vai para mix(1, smoothstep(0, Raio ÷ dist, p), Intensidade × 0,75) vezes
+      ele mesmo;
+      Intensidade ≤ 0 (saliência): mix(1, p^(1 + Intensidade × 0,75) × Raio ÷ dist, 1 − p).
+    Fora do Raio, nada muda. Com 0 a camada sai como entrou; o padrão é −0,9.
+  - O AM roda o efeito NA TELA, depois de mover, girar e escalar a camada, e lê a camada JÁ na tela (filtro linear
+    sobre a cor PRÉ-multiplicada, a textura dele). Aqui é igual: `stage="screen"` (o corte do Ampliar o fundo e do
+    Apertar) e o filtro linear feito à mão nos 4 pixels, sobre a cor pré-multiplicada.
+  - No pixel exatamente no centro, com Intensidade ≤ 0, a conta do AM dá 0 × ∞ = NaN e a GPU decide o pixel: aqui a
+    conta segue o mesmo caminho até a GPU, em vez de inventar uma resposta.
+  - O Centralizar é um `<point>` do AM sem `type` (camada), ±9999 e passo 1, número CRU (o AM o divide por 1000 no
+    shader): aqui é um ponto de números, como os outros pontos do AM já trazidos.
+  - Dentro de grupo (o filho), o corte na tela não existe: o efeito roda no buffer do filho, levado à tela do grupo
+    pelo `acTela` e de volta.
+-->
+<effect
+    id="nova.effect.am-pinch-bulge"
+    name="Pinçar/saliências"
+    name-en="Pinch/Bulge"
+    desc="Distorce a camada comprimindo-a no centro ou expandindo-a para fora (o Pinch/Bulge do Alight Motion)."
+    desc-en="Distorts the layer by pinching it towards the center or expanding it outward (Alight Motion's Pinch/Bulge)."
+    category="distort"
+    tags="pinçar,saliência,inflar,esferizar,lente,bolha,distorcer,pinch,bulge,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- `<point>` do AM sem atributos: (0, 0), ±9999 e passo 1 (`readPointParam`), número cru. -->
+        <point id="centerPoint" label="Centralizar" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <!-- `<spinner>` como no AM: o `readSpinnerParam` dele lê `ticks` (as marcas claras) e não lê `snap`. -->
+        <spinner id="strength" label="Intensidade" default="-0.9" min="-1.0" max="1.0" step="0.01"
+            ticks="-0.5,0.0,0.5" />
+        <spinner id="radius" label="Raio" default="0.3" min="0.0" max="2.5" step="0.005" />
+    </params>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta do `acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
+vec2 daTela(vec2 t) {
+    vec3 c = inverse(acParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    // O `acScreenNorm` do AM: a UV da tela com t = 0 EMBAIXO. Na tela (`stage="screen"`) a entrada já é a tela, de
+    // pé; no filho de grupo, o `acTela` leva o buffer à tela do grupo (também de pé).
+    vec2 UV = acEntradaDePe == 1 ? acScreenNorm : acTela(acScreenNorm);
+    vec2 acScreenSize = acTamanhoDaTela;
+    // O `acLayerCenterNorm` do AM (`ssl/W.render`): o location em px da tela (Y para baixo) ÷ a tela, Y para cima.
+    vec2 acLayerCenterNorm = vec2(acCentroDaCamadaPx.x / acScreenSize.x,
+                                  (acScreenSize.y - acCentroDaCamadaPx.y) / acScreenSize.y);
+
+    // A conta do AM, linha por linha.
+    vec2 center = acLayerCenterNorm-(centerPoint/1000. * vec2(-1.,1.));
+
+    UV -= center;
+    UV.x *= acScreenSize.x / acScreenSize.y;
+    float dist = length(UV);
+    if ( dist < radius ) {
+        float p = dist / radius;
+        if(strength > 0.) {
+            UV *= mix(1.0, smoothstep(0.0, radius / dist, p), strength * 0.75);
+        } else {
+            UV *= mix(1.0, pow(p, 1.0 + strength * 0.75) * radius / dist, 1.0 - p);
+        }
+    }
+    UV.x /= acScreenSize.x / acScreenSize.y;
+    UV += center;
+
+    vec2 uv = acEntradaDePe == 1 ? UV : daTela(UV);
+    // NaN (o pixel bem no centro, 0 × ∞): a GPU decide, como no AM.
+    bool foraDaConta = any(isinf(uv)) || any(isnan(uv));
+    vec4 c = foraDaConta ? preMultiplicada(texture(inputImg, uv)) : camadaNoPonto(uv);
+    fragColor = c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

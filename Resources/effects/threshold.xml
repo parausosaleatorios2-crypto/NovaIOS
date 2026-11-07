@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Limiar: tudo acima de um brilho vira uma cor, tudo abaixo vira outra.
+
+  ============================================================================
+   É O THRESHOLD DO AFTER EFFECTS, COM A CONTA DELE
+  ============================================================================
+
+  Lido no `Threshold.aex` (o efeito nativo, ADBE Threshold2) e medido no AE
+  (`tools/threshold/benchmark`). Com a Suavidade em zero e as cores em preto e
+  branco, sai igual VALOR A VALOR:
+
+  - a luminância é inteira, em 8 bits: (9798·R + 19235·G + 3735·B + 16384) >> 15
+    — os pesos 0,299 / 0,587 / 0,114 em ponto fixo de 15 bits, com
+    arredondamento;
+  - o corte é seco: branco quando a luminância é MAIOR que o Level (o Level da
+    tela do AE, de 0 a 255, com a fração jogada fora). Com o padrão, 127,5, é
+    branco de 128 para cima;
+  - a cor é a RETA (a de baixo do alfa), e o alfa passa como veio.
+
+  O "Nível" daqui é o Level do script do AE, de 0 a 1 (lá a tela mostra × 255):
+  o importador passa o número como está.
+
+  ## A Suavidade
+
+  É um extra do app (o AE não tem): com ela acima de zero o corte vira uma
+  transição (`smoothstep`), que tira o serrilhado das diagonais — e aí a conta
+  é a de ponto flutuante, não a do AE. Nasce em ZERO para o efeito recém-posto
+  ser o do After Effects; projeto antigo guarda a suavidade que tinha.
+-->
+<effect
+    id="nova.effect.threshold"
+    name="Threshold"
+    name-en="Threshold"
+    desc="Reduz a imagem a duas cores por brilho."
+    desc-en="Pure black and white at a cut point."
+    category="color"
+    blend="mode"
+    tags="preto e branco,contraste,silhueta,stencil">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="level" label="Nível"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+
+        <slider id="softness" label="Suavidade"
+                default="0.0" min="0.0" max="0.5" step="0.001" />
+
+        <color id="darkColor" label="Escuro" default="#000000" />
+        <color id="lightColor" label="Claro" default="#FFFFFF" />
+
+    </params>
+
+    <shader><![CDATA[
+
+// A luminância do Threshold do After Effects em 8 bits: 0,299 / 0,587 / 0,114 em ponto fixo de 15 bits.
+int luminanciaDoAe(ivec3 n) {
+    return (9798 * n.r + 19235 * n.g + 3735 * n.b + 16384) >> 15;
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float mask;
+    if (softness <= 0.0) {
+        // O corte seco do AE, em NÍVEIS inteiros (0..255): branco quando a luminância passa do Level truncado.
+        ivec3 n = ivec3(floor(clamp(color.rgb, 0.0, 1.0) * 255.0 + 0.5));
+        float x = level * 255.0;
+        // Level inteiro (o caso de quase sempre): não fica à mercê do arredondamento da conta acima na GPU.
+        float perto = floor(x + 0.5);
+        if (abs(x - perto) < 0.0001) x = perto;
+        int limiar = x < 0.0 ? 0 : min(255, int(floor(x)) + 1);
+        mask = luminanciaDoAe(n) >= limiar ? 1.0 : 0.0;
+    } else {
+        float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        mask = smoothstep(level - softness, level + softness, luma);
+    }
+    vec3 result = mix(darkColor.rgb, lightColor.rgb, mask);
+
+    fragColor = vec4(result, color.a);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  OSCILAR (ANTIGO, 2ª VERSÃO) — o `com.alightcreative.effects.oscillate2` do Alight Motion (0.561.0).
+
+  O AM marca este como "deprecated" (o atual é o `oscillate3`, `am-oscillate.xml`), mas os projetos feitos antes ainda
+  o trazem: existe para a importação e fica fora do catálogo. Lido do script dele (`model/Oscilar.deslocamentoDoAmV2`):
+  sem Direção (só no plano); o Ângulo direto, `posição += (sin a, cos a) · Magnitude · m` com a = Ângulo · π/180 (0° é
+  para baixo); m = sin((ciclos + Fase · 2) · 3,14159), ou triângulo((ciclos + Fase · 2) / 2 + Fase). A Frequência é do
+  tipo "hz" (os ciclos acumulados), sem o "× 2" do atual: Frequência 2 = um vaivém por segundo. Magnitude de 1 a 500.
+-->
+<effect
+    id="nova.effect.am-oscillate2-legacy"
+    name="Oscilar (antigo 2)"
+    name-en="Oscillate (legacy 2)"
+    desc="O Oscilar antigo do Alight Motion (a segunda versão), dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Oscillate (its second version), from projects made before its current version."
+    category="distort"
+    stage="transform"
+    catalog="false"
+    tags="oscilar,oscillate,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="angle" label="Ângulo" default="45.0" min="-3600.0" max="3600.0" step="0.1" type="angle" />
+        <spinner id="freq" label="Frequência" default="2.0" min="0.0" max="16.0" step="0.01" type="hz" />
+        <spinner id="mag" label="Magnitude" default="25.0" min="1.0" max="500.0" step="0.1" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+        <spinner id="phase" label="Fase" default="0.0" min="0.0" max="1000.0" step="0.01" ticks="1.0,2.0,3.0,4.0,5.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

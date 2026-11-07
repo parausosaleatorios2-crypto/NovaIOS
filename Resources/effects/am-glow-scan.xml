@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VARREDURA DE LUMINOSIDADE — o Glow Scan do Alight Motion, conta por conta (0.694.0)
+  ============================================================================
+
+  Pedido do snow (20/10/2026): "faz o efeito 100% igual do alight motion de varredura de luminosidade". Mesmos
+  parâmetros, ids, faixas, passos, tipos e padrões do `com.alightcreative.effects.glowscan` do AM 5.0.281
+  (`assets/effects/glowscan.xml` do APK descompactado, mais o `gaussianblur.xml` que ele chama por dentro; os arquivos
+  do AM não entram no repositório). Conferido rodando o efeito do próprio AM na GPU do PC ao lado deste
+  (`tools/amglowscan`).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  1. O Desfoque gaussiano do PRÓPRIO AM sobre a camada (o `<pass effect=>` sem `src`: a entrada é a camada), com a
+     Intensidade = a Suavização daqui (`strength`, o mesmo mapa de parâmetros do de fora): reduzido à metade,
+     gaussiana na horizontal e na vertical com meio-lado = Suavização · 1,14 / 24 da diagonal da imagem, e de volta ao
+     tamanho cheio no `hblur`. O script do Gaussian não roda por dentro: com Suavização 0 sobra a descida à metade e a
+     volta (o mesmo do Unsharp Mask e do Brilho de Borda do AM).
+  2. A faixa: a luz BT.709 do desfoque (pré-multiplicado); o Limite vira o começo da faixa,
+     Limite · (1 + Raio) − Raio, e a faixa tem a largura do Raio. Fora dela fica a camada × Preencher. Dentro, a
+     posição na faixa (0 no meio, 1 nas pontas) eleva o brilho — o desfoque misturado com Cor × luz pelo Misturar
+     (× 0,99) — à Pena × posição², e a camada × Preencher vai para desfoque + brilho pela força do Alfa.
+
+  NA TELA (`stage="screen"`), como no AM: ele roda os efeitos depois de mover, girar e escalar a camada, na imagem do
+  tamanho da tela; a Suavização é fração da diagonal dela, então a prévia parada fica na resolução cheia
+  (`screen-scale="full"`, como o Desfoque gaussiano (AM)).
+
+  O que é do Nova e não do AM:
+  - O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. O passe 0 guarda a camada pré-multiplicada,
+    arredondada pelo mais perto como o premul do Android (`oitoBits`); o desfoque e a conta gravam cada passo em 8 bits
+    como o AM (a conta no `varredura`); só a saída volta para o alfa reto.
+  - As contas que o GLSL deixa sem resposta ficam com a MESMA expressão do AM, para cada GPU dar aqui o que dá lá:
+    `pow(0, 0)` (Pena 0, ou o meio exato da faixa, num canal 0; na GPU do PC dá 1) e, com Raio 0, a posição na faixa
+    0 ÷ 0 = NaN, que vira `pow(x, NaN)` (na do PC, NaN na cor e 1 no alfa: o pixel sai preto opaco). O NaN que sobra é
+    gravado como 0 pelo alvo de 8 bits do AM; aqui o corte em 0..1 (`corteDoAlvo`) faz o mesmo à mão, para não depender
+    do `clamp` com NaN e para o projeto de 32 bits sair igual.
+  - Sem LUZ ACIMA DO ALFA (e por isso sem ler o fundo, ao contrário do Brilho de Borda): a camada × Preencher, o
+    desfoque e o brilho são pré-multiplicados coerentes (cor ≤ alfa, e a Cor × luz ≤ luz), a potência com expoente ≥ 0
+    mantém a ordem, e somas, misturas e o corte em 0..1 também — a saída do AM nunca tem cor acima do alfa, e a volta
+    para o alfa reto é exata. Conferido: nenhum pixel assim na bateria inteira.
+  - O buffer do Nova nunca tem menos de 8 px de lado e o do AM nunca tem menos de 16 (só pesa numa imagem minúscula).
+  - Os passes (AM → aqui): a camada pré-multiplicada, 0 (`pre`); o downImg, o hblur e o vblur do Gaussian de dentro,
+    1, 2 e 3 (`downImg`, `blurH`, `blurV`); a volta dele ao tamanho cheio no `hblur`, 4; a conta, 5 (`varredura`); a
+    saída, 6.
+-->
+<effect
+    id="nova.effect.am-glow-scan"
+    name="Varredura de Luminosidade"
+    name-en="Glow Scan"
+    desc="Desfoca a camada e acende um brilho suave só na faixa de luminosidade escolhida (o Glow Scan do Alight Motion)."
+    desc-en="Blurs the layer and lights a smooth glow only within the chosen luminance band (Alight Motion's Glow Scan)."
+    category="stylize"
+    tags="brilho,varredura,luminosidade,luminância,faixa,neon,desfoque,glow,scan,desenho,alight motion"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- Os buffers do Gaussian de dentro: a metade, o horizontal e o vertical. -->
+        <texture id="downImg" src="buffer" scale="0.5" />
+        <texture id="blurH" src="buffer" scale="0.5" />
+        <texture id="blurV" src="buffer" scale="0.5" />
+        <!-- O desfoque de volta ao tamanho cheio: o `hblur` do AM. -->
+        <texture id="hblur" src="buffer" />
+        <!-- A saída do AM, em 8 bits como o alvo dele (pré-multiplicada). -->
+        <texture id="varredura" src="buffer" />
+
+        <spinner id="threshold" label="Limite" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <spinner id="radius" label="Raio" default="0.1" min="0.0" max="1.0" step="0.01" />
+        <spinner id="power" label="Pena" default="2.0" min="0.0" max="4.0" step="0.01" />
+        <spinner id="strength" label="Suavização" default="0.05" min="0.0" max="2.0" step="0.01" />
+        <color id="fillColor" label="Cor" default="#FF0088FF" alpha="false" />
+        <!-- Slider do AM sem `step`: anda (máx − mín) ÷ 100 (`readSliderParam`). -->
+        <slider id="blend" label="Misturar" default="0.0" min="0.0" max="1.0" step="0.01" type="percent" />
+        <!-- Spinner do AM sem `step`: 10^piso(log10((máx − mín) ÷ 100)) = 0,01 (`readSpinnerParam`). -->
+        <spinner id="fill" label="Preencher" default="1.0" min="0.0" max="1.0" step="0.01" type="percent" />
+        <spinner id="alpha" label="alfa" default="1.0" min="0.0" max="1.0" step="0.01" type="percent" />
+    </params>
+
+    <!-- A miniatura: a faixa varrendo a foto dos meios-tons ao claro, mais larga e puxada para a Cor (o padrão acende
+         só uma faixa estreita, que some em 320 px; a parada mostra o `value`, que tem de cair em tons que a foto tem). -->
+    <preview amostra="foto">
+        <set param="threshold" value="0.4" ate="0.95" />
+        <set param="radius" value="0.3" />
+        <set param="blend" value="0.6" />
+    </preview>
+
+    <passes>
+        <pass target="pre" />
+        <pass target="downImg" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass target="hblur" />
+        <pass target="varredura" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+// O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
+// num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
+// do `am-gaussian-blur.xml`): os pesos tirados um do outro por multiplicação e duas amostras juntas numa leitura.
+vec4 desfocar(sampler2D img, vec2 passo, vec2 st, float lado) {
+    if (strength <= 0.0) return vec4(0.0);
+    float sigma = lado / 2.14596602;
+    highp vec3 g;
+    g.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    g.y = exp(-0.5 / (sigma * sigma));
+    g.z = g.y * g.y;
+    vec4 soma = vec4(0.0);
+    highp float total = 0.0;
+    soma += texture(img, st) * g.x;
+    total += g.x;
+    for (float i = 1.0; i <= lado; i += 2.0) {
+        float d0 = i;
+        float d1 = i + 1.0;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p0 = g.x;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p1 = g.x;
+        float par = p0 + p1;
+        float d = (d0 * p0 + d1 * p1) / par;
+        vec2 stL = st - d * passo;
+        vec2 stR = st + d * passo;
+        soma += texture(img, stL) * par;
+        soma += texture(img, stR) * par;
+    }
+    return soma / total;
+}
+
+// O meio-lado: Suavização ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `acPreviewSize` do AM).
+float ladoDoDesfoque() {
+    return strength / 2.0 * 1.14 / 4.0 / 3.0 * length(vec2(textureSize(pre, 0)));
+}
+
+// O corte que o alvo de 8 bits do AM faz ao gravar: 0..1, e NaN vira 0. Escrito para o projeto de 32 bits sair igual e
+// para o NaN não depender do `clamp` (indefinido com NaN): a comparação com NaN é falsa e cai no 0.
+vec4 corteDoAlvo(vec4 c) {
+    vec4 r;
+    for (int i = 0; i < 4; i++) r[i] = c[i] > 0.0 ? min(c[i], 1.0) : 0.0;
+    return r;
+}
+
+void main() {
+    // Na tela a entrada chega de pé (t = 0 embaixo, como no AM): "para cima" é +t. Deitada, vira para baixo.
+    float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+
+    if (acPass == 0) {
+        // A camada do AM chega pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android); no opaco a cor já é o
+        // float da textura, bit a bit.
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 p = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        fragColor = vec4(p, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = texture(pre, acScreenNorm);
+        return;
+    }
+    if (acPass == 2) {
+        vec2 passo = vec2(1.0 / vec2(textureSize(downImg, 0)).x, 0.0);
+        fragColor = desfocar(downImg, passo, acScreenNorm, ladoDoDesfoque());
+        return;
+    }
+    if (acPass == 3) {
+        // O passo aponta para CIMA e a soma do par fica na mesma ordem da do AM (o de baixo primeiro).
+        vec2 passo = vec2(0.0, cima / vec2(textureSize(blurH, 0)).y);
+        vec4 r = desfocar(blurH, passo, acScreenNorm, ladoDoDesfoque());
+        // Suavização 0: o Gaussian do AM lê a entrada dele (a camada) aqui (na meia resolução: a média de 2 × 2).
+        fragColor = strength <= 0.0 ? texture(pre, acScreenNorm) : r;
+        return;
+    }
+    if (acPass == 4) {
+        fragColor = texture(blurV, acScreenNorm);
+        return;
+    }
+    if (acPass == 5) {
+        // A conta do Glow Scan do AM, na mesma ordem, com as MESMAS expressões: onde o GLSL não define a resposta
+        // (`pow(0, 0)`, e o 0 ÷ 0 do Raio 0, que leva `pow(x, NaN)`), cada GPU dá aqui o que dá lá.
+        vec4 baseColor = texture(hblur, acScreenNorm);
+        vec4 mainColor = texture(pre, acScreenNorm) * fill;
+        float luma = dot(baseColor.rgb, luminanceWeighting);
+        float adjThreshold = threshold * (1.0 + radius) - radius;
+        if (luma >= adjThreshold && luma <= adjThreshold + radius) {
+            float halfRadius = radius*0.5;
+            float linearPos = abs((luma - adjThreshold - halfRadius)/halfRadius);
+            // `pow(0, 0)` (Pena 0, ou o meio exato da faixa, num canal 0) é indefinido no GLSL: fica a MESMA expressão do
+            // AM, para cada GPU dar aqui o que dá lá (a do PC dá 1).
+            vec4 glow = pow(mix(baseColor, fillColor*luma, blend*0.99), vec4(power) * pow(linearPos, 2.0));
+            mainColor = mix(mainColor, baseColor + glow, alpha);
+        }
+        fragColor = corteDoAlvo(mainColor);
+        return;
+    }
+
+    // A saída do AM (já em 8 bits) em cor reta. A cor nunca passa do alfa (ver o cabeçalho): o `min` só guarda.
+    vec4 q = texture(varredura, acScreenNorm);
+    fragColor = q.a > 0.0 ? vec4(min(q.rgb / q.a, vec3(1.0)), q.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MAPA DE DESLOCAMENTO — o Displacement Map do Alight Motion, conta por conta (0.604.0)
+  ============================================================================
+
+  Pedido do snow (17/10/2026): "faça mapa de deslocamento 100% igual o do alight motion". Mesmos ids, padrões e
+  escolhas do `com.alightcreative.effects.displacemap3` (e do `displacemap2`, "deprecated" com o MESMO shader: os
+  dois abrem aqui). A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/displacemap3.xml` do APK
+  descompactado) e escrita de novo; o arquivo do AM não entra no repositório. A versão 1 (`displacemap`, um canal só)
+  é `am-displacement-map-legacy.xml`. A conferência é `tools/amdeslocamento`: o efeito do AM rodado na GPU do PC ao
+  lado deste. O "Deslocar por mapa" do Nova (`displace.xml`, "Displacement Map" em inglês) é outro efeito e continua;
+  por isso o inglês daqui é "Displacement Map (AM)".
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A camada vira o MAPA e some: no formato dela aparece o fundo (o que está montado atrás, a textura `comp` do AM)
+    deslocado pela cor dela. Com o Deslocamento em (0, 0) (o padrão do AM) nada anda e a camada fica invisível
+    sobre o fundo.
+  - O quanto anda: Deslocamento ÷ 1000 em UV da TELA (o Y para cima, como a tela do AM), com o X multiplicado por
+    −largura/altura do CONTEÚDO da camada (`acLayerSize`, o tamanho sem a escala — a conta é do AM, não da tela),
+    vezes o canal escolhido para cada eixo (X e Y: Lum = 0,2126 R + 0,7152 G + 0,0722 B, R, G ou B) e vezes o alfa.
+    O canal é o da cor PRÉ-multiplicada (a textura do AM é assim): na borda suave, o canal e o alfa entram os dois.
+  - A partir do centro: o canal vira (c − 0,5) × 2 (o cinza médio não anda, o escuro anda para o outro lado).
+    Inverter: 1 − o valor (depois do centro, se os dois estiverem ligados).
+  - Arestas, quando o ponto deslocado sai da tela: Repetir (a última linha da tela, o CLAMP_TO_EDGE da textura do
+    AM) e, SÓ nele, a saída não leva o alfa da camada — a camada inteira vira o fundo, e fora do formato dela o
+    próprio fundo sem deslocar (o AM é assim: com opacidade ou modo de mesclagem, isso aparece); Espelhar (o padrão)
+    dobra a tela de volta; Claro deixa transparente; Ladrilho repete a tela. Nos três, a saída é o fundo × o alfa.
+  - O fundo é lido pelo filtro linear da GPU sobre a cor PRÉ-multiplicada (a textura do AM): onde os 4 pixels em
+    volta são opacos, pré-multiplicada = reta e o filtro é o da própria GPU (os mesmos pesos do AM); senão, à mão nos
+    4 pixels pré-multiplicados e arredondados a 8 bits, como o AM os guarda (misturar a cor reta daria franja).
+  - A camada entra como o AM a entrega: pré-multiplicada em 8 bits (o premul do Android, pelo mais perto), com o
+    k/255 exato (`oitoBits`) — o canal multiplica o Deslocamento, então o último bit dele vira posição.
+
+  NA TELA (`stage="screen"`, como o Ampliar o fundo e o Deslocamento turbulento): o AM roda o efeito DEPOIS da
+  transformação, pixel a pixel na tela, e o deslocamento é em UV da tela. A cadeia é cortada aqui: os efeitos de
+  antes rodam na camada; ela vai para a tela e este (e os de depois) rodam lá, com `acTela` = a identidade.
+  Prévia reduzida (`screen-scale="safe"`): o deslocamento é em fração da tela, não em pixels — a mesma conta em
+  qualquer resolução.
+
+  O QUE AINDA NÃO É IGUAL (ver `tools/amdeslocamento/LEIAME.md`): dentro de grupo (o filho) o corte não existe — o
+  efeito roda no buffer do filho, com o fundo do grupo (o limite de todo efeito que lê o fundo). A camada no Nova é
+  guardada RETA em 8 bits e a do AM pré-multiplicada: na borda de alfa parcial o canal pode diferir de 1/255, e isso
+  é deslocamento (com Deslocamento 100, um quinto de pixel numa tela de 1080).
+-->
+<effect
+    id="nova.effect.am-displacement-map"
+    name="Mapa de deslocamento"
+    name-en="Displacement Map (AM)"
+    desc="Desloca os pixels do plano de fundo com base na cor da camada (o Displacement Map do Alight Motion)."
+    desc-en="Displaces pixels in the background based on the color of pixels in the layer (Alight Motion's Displacement Map)."
+    category="distort"
+    tags="mapa de deslocamento,deslocamento,deslocar,mapa,distorcer,fundo,vidro,glitch,displacement map,displace,luma map,warp,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+
+        <!-- `<point>` do AM sem atributos: (0, 0), ±9999 e passo 1 (`readPointParam`), número cru. -->
+        <point id="offs" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <selector id="typex" label="X" style="radio" options="Lum|R|G|B" default="1" />
+        <selector id="typey" label="Y" style="radio" options="Lum|R|G|B" default="2" />
+        <selector id="edges" label="Arestas" style="radio" options="Repetir|Espelhar|Claro|Ladrilho" default="1" />
+        <switch id="fromctr" label="A partir do centro" default="false" />
+        <switch id="invert" label="Inverter" default="false" />
+    </params>
+
+    <!-- Na vitrine, com o Deslocamento do padrão (0, 0) a camada some sobre o próprio fundo: a amostra mostra 120. -->
+    <preview>
+        <set param="offs" x="120.0" y="120.0" />
+    </preview>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve ao AM (o
+// `floor(..)/255.0` vai pelo recíproco e erra o último bit — ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// Um pixel do fundo como a textura `comp` do AM o guarda: pré-multiplicado, em 8 bits.
+vec4 fundoPre(ivec2 px) {
+    vec4 c = texelFetch(comp, px, 0);
+    if (c.a >= 1.0) return c;
+    vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+    return vec4(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b), c.a);
+}
+
+// O `texture2DCv(comp.texture, uv)` do AM: o filtro linear da GPU no fundo pré-multiplicado, CLAMP_TO_EDGE. Com os
+// 4 pixels opacos é o filtro da própria GPU; senão, à mão nos 4 pixels pré-multiplicados.
+vec4 fundoNoPonto(vec2 uv) {
+    vec4 g = texture(comp, uv);
+    if (g.a >= 1.0) return g;
+    ivec2 T = textureSize(comp, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = fundoPre(clamp(a, ivec2(0), m));
+    vec4 c10 = fundoPre(clamp(a + ivec2(1, 0), ivec2(0), m));
+    vec4 c01 = fundoPre(clamp(a + ivec2(0, 1), ivec2(0), m));
+    vec4 c11 = fundoPre(clamp(a + ivec2(1, 1), ivec2(0), m));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    // A UV da tela do fundo (t = 0 embaixo, a da tela do AM); na tela (`stage="screen"`) é o próprio acScreenNorm.
+    vec2 tela = acTela(acScreenNorm);
+
+    // Daqui até a `amostra`, a conta do AM na mesma ordem (o `sample` dele é palavra reservada no GLSL ES 3.00).
+    vec2 adjOffs = offs / 1000.0;
+    adjOffs.x *= acTamanhoDaCamada.x/acTamanhoDaCamada.y * -1.0;
+
+    // A camada pré-multiplicada em 8 bits, como o AM a entrega (no opaco, a própria cor).
+    vec4 texColor = texture(inputImg, acScreenNorm);
+    if (texColor.a < 1.0) {
+        vec3 k = floor(texColor.rgb * texColor.a * 255.0 + 0.5);
+        texColor.rgb = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+    float luminance = dot(texColor.rgb, luminanceWeighting);
+    float px = 0.0;
+    float py = 0.0;
+
+    if( typex==0 ) {
+        px = luminance;
+    } else if( typex == 1 ) {
+        px = texColor.r;
+    } else if( typex == 2 ) {
+        px = texColor.g;
+    } else if( typex == 3 ) {
+        px = texColor.b;
+    } else {
+        adjOffs *= 0.0;
+    }
+
+    if( typey==0 ) {
+        py = luminance;
+    } else if( typey == 1 ) {
+        py = texColor.r;
+    } else if( typey == 2 ) {
+        py = texColor.g;
+    } else if( typey == 3 ) {
+        py = texColor.b;
+    } else {
+        adjOffs *= 0.0;
+    }
+
+    if( fromctr ) {
+        px = (px-0.5)*2.0;
+        py = (py-0.5)*2.0;
+    }
+    if( invert ) {
+        px = 1.0-px;
+        py = 1.0-py;
+    }
+
+    vec2 p = vec2(px,py);
+
+    adjOffs *= p * texColor.a;
+
+    vec2 amostra = tela + adjOffs;
+    vec4 saida;
+    if(edges==0) {
+        saida = fundoNoPonto(amostra);
+    } else if(edges==1) {
+        amostra = vec2(1.0,1.0) - abs(mod(amostra,vec2(2.0,2.0))-vec2(1.0,1.0));
+        saida = fundoNoPonto(amostra) * texColor.a;
+    } else if(edges==2) {
+        if( amostra.x < 0.0 || amostra.x > 1.0 || amostra.y < 0.0 || amostra.y > 1.0 ) {
+            saida = vec4(0.0,0.0,0.0,0.0);
+        } else {
+            saida = fundoNoPonto(amostra) * texColor.a;
+        }
+    } else if(edges==3) {
+        amostra = mod(amostra,vec2(1.0,1.0));
+        saida = fundoNoPonto(amostra) * texColor.a;
+    } else {
+        saida = fundoNoPonto(amostra) * texColor.a;
+    }
+
+    // Pré-multiplicada, como o AM; o Nova guarda reta.
+    fragColor = saida.a > 0.0 ? vec4(saida.rgb / saida.a, saida.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

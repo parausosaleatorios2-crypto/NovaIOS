@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Reflection_iPhone
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-reflection-iphone"
+    name="Reflection Iphone (NV)"
+    name-en="Reflection Iphone (NV)"
+    desc="NodeVideo effect 'NodeVideo/Reflection_iPhone', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Reflection_iPhone', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="panoramic_texture" src="content" empty="transparent" />
+        <texture id="mat_cap" src="content" empty="transparent" />
+        <texture id="MainTex" src="content" empty="transparent" />
+        <slider id="_reflection" label="Reflection" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <color id="_Color" label="Color" default="#FFFFFFFF" />
+        <slider id="_panoramic_upside_down" type="integer" label="Panoramic Upside Down" default="0" min="0" max="10" step="1" />
+        <slider id="_material" type="integer" label="Material" default="0" min="0" max="10" step="1" />
+        <slider id="_reflection_mode" type="integer" label="Reflection Mode" default="0" min="0" max="10" step="1" />
+        <xyz id="_light_direction" label="Light Direction" defaultX="0" defaultY="0" defaultZ="0" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+bool u_xlatb0;
+vec3 u_xlat1;
+bool u_xlatb1;
+vec3 u_xlat2;
+mediump vec3 u_xlat16_3;
+float u_xlat5;
+bool u_xlatb5;
+bvec2 u_xlatb6;
+float u_xlat12;
+bool u_xlatb12;
+float u_xlat13;
+bool u_xlatb14;
+void main()
+{
+    u_xlatb0 = _material==1;
+    if(u_xlatb0){
+        u_xlat0.xyz = vs_TEXCOORD2.xyz + _light_direction.xyz;
+        u_xlat0.xyz = texture(inputImg, u_xlat0.xyz).xyz;
+    } else {
+        u_xlatb12 = _material==2;
+        if(u_xlatb12){
+            u_xlat1.xyz = vs_TEXCOORD2.yzx + _light_direction.yzx;
+            u_xlat12 = dot(u_xlat1.xyz, u_xlat1.xyz);
+            u_xlat12 = inversesqrt(u_xlat12);
+            u_xlat1.xyz = vec3(u_xlat12) * u_xlat1.xyz;
+            u_xlat12 = -abs(u_xlat1.x) + 1.0;
+            u_xlat12 = sqrt(u_xlat12);
+            u_xlat13 = abs(u_xlat1.x) * -0.0187292993 + 0.0742610022;
+            u_xlat13 = u_xlat13 * abs(u_xlat1.x) + -0.212114394;
+            u_xlat13 = u_xlat13 * abs(u_xlat1.x) + 1.57072878;
+            u_xlat2.x = u_xlat12 * u_xlat13;
+            u_xlat2.x = u_xlat2.x * -2.0 + 3.14159274;
+            u_xlatb6.xy = lessThan(u_xlat1.xzxx, (-u_xlat1.xzxx)).xy;
+            u_xlat1.x = u_xlatb6.x ? u_xlat2.x : float(0.0);
+            u_xlat2.y = u_xlat13 * u_xlat12 + u_xlat1.x;
+            u_xlat12 = min(abs(u_xlat1.z), abs(u_xlat1.y));
+            u_xlat1.x = max(abs(u_xlat1.z), abs(u_xlat1.y));
+            u_xlat1.x = float(1.0) / u_xlat1.x;
+            u_xlat12 = u_xlat12 * u_xlat1.x;
+            u_xlat1.x = u_xlat12 * u_xlat12;
+            u_xlat13 = u_xlat1.x * 0.0208350997 + -0.0851330012;
+            u_xlat13 = u_xlat1.x * u_xlat13 + 0.180141002;
+            u_xlat13 = u_xlat1.x * u_xlat13 + -0.330299497;
+            u_xlat1.x = u_xlat1.x * u_xlat13 + 0.999866009;
+            u_xlat13 = u_xlat12 * u_xlat1.x;
+            u_xlatb14 = abs(u_xlat1.z)<abs(u_xlat1.y);
+            u_xlat13 = u_xlat13 * -2.0 + 1.57079637;
+            u_xlat13 = u_xlatb14 ? u_xlat13 : float(0.0);
+            u_xlat12 = u_xlat12 * u_xlat1.x + u_xlat13;
+            u_xlat1.x = u_xlatb6.y ? -3.14159274 : float(0.0);
+            u_xlat12 = u_xlat12 + u_xlat1.x;
+            u_xlat1.x = min(u_xlat1.z, u_xlat1.y);
+            u_xlat5 = max(u_xlat1.z, u_xlat1.y);
+            u_xlatb1 = u_xlat1.x<(-u_xlat1.x);
+            u_xlatb5 = u_xlat5>=(-u_xlat5);
+            u_xlatb1 = u_xlatb5 && u_xlatb1;
+            u_xlat2.x = (u_xlatb1) ? (-u_xlat12) : u_xlat12;
+            u_xlat1.xy = (-u_xlat2.xy) * vec2(0.159154937, 0.318309873) + vec2(0.5, 1.0);
+            u_xlatb12 = 1.0<u_xlat1.x;
+            if(u_xlatb12){
+                fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                return;
+            }
+            u_xlatb12 = u_xlat1.x>=(-u_xlat1.x);
+            u_xlat1.x = fract(abs(u_xlat1.x));
+            u_xlat2.x = (u_xlatb12) ? u_xlat1.x : (-u_xlat1.x);
+            u_xlatb12 = 0<_panoramic_upside_down;
+            u_xlat1.x = (-u_xlat1.y) + 1.0;
+            u_xlat2.y = (u_xlatb12) ? u_xlat1.x : u_xlat1.y;
+            u_xlat0.xyz = texture(panoramic_texture, u_xlat2.xy).xyz;
+        } else {
+            u_xlatb12 = _material==3;
+            if(u_xlatb12){
+                u_xlat1.xyz = texture(mat_cap, vs_TEXCOORD1.xy).xyz;
+                u_xlat16_3.xyz = max(u_xlat1.xyz, vec3(0.0, 0.0, 0.0));
+                u_xlat1.xyz = log2(u_xlat16_3.xyz);
+                u_xlat1.xyz = u_xlat1.xyz * vec3(0.416666657, 0.416666657, 0.416666657);
+                u_xlat1.xyz = exp2(u_xlat1.xyz);
+                u_xlat1.xyz = u_xlat1.xyz * vec3(1.05499995, 1.05499995, 1.05499995) + vec3(-0.0549999997, -0.0549999997, -0.0549999997);
+                u_xlat0.xyz = max(u_xlat1.xyz, vec3(0.0, 0.0, 0.0));
+            } else {
+                u_xlat0.x = float(0.0);
+                u_xlat0.y = float(0.0);
+                u_xlat0.z = float(0.0);
+            }
+        }
+    }
+    u_xlat1.xyz = _Color.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = _Color.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat2.xyz = texture(MainTex, acScreenNorm.xy).xyz;
+    u_xlat1.xyz = _Color.xyz * u_xlat1.xyz + u_xlat2.xyz;
+    u_xlat2.xyz = u_xlat0.xyz * u_xlat1.xyz;
+    u_xlat2.xyz = u_xlat2.xyz * vec3(_reflection);
+    u_xlat2.xyz = u_xlat2.xyz + u_xlat2.xyz;
+    u_xlat0.xyz = u_xlat0.xyz * vec3(_reflection) + u_xlat1.xyz;
+    fragColor.xyz = (int(_reflection_mode) != 0) ? u_xlat0.xyz : u_xlat2.xyz;
+    fragColor.w = _Color.w;
+    return;
+}
+    ]]></shader>
+</effect>

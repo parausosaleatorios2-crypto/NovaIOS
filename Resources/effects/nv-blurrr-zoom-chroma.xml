@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.zoomchroma"
+    name="Desfoque Zoom Cromático (Blurrr)"
+    name-en="Chromatic Zoom Blur (Blurrr)"
+    desc="Desfoque de aproximação com os canais R/G/B escalados diferente."
+    desc-en="Zoom blur with R/G/B channels scaled differently — chromatic rush."
+    category="blur"
+    tags="blurrr,zoom,cromatica,chromatic,rush,desfoque,blur,aproximar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="strength" label="Intensidade"
+                default="0.08" min="0.0" max="0.4" step="0.002" snap="0.0" />
+        <slider id="chroma" label="Separação cromática"
+                default="0.02" min="0.0" max="0.1" step="0.001" />
+        <slider id="samples" label="Amostras"
+                default="20" min="4" max="48" step="1" type="integer" />
+        <point  id="center" label="Centro" default-x="0.5" default-y="0.5" />
+    </params>
+
+    <passes>
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+float amostraCanal(vec2 uv, vec2 c, float esc, int canal, int n) {
+    float soma = 0.0;
+    for (int i = 0; i <= 48; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n);
+        vec2 p = mix(uv, c, t * esc);
+        soma += texture(inputImg, p)[canal];
+    }
+    return soma / float(n + 1);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    if (strength <= 0.0) { fragColor = original; return; }
+
+    int n = clamp(int(samples), 4, 48);
+    float escR = strength * (1.0 + chroma);
+    float escG = strength;
+    float escB = strength * (1.0 - chroma);
+
+    float r = amostraCanal(acScreenNorm, center, escR, 0, n);
+    float g = amostraCanal(acScreenNorm, center, escG, 1, n);
+    float b = amostraCanal(acScreenNorm, center, escB, 2, n);
+
+    fragColor = vec4(r, g, b, original.a);
+}
+
+    ]]></shader>
+</effect>

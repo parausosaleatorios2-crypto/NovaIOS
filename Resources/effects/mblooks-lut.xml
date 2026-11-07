@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — LUT (`lutc`): uma tabela de cor 3D, com a força. Lido no `MBLooksUI_5_0.dll`
+  (21/10/2026): o render `0x1803ef770`, os kernels `ExpKernel_LinTo_sRGB` e `FilmKernel_CubeLut`
+  (tools/looks/benchmark/lutc.py); o host é o `ContasDoLooks.lut`.
+
+  A LUT recebe a imagem em LINEAR, passa para sRGB com um sRGB próprio (não o do motor), amostra a tabela com filtro
+  linear e mistura com a força: saída = x + (LUT(x) − x)·Strength. Depois dela o buffer fica em VÍDEO (a próxima
+  ferramenta linear converte de volta).
+
+  A tabela vem DENTRO do bloco do Look (o importador a lê do `.ffx`/`.aep`, `aeimport/BlocoDoLooks`) e fica dentro do
+  efeito, no projeto, como o LUT do Apply Color LUT; aqui também dá para escolher um `.cube` 3D do aparelho (o
+  DOMAIN_MIN/MAX do arquivo não entra: o Looks não tem domínio). "Menu" é a posição da LUT no menu do Looks: guardada,
+  o render não lê.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE. Uma ferramenta sem cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.lut"
+    name="Looks: LUT"
+    name-en="Looks: LUT"
+    desc="A ferramenta LUT do Magic Bullet Looks: uma tabela de cor 3D (.cube) aplicada com força ajustável."
+    desc-en="Magic Bullet Looks' LUT tool: a 3D color table (.cube) applied with adjustable strength."
+    category="looks"
+    stage="mblooks"
+    looks="lutc"
+    tags="magic bullet,looks,red giant,lut,cube,tabela de cor,color grading,correção de cor">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <lut id="lut" label="LUT" />
+        <slider id="menu" label="Menu" default="0.0" min="-1000.0" max="1000.0" step="1.0" hidden="true" />
+        <slider id="strength" label="Strength" default="100.0" min="0.0" max="100.0" step="0.1" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

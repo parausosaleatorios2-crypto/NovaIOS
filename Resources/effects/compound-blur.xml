@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE COMPOSTO (COMPOUND BLUR)
+  ============================================================================
+
+  O desfoque desta camada é decidido por OUTRA camada, pixel a pixel: onde o
+  mapa é claro, borra muito; onde é escuro, não borra nada. É o "Compound Blur"
+  do After Effects, e é a ferramenta de:
+
+  - **profundidade de campo falsa**: um degradê (ou um passe de profundidade)
+    como mapa deixa o fundo borrado e o primeiro plano nítido;
+  - **foco seletivo**: uma forma branca sobre preto escolhe o que sai de foco;
+  - **desfoque que anima sozinho**: o mapa é uma camada, então basta animar o
+    mapa (um degradê girando, um ruído fractal) para o desfoque acompanhar.
+
+  Sem ele, a única saída é duplicar a camada, borrar uma cópia e revelar com
+  máscara — três camadas para fazer o que aqui é um efeito com um seletor.
+
+  ============================================================================
+   POR QUE O MAPA É LIDO NO ESPAÇO DA COMPOSIÇÃO
+  ============================================================================
+
+  A camada escolhida chega aqui já desenhada em tela cheia, com a posição e a
+  escala dela. É o mesmo comportamento de "Definir matte" e "Deslocar por mapa"
+  — e é o que torna o "Esticar mapa para caber" do After Effects desnecessário:
+  os dois já estão no mesmo espaço, sempre. O mapa é lido onde cada pixel desta
+  camada CAI NA TELA (`acTela`): mover esta camada não move o mapa — ela passa
+  por cima dele, como um vidro sobre uma textura.
+
+  O transparente do mapa conta como preto (o RGB é multiplicado pelo alfa antes
+  de virar valor), que é o que se espera de "nada ali, nada de desfoque".
+
+  ============================================================================
+   A APROXIMAÇÃO, DECLARADA
+  ============================================================================
+
+  Um desfoque de raio variável não é separável de verdade: o resultado exato
+  exigiria uma vizinhança 2D por pixel, ou seja (2R+1)² leituras — com R=40 são
+  6.561 por pixel, o que não roda em telefone. Aqui o par horizontal+vertical
+  usa o raio do pixel de destino, que é como todo mundo faz em GPU e é
+  indistinguível a olho, exceto num degrau abrupto do mapa (preto colado em
+  branco), onde um fio de borrado vaza para o lado nítido. "Iterações" suaviza
+  justamente isso, ao custo de repetir os dois passes.
+
+  ============================================================================
+   O MAPA É A CAMADA COMO ELA APARECE NA TELA
+  ============================================================================
+
+  Inclusive com o Motion Tile do compositor e a perspectiva 3D dela: um chão
+  ladrilhado em perspectiva como mapa faz o borrão seguir as pedras do chão,
+  como no After Effects (com o mapa numa pré-composição). A opacidade da
+  camada-mapa não conta — um mapa com opacidade 13% continua um mapa inteiro.
+-->
+<effect
+    id="nova.effect.compoundblur"
+    name="Desfoque composto"
+    name-en="Compound Blur"
+    desc="Borra esta camada conforme o brilho de outra: claro borra, escuro não."
+    desc-en="Blurs this layer using another layer's luminance as a blur map."
+    category="blur"
+    tags="compound blur,desfoque composto,mapa de desfoque,profundidade de campo,dof,foco,blur map,depth">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- O mapa. `src="layer"` faz o painel mostrar o seletor de camada. -->
+        <texture id="blurMap" src="layer" label="Camada do desfoque" />
+
+        <!-- Onde o passe horizontal deposita o resultado para o vertical ler. -->
+        <texture id="hblur" src="buffer" />
+
+        <slider id="maxBlur" label="Desfoque máximo"
+                default="24.0" min="0.0" max="160.0" step="0.5" ticks="0.0,24.0,80.0,160.0" />
+
+        <selector id="mapChannel" label="Ler do mapa" default="0"
+                  options="Luminância|Alfa|Vermelho|Verde|Azul" />
+
+        <switch id="invertBlur" label="Inverter desfoque" default="false" />
+
+        <slider id="iterations" label="Iterações"
+                default="1" min="1" max="4" step="1" type="integer" />
+    </params>
+
+    <!-- Na vitrine, o desfoque padrão some na amostra: o máximo maior. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="maxBlur" value="80.0" />
+    </preview>
+
+
+
+    <iterations param="iterations" />
+
+    <passes>
+        <pass target="hblur" />  <!-- passe 0: horizontal -->
+        <pass />                 <!-- passe 1: vertical, para o destino final -->
+    </passes>
+
+    <shader><![CDATA[
+
+/*
+ * Até 49 leituras por passe, espaçadas de no máximo ~um pixel e meio. Eram 9
+ * leituras fixas espalhadas pelo raio inteiro: com raio 57 o passo era de 14 px,
+ * e o "borrão" era 9 cópias da imagem lado a lado — o "blur feião" do relato de
+ * 28/09/2026. Agora o número de leituras acompanha o raio, com peso gaussiano
+ * (sigma = raio/2), e raio pequeno continua barato.
+ */
+const int MAX_LEITURAS = 49;
+
+/** O quanto borrar neste ponto, de 0 a 1, lido do mapa. */
+float valorDoMapa(vec2 uv) {
+    vec4 m = texture(blurMap, uv);
+
+    // Pré-multiplicado: o que é transparente no mapa vale preto, e preto não
+    // borra. Sem isto, o RGB guardado num pixel invisível — que pode ser
+    // branco — mandaria borrar onde não há mapa nenhum.
+    vec3 c = m.rgb * m.a;
+
+    float v;
+    if (mapChannel == 1) v = m.a;
+    else if (mapChannel == 2) v = c.r;
+    else if (mapChannel == 3) v = c.g;
+    else if (mapChannel == 4) v = c.b;
+    else v = dot(c, vec3(0.299, 0.587, 0.114));
+
+    v = clamp(v, 0.0, 1.0);
+    return invertBlur ? (1.0 - v) : v;
+}
+
+vec4 lerFonte(vec2 uv) {
+    return (acPass == 0) ? texture(inputImg, uv) : texture(hblur, uv);
+}
+
+void main() {
+    // O raio é o do pixel que está sendo escrito — o mesmo nos dois passes,
+    // senão o borrado horizontal e o vertical discordariam na mesma região.
+    // Em pixels da COMPOSIÇÃO, levado ao buffer (prévia reduzida < 1).
+    //
+    // O mapa é lido onde este pixel CAI NA TELA (`acTela`), e não na coordenada
+    // da camada: o mapa chega desenhado na tela, e uma camada movida, escalada
+    // ou espelhada — um reflexo com escala Y negativa, o caso do relato — lia o
+    // chão de cabeça para baixo e fora do lugar. Camada parada: dá no mesmo.
+    float raio = maxBlur * acEscalaDePixel * valorDoMapa(clamp(acTela(acScreenNorm), 0.0, 1.0));
+
+    vec4 fonte = lerFonte(acScreenNorm);
+
+    // Meio pixel não muda nada: sai fora cedo.
+    if (raio < 0.5) {
+        fragColor = fonte;
+        return;
+    }
+
+    vec2 direcao = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+
+    // Leituras de -raio a +raio, no máximo MAX_LEITURAS, e nunca mais de ~1,5 px
+    // de distância entre duas (com filtro linear, o que fica entre elas entra
+    // pela interpolação).
+    int n = int(clamp(ceil(raio / 1.5) * 2.0 + 1.0, 3.0, float(MAX_LEITURAS)));
+    int meio = n / 2;
+    float passo = raio / float(meio);
+    float sigma = max(raio * 0.5, 0.5);
+
+    // A soma é feita com a cor PRÉ-MULTIPLICADA pelo alfa e desfeita no fim.
+    // O motor guarda cor reta, e somar cor reta através de uma borda faria a
+    // cor do lado transparente — que pode ser qualquer uma, ninguém a vê —
+    // entrar na média e sujar a borda com um halo. Multiplicando pelo alfa,
+    // quem é invisível contribui com zero, que é o certo.
+    //
+    // Pesos incrementais: um único exp() por passe em vez de um por amostra.
+    // w(i) = exp(-i²·passo²/(2σ²)); r = exp(-passo²/(2σ²)), w(i) = r^(i²).
+    float passo2 = (passo * passo) / (2.0 * sigma * sigma);
+    float r  = exp(-passo2);
+    float r2 = r * r;
+    float rk = r;   // r^(2i-1) para i=1
+    float w  = 1.0;
+    vec4 central = lerFonte(acScreenNorm);
+    vec4 soma  = vec4(central.rgb * central.a, central.a);
+    float pesos = 1.0;
+    for (int i = 1; i < MAX_LEITURAS; i++) {
+        if (i > meio) break;
+        w  *= rk;
+        rk *= r2;
+        float d = float(i) * passo;
+        vec4 pos = lerFonte(acScreenNorm + direcao * acTexelSize *  d);
+        vec4 neg = lerFonte(acScreenNorm - direcao * acTexelSize *  d);
+        soma  += (vec4(pos.rgb * pos.a, pos.a) + vec4(neg.rgb * neg.a, neg.a)) * w;
+        pesos += 2.0 * w;
+    }
+    soma /= max(pesos, 1e-5);
+
+    fragColor = soma.a > 1e-4
+        ? vec4(soma.rgb / soma.a, soma.a)
+        : vec4(fonte.rgb, 0.0);
+}
+
+    ]]></shader>
+</effect>

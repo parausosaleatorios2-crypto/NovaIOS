@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BRILHO INTERNO
+  ============================================================================
+
+  Luz que nasce na borda do desenho e vai para DENTRO dele. É o que faz um
+  texto parecer neon aceso por trás, uma forma parecer recortada em vidro e um
+  logo ganhar volume sem sombra nenhuma.
+
+  O irmão dele, o brilho externo (`glow.xml`), joga luz para fora e some contra
+  fundo claro. Este funciona em qualquer fundo, porque acontece todo dentro da
+  silhueta.
+
+  ============================================================================
+   COMO SE DESCOBRE "A QUE DISTÂNCIA DA BORDA EU ESTOU"
+  ============================================================================
+
+  Sem mapa de distância, e sem passe extra: **amostrando o alfa em volta**.
+
+  Num anel de raio `r`, se TODOS os vizinhos são opacos, este pixel está a mais
+  de `r` da borda — fundo do desenho. Se algum vizinho é transparente, a borda
+  está a menos de `r`. A média do alfa do anel é, portanto, uma medida contínua
+  de proximidade da borda — e é ela que vira a intensidade da luz.
+
+  Doze amostras em espiral, e não um anel fechado: a espiral cobre raios
+  diferentes de uma vez, o que dá um degradê liso com um terço das leituras que
+  um anel por raio exigiria.
+-->
+<effect
+    id="nova.effect.innerglow"
+    name="Brilho interno"
+    name-en="Inner Glow"
+    desc="Luz que entra a partir da borda do desenho, por dentro da silhueta."
+    desc-en="Light that starts at the edge and falls inward, inside the shape."
+    category="stylize"
+    tags="estilizar,brilho,neon,borda,luz">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="glowColor" label="Cor" default="#59E6FF" />
+
+        <slider id="size" label="Alcance"
+                default="0.06" min="0.002" max="0.3" step="0.002"
+                snap="0.06" type="number" />
+
+        <slider id="intensity" label="Intensidade"
+                default="1.0" min="0.0" max="3.0" step="0.05"
+                snap="1.0" ticks="0.0,1.0,3.0" type="relative-percent" />
+
+        <!--
+          Empurra a luz para dentro antes de ela começar a cair. Serve para o
+          caso do neon, em que a borda em si fica escura e o brilho começa um
+          pouco mais para dentro.
+        -->
+        <slider id="inset" label="Afastar da borda"
+                default="0.0" min="0.0" max="1.0" step="0.01"
+                snap="0.0" type="relative-percent" />
+
+        <selector id="blend" label="Como aplicar" default="0">
+            <option value="0" label="Somar (neon)" />
+            <option value="1" label="Cobrir" />
+            <option value="2" label="Multiplicar (sombra interna)" />
+        </selector>
+    </params>
+
+    <!-- Na vitrine, o brilho padrão fica numa faixa fina: largo e forte. (vitrine, 0.664.0) -->
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura">
+        <set param="size" value="0.2" />
+        <set param="intensity" value="3.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+const int AMOSTRAS = 12;
+const float DOURADO = 2.39996323; // o ângulo áureo, em radianos
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    // Fora do desenho não há dentro: pixel transparente sai como está, e é isso
+    // que mantém o efeito colado na silhueta em vez de virar um borrão
+    // retangular.
+    if (color.a <= 0.002) {
+        fragColor = color;
+        return;
+    }
+
+    float raio = max(size, 0.001);
+    float somaAlfa = 0.0;
+
+    for (int i = 0; i < AMOSTRAS; i++) {
+        float t = (float(i) + 0.5) / float(AMOSTRAS);
+        float angulo = float(i) * DOURADO;
+        // `sqrt(t)` espalha as amostras por ÁREA e não por raio: sem ele, a
+        // espiral fica densa no centro e rala na borda, e o degradê sai com
+        // anéis visíveis.
+        float r = raio * sqrt(t);
+
+        vec2 passo = vec2(cos(angulo), sin(angulo)) * r;
+        passo.x /= max(acAspect, 0.0001); // o raio é em unidades de altura
+
+        somaAlfa += texture(inputImg, acScreenNorm + passo).a;
+    }
+
+    float vizinhanca = somaAlfa / float(AMOSTRAS);
+
+    // 1 no miolo do desenho, 0 encostando na borda → invertido vira "quanto
+    // perto da borda estou".
+    float perto = 1.0 - vizinhanca;
+    perto = clamp((perto - inset * 0.5) / max(1.0 - inset * 0.5, 0.001), 0.0, 1.0);
+
+    // A curva ao quadrado concentra a luz junto da borda. Linear dá uma
+    // iluminação chapada que parece erro de opacidade.
+    float luz = perto * perto * intensity * glowColor.a;
+    luz *= color.a; // e ela nunca escapa da silhueta
+
+    vec3 rgb = color.rgb;
+    if (blend == 0) {
+        rgb += glowColor.rgb * luz;
+    } else if (blend == 1) {
+        rgb = mix(rgb, glowColor.rgb, clamp(luz, 0.0, 1.0));
+    } else {
+        rgb *= mix(vec3(1.0), glowColor.rgb, clamp(luz, 0.0, 1.0));
+    }
+
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

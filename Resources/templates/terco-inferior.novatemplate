@@ -1,0 +1,550 @@
+{
+    "id": "terco-inferior",
+    "nome": "Terço inferior",
+    "nomeEn": "Lower third",
+    "descricao": "Barra escura que abre no pé da tela com nome e função; para apresentar alguém ou o @ do canal.",
+    "descricaoEn": "Dark bar opening at the bottom with name and role; to introduce someone or the channel handle.",
+    "categoria": "terco_inferior",
+    "tags": [
+        "nome",
+        "apresentacao",
+        "terco",
+        "inferior",
+        "lower",
+        "third",
+        "perfil",
+        "entrevista"
+    ],
+    "estilos": [
+        "documentario",
+        "vlog"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 4000000,
+    "duracaoMinUs": 2000000,
+    "duracaoMaxUs": 15000000,
+    "entradaUs": 600000,
+    "saidaUs": 500000,
+    "campos": [
+        {
+            "id": "nome",
+            "tipo": "texto",
+            "rotulo": "Nome",
+            "rotuloEn": "Name",
+            "padrao": "Nome Sobrenome",
+            "alvos": [
+                {
+                    "camada": "nome",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "cargo",
+            "tipo": "texto",
+            "rotulo": "Função",
+            "rotuloEn": "Role",
+            "padrao": "função ou @perfil",
+            "alvos": [
+                {
+                    "camada": "cargo",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "barra",
+            "tipo": "cor",
+            "rotulo": "Cor da barra",
+            "rotuloEn": "Bar color",
+            "padrao": "#E6101018",
+            "alvos": [
+                {
+                    "camada": "barra",
+                    "propriedade": "solido:cor"
+                }
+            ]
+        },
+        {
+            "id": "destaque",
+            "tipo": "cor",
+            "rotulo": "Cor da função",
+            "rotuloEn": "Role color",
+            "padrao": "#FFFFC24D",
+            "alvos": [
+                {
+                    "camada": "cargo",
+                    "propriedade": "texto:cor"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "barra",
+            "name": "Barra",
+            "content": {
+                "kind": "solid",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0627451,
+                        0.0627451,
+                        0.09411765,
+                        0.9019608
+                    ]
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        640.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 0,
+                            "value": [
+                                0.0,
+                                0.12
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease Out"
+                            },
+                            "id": "87a67669-ce7b-4454-b47b-dcdbe62edddc"
+                        },
+                        {
+                            "timeUs": 450000,
+                            "value": [
+                                0.86,
+                                0.12
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "e161bb1a-c4f3-41c5-82cd-3ff4b9d13717"
+                        },
+                        {
+                            "timeUs": 3600000,
+                            "value": [
+                                0.86,
+                                0.12
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 1.0,
+                                "y2": 1.0,
+                                "label": "Ease In"
+                            },
+                            "id": "e47d7b5b-636e-43f2-a6fa-f19a067b94ed"
+                        },
+                        {
+                            "timeUs": 4000000,
+                            "value": [
+                                0.0,
+                                0.12
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "d9ab707b-764d-45ba-ab56-8053d9e240fe"
+                        }
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [],
+            "startUs": 0,
+            "endUs": 4000000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        },
+        {
+            "id": "nome",
+            "name": "Nome Sobrenome",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "Nome Sobrenome",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        72.0
+                    ]
+                },
+                "fontFamily": "galeria:Montserrat-Bold.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                },
+                "textAnimation": {
+                    "animator": "RISE",
+                    "unit": "WORD",
+                    "durationUs": 450000,
+                    "staggerUs": 90000,
+                    "delayUs": 0,
+                    "easing": {
+                        "kind": "bezier",
+                        "x2": 0.58,
+                        "y2": 1.0,
+                        "label": "Ease Out"
+                    },
+                    "reversed": false
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        610.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 3400000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "27368f62-fe0e-45a7-aa96-79d918ab12c3"
+                        },
+                        {
+                            "timeUs": 3700000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "53263732-99ec-433e-a416-2a1c4b1488da"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [],
+            "startUs": 200000,
+            "endUs": 3700000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        },
+        {
+            "id": "cargo",
+            "name": "função ou @perfil",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        0.7607843,
+                        0.3019608,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "função ou @perfil",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        44.0
+                    ]
+                },
+                "fontFamily": "galeria:Montserrat-Regular.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                },
+                "textAnimation": {
+                    "animator": "FADE",
+                    "unit": "WORD",
+                    "durationUs": 400000,
+                    "staggerUs": 60000,
+                    "delayUs": 0,
+                    "easing": {
+                        "kind": "bezier",
+                        "x2": 0.58,
+                        "y2": 1.0,
+                        "label": "Ease Out"
+                    },
+                    "reversed": false
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        690.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 3400000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "2708c704-3527-41f5-906f-81351be5389e"
+                        },
+                        {
+                            "timeUs": 3700000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "89dd0ecd-fa39-4aff-855d-ff3ada932c00"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [],
+            "startUs": 350000,
+            "endUs": 3700000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

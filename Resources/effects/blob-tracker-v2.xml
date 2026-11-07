@@ -1,0 +1,807 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BLOB TRACKER v2 — rastreio real, com ID estável entre quadros
+  ============================================================================
+
+  Onde o `blob-tracker.xml` (v1) parte a tela numa GRADE e dá a cada célula
+  uma caixa (sem memória entre quadros — o "ID" é só a posição na grade),
+  este efeito faz a coisa de verdade: **componentes conectados** de verdade
+  (união de pixels vizinhos, não importa a forma) e **rastreio temporal**
+  (associação pelo algoritmo húngaro, com gating por distância, dead
+  reckoning e suavização) — então o mesmo objeto MANTÉM o mesmo ID enquanto
+  anda pela cena, mesmo cruzando fronteiras que na v1 quebrariam a caixa em
+  duas.
+
+  ============================================================================
+   COMO ISTO RODA: GPU → CPU → GPU, NUM EFEITO SÓ
+  ============================================================================
+
+  A detecção por pixel (`mascaraEm`, idêntica à da v1) continua na GPU — é
+  onde ela é barata. O que muda é o meio da cadeia:
+
+      passe 0  desenha mascaraEm(px) inteiro num buffer         → maskBuf
+      passe 1  ***PASSE DE ANÁLISE*** (`analysisSource="maskBuf"`):
+               o EffectPipeline NÃO roda shader aqui — ele lê maskBuf de
+               volta pra CPU, roda ConnectedComponents (união de pixels) e
+               BlobTracker (IDs estáveis via húngaro), e sobe o resultado
+               codificado em texels                              → blobBuf
+      passe 2  desenha, lendo blobBuf com texelFetch
+
+  Ver `com.novaeditor.media.BlobDetectionEngine` para o passe 1 de verdade, e
+  `EffectManifest.EffectPass.analysisSourceBufferId` para o mecanismo do
+  motor. `docs/BLOB-TRACKER.md` e o plano da v2 explicam o porquê disso não
+  caber inteiro num shader (union-find e ID estável são algoritmos GLOBAIS,
+  que pedem memória entre quadros — um shader de fragmento não tem nenhuma
+  das duas coisas).
+
+  ============================================================================
+   A CODIFICAÇÃO DE blobBuf (ver BlobDetectionEngine.kt para a fonte)
+  ============================================================================
+
+  Só a LINHA 0 é usada. Cada blob ocupa um bloco de TEXELS_POR_BLOB texels —
+  os 3 primeiros são os campos escalares, os PONTOS_DE_TRILHA seguintes são a
+  trilha (mais antigo primeiro):
+
+      texel 0:  idAlto  idBaixo   xAlto  xBaixo          (posição, 16 bits)
+      texel 1:  yAlto   yBaixo    meiaLargura  meiaAltura   (bbox, 8 bits)
+      texel 2:  nascido<<7|confiança(7 bits)   —   —   —
+      texel 3..3+N-1:  um ponto de trilha por texel (xAlto xBaixo yAlto yBaixo)
+
+  Um bloco vazio (fim dos blobs) tem ID 0 — nenhum ID de verdade é zero, o
+  rastreador começa a contagem em 1. Logo depois do último blob de verdade
+  vem MAIS UM bloco inteiro deixado em branco (a separação que garante esse
+  sentinela continuar valendo mesmo com dado de verdade logo depois), e só
+  então as arestas da árvore geradora mínima — um texel cada:
+
+      texel:  de(índice, 8 bits)  para(índice, 8 bits)  —  —
+
+  `de`/`para` são ÍNDICES na lista de blobs desta linha (não IDs). O
+  sentinela de fim-de-arestas é `de == 255` — índice que blob nenhum atinge.
+
+  Posição, bbox e trilha são fração da imagem (0..1) — a mesma unidade que
+  `acScreenNorm` já usa, então nenhuma reconversão é precisa no shader.
+
+  ============================================================================
+   O QUE ESTA VERSÃO NÃO TEM AINDA (de propósito)
+  ============================================================================
+
+  Contorno de verdade, casco convexo e FX por blob são os itens 6 a 8 do
+  plano da v2 — já existem em Kotlin puro (`Contorno`, `DouglasPeucker`,
+  `CascoConvexo`), mas ainda não chegaram a este shader. Os extras de "Vida"
+  da v1 (tremor, varredura, formigas marchando) também ficaram de fora por
+  ora — cosmético, não uma capacidade nova.
+
+  ============================================================================
+   UM RISCO CONHECIDO, NÃO VERIFICADO EM APARELHO
+  ============================================================================
+
+  O passe de desenho percorre até MAX_BLOBS blobs POR PIXEL (com corte cedo
+  no primeiro slot vazio — custa proporcional aos blobs de verdade, não ao
+  teto), e agora cada blob pode desenhar mais até PONTOS_DE_TRILHA-1
+  segmentos de trilha por cima da caixa. Isso é mais caro que a vizinhança
+  3×3 O(1) da v1, que só existe porque a v1 tem uma GRADE para indexar; uma
+  lista de blobs livres não tem essa estrutura de graça. MAX_BLOBS caiu de
+  48 para 24 nesta versão, precisamente por causa do custo extra da trilha —
+  uma redução defensiva, não medida. Sem medir num aparelho de verdade, não
+  dá pra garantir que isso é rápido o bastante em 1080p/4K — é o risco que o
+  plano da v2 já antecipava ("medir no aparelho alvo, não no emulador"). Se
+  travar, as saídas são: reduzir MAX_BLOBS/PONTOS_DE_TRILHA mais, ou dar ao
+  passe de análise uma resolução menor que a de exibição (item 1 do plano,
+  ainda não implementado aqui).
+
+  ============================================================================
+   ENXUGADO (0.190.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 31 controles no painel. Este efeito não tem predefinições, então
+  esconder um controle seria apagar o recurso dele. Por isso a maior parte do
+  enxugamento é o `showIf` (novo no motor): o controle só aparece quando faz
+  sentido.
+
+   - a Cor-chave só com "Detectar por" = O que NÃO é a cor-chave; o Matiz
+     (início e fim) só com Faixa de matiz;
+   - o tamanho do canto só no estilo Cantos; a cor do preenchimento só com
+     opacidade acima de zero (a cor e a espessura ficam sempre: são também as
+     do retículo);
+   - o tamanho do retículo só com um retículo;
+   - o que mostrar, o tamanho e a cor do rótulo só com o rótulo ligado; a cor
+     e a espessura da trilha só com a trilha; a cor e a espessura da linha só
+     com uma topologia.
+
+  No padrão o painel mostra 16 (o 16º é o interruptor "Pontos-chave", de
+  25/09/2026). Saíram de vez (escondidos, nos padrões): a
+  Suavidade da máscara, a Área máxima (0,8 da tela), a Folga em volta da caixa
+  e o "Ver" de depuração. A Cintilação foi para o grupo Caixa.
+
+-->
+<effect
+    id="nova.effect.blobtrackerv2"
+    name="Rastreador de blobs (rastreio real)"
+    name-en="Blob Tracker (real tracking)"
+    desc="Como o Rastreador de blobs, mas com componentes conectados de verdade, ID que gruda no objeto entre quadros, trilha e MST."
+    desc-en="Like the Blob Tracker, but with real connected components, an ID that sticks across frames, trails and an MST."
+    category="stylize"
+    tags="hud,rastreio,blob,tracker,tracery,deteccao,caixas,id estavel,rastreio real,componentes conectados,visao de maquina,trilha,mst">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="prevImg" src="history" offset="1" />
+        <texture id="maskBuf" src="buffer" />
+        <texture id="blobBuf" src="buffer" />
+
+        <!-- ================================ O PAINEL ================================ -->
+        <selector id="source" group="Detecção" label="Detectar por" default="1"
+                  options="Alfa|Luz clara|Luz escura|O que NÃO é a cor-chave|Vermelho|Verde|Azul|Saturação alta|Saturação baixa|Faixa de matiz|Borda|Movimento" />
+        <color id="keyColor" showIf="source=3" group="Detecção" label="Cor-chave" default="#00B140" />
+        <slider id="hueStart" showIf="source=9" group="Detecção" label="Matiz — início"
+                default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="hueEnd" showIf="source=9" group="Detecção" label="Matiz — fim"
+                default="0.15" min="0.0" max="1.0" step="0.01" />
+        <slider id="cut" group="Detecção" label="Threshold"
+                default="0.55" min="0.01" max="1.0" step="0.01" snap="0.5" />
+        <slider id="preBlur" group="Detecção" label="Desfoque antes (funde ruído)"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="minArea" group="Detecção" label="Área mínima (% da tela)"
+                default="0.0005" min="0.0" max="0.2" step="0.0005" snap="0.0" />
+        <texture id="probeImg" group="Detecção" src="layer" label="Detectar nesta camada" />
+        <selector id="boxStyle" group="Caixa" label="Estilo" default="0"
+                  options="Cantos|Retângulo inteiro|Sem caixa" />
+        <color id="boxColor" group="Caixa" label="Cor" default="#5CE1B6" />
+        <slider id="boxWidth" group="Caixa" label="Espessura (% da altura)"
+                default="0.3" min="0.05" max="2.0" step="0.05" snap="0.3" />
+        <slider id="cornerLen" showIf="boxStyle=0" group="Caixa" label="Tamanho do canto"
+                default="0.35" min="0.05" max="1.0" step="0.01" snap="0.35" />
+        <slider id="fillOpacity" group="Caixa" label="Opacidade do preenchimento"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="fillColor" showIf="fillOpacity>0" group="Caixa" label="Cor do preenchimento" default="#5CE1B6" />
+        <slider id="flicker" group="Caixa" label="Cintilação"
+                default="0.15" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="marker" group="Marcador central" label="Retículo" default="0"
+                  options="Nenhum|Cruz|Círculo|Alvo" />
+        <slider id="markerSize" showIf="marker!=0" group="Marcador central" label="Tamanho"
+                default="0.03" min="0.005" max="0.2" step="0.005" />
+        <!-- Cor própria do retículo: nas referências a caixa é de uma cor e o
+             retículo/cruz é de outra (verde sobre caixa vermelha, etc.). No padrão
+             igual à da caixa, então quem não mexe não vê diferença. -->
+        <color id="markerColor" showIf="marker!=0" group="Marcador central" label="Cor do marcador" default="#5CE1B6" />
+        <switch id="showLabel" group="Rótulo" label="Mostrar rótulo" default="false" />
+        <selector id="labelData" showIf="showLabel=true" group="Rótulo" label="O que mostrar" default="0"
+                  options="ID|Área da caixa %|Coordenada X|Coordenada X,Y" />
+        <slider id="labelSize" showIf="showLabel=true" group="Rótulo" label="Tamanho do rótulo"
+                default="0.03" min="0.01" max="0.12" step="0.005" />
+        <color id="labelColor" showIf="showLabel=true" group="Rótulo" label="Cor do rótulo" default="#5CE1B6" />
+        <switch id="showTrail" group="Trilha" label="Mostrar trilha" default="false" />
+        <color id="trailColor" showIf="showTrail=true" group="Trilha" label="Cor da trilha" default="#5CE1B6" />
+        <slider id="trailWidth" showIf="showTrail=true" group="Trilha" label="Espessura (% da altura)"
+                default="0.2" min="0.02" max="1.0" step="0.02" snap="0.2" />
+        <selector id="topology" group="Conexões" label="Topologia" default="0"
+                  options="Nenhuma|Árvore geradora mínima" />
+        <color id="connColor" showIf="topology!=0" group="Conexões" label="Cor da linha" default="#5CE1B6" />
+        <slider id="connWidth" showIf="topology!=0" group="Conexões" label="Espessura da linha (% da altura)"
+                default="0.18" min="0.02" max="1.0" step="0.02" snap="0.18" />
+
+        <!-- Pontos-chave: cruzes espalhadas onde a detecção dispara, numa grade
+             jitterada — independentes das caixas (que seguem os blobs). É a "chuva
+             de keypoints" das referências (as cruzes vermelhas nos cisnes, as ciano
+             no olho). Usam o mesmo "Detectar por"/"Threshold" das caixas. -->
+        <switch id="keypoints" group="Pontos-chave" label="Pontos-chave (cruzes)" default="false" />
+        <slider id="kpDensity" showIf="keypoints=true" group="Pontos-chave" label="Densidade"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="kpSize" showIf="keypoints=true" group="Pontos-chave" label="Tamanho"
+                default="0.02" min="0.005" max="0.08" step="0.005" />
+        <color id="kpColor" showIf="keypoints=true" group="Pontos-chave" label="Cor" default="#FF3B30" />
+
+        <!-- ===== ESCONDIDOS (hidden): nos padrões; o painel não mostra ===== -->
+        <slider id="softness" hidden="true" group="Detecção" label="Suavidade"
+                default="0.1" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="maxArea" hidden="true" group="Detecção" label="Área máxima (% da tela)"
+                default="0.8" min="0.01" max="1.0" step="0.01" snap="1.0" />
+
+        <!-- ============================== Caixa ============================= -->
+        <slider id="padding" hidden="true" group="Caixa" label="Folga em volta"
+                default="0.0" min="0.0" max="0.1" step="0.005" snap="0.0" />
+
+
+        <!-- =========================== Depuração =========================== -->
+        <selector id="debug" hidden="true" group="Depuração" label="Ver" default="0"
+                  options="Normal|Máscara detectada|Só o HUD" />
+    </params>
+
+    <!-- Na vitrine, a imagem parada não tem o que rastrear: a máscara do que ele detecta. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="debug" value="1" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="maskBuf" />                          <!-- 0: escreve mascaraEm(px) inteiro -->
+        <!-- 1: ANÁLISE — CPU, nunca desenha de verdade -->
+        <pass target="blobBuf" analysisSource="maskBuf" analysisParams="cut,minArea,maxArea" />
+        <pass />                                            <!-- 2: desenha, lendo blobBuf -->
+    </passes>
+
+    <shader><![CDATA[
+
+// ===========================================================================
+//  A máscara: exatamente a mesma lógica da v1 (blob-tracker.xml)
+// ===========================================================================
+float lumaOf(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+// RGB -> HSV clássico (Sam Hocevar). Usado por saturação e faixa de matiz.
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 pp = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 qq = mix(vec4(pp.xyw, c.r), vec4(c.r, pp.yzx), step(pp.x, c.r));
+    float dd = qq.x - min(qq.w, qq.y);
+    float ee = 1.0e-10;
+    return vec3(abs(qq.z + (qq.w - qq.y) / (6.0 * dd + ee)), dd / (qq.x + ee), qq.x);
+}
+
+vec4 probeAt(ivec2 px) {
+    ivec2 res = ivec2(acResolution);
+    ivec2 lo = ivec2(0);
+    ivec2 hi = res - 1;
+    int r = int(floor(preBlur * 4.0 + 0.5));
+    if (r <= 0) return texelFetch(probeImg, clamp(px, lo, hi), 0);
+    vec4 acc = texelFetch(probeImg, clamp(px, lo, hi), 0) * 2.0;
+    acc += texelFetch(probeImg, clamp(px + ivec2(r, 0), lo, hi), 0);
+    acc += texelFetch(probeImg, clamp(px - ivec2(r, 0), lo, hi), 0);
+    acc += texelFetch(probeImg, clamp(px + ivec2(0, r), lo, hi), 0);
+    acc += texelFetch(probeImg, clamp(px - ivec2(0, r), lo, hi), 0);
+    return acc / 6.0;
+}
+
+float matizNaFaixa(float h, float ini, float fim, float soft) {
+    float dh = fract(h - ini);
+    float largura = fract(fim - ini);
+    if (largura <= 0.0) largura = 1.0;
+    float edge = max(soft, 0.001);
+    return 1.0 - smoothstep(largura - edge, largura, dh);
+}
+
+float mascaraEm(ivec2 px) {
+    ivec2 res = ivec2(acResolution);
+    ivec2 lo = ivec2(0);
+    ivec2 hi = res - 1;
+    vec4 c = probeAt(px);
+    float lum = lumaOf(c.rgb);
+
+    if (source == 0) return c.a;                              // Alfa
+    if (source == 1) return lum * c.a;                        // Luz clara
+    if (source == 2) return (1.0 - lum) * c.a;                // Luz escura
+    if (source == 3) {                                        // O que NÃO é a cor-chave
+        float dif = length(c.rgb - keyColor.rgb);
+        return smoothstep(0.0, max(cut, 0.02) * 1.5 + softness * 0.5, dif) * c.a;
+    }
+    if (source == 4) return clamp((c.r - max(c.g, c.b)) * 2.0, 0.0, 1.0) * c.a;  // Vermelho
+    if (source == 5) return clamp((c.g - max(c.r, c.b)) * 2.0, 0.0, 1.0) * c.a;  // Verde
+    if (source == 6) return clamp((c.b - max(c.r, c.g)) * 2.0, 0.0, 1.0) * c.a;  // Azul
+
+    if (source == 7) return rgb2hsv(c.rgb).y * c.a;                          // Saturação alta
+    if (source == 8) return (1.0 - rgb2hsv(c.rgb).y) * step(0.05, lum) * c.a; // Saturação baixa
+    if (source == 9) {                                                       // Faixa de matiz
+        vec3 hsv = rgb2hsv(c.rgb);
+        return matizNaFaixa(hsv.x, hueStart, hueEnd, softness) * hsv.y * c.a;
+    }
+    if (source == 10) {                                                      // Borda
+        float lx1 = lumaOf(probeAt(clamp(px + ivec2(1, 0), lo, hi)).rgb);
+        float lx0 = lumaOf(probeAt(clamp(px - ivec2(1, 0), lo, hi)).rgb);
+        float ly1 = lumaOf(probeAt(clamp(px + ivec2(0, 1), lo, hi)).rgb);
+        float ly0 = lumaOf(probeAt(clamp(px - ivec2(0, 1), lo, hi)).rgb);
+        return clamp(length(vec2(lx1 - lx0, ly1 - ly0)) * 2.0, 0.0, 1.0) * c.a;
+    }
+    // 11: Movimento — diferença de luminância entre este quadro e o anterior.
+    float lp = lumaOf(texelFetch(prevImg, clamp(px, lo, hi), 0).rgb);
+    return clamp(abs(lum - lp) * 4.0, 0.0, 1.0) * c.a;
+}
+
+// ===========================================================================
+//  Passe 0 — a máscara inteira, um valor por pixel (nada de pirâmide aqui:
+//  quem reduz é a CPU, via ConnectedComponents, não este shader)
+// ===========================================================================
+vec4 passeMascara(ivec2 t, ivec2 tam) {
+    if (t.x >= tam.x || t.y >= tam.y) return vec4(0.0);
+    float m = mascaraEm(t);
+    return vec4(m, m, m, m); // os 4 canais iguais: BlobDetectionEngine lê 1 só.
+}
+
+// ===========================================================================
+//  Desenho — primitivas (idênticas à v1: já testadas ali)
+// ===========================================================================
+vec2 paraAltura(vec2 uv) { return vec2(uv.x * acAspect, uv.y); }
+
+float ruido(float x) { return fract(sin(x * 127.1 + 311.7) * 43758.5453); }
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    vec3 rgb = (cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a;
+    return vec4(rgb, a);
+}
+
+float caixaSdf(vec2 p, vec2 meio) {
+    vec2 d = abs(p) - meio;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+float segmentoSdf(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// ---------------------------------------------------------------- dígitos
+int segMask(int d) {
+    if (d == 0) return 63;
+    if (d == 1) return 6;
+    if (d == 2) return 91;
+    if (d == 3) return 79;
+    if (d == 4) return 102;
+    if (d == 5) return 109;
+    if (d == 6) return 125;
+    if (d == 7) return 7;
+    if (d == 8) return 127;
+    return 111; // 9
+}
+
+float umSeg(vec2 uv, vec2 c, vec2 meio, float aa) {
+    return 1.0 - smoothstep(-aa, aa, caixaSdf(uv - c, meio));
+}
+
+float digito(vec2 uv, int m, float aa) {
+    float t = 0.12;
+    float cov = 0.0;
+    if ((m & 1) != 0)  cov = max(cov, umSeg(uv, vec2(0.5, 0.10), vec2(0.30, t), aa)); // a
+    if ((m & 64) != 0) cov = max(cov, umSeg(uv, vec2(0.5, 0.50), vec2(0.30, t), aa)); // g
+    if ((m & 8) != 0)  cov = max(cov, umSeg(uv, vec2(0.5, 0.90), vec2(0.30, t), aa)); // d
+    if ((m & 32) != 0) cov = max(cov, umSeg(uv, vec2(0.12, 0.30), vec2(t, 0.22), aa)); // f
+    if ((m & 2) != 0)  cov = max(cov, umSeg(uv, vec2(0.88, 0.30), vec2(t, 0.22), aa)); // b
+    if ((m & 16) != 0) cov = max(cov, umSeg(uv, vec2(0.12, 0.70), vec2(t, 0.22), aa)); // e
+    if ((m & 4) != 0)  cov = max(cov, umSeg(uv, vec2(0.88, 0.70), vec2(t, 0.22), aa)); // c
+    return cov;
+}
+
+int contaDigitos(int v) {
+    int n = 1;
+    int x = v;
+    for (int i = 0; i < 5; i++) { if (x >= 10) { x /= 10; n++; } }
+    return n;
+}
+
+int pot10(int n) {
+    int r = 1;
+    for (int i = 0; i < 5; i++) { if (i < n) r *= 10; }
+    return r;
+}
+
+void desenhaNumero(inout vec4 hud, vec2 org, float h, int valor, int maxD, vec4 col, vec2 p, float aa) {
+    int nd = min(contaDigitos(valor), maxD);
+    float dw = h * 0.60;
+    float gap = h * 0.22;
+    float total = float(nd) * dw + float(nd - 1) * gap;
+    if (p.x < org.x - aa || p.x > org.x + total + aa) return;
+    if (p.y < org.y - aa || p.y > org.y + h + aa) return;
+
+    float aauv = (aa / max(h, 1e-4)) * 2.0;
+    for (int k = 0; k < 5; k++) {
+        if (k >= nd) break;
+        float x0 = org.x + float(k) * (dw + gap);
+        vec2 uv = vec2((p.x - x0) / dw, (p.y - org.y) / h);
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+        int place = nd - 1 - k;
+        int dgt = (valor / pot10(place)) - (valor / pot10(place + 1)) * 10;
+        float cov = digito(uv, segMask(dgt), aauv);
+        hud = sobre(hud, vec4(col.rgb, cov * col.a));
+    }
+}
+
+// ---------------------------------------------------------------- letras x/y e ":"
+// A fonte de 7 segmentos não tem diagonal — não dá pra fazer um "x". Estas letras
+// são traçadas com segmentos de reta na mesma célula 0..1 dos dígitos, então
+// alinham com eles. `tipo`: 0='x', 1='y', 2=':'.
+float traco(vec2 uv, vec2 a, vec2 b, float w, float aa) {
+    return 1.0 - smoothstep(w - aa, w + aa, segmentoSdf(uv, a, b));
+}
+
+void desenhaGlifo(inout vec4 hud, vec2 org, float largura, float h, int tipo, vec4 col, vec2 p, float aa) {
+    if (p.x < org.x - aa || p.x > org.x + largura + aa) return;
+    if (p.y < org.y - aa || p.y > org.y + h + aa) return;
+    vec2 uv = vec2((p.x - org.x) / largura, (p.y - org.y) / h);
+    float aauv = (aa / max(h, 1e-4)) * 2.0;
+    float w = 0.14;
+    float cov = 0.0;
+    if (tipo == 0) {                                   // x — duas diagonais
+        cov = max(cov, traco(uv, vec2(0.15, 0.18), vec2(0.85, 0.90), w, aauv));
+        cov = max(cov, traco(uv, vec2(0.85, 0.18), vec2(0.15, 0.90), w, aauv));
+    } else if (tipo == 1) {                            // y — dois braços e a perna
+        cov = max(cov, traco(uv, vec2(0.15, 0.18), vec2(0.50, 0.58), w, aauv));
+        cov = max(cov, traco(uv, vec2(0.85, 0.18), vec2(0.50, 0.58), w, aauv));
+        cov = max(cov, traco(uv, vec2(0.50, 0.58), vec2(0.32, 0.92), w, aauv));
+    } else {                                           // : — dois pontos
+        cov = max(cov, umSeg(uv, vec2(0.5, 0.42), vec2(0.11, 0.11), aauv));
+        cov = max(cov, umSeg(uv, vec2(0.5, 0.74), vec2(0.11, 0.11), aauv));
+    }
+    hud = sobre(hud, vec4(col.rgb, cov * col.a));
+}
+
+float larguraNumero(int valor, float dw, float gap, int maxD) {
+    int nd = min(contaDigitos(valor), maxD);
+    return float(nd) * dw + float(nd - 1) * gap;
+}
+
+// ===========================================================================
+//  Leitura de blobBuf — o inverso exato de BlobDetectionEngine.codificar()
+// ===========================================================================
+const int PONTOS_DE_TRILHA = 5; // ver BlobDetectionEngine.PONTOS_DE_TRILHA — os dois têm que bater.
+const int TEXELS_ESCALARES_POR_BLOB = 3;
+const int TEXELS_POR_BLOB = TEXELS_ESCALARES_POR_BLOB + PONTOS_DE_TRILHA;
+// Teto de custo do laço por pixel — ver o aviso no cabeçalho do arquivo. Caiu
+// de 48 (a versão sem trilha) para 24 por causa do custo extra que a trilha
+// e a MST somam por blob.
+const int MAX_BLOBS = 24;
+
+struct BlobLido {
+    int id;
+    vec2 centroAltura;   // espaço-altura (paraAltura já aplicado)
+    vec2 meioAltura;     // meia-largura/meia-altura, espaço-altura
+    float xPixelFrac;    // posição x normalizada crua (0..1) — para o rótulo "Coordenada X"
+    float yPixelFrac;    // posição y normalizada crua (0..1) — para o rótulo "Coordenada X,Y"
+    float areaFrac;      // área da bbox, fração da tela — para o rótulo "Área %"
+    float confianca;
+    bool nascido;
+    vec2 trilha[PONTOS_DE_TRILHA]; // espaço-altura, mais antigo primeiro
+};
+
+bool lerBlob(int slot, out BlobLido b) {
+    int base = slot * TEXELS_POR_BLOB;
+    ivec4 t0 = ivec4(texelFetch(blobBuf, ivec2(base + 0, 0), 0) * 255.0 + 0.5);
+    int id = (t0.r << 8) | t0.g;
+    if (id == 0) return false;
+
+    int x16 = (t0.b << 8) | t0.a;
+    ivec4 t1 = ivec4(texelFetch(blobBuf, ivec2(base + 1, 0), 0) * 255.0 + 0.5);
+    int y16 = (t1.r << 8) | t1.g;
+    int meiaLarguraB = t1.b;
+    int meiaAlturaB = t1.a;
+    ivec4 t2 = ivec4(texelFetch(blobBuf, ivec2(base + 2, 0), 0) * 255.0 + 0.5);
+    int flagsConf = t2.r;
+
+    vec2 posNorm = vec2(float(x16) / 65535.0, float(y16) / 65535.0);
+    vec2 meioNorm = vec2(float(meiaLarguraB) / 255.0, float(meiaAlturaB) / 255.0);
+
+    b.id = id;
+    b.centroAltura = paraAltura(posNorm);
+    b.meioAltura = paraAltura(meioNorm);
+    b.xPixelFrac = posNorm.x;
+    b.yPixelFrac = posNorm.y;
+    b.areaFrac = (meioNorm.x * 2.0) * (meioNorm.y * 2.0);
+    b.confianca = float(flagsConf & 127) / 127.0;
+    b.nascido = (flagsConf & 128) != 0;
+
+    for (int p = 0; p < PONTOS_DE_TRILHA; p++) {
+        ivec4 tp = ivec4(texelFetch(blobBuf, ivec2(base + TEXELS_ESCALARES_POR_BLOB + p, 0), 0) * 255.0 + 0.5);
+        int tx16 = (tp.r << 8) | tp.g;
+        int ty16 = (tp.b << 8) | tp.a;
+        b.trilha[p] = paraAltura(vec2(float(tx16) / 65535.0, float(ty16) / 65535.0));
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------- desenho de um blob
+void desenhaBlob(inout vec4 hud, BlobLido b, vec2 p) {
+    float aa = 1.5 / max(acResolution.y, 1.0);
+    float esp = boxWidth * 0.01;
+
+    vec2 pMin = b.centroAltura - b.meioAltura - vec2(padding);
+    vec2 pMax = b.centroAltura + b.meioAltura + vec2(padding);
+    vec2 meio = max((pMax - pMin) * 0.5, vec2(1e-4));
+    vec2 centro = (pMin + pMax) * 0.5;
+
+    // A confiança cai enquanto o blob está "coastando" (sem detecção, andando
+    // pela previsão) — multiplicar a opacidade por ela faz o HUD desbotar
+    // sozinho até o quadro em que o rastreador desiste de vez.
+    float alfaBase = b.confianca;
+
+    float d = caixaSdf(p - centro, meio);
+
+    if (fillOpacity > 0.0) {
+        float dentro = 1.0 - smoothstep(-aa, aa, d);
+        hud = sobre(hud, vec4(fillColor.rgb, dentro * fillOpacity * fillColor.a * alfaBase));
+    }
+
+    if (boxStyle != 2) {
+        float borda = 1.0 - smoothstep(esp * 0.5 - aa, esp * 0.5 + aa, abs(d));
+        if (boxStyle == 0) {
+            vec2 sobra = meio - abs(p - centro);
+            float lado = cornerLen * min(meio.x, meio.y);
+            borda *= 1.0 - smoothstep(lado - aa, lado + aa, max(sobra.x, sobra.y));
+        }
+        hud = sobre(hud, vec4(boxColor.rgb, borda * boxColor.a * alfaBase));
+    }
+
+    if (marker != 0) {
+        vec2 rel = p - centro;
+        float braco = markerSize;
+        float alvo = 0.0;
+        if (marker == 1 || marker == 3) {
+            float haste = (1.0 - smoothstep(esp * 0.5 - aa, esp * 0.5 + aa, abs(rel.y))) *
+                          (1.0 - smoothstep(braco - aa, braco + aa, abs(rel.x)));
+            float vert = (1.0 - smoothstep(esp * 0.5 - aa, esp * 0.5 + aa, abs(rel.x))) *
+                         (1.0 - smoothstep(braco - aa, braco + aa, abs(rel.y)));
+            alvo = max(haste, vert);
+        }
+        if (marker == 2 || marker == 3) {
+            float raio = marker == 3 ? braco * 0.55 : braco;
+            float anel = 1.0 - smoothstep(esp * 0.5 - aa, esp * 0.5 + aa, abs(length(rel) - raio));
+            alvo = max(alvo, anel);
+        }
+        hud = sobre(hud, vec4(markerColor.rgb, alvo * markerColor.a * alfaBase));
+    }
+
+    if (showLabel) {
+        vec2 org = vec2(pMin.x, max(pMin.y - labelSize * 1.35, aa));
+        if (labelData == 3) {
+            // Coordenada X,Y — "x:NNN  y:NNN", como nas referências.
+            int vx = int(b.xPixelFrac * acResolution.x);
+            int vy = int(b.yPixelFrac * acResolution.y);
+            float h = labelSize;
+            float dw = h * 0.60;
+            float gap = h * 0.22;
+            float lw = h * 0.55;   // largura de uma letra
+            float cw = h * 0.34;   // largura do ":"
+            float cur = org.x;
+            desenhaGlifo(hud, vec2(cur, org.y), lw, h, 0, labelColor, p, aa); cur += lw + gap * 0.5;   // x
+            desenhaGlifo(hud, vec2(cur, org.y), cw, h, 2, labelColor, p, aa); cur += cw + gap;         // :
+            desenhaNumero(hud, vec2(cur, org.y), h, vx, 5, labelColor, p, aa);
+            cur += larguraNumero(vx, dw, gap, 5) + h * 0.55;                                           // espaço
+            desenhaGlifo(hud, vec2(cur, org.y), lw, h, 1, labelColor, p, aa); cur += lw + gap * 0.5;   // y
+            desenhaGlifo(hud, vec2(cur, org.y), cw, h, 2, labelColor, p, aa); cur += cw + gap;         // :
+            desenhaNumero(hud, vec2(cur, org.y), h, vy, 5, labelColor, p, aa);
+        } else {
+            int valor = b.id;
+            int maxD = 5;
+            if (labelData == 1) { valor = int(b.areaFrac * 10000.0 + 0.5); maxD = 4; }
+            else if (labelData == 2) { valor = int(b.xPixelFrac * acResolution.x); maxD = 5; }
+            desenhaNumero(hud, org, labelSize, valor, maxD, labelColor, p, aa);
+        }
+    }
+}
+
+// ---------------------------------------------------------------- trilha
+// Segmentos retos ligando os PONTOS_DE_TRILHA pontos, mais antigo→mais
+// recente — sem reamostragem por Catmull-Rom (que existe, testada, em
+// `CatmullRom.kt`): suavizar a curva no shader multiplicaria por ~4 o número
+// de segmentos por blob, e o custo por pixel já é o maior risco não medido
+// desta versão (ver o cabeçalho do arquivo). A cauda desbota: o segmento
+// mais antigo é o mais transparente.
+void desenhaTrilha(inout vec4 hud, BlobLido b, vec2 p) {
+    float aa = 1.5 / max(acResolution.y, 1.0);
+    float w = trailWidth * 0.01;
+    for (int i = 0; i < PONTOS_DE_TRILHA - 1; i++) {
+        float d = segmentoSdf(p, b.trilha[i], b.trilha[i + 1]);
+        float linha = 1.0 - smoothstep(w * 0.5 - aa, w * 0.5 + aa, d);
+        float peso = float(i + 1) / float(PONTOS_DE_TRILHA - 1);
+        hud = sobre(hud, vec4(trailColor.rgb, linha * trailColor.a * peso * b.confianca));
+    }
+}
+
+// ---------------------------------------------------------------- MST
+// Lê as arestas de `blobBuf` — ver o cabeçalho do arquivo para o layout — e
+// desenha uma linha reta entre os centros de cada par. `blobs`/`contagem`
+// vêm do MESMO laço de leitura que já decodificou os blobs para desenhá-los,
+// então isto não faz nenhuma leitura de textura a mais por blob, só por
+// aresta.
+const int MAX_ARESTAS = MAX_BLOBS;
+
+void desenhaArestasMst(inout vec4 hud, BlobLido blobs[MAX_BLOBS], int contagem, vec2 p) {
+    float aa = 1.5 / max(acResolution.y, 1.0);
+    float w = connWidth * 0.01;
+    int base = (contagem + 1) * TEXELS_POR_BLOB; // +1: o bloco vazio de separação (ver o cabeçalho).
+
+    for (int e = 0; e < MAX_ARESTAS; e++) {
+        ivec4 te = ivec4(texelFetch(blobBuf, ivec2(base + e, 0), 0) * 255.0 + 0.5);
+        if (te.r >= 255) break; // sentinela: fim das arestas.
+        int de = te.r;
+        int para = te.g;
+        if (de < 0 || de >= contagem || para < 0 || para >= contagem) continue; // defensivo.
+        float d = segmentoSdf(p, blobs[de].centroAltura, blobs[para].centroAltura);
+        float linha = 1.0 - smoothstep(w * 0.5 - aa, w * 0.5 + aa, d);
+        hud = sobre(hud, vec4(connColor.rgb, linha * connColor.a));
+    }
+}
+
+// ---------------------------------------------------------------- pontos-chave
+// Uma cruz por célula de uma grade jitterada, onde a máscara passa do Threshold.
+// Independe dos blobs (as caixas seguem os blobs; isto não) — é a "chuva de
+// keypoints" das referências. Cada pixel olha só a PRÓPRIA célula: é UMA leitura
+// de máscara a mais por pixel (ver o aviso de custo no cabeçalho), e a cruz é
+// presa ao tamanho da célula para não recortar na borda dela.
+void desenhaKeypoints(inout vec4 hud, vec2 p, float aa) {
+    vec2 uvn = acScreenNorm;
+    float cols = mix(14.0, 90.0, clamp(kpDensity, 0.0, 1.0));
+    vec2 grade = vec2(cols, max(cols / acAspect, 1.0));
+    vec2 cel = floor(uvn * grade);
+
+    // Liga só parte das células, para não virar uma grade perfeita.
+    if (ruido(cel.x * 131.0 + cel.y * 17.3) < 0.30) return;
+
+    vec2 jit = vec2(ruido(cel.x * 12.9 + cel.y * 78.2), ruido(cel.x * 39.3 + cel.y * 11.1));
+    vec2 centroN = (cel + 0.2 + 0.6 * jit) / grade;
+    if (mascaraEm(ivec2(centroN * acResolution)) <= cut) return;
+
+    vec2 rel = p - paraAltura(centroN);
+    float s = acAspect / cols;                 // lado da célula em espaço-altura
+    float braco = min(kpSize, s * 0.42);       // não deixa a cruz passar da célula
+    float esp = boxWidth * 0.01;
+    float haste = (1.0 - smoothstep(esp * 0.5 - aa, esp * 0.5 + aa, abs(rel.y))) *
+                  (1.0 - smoothstep(braco - aa, braco + aa, abs(rel.x)));
+    float vert = (1.0 - smoothstep(esp * 0.5 - aa, esp * 0.5 + aa, abs(rel.x))) *
+                 (1.0 - smoothstep(braco - aa, braco + aa, abs(rel.y)));
+    hud = sobre(hud, vec4(kpColor.rgb, max(haste, vert) * kpColor.a));
+}
+
+// ===========================================================================
+//  main
+// ===========================================================================
+void main() {
+    ivec2 t = ivec2(gl_FragCoord.xy);
+    ivec2 tam = ivec2(acResolution);
+
+    if (acPass == 0) { fragColor = passeMascara(t, tam); return; }
+    // O passe 1 é de ANÁLISE: o EffectPipeline nunca roda este branch de
+    // verdade (ele substitui o passe inteiro por CPU — ver o cabeçalho do
+    // arquivo). Este preenchimento existe só para o shader ficar bem-formado
+    // caso algum caminho o execute por engano.
+    if (acPass == 1) { fragColor = vec4(0.0); return; }
+
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    if (debug == 1) {
+        float m = mascaraEm(ivec2(acScreenNorm * acResolution));
+        float dentro = step(cut, m);
+        vec3 pint = mix(vec3(0.05, 0.05, 0.08), vec3(1.0, 0.25, 0.6), dentro);
+        fragColor = vec4(mix(original.rgb * 0.25, pint, 0.75), max(original.a, dentro));
+        return;
+    }
+
+    vec2 p = paraAltura(acScreenNorm);
+    vec4 hud = vec4(0.0);
+
+    // Uma leitura só de blobBuf por blob: o array local é reusado para a
+    // MST (que referencia blobs por índice, não em sequência) e para o
+    // desenho — sem isso, cada aresta pediria decodificar os dois blobs
+    // dela de novo.
+    BlobLido blobs[MAX_BLOBS];
+    int contagem = 0;
+    for (int slot = 0; slot < MAX_BLOBS; slot++) {
+        if (!lerBlob(slot, blobs[contagem])) break; // sentinela: acabaram os blobs desta linha.
+        contagem++;
+    }
+
+    // Conexões por baixo de tudo — o mesmo motivo do v1: uma linha por cima
+    // da caixa do outro lado esconderia a própria caixa.
+    if (topology == 1) desenhaArestasMst(hud, blobs, contagem, p);
+
+    for (int i = 0; i < contagem; i++) {
+        if (showTrail) desenhaTrilha(hud, blobs[i], p);
+        desenhaBlob(hud, blobs[i], p);
+    }
+
+    if (keypoints) desenhaKeypoints(hud, p, 1.5 / max(acResolution.y, 1.0));
+
+    if (flicker > 0.0) {
+        float degrau = floor(acTime * 12.0);
+        float cintila = 1.0
+            - flicker * 0.22 * ruido(degrau * 1.7)
+            - flicker * 0.65 * step(0.9, ruido(degrau + 5.1));
+        hud.a *= clamp(cintila, 0.0, 1.0);
+    }
+
+    if (debug == 2) { fragColor = sobre(vec4(0.02, 0.02, 0.03, 1.0), hud); return; }
+
+    fragColor = sobre(original, hud);
+}
+
+    ]]></shader>
+
+    <!--
+      ==========================================================================
+       PREDEFINIÇÕES — quatro "cara de máquina de visão", cada uma copiando uma
+       referência que o snow mandou (25/09/2026).
+      ==========================================================================
+
+      O que o preset controla é o VISUAL do HUD (caixa, marcador, rótulo, cor,
+      trilha, conexões). O QUE ele acha na cena — a fonte de detecção e o
+      threshold — depende da filmagem, então os valores de detecção aqui são um
+      ponto de partida (como nos presets do Flare Volumétrico): se a cena não for
+      a da referência, ajuste "Detectar por"/"Threshold"/"Área mínima" a olho.
+    -->
+    <presets>
+        <!-- Ref. 1: templo grego esverdeado, caixas vermelhas cheias + mancha de
+             calor + coordenadas. -->
+        <preset id="vigilanciaTermica" name="🛰️ Vigilância térmica" name-en="🛰️ Thermal Surveillance">
+            <value param="source" value="1" />           <!-- Luz clara -->
+            <value param="cut" value="0.5" />
+            <value param="minArea" value="0.003" />
+            <value param="boxStyle" value="1" />          <!-- Retângulo inteiro -->
+            <value param="boxColor" value="#FF3B30" />
+            <value param="boxWidth" value="0.5" />
+            <value param="fillOpacity" value="0.22" />
+            <value param="fillColor" value="#FF2A2A" />
+            <value param="flicker" value="0.35" />
+            <value param="marker" value="0" />            <!-- sem retículo -->
+            <value param="showLabel" value="true" />
+            <value param="labelData" value="3" />         <!-- X,Y -->
+            <value param="labelColor" value="#7CFF3C" />
+            <value param="labelSize" value="0.028" />
+            <value param="topology" value="0" />
+        </preset>
+
+        <!-- Ref. 2: olho, cruzes ciano por toda parte, teia/linhas amarelas e
+             coordenadas. Sem caixa. -->
+        <preset id="biometrico" name="👁️ Rastreio biométrico" name-en="👁️ Biometric Scan">
+            <value param="source" value="10" />           <!-- Borda -->
+            <value param="cut" value="0.35" />
+            <value param="minArea" value="0.004" />       <!-- poucos blobs → teia limpa -->
+            <value param="boxStyle" value="2" />          <!-- Sem caixa -->
+            <value param="marker" value="0" />            <!-- as cruzes vêm dos pontos-chave -->
+            <value param="keypoints" value="true" />      <!-- chuva de cruzes ciano -->
+            <value param="kpColor" value="#00E5FF" />
+            <value param="kpDensity" value="0.75" />
+            <value param="kpSize" value="0.02" />
+            <value param="showLabel" value="true" />
+            <value param="labelData" value="3" />         <!-- X,Y -->
+            <value param="labelColor" value="#FFE600" />  <!-- amarelo -->
+            <value param="labelSize" value="0.022" />
+            <value param="topology" value="1" />          <!-- teia MST -->
+            <value param="connColor" value="#FFD400" />   <!-- amarelo -->
+            <value param="connWidth" value="0.12" />
+            <value param="flicker" value="0.1" />
+        </preset>
+
+        <!-- Ref. 3: microscopia, alvos verdes + caixas vermelhas finas +
+             coordenadas brancas. -->
+        <preset id="microscopia" name="🔬 Análise microscópica" name-en="🔬 Cell Analysis">
+            <value param="source" value="10" />           <!-- Borda (paredes de célula) -->
+            <value param="cut" value="0.3" />
+            <value param="minArea" value="0.002" />
+            <value param="boxStyle" value="1" />          <!-- Retângulo inteiro -->
+            <value param="boxColor" value="#FF3B30" />    <!-- vermelho -->
+            <value param="boxWidth" value="0.35" />
+            <value param="marker" value="3" />            <!-- Alvo (cruz + círculo) -->
+            <value param="markerSize" value="0.05" />
+            <value param="markerColor" value="#3DFF6A" /> <!-- verde -->
+            <value param="showLabel" value="true" />
+            <value param="labelData" value="3" />         <!-- X,Y -->
+            <value param="labelColor" value="#FFFFFF" />  <!-- branco -->
+            <value param="labelSize" value="0.03" />
+            <value param="flicker" value="0.1" />
+            <value param="topology" value="0" />
+        </preset>
+
+        <!-- Ref. 4: cisnes, caixas verdes de detecção + cruzes vermelhas
+             (keypoints) + coordenadas brancas. -->
+        <preset id="deteccaoObjetos" name="🎯 Detecção de objetos" name-en="🎯 Object Detection">
+            <value param="source" value="1" />            <!-- Luz clara -->
+            <value param="cut" value="0.5" />
+            <value param="minArea" value="0.004" />
+            <value param="boxStyle" value="1" />          <!-- Retângulo inteiro -->
+            <value param="boxColor" value="#3DFF57" />    <!-- caixas verdes -->
+            <value param="boxWidth" value="0.35" />
+            <value param="marker" value="0" />            <!-- os keypoints vermelhos vêm abaixo -->
+            <value param="keypoints" value="true" />      <!-- chuva de cruzes vermelhas -->
+            <value param="kpColor" value="#FF3B30" />
+            <value param="kpDensity" value="0.7" />
+            <value param="kpSize" value="0.015" />
+            <value param="showLabel" value="true" />
+            <value param="labelData" value="3" />         <!-- X,Y -->
+            <value param="labelColor" value="#FFFFFF" />  <!-- branco -->
+            <value param="labelSize" value="0.03" />
+            <value param="flicker" value="0.05" />
+            <value param="topology" value="0" />
+        </preset>
+    </presets>
+</effect>

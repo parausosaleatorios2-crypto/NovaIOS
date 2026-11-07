@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_skybox
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-skybox"
+    name="Rendercommand Skybox (NV)"
+    name-en="Rendercommand Skybox (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_skybox', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_skybox', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="_MainTex_HDR" label="Maintex Hdr" default="#FFFFFFFF" />
+        <color id="_Tint" label="Tint" default="#FFFFFFFF" />
+        <slider id="_Exposure" label="Exposure" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_panoramic_upside_down" type="integer" label="Panoramic Upside Down" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+bool u_xlatb0;
+vec3 u_xlat1;
+bool u_xlatb2;
+mediump vec3 u_xlat16_3;
+vec2 u_xlat4;
+bool u_xlatb4;
+vec2 u_xlat5;
+bool u_xlatb8;
+bvec2 u_xlatb9;
+float u_xlat12;
+bool u_xlatb12;
+void main()
+{
+    u_xlat0.x = dot(acScreenNorm.xyz, acScreenNorm.xyz);
+    u_xlat0.x = inversesqrt(u_xlat0.x);
+    u_xlat0.xyz = u_xlat0.xxx * acScreenNorm.yzx;
+    u_xlat12 = -abs(u_xlat0.x) + 1.0;
+    u_xlat12 = sqrt(u_xlat12);
+    u_xlat1.x = abs(u_xlat0.x) * -0.0187292993 + 0.0742610022;
+    u_xlat1.x = u_xlat1.x * abs(u_xlat0.x) + -0.212114394;
+    u_xlat1.x = u_xlat1.x * abs(u_xlat0.x) + 1.57072878;
+    u_xlat5.x = u_xlat12 * u_xlat1.x;
+    u_xlat5.x = u_xlat5.x * -2.0 + 3.14159274;
+    u_xlatb9.xy = lessThan(u_xlat0.xzxz, (-u_xlat0.xzxz)).xy;
+    u_xlat0.x = u_xlatb9.x ? u_xlat5.x : float(0.0);
+    u_xlat5.y = u_xlat1.x * u_xlat12 + u_xlat0.x;
+    u_xlat0.x = min(abs(u_xlat0.z), abs(u_xlat0.y));
+    u_xlat12 = max(abs(u_xlat0.z), abs(u_xlat0.y));
+    u_xlat12 = float(1.0) / u_xlat12;
+    u_xlat0.x = u_xlat12 * u_xlat0.x;
+    u_xlat12 = u_xlat0.x * u_xlat0.x;
+    u_xlat1.x = u_xlat12 * 0.0208350997 + -0.0851330012;
+    u_xlat1.x = u_xlat12 * u_xlat1.x + 0.180141002;
+    u_xlat1.x = u_xlat12 * u_xlat1.x + -0.330299497;
+    u_xlat12 = u_xlat12 * u_xlat1.x + 0.999866009;
+    u_xlat1.x = u_xlat12 * u_xlat0.x;
+    u_xlatb2 = abs(u_xlat0.z)<abs(u_xlat0.y);
+    u_xlat1.x = u_xlat1.x * -2.0 + 1.57079637;
+    u_xlat1.x = u_xlatb2 ? u_xlat1.x : float(0.0);
+    u_xlat0.x = u_xlat0.x * u_xlat12 + u_xlat1.x;
+    u_xlat12 = u_xlatb9.y ? -3.14159274 : float(0.0);
+    u_xlat0.x = u_xlat12 + u_xlat0.x;
+    u_xlat12 = min(u_xlat0.z, u_xlat0.y);
+    u_xlat4.x = max(u_xlat0.z, u_xlat0.y);
+    u_xlatb8 = u_xlat12<(-u_xlat12);
+    u_xlatb4 = u_xlat4.x>=(-u_xlat4.x);
+    u_xlatb4 = u_xlatb4 && u_xlatb8;
+    u_xlat5.x = (u_xlatb4) ? (-u_xlat0.x) : u_xlat0.x;
+    u_xlat4.x = 0.5;
+    u_xlat4.y = vs_TEXCOORD2.y;
+    u_xlat0.yz = (-u_xlat5.xy) * vec2(0.159154937, 0.318309873) + u_xlat4.xy;
+    u_xlatb12 = vs_TEXCOORD1.y<u_xlat0.y;
+    if(u_xlatb12){
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+    u_xlat4.x = u_xlat0.y * vs_TEXCOORD1.x;
+    u_xlatb12 = u_xlat4.x>=(-u_xlat4.x);
+    u_xlat4.x = fract(abs(u_xlat4.x));
+    u_xlat0.x = (u_xlatb12) ? u_xlat4.x : (-u_xlat4.x);
+    u_xlat1.x = vs_TEXCOORD2.x;
+    u_xlat1.y = 1.0;
+    u_xlat0.xy = u_xlat0.xz + u_xlat1.xy;
+    u_xlat1.xy = u_xlat0.xy * vs_TEXCOORD2.zw;
+    u_xlatb0 = 0<_panoramic_upside_down;
+    u_xlat4.x = (-u_xlat0.y) * vs_TEXCOORD2.w + 1.0;
+    u_xlat1.z = (u_xlatb0) ? u_xlat4.x : u_xlat1.y;
+    u_xlat0 = texture(inputImg, u_xlat1.xz);
+    u_xlat16_3.x = u_xlat0.w + -1.0;
+    u_xlat16_3.x = _MainTex_HDR.w * u_xlat16_3.x + 1.0;
+    u_xlat16_3.x = log2(u_xlat16_3.x);
+    u_xlat16_3.x = u_xlat16_3.x * _MainTex_HDR.y;
+    u_xlat16_3.x = exp2(u_xlat16_3.x);
+    u_xlat16_3.x = u_xlat16_3.x * _MainTex_HDR.x;
+    u_xlat16_3.xyz = u_xlat0.xyz * u_xlat16_3.xxx;
+    u_xlat16_3.xyz = u_xlat16_3.xyz * _Tint.xyz;
+    u_xlat16_3.xyz = u_xlat16_3.xyz * vec3(_Exposure);
+    fragColor.xyz = u_xlat16_3.xyz * vec3(4.5947938, 4.5947938, 4.5947938);
+    fragColor.w = 1.0;
+    return;
+}
+    ]]></shader>
+</effect>

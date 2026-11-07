@@ -1,0 +1,46 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.stained_glass" name="Stained Glass" desc="Voronoi cells with bright leading lines, filled with the average colour of each cell." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/stained_glass.png"
+        tags="stylize,stained,glass,voronoi,cells" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Stained Glass" />
+<spinner id="cells" default="18.0" min="3.0" max="80.0" step="1.0" label="Cell Count" />
+<spinner id="leadWidth" default="0.06" min="0.005" max="0.3" step="0.005" label="Lead Width" />
+<color id="leadColor" default="#FF120C08" label="Lead Colour" />
+<spinner id="jitter" default="1.0" min="0.0" max="1.0" step="0.01" label="Cell Jitter" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+vec2 gmCell(vec2 g){
+  return vec2(gmHash(g), gmHash(g + 3.7));
+}
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 p = uv * vec2(ar, 1.0) * cells;
+  vec2 g = floor(p);
+  float d1 = 8.0, d2 = 8.0;
+  vec2 best = vec2(0.5);
+  for (int y = -1; y <= 1; y++){
+    for (int x = -1; x <= 1; x++){
+      vec2 o = vec2(float(x), float(y));
+      vec2 pt = o + mix(vec2(0.5), gmCell(g + o), jitter);
+      float d = length(pt - fract(p));
+      if (d < d1){ d2 = d1; d1 = d; best = (g + o + mix(vec2(0.5), gmCell(g + o), jitter)) / (vec2(ar, 1.0) * cells); }
+      else if (d < d2){ d2 = d; }
+    }
+  }
+  vec3 fill = texture2DCv(inputImg.texture, best).rgb / max(texture2DCv(inputImg.texture, best).a, 1e-4);
+  float lead = smoothstep(leadWidth, leadWidth * 0.6, d2 - d1);
+  vec3 col = mix(leadColor.rgb, fill, lead);
+  col = mix(c, col, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

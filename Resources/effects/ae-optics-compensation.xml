@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   OPTICS COMPENSATION — o efeito nativo do After Effects, medido (0.453.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "optics compensation".
+
+  MEDIDO NO AFTER EFFECTS (tools/optics/benchmark, 60 renders em 16 bpc, com uma rampa que diz de
+  onde cada pixel leu):
+
+      f = meia medida / tan(FOV / 2)     meia medida: metade da largura (Horizontal), da altura
+                                         (Vertical) ou da diagonal (Diagonal) da camada
+      r = distância do pixel ao View Center
+      Reverse Lens Distortion:   lê em r / sqrt(1 + (r / f)²)     (a imagem incha para fora)
+      desligado:                 lê em r / sqrt(1 − (r / f)²)     (encolhe; além de r = f, vazio)
+
+  A leitura é bilinear na cor pré-multiplicada; fora da camada, transparente. O modelo em numpy
+  fica a 0,006 px do AE na posição e a 0,003 nível (de 255) numa foto com Reverse ligado.
+
+  O QUE NÃO ENTROU: Optimal Pixels (muda a conta; os presets não usam) e Resize (aumenta a camada
+  para caber a imagem inchada; aqui a camada fica do tamanho dela, como no AE com Resize em Off).
+  Com Reverse desligado, a borda do círculo vazio sai sem a suavização do AE.
+-->
+<effect
+    id="nova.effect.aeoptics"
+    name="Optics Compensation (AE)"
+    name-en="Optics Compensation (AE)"
+    desc="O Optics Compensation do After Effects: põe ou tira distorção de lente pelo campo de visão (FOV)."
+    desc-en="After Effects' Optics Compensation: adds or removes lens distortion by field of view (FOV)."
+    category="distort"
+    tags="optics compensation,optics,lente,lens,distorção,distorcao,fisheye,olho de peixe,barril,fov,after effects"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="fov" label="Field Of View (FOV)" default="0.0" min="0.0" max="179.0" step="0.1" snap="0.0" />
+        <switch id="reverse" label="Reverse Lens Distortion" default="false" />
+        <selector id="fovOrientation" label="FOV Orientation" default="0" options="Horizontal|Vertical|Diagonal" />
+        <point id="viewCenter" label="View Center" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <!-- Na vitrine, o padrão (FOV 0) não distorce: uma lente bem aberta. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="fov" value="80.0" />
+    </preview>
+
+    <shader><![CDATA[
+/** Um ponto da camada, pré-multiplicado; fora dela, transparente. */
+vec4 ponto(ivec2 p, ivec2 T) {
+    if (p.x < 0 || p.y < 0 || p.x >= T.x || p.y >= T.y) return vec4(0.0);
+    vec4 c = texelFetch(inputImg, p, 0);
+    return vec4(c.rgb * c.a, c.a);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 tam = vec2(T);
+    vec2 pos = floor(min(acScreenNorm * tam, tam - 1.0)) + 0.5;
+    vec2 centro = viewCenter * tam;
+    vec2 d = pos - centro;
+
+    vec2 lido = pos;
+    bool existe = true;
+    float a = radians(clamp(fov, 0.0, 179.99));
+    if (a > 0.0) {
+        float meia = fovOrientation == 0 ? 0.5 * tam.x : (fovOrientation == 1 ? 0.5 * tam.y : 0.5 * length(tam));
+        float f = meia / tan(0.5 * a);
+        float u2 = dot(d, d) / (f * f);
+        if (reverse) lido = centro + d / sqrt(1.0 + u2);
+        else if (u2 < 1.0) lido = centro + d / sqrt(1.0 - u2);
+        else existe = false;
+    }
+    if (!existe) { fragColor = vec4(0.0); return; }
+
+    // Bilinear na cor pré-multiplicada (medido: é como o AE lê).
+    vec2 q = lido - 0.5;
+    ivec2 b = ivec2(floor(q));
+    vec2 t = q - vec2(b);
+    vec4 c = mix(mix(ponto(b, T), ponto(b + ivec2(1, 0), T), t.x), mix(ponto(b + ivec2(0, 1), T), ponto(b + ivec2(1, 1), T), t.x), t.y);
+    fragColor = c.a > 0.0 ? vec4(min(c.rgb / c.a, vec3(1.0)), c.a) : vec4(0.0);
+}
+]]></shader>
+</effect>

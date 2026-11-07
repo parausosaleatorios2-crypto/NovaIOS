@@ -1,0 +1,484 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ENVOLVER EM LUZ (CREATE LIGHT WRAP)
+  ============================================================================
+
+  A luz do fundo VAZA para dentro da borda do recorte. Um personagem colado sobre
+  um cenário brilhante parece um adesivo porque a borda dele é limpa demais: no
+  mundo real a luz do cenário passa em volta e acende a beirada. Este efeito faz
+  isso, com o próprio cenário que está por baixo — o contorno de luz tem a cor do
+  lugar onde o personagem está.
+
+  ============================================================================
+   A CONTA
+  ============================================================================
+
+  1. **Fundo borrado.** O que está por baixo da camada, desfocado (Background
+     Blur). É a luz ambiente: sem borrar, o contorno seria uma cópia nítida do
+     cenário, e o que se quer é uma névoa da cor dele.
+  2. **A faixa de borda, por dentro.** Quão perto da borda do recorte cada pixel
+     está. Sai do próprio alfa: `alfa * (1 - desfoque(alfa))`. Na fronteira o
+     desfoque do alfa vale ~0,5; no miolo vale 1 e a faixa some. O `Wrap Width` é
+     o tamanho desse desfoque.
+  3. **O ganho de 2.** A fórmula acima, sozinha, tem pico de 0,5 numa borda reta
+     (é o valor do desfoque exatamente na fronteira). Um protótipo em numpy mostrou
+     isso, e é por causa dele que o efeito multiplica por 2 e prende em 1: assim a
+     faixa começa em força total na borda e cai a ~5% depois de uma "largura".
+  4. **A luz.** `fundo borrado * faixa`, vezes a Intensity, tingida pelo Tint,
+     com mais peso onde o fundo é claro (Luminance Bias). A Saturation enriquece
+     essa cor (1 = igual ao fundo; acima, puxa para fora do cinza), e um OMBRO
+     suave a segura perto de 1 no lugar de um corte reto — é o que tira o branco
+     leitoso da luz forte e guarda a cor do realce, o que fazia o contorno
+     parecer chapado e "de adesivo".
+  5. **A composição.** A luz entra por cima do recorte por um modo (Screen por
+     padrão), e só onde a faixa manda. O alfa que sai é o do recorte, sem mudar.
+
+  ============================================================================
+   O QUE ELE LÊ
+  ============================================================================
+
+  - **O recorte** é o alfa da camada NA ALTURA em que este efeito está na pilha:
+    ponha-o DEPOIS do Chroma Key e do Spill Suppress, porque é o alfa final que
+    interessa.
+  - **A máscara da camada**, com `Use Layer Mask` ligado. Neste motor a máscara é
+    aplicada depois dos efeitos (para o desfoque borrar o conteúdo e o recorte sair
+    com borda limpa), então sem `<texture src="mask">` o efeito veria a borda do
+    retângulo do vídeo e a luz entraria no lugar errado. Ver
+    `TextureSource.MASK`.
+  - **O fundo**: a cena montada por baixo da camada (`Scene Below`) ou uma camada
+    à escolha (`Layer`). Numa camada de ajuste o efeito não faz nada, e dentro de um
+    grupo "por baixo" é só o que está sob a camada no grupo.
+
+  ============================================================================
+   LINEAR WORKFLOW
+  ============================================================================
+
+  Cor de tela é codificada em sRGB, que é um gama: o valor 0,5 NÃO é meia luz, é
+  cerca de 21% dela. Desfocar, somar e fazer Screen com esses números tortos dá um
+  resultado mais escuro e mais sujo do que a luz de verdade faria — o exemplo
+  clássico é o desfoque de xadrez preto e branco, que deveria dar 73,5% de cinza
+  codificado e dá 50%.
+
+  Com `Linear Workflow` ligado, cada leitura é convertida para luz linear ANTES de
+  ser somada e o resultado volta ao sRGB no fim: o desfoque do fundo, a Intensity
+  (que passa a ser exposição de verdade), o Add e o Screen. Desligado é o que o
+  resto do motor faz, e é o padrão.
+
+  Os buffers de desfoque guardam sempre a cor CODIFICADA e RETA (não
+  pré-multiplicada): guardar luz linear em 8 bits daria degraus nos escuros, e a
+  conversão acontece dentro do shader, em ponto flutuante, a cada leitura.
+
+  ============================================================================
+   LUZ DIRECIONAL
+  ============================================================================
+
+  Uma luz de janela só acende UM lado. Com `Directional` ligado, a faixa é
+  multiplicada por um peso que depende para onde a borda aponta:
+
+  - a **normal** da borda é o gradiente do alfa borrado, virado para fora;
+  - ela é levada para o espaço da TELA pela ponte `acTela`, e é aí que se compara
+    com `Light Direction`. Assim a luz continua vindo do MESMO lado da tela quando
+    a camada é girada — se a comparação fosse no espaço da camada, o lado aceso
+    giraria junto e o efeito mentiria;
+  - `Light Direction` é o ângulo de onde a luz VEM: 0° = da direita, 90° = de cima;
+  - `Direction Spread` é a abertura, em graus, do arco aceso: 180° acende meio
+    contorno, 360° acende tudo (o mesmo que desligar).
+
+  ============================================================================
+   MEDIDAS EM "PIXEL DE 1080"
+  ============================================================================
+
+  Largura e desfoque são em pixels de uma composição de 1080 de altura, e o shader
+  os converte pela altura do alvo. A prévia cai para meia resolução no arraste, e
+  40 px que virassem 40 px do buffer apareceriam com o dobro do tamanho na prévia
+  e voltariam ao normal ao exportar — a mesma regra do Vidro líquido.
+
+  ============================================================================
+   POR QUE O DESFOQUE MORA EM BUFFER DE UM QUARTO
+  ============================================================================
+
+  Desfoque é justamente a informação que se perde: 25 leituras por pixel em
+  resolução cheia para produzir uma névoa que ninguém vai olhar de perto. Os
+  quatro buffers vivem em 1/2, e a interpolação da GPU ao subir suaviza o resto.
+  A faixa, porém, é calculada com o alfa em resolução CHEIA, então a borda do
+  recorte continua nítida; só a queda dela é suave.
+
+  Já foi 1/4, e serrilhava: em 1/4, subir de volta mostrava o quadriculado do
+  buffer (relato do snow, com Deep Glow por cima realçando). 1/2 é o ponto certo
+  para um desfoque desse tamanho — indistinguível da resolução cheia a olho, e
+  ainda 4× mais barato que ela. A política geral está em `docs/QUALIDADE-DOS-EFEITOS.md`.
+
+  Os dois primeiros passes leem a imagem cheia e fazem uma média de 4 leituras
+  antes de borrar: descer para 1/2 é uma redução de 2×, e 4 leituras (2×2) é
+  exatamente o que ela pede — sem pular pixel, sem cintilar quando se mexe.
+
+  ============================================================================
+   LIMITES QUE ELE ASSUME
+  ============================================================================
+
+  - Fundo abaixo de uns 2 px de desfoque não fica mais nítido: o buffer é de 1/2.
+  - O alfa é desfocado com a borda da tela repetida, então um recorte que sai da
+    tela não ganha luz ao longo da borda da tela. É o que se quer.
+  - Trocar `Background` para `Scene Below` depois de escolher uma camada não a
+    poupa de ser desenhada: o motor a desenha enquanto houver uma escolhida.
+  - A direção da luz lê a normal de um alfa borrado em 1/2: numa borda com detalhe
+    mais fino que a largura da faixa, a normal é a média, não a de cada pontinha.
+  - O Linear Workflow corrige a média que o SHADER faz. Cada leitura, porém, já
+    passou pelo filtro bilinear do hardware, que mistura os pixels vizinhos ainda em
+    sRGB: um xadrez de 1 pixel chega como 0,5 codificado a cada leitura e sai igual
+    nos dois modos (medido em simulação). Detalhe de 2 pixels ou menos no fundo não
+    ganha nada com a chave; com quadrados de 8 pixels, o desfoque dá 73% em vez de 50%.
+-->
+<effect
+    id="nova.effect.lightwrap"
+    name="Envolver em luz (Light Wrap)"
+    name-en="Create Light Wrap"
+    desc="A luz do fundo vaza para dentro da borda do recorte, para ele pertencer à cena."
+    desc-en="Background light bleeds into the edge of the cutout, so it belongs to the scene."
+    category="matte"
+    tags="light wrap,create light wrap,luz,borda,recorte,fundo,composicao,integrar,rim,vazar,keying,chroma,matte,direcional,linear"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="backdropImg" src="backdrop" />
+        <texture id="bgLayerImg" src="layer" label="Background Layer" />
+        <texture id="maskImg" src="mask" />
+
+        <!-- Fundo borrado (dois passes) e alfa borrado (dois passes), em 1/2. -->
+        <texture id="bgA" src="buffer" scale="0.5" />
+        <texture id="bgB" src="buffer" scale="0.5" />
+        <texture id="aA" src="buffer" scale="0.5" />
+        <texture id="aB" src="buffer" scale="0.5" />
+
+        <!-- Para regular a olho: só a luz, ou a luz sobre preto. -->
+        <selector id="view" label="View" default="0"
+                  options="Normal|Wrap Only|Wrap on Black" />
+
+        <selector id="background" label="Background" default="0"
+                  options="Scene Below|Layer" />
+
+        <slider id="bgBlur" label="Background Blur"
+                default="30" min="0" max="200" step="1" />
+        <slider id="wrapWidth" label="Wrap Width"
+                default="40" min="1" max="200" step="1" />
+
+        <!-- 1 = queda natural; acima, a luz se concentra na borda; abaixo, entra mais fundo. -->
+        <slider id="falloff" label="Falloff"
+                default="1.0" min="0.25" max="4.0" step="0.05" snap="1.0" />
+        <slider id="intensity" label="Intensity"
+                default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+
+        <!-- O alfa da cor é a QUANTIDADE do tingimento: 0 = sem tingir (o padrão). -->
+        <color id="tint" label="Tint" default="#00FFFFFF" />
+
+        <!-- Enriquece a cor da luz que envolve a borda: 1 = igual ao fundo; acima,
+             puxa a cor para fora do cinza, e o contorno deixa de parecer lavado. -->
+        <slider id="wrapSat" label="Saturation"
+                default="1.2" min="0.0" max="2.0" step="0.01" snap="1.0" />
+
+        <!-- Positivo favorece as partes claras do fundo; negativo, as escuras. -->
+        <slider id="lumBias" label="Luminance Bias"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+
+        <selector id="applyMode" label="Apply Mode" default="0"
+                  options="Screen|Add|Normal|Lighten|Soft Light|Overlay" />
+
+        <!-- Desfocar e somar em luz de verdade, e não em número de gama. Desligado = o padrão do motor. -->
+        <switch id="linearWorkflow" label="Linear Workflow" default="false" />
+
+        <!-- Como no After Effects: 0% = o efeito inteiro; 100% = só o recorte cru. -->
+        <slider id="mixWithOriginal" label="Mix with Original"
+                default="0.0" min="0.0" max="1.0" step="0.01"
+                type="relative-percent" snap="0.0,1.0" />
+
+        <switch id="useMask" label="Use Layer Mask" default="true" />
+
+        <!-- Luz de um lado só, como a de uma janela. Desligada, a luz cerca o recorte todo. -->
+        <switch id="useDirection" group="Direction" label="Directional" default="false" />
+        <!-- De onde a luz VEM, na tela: 0 = da direita, 90 = de cima, -90 = de baixo, 180 = da esquerda. -->
+        <slider id="lightAngle" group="Direction" label="Light Direction"
+                default="45.0" min="-180.0" max="180.0" step="1.0" type="angle" snap="0.0,90.0,-90.0" />
+        <!-- A abertura do arco aceso: 180 = meio contorno, 360 = tudo. -->
+        <slider id="lightSpread" group="Direction" label="Direction Spread"
+                default="140.0" min="20.0" max="360.0" step="1.0" type="angle" snap="180.0,360.0" />
+    </params>
+
+    <!-- Na vitrine, a figura solta sobre a paisagem: a luz do fundo envolve a borda dela. (vitrine, 0.668.0) -->
+    <preview amostra="figura" fundo="paisagem">
+        <set param="intensity" value="2.5" />
+        <set param="wrapWidth" value="80.0" />
+    </preview>
+
+    <passes>
+        <pass target="bgA" />
+        <pass target="bgB" />
+        <pass target="aA" />
+        <pass target="aB" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+// Leituras de cada lado do centro. 12 + 1 + 12 = 25, espaçadas de um quarto de
+// sigma: cobre 3 sigmas, que é onde a gaussiana acaba.
+const int TAPS = 12;
+
+// A altura de referência das medidas em pixel.
+const float REFERENCIA = 1080.0;
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+const vec2 CANTOS[4] = vec2[4](
+    vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0)
+);
+
+/** sRGB para luz linear. Com o Linear Workflow desligado, não faz nada. */
+vec3 aLinear(vec3 c) {
+    if (!linearWorkflow) return c;
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+/** Luz linear para sRGB. Com o Linear Workflow desligado, não faz nada. */
+vec3 deLinear(vec3 c) {
+    if (!linearWorkflow) return c;
+    c = max(c, vec3(0.0));
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+/** Cor reta e codificada -> pré-multiplicada em luz (linear, se ligado). */
+vec4 emLuz(vec4 c) { return vec4(aLinear(c.rgb) * c.a, c.a); }
+
+/** Pré-multiplicada em luz -> cor RETA e codificada, que é o que os buffers guardam. */
+vec4 empacotar(vec4 pm) {
+    vec3 reto = pm.a > 0.0 ? pm.rgb / pm.a : vec3(0.0);
+    return vec4(deLinear(reto), pm.a);
+}
+
+/** Sigma em fração da ALTURA, para uma largura em "pixels de 1080". Largura = 2 sigmas. */
+float sigmaDe(float px) { return px / REFERENCIA * 0.5; }
+
+/**
+ * O fundo na posição `uv` da camada, pré-multiplicado e em luz.
+ *
+ * Média de 4 leituras a +-1 pixel cheio (o alvo é 1/4): ao descer de resolução,
+ * uma leitura só pularia pixels. `acTela` leva a posição da camada para o lugar
+ * dela na tela, que é onde o fundo está.
+ */
+vec4 fundoEm(vec2 uv) {
+    vec2 d = acTexelSize * 0.25;
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i < 4; i++) {
+        vec2 t = acTela(uv + CANTOS[i] * d);
+        vec4 c = background == 0 ? texture(backdropImg, t) : texture(bgLayerImg, t);
+        soma += emLuz(c);
+    }
+    return soma * 0.25;
+}
+
+/** O alfa do recorte em `uv`: o do conteúdo, vezes a cobertura da máscara. */
+float alfaEm(vec2 uv) {
+    vec2 d = acTexelSize * 0.25;
+    float soma = 0.0;
+    for (int i = 0; i < 4; i++) {
+        vec2 t = uv + CANTOS[i] * d;
+        float a = texture(inputImg, t).a;
+        if (useMask) a *= texture(maskImg, t).a;
+        soma += a;
+    }
+    return soma * 0.25;
+}
+
+/**
+ * Um passe do desfoque gaussiano separável.
+ *
+ * `passe` diz de onde ler: 0 = o fundo, 1 = o buffer do fundo, 2 = o alfa, 3 = o
+ * buffer do alfa. O passo entre leituras é em fração da altura e vale um quarto de
+ * sigma; na horizontal ele é dividido pela proporção, para ser o mesmo tamanho.
+ * Devolve pré-multiplicado em luz; quem escreve no buffer chama `empacotar`.
+ */
+vec4 desfocar(int passe, vec2 uv, vec2 eixo, float sigma) {
+    float passoAltura = 0.25 * sigma;
+    vec2 passo = vec2(passoAltura / acAspect, passoAltura) * eixo;
+
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int i = -TAPS; i <= TAPS; i++) {
+        float x = float(i) * 0.25;
+        float w = exp(-0.5 * x * x);
+        vec2 p = uv + passo * float(i);
+
+        vec4 c;
+        if (passe == 0) c = fundoEm(p);
+        else if (passe == 1) c = emLuz(texture(bgA, p));
+        else if (passe == 2) c = vec4(alfaEm(p));
+        else c = texture(aA, p);
+
+        soma += c * w;
+        pesos += w;
+    }
+    return soma / pesos;
+}
+
+/**
+ * O peso da luz direcional neste pixel: 1 onde a borda olha para a luz, 0 onde
+ * olha para o lado oposto. Sem `Directional`, 1 em todo lugar.
+ *
+ * A normal sai do gradiente do alfa borrado (por diferenças centrais de um texel
+ * do buffer), virada para FORA. É levada para a tela por `acTela` — dois pontos, o
+ * pixel e um passo na direção da normal —, então a comparação com a luz é feita
+ * no espaço em que a luz existe, e não no da camada.
+ */
+float pesoDaDirecao(vec2 uv) {
+    if (!useDirection || lightSpread >= 359.0) return 1.0;
+
+    vec2 t = 1.0 / vec2(textureSize(aB, 0));
+    float gx = texture(aB, uv + vec2(t.x, 0.0)).r - texture(aB, uv - vec2(t.x, 0.0)).r;
+    float gy = texture(aB, uv + vec2(0.0, t.y)).r - texture(aB, uv - vec2(0.0, t.y)).r;
+
+    // O gradiente em pixels: du vale 1/largura e dv vale 1/altura. Com o alfa
+    // decaindo para fora, a normal para fora é o gradiente com o sinal trocado.
+    vec2 g = vec2(gx / (2.0 * t.x * acAspect), gy / (2.0 * t.y));
+    vec2 nCamada = -g / max(length(g), 1e-6);
+
+    float passo = 0.02;
+    vec2 duv = vec2(nCamada.x / acAspect, nCamada.y) * passo;
+    vec2 d = (acTela(uv + duv) - acTela(uv)) * vec2(acAspect, 1.0);
+    vec2 nTela = d / max(length(d), 1e-6);
+
+    float angulo = radians(lightAngle);
+    vec2 aLuz = vec2(cos(angulo), -sin(angulo));      // o y da tela cresce para baixo
+
+    float metade = cos(radians(clamp(lightSpread, 1.0, 360.0)) * 0.5);
+    return smoothstep(metade - 0.15, metade + 0.15, dot(nTela, aLuz));
+}
+
+/**
+ * Enriquece (ou lava) a cor em volta do próprio brilho: `s=1` não mexe, acima
+ * afasta os canais do cinza, abaixo aproxima. É o que tira o aspecto "lavado" da
+ * luz — um contorno com a cor viva do fundo pertence à cena; um contorno cinza
+ * parece um halo colado por cima.
+ */
+vec3 saturar(vec3 c, float s) {
+    return max(mix(vec3(dot(c, LUMA)), c, s), 0.0);
+}
+
+/**
+ * Ombro suave no lugar do corte reto em 1. Abaixo de 0,8 a luz passa igual;
+ * acima, desliza para 1 sem nunca estourar. O corte reto (`clamp`) empilhava
+ * tudo que passava de 1 no branco e achatava a cor do realce — o defeito que
+ * fazia a luz forte virar uma mancha leitosa. Aqui o topo rola de mansinho e a
+ * cor sobrevive.
+ */
+vec3 ombro(vec3 c) {
+    const float joelho = 0.8;
+    float folga = 1.0 - joelho;                 // 0.2
+    vec3 alto = joelho + folga * (1.0 - exp(-(max(c, joelho) - joelho) / folga));
+    return mix(c, alto, step(vec3(joelho), c));
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    if (acPass == 0) { fragColor = empacotar(desfocar(0, uv, vec2(1.0, 0.0), sigmaDe(bgBlur))); return; }
+    if (acPass == 1) { fragColor = empacotar(desfocar(1, uv, vec2(0.0, 1.0), sigmaDe(bgBlur))); return; }
+    if (acPass == 2) { fragColor = desfocar(2, uv, vec2(1.0, 0.0), sigmaDe(wrapWidth)); return; }
+    if (acPass == 3) { fragColor = desfocar(3, uv, vec2(0.0, 1.0), sigmaDe(wrapWidth)); return; }
+
+    // ---- Passe final, em resolução cheia ----
+    vec4 fg = texture(inputImg, uv);
+    float cobertura = useMask ? texture(maskImg, uv).a : 1.0;
+    float alfa = fg.a * cobertura;
+
+    // A faixa por dentro da borda. O ganho de 2 traz o pico de 0,5 para 1: ver o
+    // cabeçalho.
+    float alfaBorrado = texture(aB, uv).r;
+    float borda = alfa * clamp((1.0 - alfaBorrado) * 2.0, 0.0, 1.0);
+    float faixa = pow(borda, max(falloff, 0.05)) * pesoDaDirecao(uv);
+
+    // A luz: o fundo borrado, já em luz e multiplicado pelo próprio alfa (o que é
+    // transparente não acende nada), tingido e com o viés de luminância. O viés
+    // olha a claridade PERCEBIDA, que é a codificada — 0,5 é 0,5 nos dois modos.
+    vec4 fundo = texture(bgB, uv);
+    vec3 luz = aLinear(fundo.rgb) * fundo.a;
+    float claridade = dot(deLinear(luz), LUMA);
+    luz = mix(luz, aLinear(tint.rgb) * dot(luz, LUMA), tint.a);
+
+    float claro = smoothstep(0.15, 0.85, claridade);
+    float peso = lumBias >= 0.0 ? mix(1.0, claro, lumBias) : mix(1.0, 1.0 - claro, -lumBias);
+    // Enriquece a cor e rola o topo de mansinho, em vez de cortar reto em 1.
+    luz = ombro(saturar(luz * peso * intensity, wrapSat));
+
+    if (view == 1) { fragColor = vec4(deLinear(luz), faixa); return; }
+    if (view == 2) { fragColor = vec4(deLinear(luz * faixa), 1.0); return; }
+
+    // O modo: como a luz entra por cima do recorte.
+    vec3 base = aLinear(fg.rgb);
+    vec3 misturado;
+    if (applyMode == 0) {
+        misturado = 1.0 - (1.0 - base) * (1.0 - luz);                 // Screen
+    } else if (applyMode == 1) {
+        misturado = min(base + luz, vec3(1.0));                       // Add
+    } else if (applyMode == 2) {
+        misturado = luz;                                              // Normal
+    } else if (applyMode == 3) {
+        misturado = max(base, luz);                                   // Lighten
+    } else if (applyMode == 4) {
+        misturado = (1.0 - 2.0 * luz) * base * base + 2.0 * luz * base; // Soft Light
+    } else {
+        misturado = mix(                                              // Overlay
+            2.0 * base * luz,
+            1.0 - 2.0 * (1.0 - base) * (1.0 - luz),
+            step(0.5, base)
+        );
+    }
+
+    vec4 resultado = vec4(deLinear(mix(base, misturado, faixa)), fg.a);
+    fragColor = mix(resultado, fg, mixWithOriginal);
+}
+
+    ]]></shader>
+
+    <!--
+      Pontos de partida. Todos deixam o Tint no padrão (0%): a graça do efeito é a
+      luz ter a COR do fundo, então quem tinge é a cena, não o preset. Ajuste fino
+      (largura, direção) é a olho, no aparelho.
+    -->
+    <presets>
+        <preset id="integrar" name="🎬 Integrar na cena" name-en="🎬 Blend Into Scene">
+            <value param="bgBlur" value="40" />
+            <value param="wrapWidth" value="40" />
+            <value param="falloff" value="1.0" />
+            <value param="intensity" value="1.1" />
+            <value param="wrapSat" value="1.25" />
+            <value param="applyMode" value="0" />
+            <value param="linearWorkflow" value="true" />
+        </preset>
+        <preset id="rimCinema" name="✨ Realce cinematográfico" name-en="✨ Cinematic Rim">
+            <value param="bgBlur" value="45" />
+            <value param="wrapWidth" value="55" />
+            <value param="falloff" value="1.2" />
+            <value param="intensity" value="1.6" />
+            <value param="wrapSat" value="1.4" />
+            <value param="applyMode" value="0" />
+            <value param="linearWorkflow" value="true" />
+        </preset>
+        <preset id="contraluz" name="🌙 Contraluz suave" name-en="🌙 Soft Backlight">
+            <value param="bgBlur" value="60" />
+            <value param="wrapWidth" value="75" />
+            <value param="falloff" value="0.85" />
+            <value param="intensity" value="1.15" />
+            <value param="wrapSat" value="1.15" />
+            <value param="applyMode" value="4" />
+        </preset>
+        <preset id="glowForte" name="🔥 Brilho intenso" name-en="🔥 Strong Glow">
+            <value param="bgBlur" value="30" />
+            <value param="wrapWidth" value="45" />
+            <value param="falloff" value="1.4" />
+            <value param="intensity" value="2.3" />
+            <value param="wrapSat" value="1.5" />
+            <value param="applyMode" value="1" />
+        </preset>
+    </presets>
+</effect>

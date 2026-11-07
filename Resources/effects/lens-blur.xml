@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE DE LENTE (BOKEH)
+  ============================================================================
+
+  Desfoque gaussiano e desfoque de LENTE não são a mesma coisa, e a diferença
+  aparece exatamente onde importa: nas luzes.
+
+  O gaussiano espalha cada ponto num borrão macio que desaparece nas bordas. Uma
+  lente de verdade espalha cada ponto no formato do DIAFRAGMA — um hexágono, um
+  círculo, um polígono — com borda definida. Por isso, num vídeo desfocado de
+  verdade, cada luzinha ao fundo vira uma moeda hexagonal, e não uma mancha.
+
+  ============================================================================
+   COMO SE FAZ UM HEXÁGONO COM BORRÕES EM LINHA RETA
+  ============================================================================
+
+  Amostrar um hexágono de raio R custa R² leituras por pixel — inviável.
+
+  O truque, que é o padrão da indústria: borrar em três direções a 120° uma da
+  outra e combinar. Cada par de direções dá um LOSANGO; dois losangos somados
+  dão o hexágono.
+
+      passe 0   V  = borra a fonte para cima              → bufV
+      passe 1   DL = borra a fonte para baixo-esquerda    → bufDL
+      passe 2   R1 = borra bufV para baixo-esquerda       → bufR1   (losango 1)
+      passe 3   R2 = borra (bufV+bufDL) para baixo-direita
+                saída = (R1 + R2) / 2                               (hexágono)
+
+  Custa 4 × K leituras em vez de K², e o formato sai de verdade — não é um
+  gaussiano com nome bonito.
+
+  ============================================================================
+   POR QUE O BRILHO É ELEVADO ANTES E BAIXADO DEPOIS
+  ============================================================================
+
+  Luz se soma em energia, não no valor que está guardado no arquivo. Média
+  aritmética de pixels comprimidos apaga o realce: uma lâmpada de valor 4,0
+  vizinha de preto vira cinza, em vez de virar uma moeda brilhante.
+
+  Elevar a cor a uma potência antes de somar (e tirar a raiz depois) aproxima a
+  soma em energia. É o que faz a luz FLORESCER em vez de derreter — e é a
+  diferença entre parecer fora de foco e parecer borrado.
+-->
+<effect
+    id="nova.effect.lensblur"
+    name="Desfoque de lente"
+    name-en="Lens Blur"
+    desc="O desfoque de câmera de verdade: as luzes viram moedas hexagonais."
+    desc-en="Blur with a real aperture shape — highlights become hexagons."
+    category="blur"
+    tags="bokeh,lente,desfoque,foco,profundidade,hexágono">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          Mapa opcional de PROFUNDIDADE — MESMA convenção do "Mapa de
+          profundidade" e do Depth Lab: branco = perto, preto = longe. Aponte
+          o mesmo mapa gerado pelo Depth Lab aqui e na paralaxe sem inverter
+          nada; o que muda entre os dois efeitos é só o `focusDistance`
+          abaixo, que decide qual profundidade fica nítida.
+
+          É o que transforma um desfoque uniforme em profundidade de campo —
+          pinte um gradiente numa camada, esconda ela, e o fundo sai borrado
+          com o assunto limpo. Sem escolher nada (`useMap = 0`), vale o raio
+          inteiro em tudo.
+        -->
+        <texture id="focusMap" src="layer" label="Mapa de profundidade (branco = perto)" />
+
+        <texture id="bufV" src="buffer" />
+        <texture id="bufDL" src="buffer" />
+        <texture id="bufR1" src="buffer" />
+
+        <slider id="radius" label="Raio"
+                default="0.03" min="0.0" max="0.25" step="0.002" snap="0.0" />
+        <slider id="useMap" label="Força do mapa de profundidade"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="focusDistance" label="Plano nítido (foco)"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+
+        <!-- ============================ Bokeh ============================== -->
+        <slider id="boost" group="Bokeh" label="Realce das luzes"
+                default="1.2" min="0.0" max="6.0" step="0.05" snap="0.0" />
+        <slider id="cut" group="Bokeh" label="A partir de que brilho"
+                default="0.65" min="0.0" max="1.0" step="0.01" />
+        <slider id="energy" group="Bokeh" label="Concentração da luz"
+                default="2.2" min="1.0" max="6.0" step="0.1" snap="1.0" />
+        <slider id="rotation" group="Bokeh" label="Girar o diafragma"
+                default="0.0" min="0.0" max="120.0" step="1.0" type="angle" snap="0.0" />
+    </params>
+
+    <passes>
+        <pass target="bufV" />   <!-- 0: fonte, para cima -->
+        <pass target="bufDL" />  <!-- 1: fonte, para baixo-esquerda -->
+        <pass target="bufR1" />  <!-- 2: bufV, para baixo-esquerda (losango 1) -->
+        <pass />                 <!-- 3: losango 2 + combinação -->
+    </passes>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// 16 passos por direção. Mais que isso não muda o que se vê e custa linear; com
+// muito menos, o hexágono vira uma fileira de fantasmas em vez de um borrão.
+const int PASSOS = 16;
+
+vec2 paraUv(vec2 v) { return vec2(v.x / max(acAspect, 1e-4), v.y); }
+
+vec2 direcao(float graus) {
+    float a = (graus + rotation) * PI / 180.0;
+    return vec2(sin(a), cos(a));
+}
+
+// A separação de profundidade (0..1) que já conta como "totalmente fora de
+// foco" — mesma constante e mesmo raciocínio de `depth-map.xml`: sem isto, só
+// uma separação extrema entre assunto e fundo chegaria perto do raio cheio.
+const float FAIXA_DE_QUEDA = 0.3;
+
+/**
+ * O raio naquele ponto, já considerando o mapa de profundidade.
+ *
+ * O mapa entra como MULTIPLICADOR e não como substituto: assim o slider de raio
+ * continua sendo o controle mestre, e o mapa só decide onde ele vale.
+ *
+ * `profundidade - focusDistance` é o MESMO termo de `depth-map.xml`: o plano
+ * escolhido em `focusDistance` fica nítido, e quem está mais longe dele (pra
+ * qualquer lado) desfoca proporcionalmente — não é mais "claro borra, escuro
+ * não", que ignorava qual profundidade a pessoa queria manter nítida.
+ */
+float raioEm(vec2 uv) {
+    if (useMap <= 0.0) return radius;
+    float profundidade = dot(texture(focusMap, uv).rgb, LUMA);
+    float queda = clamp(abs(profundidade - focusDistance) / FAIXA_DE_QUEDA, 0.0, 1.0);
+    return radius * mix(1.0, queda, useMap);
+}
+
+/** A cor da fonte já preparada para somar: realçada e em energia. */
+vec4 fonteEm(vec2 uv) {
+    vec4 c = texture(inputImg, uv);
+
+    // Realce só do que já é claro. Espalhar tudo igualmente clarearia a imagem
+    // inteira em vez de acender as luzes.
+    float luz = dot(c.rgb, LUMA);
+
+    // A borda de cima passa de 1,0 quando o corte está alto, e isso é proposital:
+    // apertar as duas bordas no mesmo valor faria `smoothstep` dividir por zero, o
+    // que a especificação não define. Com o corte no máximo, nada acende — que é
+    // exatamente o que o controle promete.
+    float acima = smoothstep(cut, cut + 0.25, luz);
+    vec3 realcada = c.rgb * (1.0 + boost * acima);
+
+    return vec4(pow(max(realcada, 0.0), vec3(energy)), c.a);
+}
+
+/**
+ * Borra em UMA direção, somando em energia.
+ *
+ * O alfa entra multiplicando a cor e sai dividindo: pixel transparente não tem
+ * cor que signifique alguma coisa, e misturá-la puxaria a borda para preto.
+ */
+vec4 borrarDirecao(sampler2D tex, vec2 uv, vec2 dir, float raio, bool jaEmEnergia) {
+    if (raio <= 0.0) {
+        return jaEmEnergia ? texture(tex, uv) : fonteEm(uv);
+    }
+
+    vec2 passo = paraUv(dir) * (raio / float(PASSOS));
+    vec3 soma = vec3(0.0);
+    float peso = 0.0;
+
+    for (int i = 0; i <= PASSOS; i++) {
+        vec2 p = uv + passo * float(i);
+        vec4 c = jaEmEnergia ? texture(tex, p) : fonteEm(p);
+        soma += c.rgb * c.a;
+        peso += c.a;
+    }
+
+    return vec4(soma / max(peso, 1e-4), peso / float(PASSOS + 1));
+}
+
+void main() {
+    float raio = raioEm(acScreenNorm);
+
+    // As três direções do diafragma, a 120° uma da outra: é a menor quantidade
+    // de direções que fecha um polígono convexo.
+    vec2 cima = direcao(0.0);
+    vec2 baixoEsq = direcao(120.0);
+    vec2 baixoDir = direcao(240.0);
+
+    if (acPass == 0) {
+        fragColor = borrarDirecao(inputImg, acScreenNorm, cima, raio, false);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = borrarDirecao(inputImg, acScreenNorm, baixoEsq, raio, false);
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = borrarDirecao(bufV, acScreenNorm, baixoEsq, raio, true);
+        return;
+    }
+
+    // Último passe: o segundo losango sai de V+DL, e a média dos dois losangos
+    // é o hexágono.
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 passo = paraUv(baixoDir) * (raio / float(PASSOS));
+    vec3 soma = vec3(0.0);
+    float peso = 0.0;
+    for (int i = 0; i <= PASSOS; i++) {
+        vec2 p = acScreenNorm + passo * float(i);
+        vec4 v = texture(bufV, p);
+        vec4 dl = texture(bufDL, p);
+        vec3 juntos = (v.rgb * v.a + dl.rgb * dl.a) * 0.5;
+        float a = (v.a + dl.a) * 0.5;
+        soma += juntos;
+        peso += a;
+    }
+    vec4 losango2 = vec4(soma / max(peso, 1e-4), peso / float(PASSOS + 1));
+    vec4 losango1 = texture(bufR1, acScreenNorm);
+
+    vec3 energiaFinal = (losango1.rgb + losango2.rgb) * 0.5;
+    float alfa = (losango1.a + losango2.a) * 0.5;
+
+    // Volta da energia para a cor guardada. Sem esta raiz, tudo sairia lavado.
+    vec3 cor = pow(max(energiaFinal, 0.0), vec3(1.0 / max(energy, 0.001)));
+
+    // Raio zero tem que devolver a imagem intacta, e não uma versão que passou
+    // por potência e raiz — as duas juntas não são exatamente a identidade.
+    float quanto = smoothstep(0.0, 0.002, raio);
+    fragColor = mix(original, vec4(cor, min(alfa, 1.0) * original.a + (1.0 - original.a) * alfa), quanto);
+}
+
+    ]]></shader>
+</effect>

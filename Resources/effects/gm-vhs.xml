@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.vhs" name="VHS Tape" desc="Chroma bleed, wobble, tape noise and a soft edge. The full 80s tape treatment." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/vhs.png"
+        tags="glitch,vhs,retro,tape,analog" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="VHS" />
+<spinner id="wobble" default="0.004" min="0.0" max="0.05" step="0.0005" label="Wobble" />
+<spinner id="bleed" default="0.006" min="0.0" max="0.05" step="0.0005" label="Chroma Bleed" />
+<spinner id="noise" default="0.12" min="0.0" max="1.0" step="0.01" label="Tape Noise" />
+<spinner id="speed" default="2.0" min="0.0" max="20.0" step="0.1" label="Speed" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+void main(){
+  vec2 uv = acScreenNorm;
+  float t = acTime * speed;
+  uv.x += sin(uv.y * 90.0 + t) * wobble * mixAmt;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = src.a;
+  vec3 c = src.rgb / max(a, 1e-4);
+  float rr = texture2DCv(inputImg.texture, uv + vec2(bleed, 0.0)).r / max(texture2DCv(inputImg.texture, uv + vec2(bleed, 0.0)).a, 1e-4);
+  float bb = texture2DCv(inputImg.texture, uv - vec2(bleed, 0.0)).b / max(texture2DCv(inputImg.texture, uv - vec2(bleed, 0.0)).a, 1e-4);
+  c = mix(c, vec3(rr, c.g, bb), 0.8);
+  float n = gmHash(floor(uv * acScreenSize) + floor(t * 60.0));
+  c += (n - 0.5) * noise * 0.4;
+  gl_FragColor = vec4(clamp(c, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

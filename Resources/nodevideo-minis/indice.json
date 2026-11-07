@@ -1,0 +1,8 @@
+[
+  {"arquivo":"colorgrading.nv","nome":"Color Grading","categoria":"cor","propriedades":["DataColorGrading"]},
+  {"arquivo":"filter.nv","nome":"Custom LUT Filter","categoria":"cor","propriedades":["DataCustomLut"]},
+  {"arquivo":"glow.nv","nome":"Glow","categoria":"estilo","efeitos":["_Effect/_BasicCorrection","_Effect/_Stylize/_Glow"]},
+  {"arquivo":"motion_blur.nv","nome":"Motion Blur","categoria":"movimento"},
+  {"arquivo":"rainy.nv","nome":"Rainy","categoria":"natureza","efeitos":["_Effect/_AssetStore/_Nature/_Rainy","_Effect/_AssetStore/_Nature/_RaindropPro"]},
+  {"arquivo":"smooth_slowmo.nv","nome":"Smooth Slow Motion","categoria":"movimento"}
+]

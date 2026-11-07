@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.rgbshift"
+    name="Separação RGB (Blurrr)"
+    name-en="RGB Shift (Blurrr)"
+    desc="Canais R/G/B separados em direções diferentes — aberração pura."
+    desc-en="R/G/B channels pushed in different directions — pure aberration."
+    category="blur"
+    tags="blurrr,rgb,shift,split,aberracao,chromatic">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount" label="Separação" default="0.01" min="0.0" max="0.08" step="0.0005" />
+        <slider id="angle"  label="Ângulo" default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+void main() {
+    float a = angle * PI / 180.0;
+    vec2 d = vec2(cos(a), sin(a)) * amount;
+    d.x /= max(acAspect, 1e-4);
+    float r = texture(inputImg, acScreenNorm + d).r;
+    float g = texture(inputImg, acScreenNorm).g;
+    float b = texture(inputImg, acScreenNorm - d).b;
+    float al = texture(inputImg, acScreenNorm).a;
+    fragColor = vec4(r, g, b, al);
+}
+    ]]></shader>
+</effect>

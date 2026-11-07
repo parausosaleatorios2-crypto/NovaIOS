@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC PRISM — o Prism do Boris Continuum, lido do plugin (0.887.0)
+  ============================================================================
+
+  Pedido do snow (01/11/2026): fazer o BCC+Prism da fila dos presets (os dois "Ryan's Prism" da pasta dele).
+
+  DE ONDE VEIO (tools/bccprism): o próprio shader do plugin. O `OGLPrismRenderer` da Continuum_AE_8Bit.dll desenha
+  com um GLSL guardado em texto na DLL (`sPrismFragmentShader`, 0x18144c450 — cópia em
+  tools/bccprism/leitura/prism_bcc.frag); o que ele recebe foi lido no código que monta os uniforms (0x180a56910 lê
+  os controles, 0x180a56d80 passa ao shader). Este efeito é aquele shader, conta por conta:
+
+      N amostras (Sample Count). A amostra i (0..N−1) anda em linha reta, em float somado passo a passo:
+          posição  de Starting até Starting + (Ending − meio)        (o Ending é SOMADO ao Starting)
+          escala   de 1/Starting Depth até 1/Ending Depth            (reta no inverso da profundidade)
+          ângulo   de Starting Angle até Ending Angle, menos 90°     (graus · 0,0174533; o plugin tira 1,5708)
+      Cada amostra lê a camada com o pixel girado em volta do Rotation Center e escalado:
+          p' = R(ângulo) · ((p − pos − meio)/escala − (centro − pos)) + centro + meio
+      fora da camada: nada (No), repetida (Tile) ou espelhada (Reflect), com as funções do plugin.
+      cor da amostra = cor · alfa · peso(i);  alfa = alfa / N;  tudo somado; o alfa preso em 1.
+      peso(i): Short → Mid nas primeiras N/2 amostras, Mid → Long nas outras, cada cor = branco + (cor − branco) ·
+      Prism Amount/100; se a soma dos pesos de um canal passa de 1, o canal é dividido por ela.
+
+  A conta é feita no sistema do OpenGL do plugin (y para cima), por isso o ângulo gira no sentido dele. O resultado
+  sai num FBO de meia precisão (GL_HALF_FLOAT, 0x180a57910) — arredondado igual aqui — e volta à camada sem a
+  pré-multiplicação; Mix with Original mistura com a camada original (pré-multiplicada).
+
+  MEDIDO no After Effects 2023 em 32 bpc (tools/bccprism/benchmark, 51 casos: os dois presets do Ryan em foto, alfa,
+  grade e ponto; Sample Count, Depth, Outside Pattern, ângulos, pontos, centro, Amount, cores, Mix e tudo junto): este
+  efeito na GPU do PC fica a ≤ 1 nível do AE em 0,000% dos pixels a mais de 1 em quase todos; nos casos com giro e
+  centro, 0,01–0,05% dos pixels (pontos soltos nas costuras do espelho) chegam a 4–9 níveis. A leitura da camada é
+  BILINEAR (medido na grade; sem interpolação errava 44 níveis), e os pontos chegam em px da camada.
+
+  O QUE NÃO FOI MEDIDO: 8 e 16 bpc. No AE desta máquina o BCC Prism sai TRANSPARENTE em 8 bpc (no aerender e na fila
+  com janela; o log do BCC não mostra erro) — só o 32 bpc desenha. A conta do shader é a mesma em todas as
+  profundidades; a diferença possível é a leitura da textura (o `ConvertTexture` da biblioteca OGL deixa GL_NEAREST
+  quando converte a imagem) e o arredondamento a 8 bits.
+-->
+<effect
+    id="nova.effect.bccprism"
+    name="BCC Prism"
+    name-en="BCC Prism"
+    desc="O Prism do Boris Continuum: a imagem repetida em várias cópias que se afastam, giram e mudam de tamanho, cada uma com uma cor do espectro, igual ao After Effects."
+    desc-en="Boris Continuum's Prism: the image repeated in many copies that drift, turn and change size, each with a color of the spectrum, as in After Effects."
+    category="stylize"
+    tags="bcc prism,prism,prisma,espectro,spectrum,aberração cromática,chromatic aberration,rgb split,boris,continuum,bcc,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="sampleCount" label="Amostras" default="100.0" min="3.0" max="200.0" step="1.0" snap="100.0" />
+        <point id="startPoint" label="Ponto inicial" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <point id="endPoint" label="Ponto final" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="startDepth" label="Profundidade inicial" default="1.02" min="0.001" max="10.0" step="0.001" snap="1.02" />
+        <slider id="endDepth" label="Profundidade final" default="0.98" min="0.001" max="10.0" step="0.001" snap="0.98" />
+        <point id="rotationCenter" label="Centro da rotação" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="startAngle" label="Ângulo inicial" default="90.0" min="-35999.0" max="35999.0" step="1.0" type="angle" snap="90.0" />
+        <slider id="endAngle" label="Ângulo final" default="90.0" min="-35999.0" max="35999.0" step="1.0" type="angle" snap="90.0" />
+
+        <slider id="prismAmount" group="Cores do prisma" label="Intensidade do prisma" default="100.0" min="0.0" max="100.0" step="0.1" snap="100.0" />
+        <color id="shortColor" group="Cores do prisma" label="Cor curta" default="#0000FF" />
+        <color id="midColor" group="Cores do prisma" label="Cor do meio" default="#00FF00" />
+        <color id="longColor" group="Cores do prisma" label="Cor longa" default="#FF0000" />
+
+        <selector id="outsidePattern" label="Fora da imagem" default="2" options="Nenhum|Ladrilho|Espelhar" />
+        <slider id="mixWithOriginal" label="Misturar com o original" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+const float GRAU = 0.017453292;            // 0x1810301f0: π/180 em float, como o plugin
+const int MAX_AMOSTRAS = 200;              // o máximo do Sample Count
+
+// ---- a camada do AE no buffer (como no BCC Rays Textured) ---------------------------------------
+ivec2 gBuf, gInicio;
+int W, H;
+bool dePe;
+
+void preparar() {
+    gBuf = textureSize(inputImg, 0);
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(gBuf) + 0.5)), ivec2(1), gBuf);
+    gInicio = (gBuf - tam) / 2;
+    W = tam.x; H = tam.y;
+    dePe = acEntradaDePe == 1;
+}
+
+// Um <point> como o plugin o recebe: fração da camada, x da esquerda e y do ALTO.
+vec2 fracao(vec2 p) {
+    vec2 cb = acPontoNoBuffer(p) * vec2(gBuf) - vec2(gInicio);
+    if (dePe) cb.y = float(H) - cb.y;
+    return cb / vec2(float(W), float(H));
+}
+
+// texture2DRect bilinear (medido no AE em 32 bpc) no sistema do GL do plugin: y para cima, a base da imagem na
+// linha 0, a borda da CAMADA repetida (CLAMP_TO_EDGE da textura do plugin, que tem o tamanho da camada).
+vec4 ler(vec2 r) {
+    vec2 p = clamp(r, vec2(0.5), vec2(float(W), float(H)) - 0.5);
+    if (!dePe) p.y = float(H) - p.y;
+    return texture(inputImg, (vec2(gInicio) + p) / vec2(gBuf));
+}
+
+// ---- as funções do shader do plugin, como estão lá ----------------------------------------------
+float bfxMod(float a, float b) {
+    float ret = a - float(int(a / b)) * b;
+    return ret >= 0.0 ? ret : ret + b;
+}
+vec2 outsideTexCoord(vec2 transformed, float textureX, float textureY, bool mirrored) {
+    vec2 textureCoord;
+    textureCoord.s = transformed.s / textureX;
+    textureCoord.t = transformed.t / textureY;
+    float texModx = floor(textureCoord.s);
+    if (mirrored && bfxMod(texModx, 2.0) == 1.0) textureCoord.s = textureX - (transformed.s - textureX * texModx);
+    else textureCoord.s = transformed.s - textureX * texModx;
+    float texMody = floor(textureCoord.t);
+    if (mirrored && bfxMod(texMody, 2.0) == 1.0) textureCoord.t = textureY - (transformed.t - textureY * texMody);
+    else textureCoord.t = transformed.t - textureY * texMody;
+    return textureCoord;
+}
+
+// O que o 0x180a56910/0x180a56d80 calculam antes de desenhar (as cores do prisma e a soma delas).
+vec3 gMin, gMid, gSoma, gPasso0, gPasso1;
+int gMeio;
+void cores(int n) {
+    float k = prismAmount * 0.0099999998;          // 0x181152c08
+    gMin = (shortColor.rgb - vec3(1.0)) * k + vec3(1.0);
+    gMid = (midColor.rgb - vec3(1.0)) * k + vec3(1.0);
+    vec3 maxc = (longColor.rgb - vec3(1.0)) * k + vec3(1.0);
+    int m = n >> 1;
+    gMeio = n / 2;
+    gPasso0 = (gMid - gMin) * (1.0 / float(m));
+    gPasso1 = (maxc - gMid) * (1.0 / float(n - m - 1));
+    vec3 a = gMin * float(m) + gPasso0 * (float((m - 1) * m) * 0.5);
+    vec3 b = gMid * float(n - m) + gPasso1 * (float((n - m - 1) * (n - m)) * 0.5);
+    gSoma = a + b;
+}
+vec3 peso(int index) {
+    vec3 w = index < gMeio ? gMin + gPasso0 * float(index) : gMid + gPasso1 * float(index - gMeio);
+    if (gSoma.r > 1.0) w.r *= 1.0 / gSoma.r;
+    if (gSoma.g > 1.0) w.g *= 1.0 / gSoma.g;
+    if (gSoma.b > 1.0) w.b *= 1.0 / gSoma.b;
+    return w;
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gBuf))), gBuf - ivec2(1));
+    ivec2 q = t - gInicio;
+    if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, ivec2(W, H)))) {
+        fragColor = texelFetch(inputImg, t, 0);
+        return;
+    }
+    vec4 orig = texelFetch(inputImg, t, 0);
+
+    int n = clamp(int(sampleCount), 3, MAX_AMOSTRAS);     // o plugin trunca o valor
+    if (acRascunho == 1) n = min(n, 48);                  // na prévia em movimento: o espectro em menos degraus
+    cores(n);
+    float dw = float(W), dh = float(H);
+    bool repetir = outsidePattern != 0, espelhar = outsidePattern == 2;
+
+    // o pixel no sistema do plugin: gl_TexCoord = o centro do pixel, y para cima
+    vec2 textureCoord = vec2(float(q.x) + 0.5, (dePe ? float(q.y) : float(H - 1 - q.y)) + 0.5);
+    vec2 s = fracao(startPoint), e = fracao(endPoint), c = fracao(rotationCenter);
+
+    vec2 halfSize = vec2(0.5 * dw, 0.5 * dh);
+    vec2 startPos = vec2(s.x * dw - halfSize.x, (1.0 - s.y) * dh - halfSize.y);
+    vec2 endPos = vec2(e.x * dw - halfSize.x, (1.0 - e.y) * dh - halfSize.y);
+    endPos += startPos;
+    vec2 center = vec2(c.x * dw - halfSize.x, (1.0 - c.y) * dh - halfSize.y);
+    float rotateGetPtr = startAngle * GRAU - 1.5708;
+    float rotateEnd = endAngle * GRAU - 1.5708;
+    float changeRate = 1.0 / float(n - 1);
+    float currentAngle = rotateGetPtr;
+    float angleChange = (rotateEnd - rotateGetPtr) * changeRate;
+    vec2 currentPos = startPos;
+    vec2 posChange = vec2((endPos.x - startPos.x) * changeRate, (endPos.y - startPos.y) * changeRate);
+    float scaleZ = 1.0 / max(startDepth, 0.001);
+    float scaleZrate = (1.0 / max(endDepth, 0.001) - scaleZ) * changeRate;
+
+    vec4 prismColor = vec4(0.0);
+    for (int i = 0; i < MAX_AMOSTRAS; i++) {
+        if (i >= n) break;
+        vec2 currentCenter = center - currentPos;
+        vec2 transformed;
+        transformed.x = (textureCoord.x - currentPos.x - halfSize.x) / scaleZ - currentCenter.x;
+        transformed.y = (textureCoord.y - currentPos.y - halfSize.y) / scaleZ - currentCenter.y;
+        float cosa = cos(currentAngle);
+        float sina = sin(currentAngle);
+        vec2 rotated;
+        rotated.x = cosa * transformed.x - sina * transformed.y + currentCenter.x + currentPos.x + halfSize.x;
+        rotated.y = sina * transformed.x + cosa * transformed.y + currentCenter.y + currentPos.y + halfSize.y;
+        vec4 currentColor = vec4(0.0);
+        if (repetir) {
+            vec2 m = outsideTexCoord(rotated, dw, dh, espelhar);
+            if (m.x >= 0.0 && m.x < dw && m.y >= 0.0 && m.y < dh) currentColor = ler(m);
+        } else if (rotated.x >= 0.0 && rotated.x < dw && rotated.y >= 0.0 && rotated.y < dh) {
+            currentColor = ler(rotated);
+        }
+        currentColor.rgb *= currentColor.a;
+        currentColor.rgb *= peso(i);
+        currentColor.a /= float(n);
+        prismColor += currentColor;
+        scaleZ += scaleZrate;
+        currentPos += posChange;
+        currentAngle += angleChange;
+    }
+    if (prismColor.a > 1.0) prismColor.a = 1.0;
+
+    // o FBO do plugin é de meia precisão (0x140B)
+    prismColor = vec4(unpackHalf2x16(packHalf2x16(prismColor.rg)), unpackHalf2x16(packHalf2x16(prismColor.ba)));
+
+    // Mix with Original (0x180d3c5e0 com 1 − mix): na cor pré-multiplicada
+    float mx = clamp(mixWithOriginal * 0.0099999998, 0.0, 1.0);
+    vec4 r = prismColor * (1.0 - mx) + vec4(orig.rgb * orig.a, orig.a) * mx;
+    fragColor = r.a > 0.0 ? vec4(clamp(r.rgb / r.a, 0.0, 1.0), r.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

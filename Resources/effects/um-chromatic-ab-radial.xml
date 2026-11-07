@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.chromaticabradial"
+    name="Aberração Cromática Radial (Ultra Motion)"
+    name-en="Radial Chromatic Aberration (Ultra Motion)"
+    desc="Deslocamento cromático que cresce do centro — bordas quebradas."
+    desc-en="Chromatic shift that grows from the center — broken edges."
+    category="color"
+    tags="ultramotion,chromatic,aberration,radial,color">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount" label="Intensidade" default="0.02" min="0.0" max="0.1" step="0.001" />
+        <slider id="power"  label="Expoente"    default="2.0"  min="1.0" max="4.0" step="0.1" />
+        <point  id="center" label="Centro"      defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <!-- Na vitrine: o padrão é discreto de propósito; aqui a franja precisa aparecer em 320 px. -->
+    <preview>
+        <set param="amount" value="0.075" />
+        <set param="power" value="1.4" />
+    </preview>
+
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec2 p = acScreenNorm - center;
+    p.x *= acAspect;
+    float r = pow(length(p) / 0.7071, power);
+    vec2 dir = normalize(p + vec2(1e-6));
+    dir.x /= acAspect;
+    vec2 off = dir * amount * r;
+
+    float rr = texture(inputImg, acScreenNorm + off).r;
+    float gg = texture(inputImg, acScreenNorm).g;
+    float bb = texture(inputImg, acScreenNorm - off).b;
+    float aa = texture(inputImg, acScreenNorm).a;
+    fragColor = vec4(rr, gg, bb, aa);
+}
+    ]]></shader>
+</effect>

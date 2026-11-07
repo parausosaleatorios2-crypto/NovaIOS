@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/Distort/perspective_transform — o Perspective Transform do Node (definição `_PerspectiveTransform`,
+  no menu Efeitos → Distorcer), portado do C# (0.915.0).
+
+  O porte automático tinha pegado o programa 0 do shader, que só limpa o RT. O que o Node faz (lido no il2cpp):
+  - `AEPerspectiveTransform::CalcHomographyMatrix` monta a homografia H (3×3, a [8] = 1) que leva o quadrado UV
+    (0,0)→Point0, (0,1)→Point1, (1,0)→Point2, (1,1)→Point3 (os quatro Vector2 da definição, em UV da composição com o
+    Y para CIMA; partida = os próprios cantos, sem mexer). `CalcInverseMatrix` a inverte.
+  - `Render`: `SetGlobalFloatArray` de `_homography_mat` e `_invHomography_mat` e UM `Blit` com o passe −1 (todos):
+    o passe 0 limpa o RT, o passe 1 desenha o quad do Blit levado por H no vertex (o quadrilátero dos 4 pontos) e,
+    em cada pixel dele, lê a camada em H⁻¹(UV da tela). Fora do quadrilátero, transparente.
+  Aqui num passe: H⁻¹ em cada pixel; dentro do quadrado UV, a leitura; fora, nada (o mesmo quadrilátero quando os 4
+  pontos formam um quadrilátero convexo; nos cruzados o Node desenha os dois triângulos do quad, que podem sair
+  diferentes daqui). A leitura é o filtro linear do Node: em luz linear e pré-multiplicada (o RT da camada dele).
+  A máscara interna do Node (`_use_inner_mask`) não é controle do efeito e fica de fora.
+  Os pontos: lugares (com a alça), Y para baixo como todo ponto do Nova — o (0,0) do Node, embaixo à esquerda, é o
+  (0,1) daqui. Na tela o motor já entrega o ponto de pé; no buffer de camada o Y vira 1 − Y.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-distort-perspective-transform"
+    name="Transformação de perspectiva (NV)"
+    name-en="Perspective Transform (NV)"
+    desc="Prende os quatro cantos da camada em quatro pontos (o Perspective Transform do Node Video)."
+    desc-en="Pins the four corners of the layer to four points (Node Video's Perspective Transform)."
+    category="nodevideo"
+    tags="nodevideo,nv,perspectiva,cantos,corner pin,perspective,distorcer,distort"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <point id="point0" label="Ponto0" defaultX="0.0" defaultY="1.0" min="-10.0" max="10.0" />
+        <point id="point1" label="Ponto1" defaultX="0.0" defaultY="0.0" min="-10.0" max="10.0" />
+        <point id="point2" label="Ponto2" defaultX="1.0" defaultY="1.0" min="-10.0" max="10.0" />
+        <point id="point3" label="Ponto3" defaultX="1.0" defaultY="0.0" min="-10.0" max="10.0" />
+    </params>
+
+    <preview>
+        <set param="point1" x="0.2" y="0.15" />
+        <set param="point3" x="0.85" y="0.05" />
+    </preview>
+
+    <shader><![CDATA[
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+// O filtro linear do RT do Node: os 4 texels em luz linear, pré-multiplicados (Clamp nas bordas).
+vec4 lerComoONode(highp sampler2D t, vec2 uv) {
+    ivec2 T = textureSize(t, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    ivec2 i = ivec2(floor(p));
+    vec2 f = p - floor(p);
+    vec4 s = vec4(0.0);
+    for (int k = 0; k < 4; k++) {
+        ivec2 o = ivec2(k & 1, k >> 1);
+        vec4 c = texelFetch(t, clamp(i + o, ivec2(0), T - 1), 0);
+        float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);
+        s += w * vec4(linear(c.rgb) * c.a, c.a);
+    }
+    return s;
+}
+// Ponto do Nova → UV do Node (Y para cima).
+vec2 doNode(vec2 p) { return acEntradaDePe == 1 ? p : vec2(p.x, 1.0 - p.y); }
+void main()
+{
+    vec2 p0 = doNode(point0), p1 = doNode(point1), p2 = doNode(point2), p3 = doNode(point3);
+    // CalcHomographyMatrix, conta por conta.
+    float sx = p0.x - p1.x - p2.x + p3.x;
+    float sy = p0.y - p1.y - p2.y + p3.y;
+    float a = (p1.x - p3.x) * (p2.y - p3.y);
+    float b = (p2.x - p3.x) * (p1.y - p3.y);
+    float g = (sx * (p1.y - p3.y) - (p1.x - p3.x) * sy) / (b - a);
+    float h = (sx * (p2.y - p3.y) - (p2.x - p3.x) * sy) / (a - b);
+    mat3 H = mat3(p2.x - p0.x + p2.x * g, p2.y - p0.y + p2.y * g, g,
+                  p1.x - p0.x + p1.x * h, p1.y - p0.y + p1.y * h, h,
+                  p0.x, p0.y, 1.0);
+    if (abs(determinant(H)) < 1e-12) { fragColor = vec4(0.0); return; }
+    // O UV da tela no Node (Y para cima) e o lugar da camada nele.
+    vec2 q = acEntradaDePe == 1 ? acScreenNorm : vec2(acScreenNorm.x, 1.0 - acScreenNorm.y);
+    vec3 s = inverse(H) * vec3(q, 1.0);
+    vec2 uv = s.xy / s.z;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { fragColor = vec4(0.0); return; }
+    if (acEntradaDePe != 1) uv.y = 1.0 - uv.y;
+    vec4 c = lerComoONode(inputImg, uv);
+    fragColor = c.a > 1e-5 ? vec4(srgb(c.rgb / c.a), c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

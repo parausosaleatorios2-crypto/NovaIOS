@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Caleidoscópio: espelha uma fatia da imagem em torno de um centro.
+
+  A conta toda acontece em coordenadas polares. Em coordenadas normais,
+  "espelhar em torno de um eixo girado" exige montar uma matriz por fatia; em
+  polares é um `mod` no ângulo e um `abs` para dobrar a fatia ao meio.
+-->
+<effect
+    id="nova.effect.kaleidoscope"
+    name="Caleidoscópio"
+    name-en="Kaleidoscope"
+    desc="Espelha a imagem em fatias em torno de um ponto."
+    desc-en="Mirrored wedges around a centre."
+    category="distort"
+    tags="espelho,simetria,psicodelico,fatias">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="sides" label="Fatias"
+                default="6.0" min="2.0" max="24.0" step="1.0" type="integer" />
+
+        <slider id="spin" label="Giro"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0" />
+
+        <slider id="zoom" label="Aproximação"
+                default="1.0" min="0.2" max="3.0" step="0.01" snap="1.0" />
+
+        <slider id="amount" label="Intensidade"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+const float TAU = 6.28318530718;
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 offset = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    float radius = length(offset) / max(zoom, 0.01);
+    float angle = atan(offset.y, offset.x) + radians(spin);
+
+    float segment = TAU / max(sides, 2.0);
+    angle = mod(angle, segment);
+    // Dobra a fatia ao meio. É este `abs` que faz o desenho espelhar em vez de
+    // apenas se repetir — sem ele o resultado é um ventilador, não um
+    // caleidoscópio.
+    angle = abs(angle - segment * 0.5);
+
+    vec2 warped = vec2(cos(angle), sin(angle)) * radius;
+    vec2 sampleUv = warped / vec2(acAspect, 1.0) + center;
+    sampleUv = clamp(sampleUv, 0.0, 1.0);
+
+    fragColor = mix(original, texture(inputImg, sampleUv), amount);
+}
+
+    ]]></shader>
+</effect>

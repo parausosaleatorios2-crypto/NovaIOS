@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LEVELS — o efeito nativo do After Effects (ADBE Easy Levels2), medido (0.452.0)
+
+  Pedido do snow (08/10/2026): "lote simples de cor". O "Níveis" que já existia tem a mesma ideia,
+  mas prende os valores em 0..1 e nomeia diferente; ESTE recebe os valores dos presets como estão
+  (o AE aceita preto de entrada negativo e branco de saída acima de 1).
+
+  MEDIDO (tools/lotecor/benchmark, 32 casos): na cor reta,
+      t = (x − Input Black) / (Input White − Input Black), preso em 0..1
+      saída = Output Black + (Output White − Output Black) · t^(1 / Gamma), presa em 0..1
+  Channel RGB aplica aos três canais; Red, Green, Blue e Alpha, só àquele. Gamma 0 vira degrau
+  (só t = 1 passa); Input Black = Input White também. Modelo × AE: 0,002 nível de 255.
+
+  FORA: Clip To Output Black / White (só mudam algo em projeto de 32 bpc) e os valores que o AE
+  guarda para os outros canais quando o menu está em RGB (o preset só traz os do canal à vista).
+-->
+<effect
+    id="nova.effect.aelevels"
+    name="Levels (AE)"
+    name-en="Levels (AE)"
+    desc="O Levels do After Effects: preto e branco de entrada, gama e preto e branco de saída, com os valores de lá."
+    desc-en="After Effects' Levels: input black and white, gamma and output black and white, with its own values."
+    category="color"
+    tags="levels,níveis,niveis,gama,gamma,contraste,after effects,cc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <selector id="channel" label="Channel" default="0" options="RGB|Red|Green|Blue|Alpha" />
+        <slider id="inputBlack" label="Input Black" default="0.0" min="-1.0" max="2.0" step="0.001" snap="0.0" />
+        <slider id="inputWhite" label="Input White" default="1.0" min="-1.0" max="2.0" step="0.001" snap="1.0" />
+        <slider id="gamma" label="Gamma" default="1.0" min="0.0" max="5.0" step="0.001" snap="1.0" />
+        <slider id="outputBlack" label="Output Black" default="0.0" min="-1.0" max="2.0" step="0.001" snap="0.0" />
+        <slider id="outputWhite" label="Output White" default="1.0" min="-1.0" max="2.0" step="0.001" snap="1.0" />
+    </params>
+
+    <!-- Na vitrine, os níveis na identidade não mudam nada: entrada apertada (mais contraste). (vitrine, 0.664.0) -->
+    <preview>
+        <set param="inputBlack" value="0.2" />
+        <set param="inputWhite" value="0.7" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+float nivel(float x) {
+    float faixa = inputWhite - inputBlack;
+    float t = faixa != 0.0 ? clamp((x - inputBlack) / faixa, 0.0, 1.0) : (x >= inputBlack ? 1.0 : 0.0);
+    t = gamma > 0.0 ? pow(t, 1.0 / gamma) : (t >= 1.0 ? 1.0 : 0.0);
+    return clamp(outputBlack + (outputWhite - outputBlack) * t, 0.0, 1.0);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 c = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+    if (channel == 0) c.rgb = vec3(nivel(c.r), nivel(c.g), nivel(c.b));
+    else if (channel == 1) c.r = nivel(c.r);
+    else if (channel == 2) c.g = nivel(c.g);
+    else if (channel == 3) c.b = nivel(c.b);
+    else c.a = nivel(c.a);
+    fragColor = c;
+}
+]]></shader>
+</effect>

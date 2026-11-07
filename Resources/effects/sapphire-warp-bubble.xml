@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_WARPBUBBLE — o Warp Bubble do Sapphire (Boris FX), igual ao do After Effects
+  ============================================================================
+
+  O próximo efeito da fila da pasta do snow (01/11/2026): destrava os `utilize shake + wb`, os `furys warp`, o
+  `vito shake 4`, o `kl4ps new effect warpbubble`, o `Pixel Appearance` e o `vfx shake 7`.
+
+  DE ONDE VEIO (tools/swarpbubble/benchmark, LEIAME.md):
+  - A receita está em texto na sapphire_ae.dll:
+        shift  = Shift Start + Shift Speed · tempo
+        coords = rotate(noise2(Frequency · Z Dist · (Rel X, 1), Octaves, shift, Seed, Amplitude), Rotate Warp Dir)
+                 + xy · Z Dist
+        saída  = warp(make_mipmap(fonte, Wrap, Filter), coords, Wrap, Filter)
+  - O `noise2` (fnoise.cxx, a variante AVX2 que roda no Ryzen do snow), o `warp`, o nível do mipmap por pixel e o
+    rip-map (níveis separados em x e em y, leitura de 3 amostras baricêntrica) foram lidos no código (Ghidra, em
+    trechos recortados da DLL) e conferidos no After Effects em 16, 32 e 8 bpc. Shift em px da CAMADA; os
+    controles em 16.16 arredondados.
+
+  COMO É FEITO AQUI: um motor próprio (`stage="warpbubble"`, `render/PasseDoWarpBubble.kt`, shaders em
+  `assets/swarpbubble`, contas da CPU em `model/ContasDoWarpBubble.kt`). O ruído sai como a DLL o faz (a pirâmide de
+  subdivisões, em alvos de inteiros com os bits do float: 1 ulp da DLL); o rip-map vem de uma tabela de somas da
+  camada (o miolo de cada nível é exato; a última coluna/linha, a folga do Wrap, é uma soma de blocos).
+  Na GPU do PC: no máximo 1 nível do AE de 8 bpc nos presets do snow; ~20 ms por quadro em 1080p.
+
+  O QUE NÃO ENTROU: Matte from Layer / Matte from Path (a máscara que multiplica o ruído), Blur Matte, Invert
+  Matte, Matte Use, Mocha e Crop. O Opacity o próprio Sapphire ignora. Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.swarpbubble"
+    name="S_WarpBubble"
+    name-en="S_WarpBubble"
+    desc="O Warp Bubble do Sapphire: a camada ondula por um ruído fractal que anda com o tempo, como bolhas sob a imagem, igual ao After Effects."
+    desc-en="Sapphire's Warp Bubble: the layer ripples through a moving fractal noise, like bubbles under the image, as in After Effects."
+    category="distort"
+    stage="warpbubble"
+    tags="s_warpbubble,warp bubble,warpbubble,bolha,bubble,sapphire,boris,distorcer,distort,ondular,ripple,ruido,noise,shake,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="amplitude" label="Amplitude" default="0.25" min="-10.0" max="10.0" step="0.001" snap="0.0,0.25" />
+        <slider id="frequency" label="Frequency" default="16.0" min="0.01" max="200.0" step="0.01" snap="16.0" />
+        <slider id="frequencyRelX" label="Frequency Rel X" default="1.0" min="0.01" max="20.0" step="0.01" snap="1.0" />
+        <slider id="octaves" label="Octaves" default="1.0" min="1.0" max="10.0" step="1.0" />
+        <slider id="seed" label="Seed" default="0.23" min="0.0" max="1000.0" step="0.001" snap="0.23" />
+        <slider id="rotateWarpDir" label="Rotate Warp Dir" default="0.0" min="-3600.0" max="3600.0" step="0.1" type="angle" snap="0.0" />
+        <slider id="shiftStartX" label="Shift Start X" default="0.0" min="-50000.0" max="50000.0" step="1.0" snap="0.0" />
+        <slider id="shiftStartY" label="Shift Start Y" default="0.0" min="-50000.0" max="50000.0" step="1.0" snap="0.0" />
+        <slider id="shiftSpeedX" label="Shift Speed X" default="96.0" min="-50000.0" max="50000.0" step="1.0" snap="0.0,96.0" />
+        <slider id="shiftSpeedY" label="Shift Speed Y" default="0.0" min="-50000.0" max="50000.0" step="1.0" snap="0.0" />
+        <slider id="zDist" label="Z Dist" default="1.0" min="0.001" max="20.0" step="0.001" snap="1.0" />
+        <selector id="wrapX" label="Wrap X" default="2" options="No|Tile|Reflect" />
+        <selector id="wrapY" label="Wrap Y" default="2" options="No|Tile|Reflect" />
+        <switch id="useFilter" label="Filter" default="true" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoWarpBubble` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.halftone" name="Halftone" desc="Classic print halftone. Dot size follows luminance; angle and scale are controllable." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/halftone.png"
+        tags="stylize,halftone,print,dots" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Halftone" />
+<spinner id="scale" default="90.0" min="10.0" max="400.0" step="1.0" label="Dot Density" />
+<spinner id="angle" default="45.0" min="-180.0" max="180.0" step="0.5" label="Screen Angle" type="angle" />
+<spinner id="contrast" default="1.2" min="0.2" max="3.0" step="0.01" label="Contrast" />
+<switch id="mono" default="true" label="Monochrome" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 base = mono ? vec3(gmLum(c)) : c;
+  base = clamp((base - 0.5) * contrast + 0.5, 0.0, 1.0);
+  float rad = radians(angle);
+  vec2 rp = vec2(uv.x * cos(rad) - uv.y * sin(rad), uv.x * sin(rad) + uv.y * cos(rad));
+  vec2 cell = fract(rp * scale) - 0.5;
+  float d = length(cell);
+  vec3 dots;
+  dots.r = step(d, sqrt(base.r) * 0.5);
+  dots.g = step(d, sqrt(base.g) * 0.5);
+  dots.b = step(d, sqrt(base.b) * 0.5);
+  vec3 col = mix(c, dots, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

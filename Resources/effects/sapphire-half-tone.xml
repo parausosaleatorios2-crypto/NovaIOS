@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_HALFTONE — o Half Tone do Sapphire (Boris FX), lido do plugin (0.863.0)
+  ============================================================================
+
+  Pedido do snow (01/11/2026): "proximo efeito que libera mais presets" — o S_HalfTone, que 13 presets da pasta
+  dele esperavam (Alvar Halftone, Ryan's Halftone, dnte dots, hurrhalf, kinza, Opium…).
+
+  DE ONDE VEIO (tools/shalftone): a conta INTEIRA está em texto na sapphire_ae.dll (`half_tone_internal` e
+  `Half_Tone_Autogen`) e foi conferida no After Effects:
+
+      bw    = blur(monochrome(Fonte), Smooth Source, 3, 1, 0)         as três caixas, largura arredondada
+      xy2   = xy · (Frequency / max(Rel Width, 0,01), Frequency)
+      grad  = 0,707 · |bounce(rotate(xy2 − (Shift X, −Shift Y), Angle), 1)|        Dots White: 1 − grad
+      s     = Sharpness + 1
+      peso  = (grad + (−1 + (1/s + 1) · (bw + Lighten))) · s, preso em 0..1
+      saída = Color0 + (Color1 − Color0) · peso
+
+  `xy`: −1..1 na largura da CAMADA, y para cima, no centro do pixel. `bounce` dobra em triângulo (período 2).
+  O ângulo do AE é o da DLL com o sinal trocado (o padrão −30 do AE é o 30 da definição).
+
+  Medido (tools/shalftone/benchmark): os controles chegam exatos (não em 16.16); as cores valem em 8 bits; o Rel
+  Width fica preso em 0,01 (o `min .01` da definição; o AE deixa 0,0099945, e o Opium-5 usa); Opacity Normal faz
+  a conta na cor PRÉ-multiplicada e a devolve como pré-multiplicada (limitada ao alfa), All Opaque e As Premult
+  usam a cor reta (All Opaque sai opaco, As Premult leva o alfa da fonte). Modelo em numpy: 0,0–0,8 nível do AE
+  de 16 bpc; com mais de ~15 mil ciclos por unidade (o Opium-5), 1–2 níveis (a conta em float do plugin).
+
+  A máscara (Mask from Layer) é a mesma `PROCESS_MASKS` do S_Hotspots, medida lá.
+  O QUE NÃO ENTROU: Mask from Path e Mocha.
+-->
+<effect
+    id="nova.effect.shalftone"
+    name="S_HalfTone"
+    name-en="S_HalfTone"
+    desc="O Half Tone do Sapphire: a imagem vira uma grade de pontos entre duas cores, igual ao After Effects."
+    desc-en="Sapphire's Half Tone: turns the image into a dot screen between two colors, as in After Effects."
+    category="stylize"
+    tags="s_halftone,halftone,half tone,meio-tom,meio tom,pontos,dots,retícula,sapphire,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="bX" src="buffer" />
+        <texture id="mH" src="buffer" />
+
+        <selector id="dots" label="Dots" default="0" options="Black|White" />
+        <slider id="dotsFrequency" label="Dots Frequency" default="50.0" min="0.0" max="500.0" step="0.1" snap="50.0" />
+        <slider id="dotsAngle" label="Dots Angle" default="-30.0" min="-3600.0" max="3600.0" step="0.1" type="angle" snap="-30.0,0.0,30.0" />
+        <slider id="dotsRelWidth" label="Dots Rel Width" default="1.0" min="0.01" max="10.0" step="0.01" snap="1.0" />
+        <slider id="dotsSharpness" label="Dots Sharpness" default="4.0" min="0.0" max="10.0" step="0.01" snap="4.0" />
+        <slider id="dotsLighten" label="Dots Lighten" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="smoothSource" label="Smooth Source" default="0.0" min="0.0" max="200.0" step="0.1" snap="0.0" />
+        <color id="color1" label="Color1" default="#FFFFFF" />
+        <color id="color0" label="Color0" default="#000000" />
+        <slider id="dotsShiftX" label="Dots Shift X" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="dotsShiftY" label="Dots Shift Y" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <selector id="opacity" label="Opacity" default="1" options="All Opaque|Normal|As Premult" />
+
+        <texture id="maskImg" src="layer" group="Mask" label="Mask from Layer" empty="transparent" />
+        <selector id="maskUse" group="Mask" label="Mask Use" default="0" options="Luma|Alpha" />
+        <slider id="blurMask" group="Mask" label="Blur Mask" default="12.0" min="0.0" max="200.0" step="0.1" snap="12.0" />
+        <switch id="invertMask" group="Mask" label="Invert Mask" default="false" />
+    </params>
+
+    <passes>
+        <pass target="bX" skipIfZero="smoothSource" />   <!-- 0: a luminância desfocada em x -->
+        <pass target="mH" skipIfZero="blurMask" />       <!-- 1: a máscara desfocada em x -->
+        <pass />                                         <!-- 2: o resto -->
+    </passes>
+
+    <shader><![CDATA[
+const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+float gEscala;     // a prévia reduzida (Smooth Source e Blur Mask são em px da composição)
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+}
+
+/** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
+int espelhar(int i, int n) {
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+ivec2 naCamada(ivec2 q) {
+    return gInicio + ivec2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
+}
+
+// ---- o núcleo das três caixas (o do S_Hotspots) -----------------------------------------------
+// Largura inteira n -> raios r0 ≥ r1 ≥ r2 que somam n ((n + 2 − i) div 3); a soma das três caixas em d, em
+// inteiros (exata), dividida no fim por (2r0 + 1)(2r1 + 1)(2r2 + 1).
+int somaDoTrapezio(int x, int p, int q) {
+    int m = q - p;
+    int M = p + q;
+    x = min(x, M);
+    if (x <= m) return (x + 1) * (2 * p + 1);
+    return (m + 1) * (2 * p + 1) + (x - m) * (M + 1) - (x * (x + 1) - m * (m + 1)) / 2;
+}
+
+int acumulado(int x, int p, int q) {
+    int total = (2 * p + 1) * (2 * q + 1);
+    int meio = (total - (2 * p + 1)) / 2;
+    if (x >= 0) return meio + somaDoTrapezio(x, p, q);
+    return total - (meio + somaDoTrapezio(-x - 1, p, q));
+}
+
+float pesoDasCaixas(int d, int n) {
+    if (n <= 0) return d == 0 ? 1.0 : 0.0;
+    int r0 = (n + 2) / 3;
+    int r1 = (n + 1) / 3;
+    int r2 = n / 3;
+    if (abs(d) > n) return 0.0;
+    int c = acumulado(d + r0, r2, r1) - acumulado(d - r0 - 1, r2, r1);
+    return float(c) / (float(2 * r0 + 1) * float(2 * r1 + 1) * float(2 * r2 + 1));
+}
+
+// Um valor de 0..1 em 24 bits num texel RGBA8.
+vec4 gravar24(float m) {
+    float a = floor(clamp(m, 0.0, 1.0) * 16777215.0 + 0.5);
+    float b0 = floor(a / 65536.0);
+    float r = a - b0 * 65536.0;
+    float b1 = floor(r / 256.0);
+    return vec4(b0, b1, r - b1 * 256.0, 255.0) / 255.0;
+}
+
+float ler24(vec4 v) {
+    vec3 b = floor(v.rgb * 255.0 + 0.5);
+    return (b.x * 65536.0 + b.y * 256.0 + b.z) / 16777215.0;
+}
+
+// ---- a fonte e a máscara --------------------------------------------------------------------
+// Medido: Normal (1) faz a conta na cor pré-multiplicada; All Opaque (0) e As Premult (2), na cor reta.
+// monochrome (0x180f26020): (0,3125 R + 0,5 G) + 0,1875 B.
+float luma(ivec2 p) {
+    vec4 s = texelFetch(inputImg, p, 0);
+    vec3 c = opacity == 1 ? s.rgb * s.a : s.rgb;
+    return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b;
+}
+
+bool temMascara() { return textureSize(maskImg, 0).x > 1; }
+
+float mascara(ivec2 p) {
+    vec4 m = texture(maskImg, (vec2(p) + 0.5) / vec2(gT));
+    float v = maskUse == 1 ? m.a : dot(m.rgb * m.a, vec3(0.3125, 0.5, 0.1875));
+    return invertMask ? 1.0 - v : v;
+}
+
+// O subpixel 0 da definição: as larguras arredondam, meio para cima.
+int larguraDaFonte() { return int(clamp(floor(smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+int larguraDaMascara() { return int(clamp(floor(blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+
+float lumaDesfocada(ivec2 q, bool emX) {
+    int n = larguraDaFonte();
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDasCaixas(d, n);
+        if (k == 0.0) continue;
+        ivec2 p = naCamada(q + (emX ? ivec2(d, 0) : ivec2(0, d)));
+        soma += k * (emX ? luma(p) : ler24(texelFetch(bX, p, 0)));
+    }
+    return soma;
+}
+
+float mascaraDesfocada(ivec2 q, bool emX) {
+    int n = larguraDaMascara();
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDasCaixas(d, n);
+        if (k == 0.0) continue;
+        ivec2 p = naCamada(q + (emX ? ivec2(d, 0) : ivec2(0, d)));
+        soma += k * (emX ? mascara(p) : ler24(texelFetch(mH, p, 0)));
+    }
+    return soma;
+}
+
+// ---- a grade ------------------------------------------------------------------------------------
+// bounce(v, 1): a dobra em triângulo de período 2 (0..1).
+float dobra(float v) {
+    float m = mod(v, 2.0);
+    return m > 1.0 ? 2.0 - m : m;
+}
+
+float grade(ivec2 q) {
+    // xy do Sapphire: −1..1 na largura da camada, y para cima, no centro do pixel (a cena de pé tem a linha 0 embaixo)
+    float W = float(gN.x);
+    float linha = acEntradaDePe == 1 ? float(gN.y - 1 - q.y) : float(q.y);
+    vec2 xy = vec2((float(q.x) + 0.5) * 2.0 / W - 1.0, float(gN.y) / W - (linha + 0.5) * 2.0 / W);
+    // a definição prende o Rel Width em 0,01 (o AE deixa 0,0099945, o Opium-5 usa)
+    float fx = dotsFrequency / max(dotsRelWidth, 0.01);
+    float fy = dotsFrequency;
+    vec2 p = vec2(xy.x * fx - dotsShiftX, xy.y * fy + dotsShiftY);
+    // rotate(p, Angle / −360) da DLL, com o ângulo do AE (sinal trocado)
+    float t = radians(dotsAngle);
+    float c = cos(t), s = sin(t);
+    vec2 r = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+    return 0.707 * length(vec2(dobra(r.x), dobra(r.y)));
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN));
+
+    if (acPass == 0) {
+        fragColor = fora ? vec4(0.0) : gravar24(lumaDesfocada(q, true));
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = (fora || !temMascara()) ? vec4(0.0) : gravar24(mascaraDesfocada(q, true));
+        return;
+    }
+
+    // ---- 2: o resto ----
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora) {
+        fragColor = s;
+        return;
+    }
+    float bw = larguraDaFonte() > 0 ? lumaDesfocada(q, false) : luma(t);
+    float g = grade(q);
+    if (dots == 1) g = 1.0 - g;
+    float sh = dotsSharpness + 1.0;
+    float peso = clamp((g + (-1.0 + (1.0 / sh + 1.0) * (bw + dotsLighten))) * sh, 0.0, 1.0);
+    // Medido: as cores valem em 8 bits.
+    vec3 c0 = floor(color0.rgb * 255.0 + 0.5) / 255.0, c1 = floor(color1.rgb * 255.0 + 0.5) / 255.0;
+    vec3 cor = c0 + (c1 - c0) * peso;
+
+    // O resultado em pré-multiplicado, com o alfa da saída.
+    float a = s.a;
+    vec3 r;
+    if (opacity == 0) { a = 1.0; r = cor; }        // All Opaque: sai opaco
+    else if (opacity == 1) r = min(cor, vec3(a));  // Normal: a conta já é a pré-multiplicada (o AE a limita ao alfa)
+    else r = cor * a;                              // As Premult: a cor reta com o alfa da fonte
+
+    if (temMascara()) {
+        float m = larguraDaMascara() > 0 ? mascaraDesfocada(q, false) : mascara(t);
+        vec3 sp = s.rgb * s.a;
+        r = sp + (r - sp) * m;
+        a = s.a;
+    }
+
+    vec3 reta = a > 0.0 ? min(r / a, vec3(1.0)) : vec3(0.0);
+    // a saída em níveis inteiros, arredondada como o AE de 8 bpc (a da GPU não arredonda igual)
+    fragColor = vec4(floor(reta * 255.0 + 0.5) / 255.0, a);
+}
+]]></shader>
+</effect>

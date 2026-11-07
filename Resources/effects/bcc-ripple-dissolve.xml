@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC RIPPLE DISSOLVE (Boris Continuum, transição `BCC Ripple Dissolve`)
+  ============================================================================
+
+  Os 8 presets da pasta do snow (Ryan's Ripple In/Out v1–v3, Alvar Ripple Dissolve (a), Ripple Impact): o Percent
+  Done animado (ou Auto), sem camada a revelar, Apply Mode Add, luz branca.
+
+  LIDO na Continuum_AE_8Bit.dll (tools/bccrippledissolve/LEIAME.md — endereços, fórmulas e as rodadas do AE):
+    - os controles viram o struct do renderer em 0x180979930 (por lado; t = Percent Done/100, s = 1 − t): Radius
+      Peak e Inside Radius × 2t até a metade; Height × s; meia-onda = Wave Width·(1 + Width % Increase·t/100); Perp ×
+      s; tudo em px × ALTURA da camada / 720; Light Level·2,56·s; fase = −Phase − 360·∫velocidade;
+    - a onda (FixedRippleSupport, 0x180e2a030/0x180e2d1d0): D(r) = Height·sen(r·180/meia + fase) dentro de um envelope
+      (rampa de r0 = (0,5 − 0,45·Fall Off)·Inside até Inside, cauda de Radius até (0,9·Fall Off + 2)·Radius); o pixel lê
+      em centro + (r + D)·(cos, sen)(θ + Φ), Φ = −Perp·sen(…)/r;
+    - a luz (WaveLight, 0x180e2f760; conferida contra a DLL chamada fora do AE: tabelas IGUAIS, `luz.py`): pela
+      direção do pixel, L0 = powf(20/41·cos 2a + 21/41, e/10) na frente da luz (cos a > 0) e um lobo mais fechado e
+      fraco atrás (e = 100 − Elevation); pela fase da onda, A/B = o lobo de Light Width (curva u·(k·u + 1 − k),
+      k = −Focus/100) no ângulo ±acos(sen) ± 90·smoothstep(e), suavizado 0,1|0,2667×3|0,1 em 1°;
+      luz do pixel = L0(θ)·(frente ? A : B)(r·180/meia)·envelope;
+    - o Apply Mode é o índice do menu − 1 na tabela 0x18048fd10: o Add (13) é o 0x180445d00, novo = min(cor + pixel,
+      255) misturado pela luz (teto 255, em 1/256);
+    - sem camada a revelar, a saída é o lado A com o alfa × (80 − p)/60 (Dissolve Duration 60); em 8 bits
+      k8 = rint(255·k) e alfa = (alfa·k8) >> 8 (medido, r3_8).
+
+  MEDIDO no AE 2023: em 8 bpc o BCC 2024 sai a ±3 níveis do render de 16 bpc — ele usa o caminho de alta precisão
+  mesmo em 8 bits, com o centro CONTÍNUO (W·cx, H·cy) e não o centro arredondado do código inteiro da DLL (as DLLs de
+  8 bits, 16 bits e float têm o MESMO construtor e o mesmo laço por pixel; a float só guarda as tabelas D/Φ em float).
+  Por isso a conta aqui é em float.
+
+  PIN WIDTH (0.870.0): 0x18097a058 = 0,01·max(Perpendicular/4, Pin Width, Height/4) (Height e Perp crus); o modo
+  0x71017e não existe neste efeito e cai em "Pin Edges"; 0x18052d100 dá o peso de cada eixo (rampa até 0,8·L, parábola
+  até 1 em L = n·pino/2) e 0x18052b440 multiplica o deslocamento por peso(x)·peso(y). No AE o peso é avaliado no
+  CENTRO do pixel (d = i + ½, simétrico — medido na grade de 16 bpc; o código inteiro usa d = i). Sem ele a faixa de
+  queda que passa da borda do quadro errava até 17 px.
+
+  COMO FICOU (tools/bccrippledissolve/benchmark/gpu.py: este shader na GPU do PC contra 33 renders do AE em 8 bpc,
+  r3_8): 91% dos pixels a até 1 nível, 96% a até 3; média 0,63 nível (era 1,3 antes do Pin Width). O mapa fica a
+  ~0,09 px do AE de 16 bpc em média (p99 0,24 px, máx 0,35 px) — o resto é o ruído da própria grade de cor.
+  O QUE NÃO É IGUAL:
+    - bordas finas (o xadrez, contornos da foto) dentro da onda: o resíduo sub-pixel do mapa vira até ~60 níveis num
+      pixel de borda dura; com alfa < 1 (p > 20) o arredondamento da cor pré-multiplicada do AE soma ±1;
+    - a última linha e a última coluna do quadro dentro da onda (a leitura de fora do quadro do AE);
+    - Apply Mode: só o Add (o dos presets) e o Normal; Camada a revelar (lado B), Brightness/Contrast/Saturation
+      Peak, Ease In/Out e Apply Ripple To ≠ Dissolve: não feitos (o conversor avisa);
+    - Dissolve Duration ≠ 60: (50 + D/2 − p)/D, não medido.
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.bccrippledissolve"
+    name="BCC Ripple Dissolve"
+    name-en="BCC Ripple Dissolve"
+    desc="A transição de onda do Boris Continuum: anéis de água que distorcem e iluminam a camada enquanto ela some."
+    desc-en="Boris Continuum's ripple transition: water rings that warp and light the layer while it fades away."
+    category="distort"
+    tags="bcc,boris,continuum,ripple,onda,água,agua,dissolve,transição,transicao,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="animation" label="Animação" default="1" options="Automática|Porcentagem" />
+        <slider id="percentDone" label="Porcentagem" default="50.0" min="0.0" max="100.0" step="0.1" snap="50.0" showIf="animation=1" />
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" min="0.0" max="1.0" unit="px" />
+        <slider id="radiusPeak" label="Raio máximo" default="500.0" min="0.0" max="30000.0" step="1.0" snap="500.0" />
+        <slider id="height" label="Altura" default="30.0" min="0.0" max="300.0" step="0.1" snap="30.0" />
+        <slider id="perpHeight" label="Altura perpendicular" default="0.0" min="0.0" max="300.0" step="0.1" snap="0.0" />
+        <slider id="waveWidth" label="Largura da onda" default="50.0" min="2.0" max="10000.0" step="0.1" snap="50.0" />
+        <slider id="widthIncrease" label="Aumento da largura (%)" default="300.0" min="-400.0" max="400.0" step="1.0" snap="300.0" />
+        <slider id="speed" label="Velocidade" default="20.0" min="-200.0" max="200.0" step="0.1" snap="20.0" />
+        <slider id="speedDecel" label="Desaceleração" default="100.0" min="-100.0" max="100.0" step="0.1" snap="100.0" />
+        <slider id="phase" label="Fase" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="insideRadius" label="Raio interno" default="400.0" min="0.0" max="30000.0" step="1.0" snap="400.0" />
+        <slider id="fallOff" label="Queda" default="50.0" min="-100.0" max="100.0" step="0.1" snap="50.0" />
+        <slider id="pinWidth" label="Prender as bordas" default="8.0" min="0.0" max="100.0" step="0.1" snap="8.0" />
+
+        <slider id="lightLevel" group="Luz" label="Nível da luz" default="75.0" min="0.0" max="400.0" step="0.1" snap="75.0" />
+        <color id="lightColor" group="Luz" label="Cor da luz" default="#FFFFFF" />
+        <slider id="lightWidth" group="Luz" label="Largura da luz" default="50.0" min="0.0" max="100.0" step="0.1" snap="50.0" />
+        <slider id="lightFocus" group="Luz" label="Foco da luz" default="-90.0" min="-100.0" max="100.0" step="0.1" snap="-90.0" />
+        <slider id="lightAngle" group="Luz" label="Ângulo da luz" default="55.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="55.0" />
+        <slider id="lightElevation" group="Luz" label="Elevação da luz" default="75.0" min="0.0" max="100.0" step="0.1" snap="75.0" />
+        <selector id="applyMode" group="Luz" label="Modo da luz" default="1" options="Normal|Somar" />
+
+        <slider id="dissolveDuration" group="Transição" label="Duração da dissolução" default="60.0" min="0.0" max="100.0" step="0.1" snap="60.0" />
+        <slider id="heightScale" group="Transição" label="Escala da altura" default="100.0" min="0.0" max="1000.0" step="0.1" snap="100.0" />
+        <slider id="widthScale" group="Transição" label="Escala da largura" default="100.0" min="0.0" max="1000.0" step="0.1" snap="100.0" />
+        <slider id="speedScale" group="Transição" label="Escala da velocidade" default="100.0" min="0.0" max="1000.0" step="0.1" snap="100.0" />
+    </params>
+
+    <preview amostra="figura">
+        <set param="percentDone" value="25.0" />
+    </preview>
+
+    <shader><![CDATA[
+// Do Kotlin (RippleDissolveDoBcc): o struct do plugin neste quadro. Os comprimentos vêm em "px de 720 linhas" (o
+// shader multiplica pela altura da camada / 720), a fase já com a Speed integrada no tempo, reduzida a [0, 360).
+uniform float rdAltura, rdMeia, rdPerp, rdInterno, rdRaio, rdQueda, rdFase;
+uniform int rdNivel;                       // Light Level·2,56·s, inteiro (0 = sem luz)
+uniform int rdK8;                          // o alfa da dissolução em 1/255 (255 = nada)
+uniform bool rdLuzAtiva;                   // Elevation < 100: L0 pela direção
+uniform float rdElev, rdEf, rdEt, rdM;     // 90·smoothstep(e), e/10, o expoente e o fator de trás
+uniform vec4 rdLobo;                       // l2c, l30, rampa de baixo, rampa de cima (graus)
+uniform vec2 rdFoco;                       // k, 1 − k
+
+const float GRAU = 0.017453292519943295;
+
+int W, H;
+ivec2 gBuf, gInicio;
+bool dePe;
+
+void preparar() {
+    gBuf = textureSize(inputImg, 0);
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(gBuf) + 0.5)), ivec2(1), gBuf);
+    gInicio = (gBuf - tam) / 2;
+    W = tam.x; H = tam.y;
+    dePe = acEntradaDePe == 1;
+}
+ivec2 noBuffer(int x, int y) { return gInicio + ivec2(x, dePe ? H - 1 - y : y); }
+
+// O pixel (x, y) da camada (linha 0 = topo, como no AE). Fora do quadro: a cor do vizinho de dentro, alfa 0.
+vec4 pixel(int x, int y) {
+    int cx = clamp(x, 0, W - 1), cy = clamp(y, 0, H - 1);
+    vec4 c = texelFetch(inputImg, noBuffer(cx, cy), 0);
+    if (cx != x || cy != y) c.a = 0.0;
+    return c;
+}
+vec4 bilinear(vec2 p) {
+    vec2 b = floor(p), f = p - b;
+    int x = int(b.x), y = int(b.y);
+    if (x < -1 || y < -1 || x >= W || y >= H) return vec4(0.0);
+    return mix(mix(pixel(x, y), pixel(x + 1, y), f.x), mix(pixel(x, y + 1), pixel(x + 1, y + 1), f.x), f.y);
+}
+
+float mod360(float a) { return a - 360.0 * floor(a / 360.0); }
+
+// O Pin Width (0x18052d100, medido no AE): o deslocamento × peso(x)·peso(y), d = distância do CENTRO do pixel à
+// borda; rampa d·2/(2k + L − k) até k = 0,8·L, depois 1 − (L − d)²/(2(L − k)k + (L − k)²) até 1 em L = n·pino/2.
+float pesoDoPino(float d, float L) {
+    if (d >= max(L, 1.0)) return 1.0;
+    float k = 0.8 * L, a = L - k;
+    float f = d < k ? d * 2.0 / (2.0 * k + a) : 1.0 - (L - d) * (L - d) / (2.0 * a * k + a * a);
+    return clamp(f, 0.0, 1.0);
+}
+
+// O envelope radial: a rampa de dentro, 1, a cauda; 0 antes de r0 e depois do alcance.
+float envelope(float r, float Ir, float R, out float alcance) {
+    alcance = (rdQueda * 0.9 + 2.0) * R;
+    float r0 = (0.5 - rdQueda * 0.45) * Ir;
+    if (r < r0 || r0 > alcance) return 0.0;
+    if (r < Ir) return max((r - r0) / max(Ir - r0, 1e-6), 0.0);
+    if (r > R) return max((alcance - r) / max(alcance - R, 1e-6), 0.0);
+    return 1.0;
+}
+
+// O lobo da luz (0x180e300b0): 0 fora de (l2c, l30), a curva u·(k·u + 1 − k) nas rampas, inteiro como no plugin.
+float lobo(float y) {
+    y = mod360(y);
+    if (y >= rdLobo.y || y <= rdLobo.x) return 0.0;
+    float u;
+    if (y < 180.0) u = (y - rdLobo.x) / rdLobo.z;
+    else if (y > 180.0) u = (rdLobo.y - y) / rdLobo.w;
+    else return float(rdNivel);
+    float c = clamp(u * (u * rdFoco.x + rdFoco.y), 0.0, 1.0);
+    return floor(float(rdNivel) * c);
+}
+// A (frente) e B (trás) crus no grau inteiro i da fase da onda (o laço de 360 do WaveLight).
+vec2 loboCru(float i) {
+    float x = i + rdFase;
+    float sv = sin(x * GRAU), sv2 = sin((x - 0.1) * GRAU);
+    float ac = acos(clamp(sv, -1.0, 1.0)) / GRAU;
+    if (sv > sv2) ac = -ac;
+    return vec2(lobo(ac + rdElev), lobo(ac - rdElev));
+}
+// Suavizado como o 0x18036b250 (s = 1,5): 0,1·(i ± 2) + 0,26667·(i − 1, i, i + 1), truncado.
+vec2 loboSuave(float i) {
+    vec2 s3 = loboCru(i - 1.0) + loboCru(i) + loboCru(i + 1.0);
+    vec2 s2 = loboCru(i - 2.0) + loboCru(i + 2.0);
+    return floor(s2 * 0.1 + s3 * 0.26666668);
+}
+// L0 e o lado (frente/trás) pela direção j (graus inteiros) do pixel.
+vec2 direcao(float j) {
+    float a = j + lightAngle;
+    a = a - 360.0 * floor((a + 180.0) / 360.0);
+    a *= GRAU;
+    float v = 0.48780487804878 * cos(2.0 * a) + 0.51219512195122;
+    if (cos(a) > 0.0) return vec2(pow(v, rdEf), 1.0);
+    return vec2(pow(abs(v), rdEt) * rdM, 0.0);
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gBuf))), gBuf - ivec2(1));
+    ivec2 q = t - gInicio;
+    vec4 src = texelFetch(inputImg, t, 0);
+    if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, ivec2(W, H)))) { fragColor = src; return; }
+    int x = q.x, y = dePe ? H - 1 - q.y : q.y;
+
+    float esc = float(H) / 720.0;
+    float meia = max(rdMeia * esc, 1.0), altura = rdAltura * esc, perp = rdPerp * esc;
+    float Ir = rdInterno * esc, R = rdRaio * esc;
+    vec2 c = acPontoNoBuffer(center) * vec2(gBuf) - vec2(gInicio);
+    if (dePe) c.y = float(H) - c.y;
+    c = vec2(clamp(c.x, 0.0, float(W)), clamp(c.y, 0.0, float(H)));
+
+    float dx = float(x) - c.x, dy = c.y - float(y);            // y para cima, como o plugin
+    float r = length(vec2(dx, dy));
+    float alcance;
+    float env = envelope(r, Ir, R, alcance);
+    vec4 cor = src;
+    if (r < alcance) {
+        float gp = 180.0 / meia;
+        float s = sin((r * gp + rdFase) * GRAU);
+        float D = s * altura * env;
+        float P = r > 0.1 ? -s * perp * env / r : 0.0;
+        float a = atan(dy, dx) + P;
+        vec2 org = c + (r + D) * vec2(cos(a), -sin(a));
+        // o pino (0x18097a058: 0,01·max(Perp/4, Pin Width, Height/4), com Height e Perp crus; o modo é Pin Edges)
+        if (height != 0.0 || perpHeight != 0.0) {
+            float pino = 0.01 * max(perpHeight * 0.25, max(pinWidth, height * 0.25));
+            float px = float(x) + 0.5, py = float(y) + 0.5;
+            float w = pesoDoPino(min(px, float(W) - px), float(W) * pino * 0.5)
+                    * pesoDoPino(min(py, float(H) - py), float(H) * pino * 0.5);
+            org = vec2(float(x), float(y)) + (org - vec2(float(x), float(y))) * w;
+        }
+        cor = bilinear(org);
+
+        // a luz pelo r e o θ ORIGINAIS do pixel
+        if (rdNivel != 0) {
+            float ang = mod360(r * gp);
+            float i = floor(ang), f = ang - i;
+            vec2 lab = mix(loboSuave(i), loboSuave(i + 1.0), f) * env;
+            float L = lab.x;
+            if (rdLuzAtiva) {
+                float th = mod360(degrees(atan(dy, dx)));
+                float j = floor(th), g = th - j;
+                vec2 d0 = direcao(j), d1 = direcao(j + 1.0);
+                float l0 = mix(floor(d0.x * 65536.0 + 0.5), floor(d1.x * 65536.0 + 0.5), g) / 65536.0;
+                L = l0 * (d0.y > 0.5 ? lab.x : lab.y);
+            }
+            float w = min(L, 255.0) / 256.0;
+            vec3 novo = applyMode == 1 ? min(cor.rgb + lightColor.rgb, 1.0) : lightColor.rgb;
+            cor.rgb += (novo - cor.rgb) * w;
+        }
+    }
+    // a dissolução: alfa·k8 >> 8 em 8 bits
+    if (rdK8 < 255) {
+        int a8 = int(floor(cor.a * 255.0 + 0.5));
+        cor.a = float((a8 * rdK8) >> 8) / 255.0;
+    }
+    fragColor = clamp(cor, 0.0, 1.0);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,620 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESLOCAMENTO TURBULENTO — o Turbulent Displace do After Effects, tirado do plugin
+  ============================================================================
+
+  As contas saíram do TurbulentDisplace.aex do AE 2023 desmontado
+  (`tools/turbulentdisplace/benchmark/`, ver o LEIAME) e foram conferidas contra
+  o próprio AE: o ponto de onde cada pixel lê bate em 0,01 px (o limite do PNG
+  de 16 bits) nos 9 modos, nas 15 opções de Pinning e no Antialiasing High.
+
+  - A GRADE (passe 0): 64 × 64 valores. Cada um é uma B-spline cúbica no tempo
+    entre 4 sorteios (LCG 0x41C64E6D/0x3039) de quartos de volta vizinhos da
+    Evolution, com um atraso sorteado por ponto. Random Seed e Cycle Evolution
+    mudam a semente de cada quarto de volta.
+  - O RUÍDO: oitavas de frequência ×1,77 e força ×0,7 (começa em 0,25), a
+    Complexity inteira mais a fração dela numa oitava a mais. Turbulent, Bulge
+    e Twist interpolam a grade (suavizada, 3f² − 2f³) num plano girado 45°;
+    os "Smoother", com B-spline bicúbica; Vertical/Horizontal/Cross, em 1D.
+  - O DESLOCAMENTO: Turbulent lê dois ruídos (um por eixo); Bulge vai pelo
+    gradiente, Twist pelo gradiente girado 90°. Amount × Size/100 × 5 px.
+  - Pinning: perto das bordas (uma faixa do tamanho do maior deslocamento
+    possível) o deslocamento cai a zero; "Locked" segura os dois eixos.
+  - A leitura: bilinear pré-multiplicada, fora da camada transparente; no
+    Antialiasing High, uma caixa do tamanho do esticamento local (0,5 a 32 px).
+
+  Em float de 32 bits a coordenada do ruído (7913,17·1,77ᵏ) perderia a fração:
+  a parte constante anda em inteiro exato + fração (`avancar`, ver `gerar.py`).
+
+  DESEMPENHO (06/10/2026: "está travando bastante"). Medido na GPU do PC
+  (`medir.py`): metade do custo é ler a grade, e cada oitava custa o mesmo. As
+  oitavas GROSSAS (onda de 96 px ou mais) quase não mudam de um pixel ao vizinho:
+  vão para o passe 1, em meia resolução, e o passe final as lê por bilinear (o
+  erro fica em centésimos de pixel — conferido de novo contra o AE). Só as finas
+  são calculadas pixel a pixel. Com os padrões (Complexity 1, Size 100) a única
+  oitava tem onda de ~230 px: o pixel final só lê o campo.
+
+  CELULAR CAINDO (09/10/2026: "aparentemente tá muito pesado e travando/crashando meu
+  celular"): o Antialiasing High calculava o ruído TRÊS vezes por pixel (Twist Smoother c=10:
+  190 ms por quadro na GPU do PC) e a caixa podia ler 65 × 65 pixels por pixel. Agora um passe
+  só com o Antialiasing High guarda o deslocamento de cada pixel e a caixa lê no máximo 12 × 12
+  pontos; a grade ocupa um buffer de 1/4 (só os 64 × 64 do canto são usados). O shader chama o
+  ruído UMA vez por passe: tentar dividir as oitavas em vários passes, com mais chamadas, fez o
+  driver do PC levar 69 s para compilar (`compilar.py` mede isso).
+
+  CAMADA BAIXA E CONTA REPETIDA (13/10/2026: "podem melhorar o desempenho do turbulent displace?").
+  Medido com `medir_tamanhos.py`. (1) A grade vivia num buffer de 1/4 da camada, e num texto de
+  220 px de altura (ou em qualquer camada na prévia reduzida) ele ficava com menos de 64 linhas:
+  o shader caía na conta direta, refazendo os sorteios a cada leitura — 13 ms no lugar de 1 no
+  Turbulent Smoother. Agora a grade tem tamanho FIXO (`width`/`height`, 64 × 67), cabe sempre, e
+  a conta direta saiu do shader. (2) A parte constante da coordenada de cada oitava (14 bases ×
+  11 oitavas, iguais em todo pixel) era refeita em inteiro por pixel; agora o passe 0 a calcula
+  uma vez e guarda nas linhas 64 a 66 da grade (12 bits de inteiro + 20 de fração). (3) A oitava
+  da fração da Complexity não é mais chamada quando a fração é zero. O ponto lido não mudou
+  (até 0,014 px contra a versão anterior; contra o AE, os mesmos números).
+-->
+<effect
+    id="nova.effect.turbulentdisplace"
+    name="Deslocamento turbulento"
+    name-en="Turbulent Displace"
+    desc="O Turbulent Displace do After Effects: distorce com ruído fractal (calor, água, tecido, derretimento)."
+    desc-en="After Effects' Turbulent Displace: displaces with fractal noise (heat, water, cloth, melting)."
+    category="distort"
+    tags="turbulent displace,turbulencia,turbulence,ruido,noise,agua,water,calor,heat,onda,derreter,melt,organico,distorcer,distort,bulge,twist">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="grade" src="buffer" width="64" height="67" />
+        <texture id="campo" src="buffer" scale="0.5" />
+        <texture id="desl" src="buffer" />
+
+        <selector id="deslocamento" label="Displacement" default="0"
+                  options="Turbulent|Bulge|Twist|Turbulent Smoother|Bulge Smoother|Twist Smoother|Vertical Displacement|Horizontal Displacement|Cross Displacement" />
+        <slider id="quantidade" label="Amount" default="50.0" min="-10000.0" max="10000.0" step="0.1" snap="50.0" />
+        <slider id="tamanho" label="Size" default="100.0" min="2.0" max="1000.0" step="0.1" snap="100.0" />
+        <point id="offset" label="Offset (Turbulence)" defaultX="0.5" defaultY="0.5" min="-2.0" max="3.0" unit="px" />
+        <slider id="complexidade" label="Complexity" default="1.0" min="1.0" max="10.0" step="0.1" snap="1.0" />
+        <slider id="evolucao" label="Evolution" default="0.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="0.0" />
+
+        <switch id="cicloEvolucao" group="Evolution Options" label="Cycle Evolution" default="false" />
+        <slider id="revolucoes" group="Evolution Options" label="Cycle (in Revolutions)" default="1.0" min="1.0" max="88.0" step="1.0" type="integer" showIf="cicloEvolucao=true" />
+        <slider id="semente" group="Evolution Options" label="Random Seed" default="0.0" min="0.0" max="100000.0" step="1.0" type="integer" />
+
+        <selector id="prender" label="Pinning" default="1"
+                  options="None|Pin All|Pin Horizontal|Pin Vertical|Pin Left|Pin Right|Pin Top|Pin Bottom|Pin All Locked|Pin Horizontal Locked|Pin Vertical Locked|Pin Left Locked|Pin Right Locked|Pin Top Locked|Pin Bottom Locked" />
+        <selector id="antialias" label="Antialiasing for Best Quality" default="0" options="Low|High" />
+    </params>
+
+    <passes>
+        <pass target="grade" />   <!-- 0: os 64 × 64 valores da grade, nos 64 × 64 pixels do canto -->
+        <pass target="campo" />   <!-- 1: as oitavas GROSSAS do ruído, em meia resolução -->
+        <pass target="desl" skipIfZero="antialias" />   <!-- 2: só com Antialiasing High: o deslocamento de cada pixel, uma vez -->
+        <pass />                  <!-- 3: as oitavas finas, o Pinning e a leitura -->
+    </passes>
+
+    <shader><![CDATA[
+
+// <constantes> AS BASES, EM CENTÉSIMOS (exatas: 7913,17 = 791317/100). Ver gerar.py.
+//
+// Até 06/10/2026 eram duas tabelas de 154 números (14 bases × 11 oitavas, base·1,77ᵏ
+// reduzida em double). Tabela grande lida com índice variável é o que mais pesa numa
+// GPU de celular (o driver pode copiá-la para a memória de cada pixel). Agora a conta
+// anda junto com a oitava, em [avancar]: 1,77 = 177/100, então a parte INTEIRA vai em
+// inteiro exato e só a fração (< 2) vai em float — bate com a tabela (os 154 inteiros
+// iguais, a fração a menos de 0,00004 de célula).
+const int U_A = -179856;
+const int V_A = 1762490;
+const int U_B = -177856;
+const int V_B = 1767890;
+const int U_C = -179831;
+const int V_C = 1762515;
+const int U_D = -179881;
+const int V_D = 1762515;
+const int X_A = 791317;
+const int X_B = 795017;
+const int X_C = 791342;
+const int Y_A = 971173;
+const int Y_B = 972873;
+const int Y_C = 971198;
+// </constantes>
+
+const uint LCG_A = 0x41C64E6Du;
+const uint LCG_C = 0x3039u;
+const int QUARTO = 5898240;          // 90° em 16.16
+
+float sorteio(uint s) { return float((s >> 16u) & 0x7FFFu) / 16384.0 - 1.0; }
+
+float bspline(float p0, float p1, float p2, float p3, float t) {
+    float t2 = t * t;
+    float t3 = t2 * t;
+    float u = 1.0 - t;
+    return 0.2 * (u * u * u * p0 + (3.0 * t3 - 6.0 * t2 + 4.0) * p1
+                  + (-3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0) * p2 + t3 * p3);
+}
+
+/** A semente de um quarto de volta: a chave reduzida pelo período, como o plugin (C, com sinal). */
+uint sementeDaChave(uint chave, uint periodo) {
+    int k = int(chave);
+    uint m = k >= 0 ? uint(k) % periodo : (periodo - (0u - chave) % periodo) % periodo;
+    return 0x0DAA96F5u - m * 0x145EB7C3u;
+}
+
+/** O valor n da grade (0..4095): a B-spline no tempo entre 4 sorteios. */
+float valorDaGrade(int n) {
+    // A Evolution em 16.16, partida em quartos de volta inteiros + a fração.
+    int e = int(round(evolucao * 65536.0));
+    int q = int(floor(float(e) / float(QUARTO)));
+    int resto = e - q * QUARTO;
+    if (resto < 0) { q -= 1; resto += QUARTO; }
+    if (resto >= QUARTO) { q += 1; resto -= QUARTO; }
+    float fr = float(resto) / float(QUARTO);
+
+    uint periodo = 0x7E900000u;   // 90 revoluções: o ciclo de sempre
+    int rev = int(revolucoes + 0.5);
+    if (cicloEvolucao && rev > 0) periodo = uint(rev) * 0x1680000u;
+    uint c = uint(q) * uint(QUARTO) + uint(int(semente + 0.5));
+
+    // O LCG avançado n + 1 passos de uma vez: x → A·x + C.
+    uint A = 1u, C = 0u, a = LCG_A, b = LCG_C;
+    uint passos = uint(n + 1);
+    while (passos > 0u) {
+        if ((passos & 1u) != 0u) { A = a * A; C = a * C + b; }
+        b = a * b + b;
+        a = a * a;
+        passos >>= 1u;
+    }
+    float r[6];
+    for (int j = 0; j < 6; j++) {
+        uint s = sementeDaChave(c + uint(j - 2) * 0x5A0000u, periodo);
+        r[j] = sorteio(A * s + C);
+    }
+    float t = sorteio(A * 0xBC8CB5u + C) + fr;
+    if (t < 0.0) return bspline(r[0], r[1], r[2], r[3], t + 1.0);
+    if (t > 1.0) return bspline(r[2], r[3], r[4], r[5], t - 1.0);
+    return bspline(r[1], r[2], r[3], r[4], t);
+}
+
+// A grade no buffer: 24 bits por valor (RGB), na faixa ±1,25.
+vec4 codifica(float v) {
+    uint q = uint(clamp((v + 1.25) / 2.5, 0.0, 1.0) * 16777215.0 + 0.5);
+    return vec4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
+}
+
+// As 14 bases, na ordem dos índices que `fractal` recebe.
+const int B_UA = 0; const int B_VA = 1; const int B_UB = 2; const int B_VB = 3; const int B_UC = 4; const int B_VC = 5;
+const int B_UD = 6; const int B_VD = 7; const int B_XA = 8; const int B_XB = 9; const int B_XC = 10; const int B_YA = 11;
+const int B_YB = 12; const int B_YC = 13;
+int centesimosDaBase(int b) {
+    int bases[14] = int[14](U_A, V_A, U_B, V_B, U_C, V_C, U_D, V_D, X_A, X_B, X_C, Y_A, Y_B, Y_C);
+    return bases[b];
+}
+
+float G(int n) {
+    vec3 c = floor(texelFetch(grade, ivec2(n & 63, n >> 6), 0).rgb * 255.0 + 0.5);
+    return (c.r * 65536.0 + c.g * 256.0 + c.b) / 16777215.0 * 2.5 - 1.25;
+}
+
+/** A grade em (a, b): o índice embaralhado do plugin, periódico em 4096 nos dois eixos. */
+float L(int a, int b) {
+    a &= 4095;
+    b &= 4095;
+    return G(((((b >> 6) ^ a) & 63) << 6) + (((a >> 6) ^ b) & 63));
+}
+
+float L1(int i) {
+    i &= 4095;
+    return G(((i & 63) << 6) + (((i ^ 0x440) >> 6) & 63));
+}
+
+float suaviza(float f) { return clamp(f, 0.0, 1.0) * clamp(f, 0.0, 1.0) * (3.0 - 2.0 * clamp(f, 0.0, 1.0)); }
+
+// m / 100 para m >= 0, SEM divisão inteira (cara na GPU, e era por oitava, por pixel):
+// a estimativa em float erra no máximo ±2 (m < 2·10⁹), e o resto corrige para o exato.
+int div100(int m) {
+    int q = int(float(m) * 0.01);
+    int r = m - q * 100;
+    if (r < 0) { q -= 1; r += 100; }
+    if (r < 0) { q -= 1; r += 100; }
+    if (r >= 100) { q += 1; r -= 100; }
+    if (r >= 100) { q += 1; }
+    return q;
+}
+
+// A parte constante de uma coordenada: inteiro (não reduzido; L() reduz) + fração em 0..1.
+void comecar(int centesimos, out int i, out float f) {
+    int q = centesimos >= 0 ? div100(centesimos) : -div100(99 - centesimos);   // piso
+    i = q;
+    f = float(centesimos - q * 100) / 100.0;
+}
+
+// × 1,77 = × 177/100: o inteiro em aritmética inteira (cabe: |i| < 1,2·10⁷), a fração em
+// float. Inteiros negativos (as bases U_*) vão pelo módulo, sem divisão de negativo
+// (que o GLSL ES deixa por conta do driver).
+void avancar(inout int i, inout float f) {
+    if (i >= 0) {
+        int m = i * 177;
+        int q = div100(m);
+        float t = float(m - q * 100) / 100.0 + f * 1.77;
+        float fl = floor(t);
+        i = q + int(fl);
+        f = t - fl;
+    } else {
+        int m = (-i) * 177;
+        int q = div100(m);
+        float t = f * 1.77 - float(m - q * 100) / 100.0;
+        float fl = floor(t);
+        i = int(fl) - q;
+        f = t - fl;
+    }
+}
+
+// A parte constante da base `b` na oitava `k`: o inteiro (mod 4096: a grade é periódica) em 12 bits e a fração
+// em 20, nas linhas 64 a 66 da grade. Iguais em todo pixel: calculadas UMA vez, no passe 0.
+vec4 codificaConstante(int i, float f) {
+    uint ii = uint(i & 4095);
+    uint q = min(uint(f * 1048576.0 + 0.5), 1048575u);
+    return vec4(float(ii >> 4u), float(((ii & 15u) << 4u) | (q >> 16u)), float((q >> 8u) & 255u), float(q & 255u)) / 255.0;
+}
+void constante(int b, int k, out int i, out float f) {
+    int e = b * 11 + k - 1;
+    uvec4 c = uvec4(texelFetch(grade, ivec2(e & 63, 64 + (e >> 6)), 0) * 255.0 + 0.5);
+    i = int((c.r << 4u) | (c.g >> 4u));
+    f = float(((c.g & 15u) << 16u) | (c.b << 8u) | c.a) / 1048576.0;
+}
+
+// A coordenada da oitava: a parte constante (i, f) mais a que varia com o pixel.
+void coordenada(int I, float F, float variavel, out int inteiro, out float fracao) {
+    float x = F + variavel;
+    float fl = floor(x);
+    inteiro = I + int(fl);
+    fracao = x - fl;
+}
+
+float oitavaLinear(int Iu, float Fu, int Iv, float Fv, vec2 var) {
+    int i, j;
+    float fu, fv;
+    coordenada(Iu, Fu, var.x, i, fu);
+    coordenada(Iv, Fv, var.y, j, fv);
+    float su = suaviza(fu);
+    float sv = suaviza(fv);
+    return ((1.0 - su) * L(i, j) + su * L(i + 1, j)) * (1.0 - sv)
+         + ((1.0 - su) * L(i, j + 1) + su * L(i + 1, j + 1)) * sv;
+}
+
+float oitavaCubica(int Ix, float Fx, int Iy, float Fy, vec2 var) {
+    int a, b;
+    float fx, fy;
+    coordenada(Ix, Fx, var.x, a, fx);
+    coordenada(Iy, Fy, var.y, b, fy);
+    float l[4];
+    for (int m = 0; m < 4; m++) {
+        int y = b - 1 + m;
+        l[m] = bspline(L(a - 1, y), L(a, y), L(a + 1, y), L(a + 2, y), fx);
+    }
+    return bspline(l[0], l[1], l[2], l[3], fy);
+}
+
+float oitava1D(int I, float F, float var) {
+    int i;
+    float f;
+    coordenada(I, F, var, i, f);
+    float s = suaviza(f);
+    return (1.0 - s) * L1(i) + s * L1(i + 1);
+}
+
+int OITAVAS;
+float FRACAO;
+// A faixa de oitavas que este passe soma (ver K_CORTE).
+int K_DE;
+int K_ATE;
+
+/** O ruído fractal. `var` é a parte variável da coordenada SEM o 1,77ᵏ. */
+float fractal(bool cubico, int b1, int b2, vec2 var) {
+    float soma = 0.0;
+    float amp = 0.25;
+    float escala = 1.0;
+    int i1, i2;
+    float f1, f2;
+    // Limite FIXO (11 oitavas no máximo) e saída por `break`.
+    for (int k = 1; k <= 11; k++) {
+        if (k > OITAVAS + 1) break;
+        escala *= 1.77;
+        float peso = k <= OITAVAS ? 1.0 : FRACAO;
+        if (peso <= 0.0) break;
+        if (k > K_ATE) break;
+        if (k >= K_DE) {
+            constante(b1, k, i1, f1);
+            constante(b2, k, i2, f2);
+            float v = cubico ? oitavaCubica(i1, f1, i2, f2, var * escala) : oitavaLinear(i1, f1, i2, f2, var * escala);
+            soma += v * amp * peso;
+        }
+        amp *= 0.7;
+    }
+    return soma;
+}
+
+float fractal1D(int base, float var) {
+    float soma = 0.0;
+    float amp = 0.25;
+    float escala = 1.0;
+    int i1;
+    float f1;
+    for (int k = 1; k <= 11; k++) {
+        if (k > OITAVAS + 1) break;
+        escala *= 1.77;
+        float peso = k <= OITAVAS ? 1.0 : FRACAO;
+        if (peso <= 0.0) break;
+        if (k > K_ATE) break;
+        if (k >= K_DE) {
+            constante(base, k, i1, f1);
+            soma += oitava1D(i1, f1, var * escala) * amp * peso;
+        }
+        amp *= 0.7;
+    }
+    return soma;
+}
+
+float ESC;          // pixels do buffer por pixel da camada
+float AMT;          // deslocamento máximo, px do buffer
+float ESCALA;       // a frequência: 0,5/Size (×0,3536 nos três primeiros modos)
+int MODO;           // o código do AE: 1, 2, 3, 5, 6, 7, 9, 10, 11
+vec2 OFF;           // o Offset, px do buffer
+
+float fatorDaBorda(float d, float m) { return suaviza(d / m); }
+
+int K_CORTE;        // oitavas 1..K_CORTE moram no campo (meia resolução)
+vec2 FATOR;         // pixels da camada por texel do campo
+
+/** O deslocamento CRU (sem Pinning) das oitavas K_DE..K_ATE no pixel `p` (da camada cheia). */
+vec2 ruidoBruto(vec2 p) {
+    vec2 d = (p - OFF) / ESC * ESCALA;     // coordenada do ruído menos a constante
+    vec2 r;
+    if (MODO == 1 || MODO == 5) {
+        bool cub = MODO == 5;
+        r.x = cub ? fractal(true, B_XA, B_YA, d) : fractal(false, B_UA, B_VA, vec2(d.x - d.y, d.x + d.y));
+        r.y = cub ? fractal(true, B_XB, B_YB, d) : fractal(false, B_UB, B_VB, vec2(d.x - d.y, d.x + d.y));
+    } else if (MODO <= 7) {
+        bool cub = MODO >= 5;
+        vec2 uv = vec2(d.x - d.y, d.x + d.y);
+        float n0 = cub ? fractal(true, B_XA, B_YA, d) : fractal(false, B_UA, B_VA, uv);
+        float gy = n0 - (cub ? fractal(true, B_XA, B_YC, d) : fractal(false, B_UD, B_VD, uv));
+        float gx = n0 - (cub ? fractal(true, B_XC, B_YA, d) : fractal(false, B_UC, B_VC, uv));
+        r = (MODO == 2 || MODO == 6) ? vec2(gx, gy) : vec2(-gy, gx);
+    } else {
+        float col = fractal1D(B_XA, d.x);
+        float lin = fractal1D(B_YA, d.y);
+        r = MODO == 9 ? vec2(0.0, col) : (MODO == 10 ? vec2(lin, 0.0) : vec2(lin, col));
+    }
+    return r;
+}
+
+// O campo: dx e dy em 16 bits cada (RGBA8), na faixa ±2.
+vec4 empacotaCampo(vec2 r) {
+    vec2 q = floor(clamp((r + 2.0) / 4.0, 0.0, 1.0) * 65535.0 + 0.5);
+    vec2 alto = floor(q / 256.0);
+    return vec4(alto.x, q.x - alto.x * 256.0, alto.y, q.y - alto.y * 256.0) / 255.0;
+}
+vec2 lerCampo(ivec2 i) {
+    vec4 c = floor(texelFetch(campo, i, 0) * 255.0 + 0.5);
+    return vec2(c.r * 256.0 + c.g, c.b * 256.0 + c.a) / 65535.0 * 4.0 - 2.0;
+}
+/** As oitavas grossas no pixel `p`: bilinear à mão (empacotado não se filtra). */
+vec2 campoEm(vec2 p) {
+    vec2 u = p / FATOR;
+    vec2 f = fract(u);
+    ivec2 i = ivec2(floor(u));
+    ivec2 m = textureSize(campo, 0) - 1;
+    vec2 a = lerCampo(clamp(i, ivec2(0), m));
+    vec2 b = lerCampo(clamp(i + ivec2(1, 0), ivec2(0), m));
+    vec2 c = lerCampo(clamp(i + ivec2(0, 1), ivec2(0), m));
+    vec2 e = lerCampo(clamp(i + ivec2(1, 1), ivec2(0), m));
+    return mix(mix(a, b, f.x), mix(c, e, f.x), f.y);
+}
+
+/** O deslocamento (dx, dy) do ruído no pixel `p` (índice do buffer), já com o Pinning. */
+vec2 ruidoDoPixel(vec2 p) {
+    // Tudo no campo (o caso dos padrões): nenhuma oitava sobra para o pixel.
+    vec2 r = K_DE <= OITAVAS || (K_DE == OITAVAS + 1 && FRACAO > 0.0) ? ruidoBruto(p) : vec2(0.0);
+    if (K_CORTE > 0) r += campoEm(p);
+
+    int pin = prender == 0 ? 1 : (prender <= 7 ? prender + 2 : prender + 3);
+    if (pin > 2) {
+        bool trava = pin >= 10;
+        int k = (pin - 3) % 8;
+        bool esq = k == 0 || k == 2 || k == 3;
+        bool dir = k == 0 || k == 2 || k == 4;
+        bool cima = k == 0 || k == 1 || k == 5;
+        bool baixo = k == 0 || k == 1 || k == 6;
+        // A faixa: o maior deslocamento possível × 4/3, até a metade da camada.
+        float soma = 0.0;
+        float a = 0.25;
+        for (int i = 0; i < OITAVAS; i++) { soma += a; a *= 0.7; }
+        soma += a * FRACAO;
+        float m = AMT * 4.0 / 3.0 * soma;
+        float mx = min(m, acResolution.x * 0.5);
+        float my = min(m, acResolution.y * 0.5);
+        float W = acResolution.x;
+        float H = acResolution.y;
+        if (esq && p.x < mx) { float f = fatorDaBorda(p.x, mx); r.x *= f; if (trava) r.y *= f; }
+        if (dir && p.x > W - mx - 1.0) { float f = suaviza(1.0 - (p.x - (W - mx - 1.0)) / mx); r.x *= f; if (trava) r.y *= f; }
+        if (cima && p.y < my) { float f = fatorDaBorda(p.y, my); r.y *= f; if (trava) r.x *= f; }
+        if (baixo && p.y > H - my - 1.0) { float f = suaviza(1.0 - (p.y - (H - my - 1.0)) / my); r.y *= f; if (trava) r.x *= f; }
+    }
+    return r;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// ANTIALIASING HIGH SEM CALCULAR O RUÍDO TRÊS VEZES (09/10/2026: "travando/crashando meu celular").
+// A caixa precisa do esticamento — o deslocamento do pixel e o dos vizinhos da direita e de baixo —, e
+// cada um custava o ruído inteiro: Twist Smoother com Complexity 10 levava 190 ms por quadro na GPU do
+// PC (segundos num celular, que derruba o app). Agora o passe 2 calcula o deslocamento de cada pixel UMA
+// vez e guarda (dx e dy em 16 bits, na faixa da soma das amplitudes); o passe final lê os três. O
+// vizinho que cai fora da camada (a última coluna e a última linha) é calculado direto.
+// ---------------------------------------------------------------------------------------------------
+float alcanceTotal() {
+    float soma = 0.0, amp = 0.25;
+    for (int k = 1; k <= 11; k++) {
+        if (k > OITAVAS + 1) break;
+        soma += amp * (k <= OITAVAS ? 1.0 : FRACAO);
+        amp *= 0.7;
+    }
+    return max(soma * 2.5, 1e-6);   // gradiente (Bulge/Twist): até 2 · 1,25 por oitava
+}
+vec4 empacotaDesl(vec2 r) {
+    vec2 q = floor(clamp((r / alcanceTotal() + 1.0) * 0.5, 0.0, 1.0) * 65535.0 + 0.5);
+    vec2 alto = floor(q / 256.0);
+    return vec4(alto.x, q.x - alto.x * 256.0, alto.y, q.y - alto.y * 256.0) / 255.0;
+}
+vec2 lerDesl(ivec2 i) {
+    vec4 c = floor(texelFetch(desl, i, 0) * 255.0 + 0.5);
+    return (vec2(c.r * 256.0 + c.g, c.b * 256.0 + c.a) / 65535.0 * 2.0 - 1.0) * alcanceTotal();
+}
+
+vec4 texel(int x, int y) {
+    ivec2 t = textureSize(inputImg, 0);
+    if (x < 0 || y < 0 || x >= t.x || y >= t.y) return vec4(0.0);
+    vec4 c = texelFetch(inputImg, ivec2(x, y), 0);
+    return vec4(c.rgb * c.a, c.a);
+}
+
+vec4 reto(vec4 pm) { return pm.a > 0.0 ? vec4(pm.rgb / pm.a, pm.a) : vec4(0.0); }
+
+/** Bilinear pré-multiplicada; o centro do pixel no inteiro, fora = transparente. */
+vec4 bilinear(vec2 P) {
+    vec2 f0 = floor(P);
+    vec2 f = P - f0;
+    int x = int(f0.x);
+    int y = int(f0.y);
+    vec4 c = mix(mix(texel(x, y), texel(x + 1, y), f.x), mix(texel(x, y + 1), texel(x + 1, y + 1), f.x), f.y);
+    return reto(c);
+}
+
+float cobertura(float centro, float raio, float i) {
+    return max(min(centro + raio, i + 0.5) - max(centro - raio, i - 0.5), 0.0);
+}
+
+/** Bilinear pré-multiplicada (sem voltar à cor reta), para a caixa grande. */
+vec4 bilinearPm(vec2 P) {
+    vec2 f0 = floor(P);
+    vec2 f = P - f0;
+    int x = int(f0.x);
+    int y = int(f0.y);
+    return mix(mix(texel(x, y), texel(x + 1, y), f.x), mix(texel(x, y + 1), texel(x + 1, y + 1), f.x), f.y);
+}
+
+/**
+ * A caixa do Antialiasing High: a média dos pixels pela área coberta. Até 12 × 12 pixels, exata. Maior que
+ * isso (esticamento forte: até 65 × 65 = 4225 leituras POR PIXEL — segundos por quadro num celular, que
+ * derruba o app), a média de 12 × 12 leituras bilineares espalhadas pela caixa: a mesma média, a menos do
+ * detalhe menor que um pixel (09/10/2026).
+ */
+vec4 caixa(vec2 P, vec2 raio) {
+    int x0 = int(floor(P.x - raio.x + 0.5));
+    int x1 = int(floor(P.x + raio.x + 0.5));
+    int y0 = int(floor(P.y - raio.y + 0.5));
+    int y1 = int(floor(P.y + raio.y + 0.5));
+    vec4 soma = vec4(0.0);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 144) {
+        for (int j = 0; j < 12; j++) {
+            float sy = P.y - raio.y + (float(j) + 0.5) * raio.y / 6.0;
+            for (int i = 0; i < 12; i++) {
+                float sx = P.x - raio.x + (float(i) + 0.5) * raio.x / 6.0;
+                soma += bilinearPm(vec2(sx, sy));
+            }
+        }
+        return reto(soma / 144.0);
+    }
+    for (int y = y0; y <= y1; y++) {
+        float wy = cobertura(P.y, raio.y, float(y));
+        if (wy <= 0.0) continue;
+        for (int x = x0; x <= x1; x++) {
+            float wx = cobertura(P.x, raio.x, float(x));
+            if (wx > 0.0) soma += texel(x, y) * (wx * wy);
+        }
+    }
+    return reto(soma / (4.0 * raio.x * raio.y));
+}
+
+void main() {
+    if (acPass == 0) {
+        ivec2 o = ivec2(gl_FragCoord.xy);
+        if (o.x < 64 && o.y < 64) { fragColor = codifica(valorDaGrade(o.y * 64 + o.x)); return; }
+        int e = (o.y - 64) * 64 + o.x;
+        if (o.y < 64 || e >= 14 * 11) { fragColor = vec4(0.0); return; }
+        int i;
+        float f;
+        comecar(centesimosDaBase(e / 11), i, f);
+        // Limite FIXO e saída por `break`, como nas oitavas.
+        for (int k = 0; k < 11; k++) { if (k > e % 11) break; avancar(i, f); }
+        fragColor = codificaConstante(i, f);
+        return;
+    }
+
+    // A camada CHEIA: no passe do campo o alvo é a metade, e o Offset e o pixel são da cheia.
+    vec2 cheia = vec2(textureSize(inputImg, 0));
+    // De ponta a ponta: o texel 0 cai no pixel 0 e o último texel no ÚLTIMO pixel (com
+    // `cheia / campo` o último pixel ficava fora do campo e a bilinear "chutava": 2 px de erro).
+    // No passe 1 o campo é o ALVO, e o motor não liga a textura que está sendo escrita: o `textureSize(campo)` dele
+    // devolvia o tamanho de outra (a camada), o FATOR virava 1 e o campo saía com o ruído de outro lugar — o "ao
+    // soltar o slider o efeito reseta" (26/10/2026): parado, Size acima de ~50 já usa o campo; no arraste, na
+    // metade, só acima de ~90. O tamanho do alvo é o `acResolution`.
+    vec2 tamanhoDoCampo = acPass == 1 ? acResolution : vec2(textureSize(campo, 0));
+    FATOR = max(cheia - 1.0, vec2(1.0)) / max(tamanhoDoCampo - 1.0, vec2(1.0));
+    ESC = max(acEscalaDePixel, 1e-4);
+    int codigos[9] = int[9](1, 2, 3, 5, 6, 7, 9, 10, 11);
+    MODO = codigos[clamp(deslocamento, 0, 8)];
+    float tam = max(tamanho, 2.0);
+    ESCALA = 0.5 / tam * (MODO <= 3 ? 0.35355339 : 1.0);
+    AMT = quantidade * tam * 0.05 * ESC;
+    OITAVAS = int(floor(complexidade));
+    FRACAO = complexidade - float(OITAVAS);
+    OFF = offset * cheia;
+    // As oitavas com onda de 96 px ou mais (no plano girado do Turbulent, a mais curta)
+    // vão para o campo. Com 48 o erro da bilinear chegava a 0,2 px; com 96 fica na casa do
+    // centésimo (conferido contra o AE). A mesma conta nos dois passes: os mesmos uniforms.
+    float limite = ESC / (ESCALA * 1.41421356 * 96.0);
+    K_CORTE = limite >= 1.77 ? min(int(floor(log(limite) / log(1.77))), OITAVAS + 1) : 0;
+
+    if (acPass == 1) {
+        K_DE = 1;
+        K_ATE = K_CORTE;
+        vec2 pc = floor(gl_FragCoord.xy) * FATOR;   // o pixel da camada cheia deste texel
+        fragColor = empacotaCampo(K_CORTE > 0 ? ruidoBruto(pc) : vec2(0.0));
+        return;
+    }
+    K_DE = K_CORTE + 1;
+    K_ATE = 11;
+
+    vec2 p = floor(acScreenNorm * acResolution);
+    if (acPass == 2) { fragColor = empacotaDesl(ruidoDoPixel(p)); return; }
+
+    // O ponto lido e, com o Antialiasing High, os dos vizinhos. UMA chamada ao ruído no passe (o compilador
+    // copia o ruído fractal inteiro em cada chamada; com várias, a compilação pode travar o driver do
+    // celular): com o Antialiasing High os três vêm do passe 2, menos o vizinho fora da camada.
+    if (antialias == 0) {
+        fragColor = bilinear(p + AMT * ruidoDoPixel(p));
+        return;
+    }
+    ivec2 t = textureSize(inputImg, 0);
+    vec2 Q[3];
+    for (int k = 0; k < 3; k++) {
+        vec2 q = p + (k == 1 ? vec2(1.0, 0.0) : (k == 2 ? vec2(0.0, 1.0) : vec2(0.0)));
+        ivec2 i = ivec2(q);
+        Q[k] = q + AMT * (i.x < t.x && i.y < t.y ? lerDesl(i) : vec2(0.0));
+    }
+    // O vizinho fora da camada (última coluna/linha): calculado direto — uma chamada, só na borda.
+    bool foraX = int(p.x) + 1 >= t.x, foraY = int(p.y) + 1 >= t.y;
+    if (foraX || foraY) {
+        vec2 q = p + (foraX ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+        vec2 Qf = q + AMT * ruidoDoPixel(q);
+        if (foraX) Q[1] = Qf; else Q[2] = Qf;
+        if (foraX && foraY) Q[2] = p + vec2(0.0, 1.0) + (Qf - q);   // o canto: os dois vizinhos fora (raro)
+    }
+    // O esticamento: quanto o ponto lido anda de um pixel ao vizinho.
+    vec2 raio = clamp(0.5 * max(abs(Q[1] - Q[0]), abs(Q[2] - Q[0])), vec2(0.5), vec2(32.0));
+    fragColor = caixa(Q[0], raio);
+}
+
+    ]]></shader>
+</effect>

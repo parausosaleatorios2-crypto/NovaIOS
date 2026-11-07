@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ladrilho de movimento.
+
+  Já existe um "Repetir" no catálogo, que divide a camada numa grade de N por M.
+  Este é outro bicho, e a diferença está no **campo de saída**: aqui o ladrilho
+  continua para fora da camada. É isso que faz o efeito servir para fundo
+  infinito — você anima a posição da camada e o padrão nunca acaba, porque
+  sempre há mais ladrilho além da borda.
+
+  É o mesmo desenho de parâmetros do Motion Tile do After Effects, que virou
+  padrão porque resolve os dois usos de uma vez: repetir dentro da camada e
+  estender para além dela.
+
+  ## Por que ele roda no compositor (`stage="tile"`)
+
+  A primeira versão era um efeito da cadeia, e "estender para além da camada" era
+  impossível por construção: a cadeia roda num buffer do tamanho da composição, sem
+  lugar além da borda. A "Largura/Altura da saída" acima de 100% só ENCOLHIA os
+  ladrilhos dentro do mesmo retângulo — o relato foi "eu aumento e ele não aumenta de
+  verdade para a frente", num chão em perspectiva que parava numa borda reta.
+
+  Agora o compositor faz a conta: para cada pixel da TELA, descobre onde ele cai no
+  PLANO da camada (a inversa da projeção) e ladrilha esse plano. Uma camada girada em
+  3D vira um chão que vai até o horizonte, e "aumentar a saída" aumenta de verdade a
+  área ladrilhada, sem perder nitidez (a amostragem é por pixel da tela, com mipmap).
+
+  - **Output Width/Height (%)**: o tamanho da área ladrilhada, em volta do centro da
+    camada. 100% é a própria camada; 5000% é cinquenta camadas de largura. Fora dela,
+    transparente.
+  - **Um ladrilho é a FOTO, não o quadro da composição.** Aqui toda camada é um quad do
+    tamanho da composição com a foto encaixada dentro; uma foto quadrada numa composição
+    16:9 deixava faixas vazias em cada ladrilho, e o chão não emendava — "ele não
+    duplica, só escala". Agora o compositor recorta a foto antes de ladrilhar, e
+    100% de Tile Width é a foto, como no After Effects.
+  - **Phase** desloca as colunas alternadas (como no AE), e não cada coluna um pouco
+    mais que a anterior. Em 180° as duas contas davam o mesmo tijolo; fora disso,
+    a antiga fazia uma escada.
+  - Age DEPOIS dos outros efeitos e da máscara; a posição dele na lista não conta.
+  - Numa camada de AJUSTE (que ladrilha a cena inteira) e no modelo 3D, o efeito continua
+    sendo o da cadeia: o `<shader>` abaixo é o dela, e é o que a miniatura mostra.
+  - Num GRUPO (0.579.0), o grupo com o efeito ligado vira uma imagem plana (`Layer.grupoPlano`)
+    e quem ladrilha é o compositor, como no clipe. O ladrilho é o que os filhos ocupam
+    (`LadrilhoDeMovimento.caixaDoGrupo`), e não o quadro inteiro da composição: antes as
+    faixas vazias em volta do clipe entravam em cada ladrilho, e o Mirror Edges deixava as
+    bordas pretas (relato de usuário de 16/10/2026: "no clipe funciona, no grupo não").
+
+  ## O da cadeia não encolhe mais (0.477.0)
+
+  Relato do snow (10/10/2026), no projeto importado do After Effects: "no AE só tem um
+  Sasuke e no nosso está meio que duplicado". Era a pré-composição com Motion Tile de
+  saída 200% e Mirror Edges: virava um GRUPO, o grupo caía neste shader, e ele fazia a
+  conta da primeira versão — espremia a saída inteira dentro do buffer, com a imagem na
+  metade do tamanho e as cópias espelhadas em volta.
+
+  No AE a saída não muda o tamanho de nada: acima de 100% ela só ladrilha ALÉM da borda da
+  camada (medido: `tools/motiontile/benchmark`). O shader agora faz o mesmo. A camada
+  dentro do buffer é `acCamada`; num grupo e numa camada de ajuste o buffer É a camada, e
+  o que passa da borda não tem onde aparecer — a imagem fica como estava, que é o que o AE
+  mostra com a camada parada. Onde o buffer tem folga em volta (o Expandir bordas), os
+  ladrilhos de fora aparecem nela. Saída ABAIXO de 100% corta (antes ampliava o miolo).
+
+  O importador de projeto faz a pré-composição com Motion Tile entrar como grupo
+  ACHATADO, que é uma imagem plana como a de lá: aí quem ladrilha é o compositor, e a
+  saída estende de verdade (com a camada deslocada, as cópias aparecem na borda).
+-->
+<effect
+    id="nova.effect.motiontile"
+    name="Ladrilho de movimento"
+    name-en="Motion Tile"
+    desc="Repete a camada em ladrilhos que continuam para fora da borda."
+    desc-en="Tiles the layer, with phase and mirrored edges."
+    category="repeat"
+    stage="tile"
+    tags="ladrilho,tile,repetir,padrao,fundo,infinito,textura,chao,perspectiva"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          Os oito controles do Motion Tile do After Effects, com os mesmos nomes,
+          na mesma ordem e com os mesmos padrões. Tamanhos em % da CAMADA — da foto
+          em si, não do quadro da composição (ver `LadrilhoDeMovimento.recorteDoConteudo`).
+        -->
+        <point id="tileCenter" label="Tile Center" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+
+        <slider id="tileWidth" label="Tile Width"
+                default="100.0" min="1.0" max="1000.0" step="1.0" snap="100.0" />
+        <slider id="tileHeight" label="Tile Height"
+                default="100.0" min="1.0" max="1000.0" step="1.0" snap="100.0" />
+
+        <slider id="outputWidth" label="Output Width"
+                default="100.0" min="1.0" max="5000.0" step="1.0" snap="100.0" />
+        <slider id="outputHeight" label="Output Height"
+                default="100.0" min="1.0" max="5000.0" step="1.0" snap="100.0" />
+
+        <switch id="mirrorEdges" label="Mirror Edges" default="false" />
+
+        <slider id="phase" label="Phase"
+                default="0.0" min="-360.0" max="360.0" step="1.0" type="angle" snap="0.0,180.0" />
+
+        <switch id="horizontalPhase" label="Horizontal Phase Shift" default="false" />
+    </params>
+
+    <!-- Na vitrine, o ladrilho padrão (100%) é a própria camada: ladrilhos menores. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="tileWidth" value="45.0" />
+        <set param="tileHeight" value="45.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+// O índice inteiro para baixo (o `/` de int arredonda para o zero, e à esquerda os índices são negativos).
+int divBaixo(int a, int b) { return a >= 0 ? a / b : -((-a - 1) / b) - 1; }
+
+// Índice GLOBAL de pixel da camada (pode ser de um ladrilho vizinho) -> o pixel dentro dela, com o espelho.
+int dobrar(int g, int n, out int ladrilho) {
+    ladrilho = divBaixo(g, n);
+    int q = g - ladrilho * n;
+    if (mirrorEdges && (ladrilho & 1) != 0) q = n - 1 - q;
+    return q;
+}
+
+ivec2 inicioDaCamada;
+vec4 texel(int qx, int qy) {
+    vec4 c = texelFetch(inputImg, inicioDaCamada + ivec2(qx, qy), 0);
+    return vec4(c.rgb * c.a, c.a);
+}
+
+void main() {
+    // A CAMADA dentro do buffer (`acCamada`, centrada), em pixels inteiros. Num grupo e numa camada de ajuste o
+    // buffer é a camada.
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 N = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(T) + 0.5)), ivec2(1), T);
+    inicioDaCamada = (T - N) / 2;
+    vec2 Nf = vec2(N);
+    // `xL`: este pixel em px da camada (de 0 a N por dentro, além disso por fora).
+    vec2 xL = acScreenNorm * vec2(T) - vec2(inicioDaCamada);
+
+    // O campo de saída, em volta do centro da camada: fora dele, nada. A saída NÃO muda o tamanho do que está
+    // dentro — acima de 100% ela só ladrilha além da borda, como no AE.
+    vec2 saida = vec2(outputWidth, outputHeight) * 0.01;
+    if (any(greaterThan(abs(xL / Nf - 0.5), saida * 0.5))) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    // As 4 amostras do AE, as mesmas do compositor (`EngineShaders.LADRILHO_FRAGMENT`), lendo a própria camada:
+    // amostra linear no centro do pixel que JUNTA o ladrilho vizinho na emenda (sem linha, também com o centro
+    // fracionado), o ímpar espelhado, e a Phase da coluna (ou fileira) de cada amostra. O sentido da Phase (o
+    // desenho da coluna ímpar DESCE) foi medido no AE: tools/motiontile/benchmark. Com o ladrilho menor que 100%
+    // o AE reduz a camada por área antes; aqui a leitura é direta (isso é o passe do compositor).
+    vec2 tam = max(vec2(tileWidth, tileHeight) * 0.01 * Nf, vec2(1e-3));   // o ladrilho, em px da camada
+    vec2 pxR = tam / Nf;                                                   // um pixel da camada no ladrilho
+    vec2 org = tileCenter * Nf - tam * 0.5;                                // o canto do ladrilho 0
+    float fase = phase / 360.0;
+    vec4 c = vec4(0.0);
+    if (!horizontalPhase) {
+        float ux = (xL.x - org.x) / pxR.x - 0.5;
+        float gx = floor(ux); float fx = ux - gx;
+        for (int a = 0; a < 2; a++) {
+            int kx; int qx = dobrar(int(gx) + a, N.x, kx);
+            float wx = a == 0 ? 1.0 - fx : fx;
+            float desloc = (kx & 1) != 0 ? fase * tam.y : 0.0;
+            float vy = (xL.y - org.y - desloc) / pxR.y - 0.5;
+            float gy = floor(vy); float fy = vy - gy;
+            int k0; int k1;
+            int q0 = dobrar(int(gy), N.y, k0);
+            int q1 = dobrar(int(gy) + 1, N.y, k1);
+            c += wx * ((1.0 - fy) * texel(qx, q0) + fy * texel(qx, q1));
+        }
+    } else {
+        float vy = (xL.y - org.y) / pxR.y - 0.5;
+        float gy = floor(vy); float fy = vy - gy;
+        for (int b = 0; b < 2; b++) {
+            int ky; int qy = dobrar(int(gy) + b, N.y, ky);
+            float wy = b == 0 ? 1.0 - fy : fy;
+            float desloc = (ky & 1) != 0 ? fase * tam.x : 0.0;
+            float ux = (xL.x - org.x - desloc) / pxR.x - 0.5;
+            float gx = floor(ux); float fx = ux - gx;
+            int k0; int k1;
+            int q0 = dobrar(int(gx), N.x, k0);
+            int q1 = dobrar(int(gx) + 1, N.x, k1);
+            c += wy * ((1.0 - fx) * texel(q0, qy) + fx * texel(q1, qy));
+        }
+    }
+    fragColor = c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);
+}
+
+    ]]></shader>
+</effect>

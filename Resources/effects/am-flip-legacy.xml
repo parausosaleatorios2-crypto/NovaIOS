@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VIRAR (COMPATIBILIDADE) — o Flip mais antigo do Alight Motion (0.633.0), FORA DO CATÁLOGO
+  ============================================================================
+
+  O `com.alightcreative.effects.flip` do AM 5.0.281 ("Virar (compatibilidade)" no AM em português): marcado
+  "deprecated" lá, mas os projetos antigos ainda o trazem — existe aqui para a importação cair num efeito com a
+  MESMA conta. O de hoje é o `am-flip-layer.xml` (o `flip3`); leia o comentário dele. Conferido junto com o de
+  hoje em `tools/amvirar`.
+
+  As diferenças para o de hoje (as do `am-flip-layer2-legacy.xml`, mais estas):
+  - A placa é OPACA: onde o raio a acerta sai a cor da camada pré-multiplicada com alfa 1 (o transparente da camada
+    vira preto), e as faces dos lados também levam a camada (esticada na espessura de 0,01).
+  - Sem Sólido. Com a luz: a cor × (luz ambiente × 3 × a oclusão + 1,5 × a difusa com sombra), uma névoa para
+    0,9 com a distância e a raiz quadrada no fim.
+  - Os controles da luz nunca ficam apagados (o AM não os liga à chave nesta versão).
+-->
+<effect
+    id="nova.effect.am-flip-legacy"
+    name="Virar (compatibilidade)"
+    name-en="Flip (Compatibility)"
+    desc="O Virar mais antigo do Alight Motion, dos projetos feitos antes do Virar Camada."
+    desc-en="Alight Motion's oldest Flip, from projects made before Flip Layer."
+    category="3d"
+    tags="virar,flip,3d,alight motion"
+    stage="screen"
+    screen-scale="safe"
+    catalog="false">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="angle" label="Ângulo" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0" type="angle" />
+        <spinner id="axis" label="Eixo" default="0.0" min="0.0" max="3600.0" step="1.0" ticks="0,45,90,180,270,360" type="angle" />
+        <spinner id="crop" label="Recortar" default="1.0" min="0.01" max="2.0" step="0.001" ticks="1.0" />
+        <spinner id="zdist" label="Distância" default="0.0" min="0.0" max="10.0" step="0.001" ticks="1.0" />
+
+        <switch id="enableLight" label="Ativar iluminação" default="false" group="Fonte de luz" />
+        <spinner id="lightIntensity" label="Intensidade" default="0.3" min="0.0" max="1.0" step="0.001" type="percent"
+            group="Fonte de luz" />
+        <color id="lightColor" label="Cor" default="#FFFFFFFF" alpha="false" group="Fonte de luz" />
+        <spinner id="light" label="Ângulo" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0" type="angle"
+            group="Fonte de luz" />
+        <spinner id="lightDepth" label="Elevação" default="0.3" min="-5.0" max="5.0" step="0.01" ticks="0.0"
+            group="Fonte de luz" />
+    </params>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim).
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 q = uv * vec2(T) - 0.5;
+    vec2 i = floor(q);
+    vec2 f = q - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// O `texture2DCv(inputImg.texture, (vec4(uv, 0, 1) * acLayerToScreen).xy)` do AM (ver `am-flip-layer.xml`).
+vec4 camadaDoAm(vec2 uv) {
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 b = 0.5 + (vec2(uv.x, 1.0 - uv.y) - 0.5) * conteudo / acTamanhoDaTela;
+    vec2 naTela = b;
+    if (acParaTela == mat3(1.0)) {
+        vec3 c = acCamadaParaTela * vec3(b, 1.0);
+        bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+        naTela = afim ? c.xy : c.xy / c.z;
+    }
+    bool foraDaConta = any(isinf(naTela)) || any(isnan(naTela));
+    return foraDaConta ? preMultiplicada(texture(inputImg, naTela)) : camadaNoPonto(naTela);
+}
+
+// ------------------------------------------------------------------ a conta do AM, na ordem dele
+
+vec4 raioNaCaixa(vec3 ro, vec3 rd, mat4 txx, mat4 txi, vec3 rad) {
+    vec3 rdd = (txx*vec4(rd,0.0)).xyz;
+    vec3 roo = (txx*vec4(ro,1.0)).xyz;
+
+    vec3 m = 1.0/rdd;
+    vec3 n = m*roo;
+    vec3 k = abs(m)*rad;
+
+    vec3 t1 = -n - k;
+    vec3 t2 = -n + k;
+
+    float tN = max( max( t1.x, t1.y ), t1.z );
+    float tF = min( min( t2.x, t2.y ), t2.z );
+
+    if( tN > tF || tF < 0.0) return vec4(-1.0);
+
+    vec3 nor = -sign(rdd)*step(t1.yzx,t1.xyz)*step(t1.zxy,t1.xyz);
+    nor = (txi * vec4(nor,0.0)).xyz;
+    return vec4( tN, nor );
+}
+
+float sombraNaCaixa(vec3 ro, vec3 rd, mat4 txx, vec3 rad) {
+    vec3 rdd = (txx*vec4(rd,0.0)).xyz;
+    vec3 roo = (txx*vec4(ro,1.0)).xyz;
+
+    vec3 m = 1.0/rdd;
+    vec3 n = m*roo;
+    vec3 k = abs(m)*rad;
+
+    vec3 t1 = -n - k;
+    vec3 t2 = -n + k;
+
+    float tN = max( max( t1.x, t1.y ), t1.z );
+    float tF = min( min( t2.x, t2.y ), t2.z );
+    if( tN > tF || tF < 0.0) return -1.0;
+
+    return tN;
+}
+
+mat4 rotationAxisAngle( vec3 v, float angle )
+{
+    float s = sin( angle );
+    float c = cos( angle );
+    float ic = 1.0 - c;
+
+    return mat4( v.x*v.x*ic + c,     v.y*v.x*ic - s*v.z, v.z*v.x*ic + s*v.y, 0.0,
+                 v.x*v.y*ic + s*v.z, v.y*v.y*ic + c,     v.z*v.y*ic - s*v.x, 0.0,
+                 v.x*v.z*ic - s*v.y, v.y*v.z*ic + s*v.x, v.z*v.z*ic + c,     0.0,
+                 0.0,                0.0,                0.0,                1.0 );
+}
+
+mat4 transladar( vec3 v )
+{
+    return mat4( 1.0, 0.0, 0.0, 0.0,
+                 0.0, 1.0, 0.0, 0.0,
+                 0.0, 0.0, 1.0, 0.0,
+                 v.x, v.y, v.z, 1.0 );
+}
+
+// A `inverse` do AM: a de um giro + translação (o giro transposto, a translação por −dot).
+mat4 inversaRigida( mat4 m )
+{
+    return mat4(
+        m[0][0], m[1][0], m[2][0], 0.0,
+        m[0][1], m[1][1], m[2][1], 0.0,
+        m[0][2], m[1][2], m[2][2], 0.0,
+        -dot(m[0].xyz,m[3].xyz),
+        -dot(m[1].xyz,m[3].xyz),
+        -dot(m[2].xyz,m[3].xyz),
+        1.0 );
+}
+
+void main() {
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 acLayerNormAm = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+    acLayerNormAm.y = 1.0 - acLayerNormAm.y;
+
+    vec2 st = acLayerNormAm;
+    st -= 0.5;
+    st.x *= acTamanhoDaCamada.x/acTamanhoDaCamada.y;
+
+    float width;
+    float height;
+    if( acTamanhoDaCamada.x > acTamanhoDaCamada.y ) {
+        width = acTamanhoDaCamada.x/acTamanhoDaCamada.y;
+        height = 1.0;
+    } else {
+        height = acTamanhoDaCamada.y/acTamanhoDaCamada.x;
+        width = 1.0;
+    }
+
+    float depth = 0.01;
+
+    vec2 p = st;
+
+    vec3 ro = vec3( 0.0, 0.0, 2.0 );
+    vec3 ta = vec3( 0.0, 0.0, 0.0 );
+    vec3 ww = normalize( ta - ro );
+    vec3 uu = normalize( cross(ww,vec3(0.0,1.0,0.0) ) );
+    vec3 vv = normalize( cross(uu,ww));
+    vec3 rd = normalize( p.x*uu + p.y*vv + 2.0*ww );
+
+    float axisRad = axis * 3.14159 / 180.0;
+    mat2 rotAxis = mat2(
+        cos(axisRad), -sin(axisRad),
+        sin(axisRad), cos(axisRad)
+    );
+    vec2 axisVec = vec2(0.0,1.0) * rotAxis;
+    mat4 orient = rotationAxisAngle(vec3(axisVec,0.0),angle * 3.14159 / 180.0);
+    mat4 tra = transladar( vec3(0.0, 0.0, -zdist) );
+    mat4 txi = tra * orient;
+    mat4 txx = inversaRigida( txi );
+
+    float tmin = 10000.0;
+    vec3 nor = vec3(0.0);
+    vec3 pos = vec3(0.0);
+
+    vec3 box = vec3(width/2.,height/2.,depth/2.);
+    vec4 res = raioNaCaixa( ro, rd, txx, txi, box );
+    if( res.x>0.0 && res.x<tmin ) {
+        tmin = res.x;
+        nor = res.yzw;
+    }
+
+    vec4 saida = vec4(0.0);
+    if( tmin<100.0 ) {
+        float lightAngle = light * 0.0174533;
+        vec3 lig = normalize(vec3(cos(lightAngle),-sin(lightAngle),lightDepth));
+        pos = ro + tmin*rd;
+
+        float occ = 1.0;
+        vec3 mate = vec3(1.0);
+        {
+            // As três faces levam a camada, cada uma pelo componente do normal no espaço da caixa.
+            vec3 opos = (txx*vec4(pos,1.0)).xyz;
+            vec3 onor = (txx*vec4(nor,0.0)).xyz;
+
+            mate = abs(onor.x)*camadaDoAm( mod(crop*0.5*opos.yz/box.yz+0.5,1.0) ).xyz +
+                   abs(onor.y)*camadaDoAm( mod(crop*0.5*opos.zx/box.zx+0.5,1.0) ).xyz +
+                   abs(onor.z)*camadaDoAm( mod(crop*0.5*opos.xy/box.xy+0.5,1.0) ).xyz;
+
+            occ = 0.6 + 0.4*nor.y;
+        }
+
+        float dif = clamp( dot(nor,lig), 0.0, 1.0 );
+        dif *= step( sombraNaCaixa( pos+0.01*nor, lig, txx, box ), 0.0 );
+        vec3 col = lightColor.rgb*lightIntensity*occ*3.0 + 1.5*dif*lightColor.rgb*lightIntensity;
+
+        col *= mate;
+
+        col = mix( col, vec3(0.9), 1.0-exp( -0.003*tmin*tmin ) );
+        col = sqrt( col );
+
+        if( !enableLight ) {
+            col = mate;
+        }
+
+        saida = vec4( col, 1.0 );
+    }
+
+    // A saída do AM é opaca onde o raio acerta (alfa 1: a cor reta é a própria), num alvo de 8 bits.
+    fragColor = clamp(saida, 0.0, 1.0);
+}
+    ]]></shader>
+</effect>

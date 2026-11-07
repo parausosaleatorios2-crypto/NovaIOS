@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Stylize_mosaic
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-stylize-mosaic"
+    name="Effect Stylize Mosaic (NV)"
+    name-en="Effect Stylize Mosaic (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Stylize_mosaic', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Stylize_mosaic', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_pixelisation" label="Pixelisation" default="6" min="0" max="100" step="1" />
+        <slider id="_horizontal_size" label="Horizontal Size" default="1" min="1" max="50" step="0.01" />
+        <slider id="_vertical_size" label="Vertical Size" default="1" min="1" max="50" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+float u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+bool u_xlatb12;
+float u_xlat18;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.yx + vec2(-0.5, -0.5);
+    u_xlat1.xyz = vec3(512.0, 512.0, 512.0) / vec3(_pixelisation, _horizontal_size, _vertical_size);
+    u_xlat18 = _resolution.x / _resolution.y;
+    u_xlat0.z = u_xlat0.x / u_xlat18;
+    u_xlat0.xy = u_xlat0.yz * u_xlat1.xx;
+    u_xlat0.xy = roundEven(u_xlat0.xy);
+    u_xlat0.xy = u_xlat0.xy / u_xlat1.xx;
+    u_xlat0.xy = u_xlat1.yz * u_xlat0.xy;
+    u_xlat0.xy = roundEven(u_xlat0.xy);
+    u_xlat0.xy = u_xlat0.xy / u_xlat1.yz;
+    u_xlat0.z = u_xlat18 * u_xlat0.y;
+    u_xlat0.xy = u_xlat0.xz + vec2(0.5, 0.5);
+    u_xlatb12 = _pixelisation<0.5;
+    u_xlat0.xy = (bool(u_xlatb12)) ? acScreenNorm.xy : u_xlat0.xy;
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    if(int(_use_inner_mask) != 0) {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2 = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2 : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

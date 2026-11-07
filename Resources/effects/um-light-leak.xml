@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.lightleak"
+    name="Vazamento de Luz (Ultra Motion)"
+    name-en="Light Leak (Ultra Motion)"
+    desc="Gradiente colorido vazando por um canto — filme velho."
+    desc-en="Colored gradient leaking from a corner — old film."
+    category="stylize"
+    tags="ultramotion,leak,film,vintage,light">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="angle"    label="Direção"   default="35.0" min="0.0" max="360.0" step="1.0" />
+        <slider id="softness" label="Suavidade" default="0.6"  min="0.05" max="1.5" step="0.01" />
+        <slider id="drift"    label="Movimento" default="0.05" min="0.0" max="0.5" step="0.005" />
+        <slider id="intensity" label="Intensidade" default="0.7" min="0.0" max="2.0" step="0.02" />
+        <color  id="tint"     label="Cor"       default="#ffff5a1a" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    float a = radians(angle);
+    vec2 n = vec2(cos(a), sin(a));
+    float t = dot(acScreenNorm - 0.5, n) + 0.5 + sin(acTime) * drift;
+    float leak = smoothstep(1.0 - softness, 1.0 + softness * 0.2, t);
+    // Vazamento soft-light
+    vec3 cor = orig.rgb + tint.rgb * leak * intensity * tint.a;
+    // Toque de clareio onde a luz bate forte
+    cor = mix(cor, 1.0 - (1.0 - cor) * (1.0 - tint.rgb * tint.a), leak * 0.5);
+    fragColor = vec4(cor, orig.a);
+}
+    ]]></shader>
+</effect>

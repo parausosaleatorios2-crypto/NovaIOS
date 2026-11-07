@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ondulação: anéis concêntricos saindo de um ponto, como pedra na água.
+
+  Anima sozinho a partir de `acTime`, o tempo local da camada. É o exemplo mais
+  direto de um efeito que se move sem nenhum keyframe — e de por que o motor
+  entrega o tempo para todo shader, precise ele ou não.
+-->
+<effect
+    id="nova.effect.ripple"
+    name="Ondulação"
+    name-en="Ripple"
+    desc="Ondas concêntricas que se propagam sozinhas."
+    desc-en="Concentric waves spreading from a centre."
+    category="distort"
+    tags="agua,onda,liquido,anel,pulso">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="amplitude" label="Altura da onda"
+                default="1.0" min="0.0" max="8.0" step="0.05" />
+
+        <slider id="frequency" label="Quantidade de anéis"
+                default="40.0" min="2.0" max="160.0" step="1.0" />
+
+        <slider id="speed" label="Velocidade"
+                default="1.0" min="-6.0" max="6.0" step="0.05" snap="0.0" />
+
+        <slider id="radius" label="Alcance"
+                default="1.0" min="0.05" max="2.0" step="0.01" />
+    </params>
+
+    <!-- Na vitrine, a onda padrão é fina demais a 64 dp: menos anéis, mais altos. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="amplitude" value="4.0" />
+        <set param="frequency" value="24.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const float TAU = 6.28318530718;
+
+void main() {
+    vec2 offset = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    float dist = length(offset);
+
+    float wave = sin(dist * frequency - acTime * speed * TAU) * amplitude * 0.004;
+    float falloff = 1.0 - smoothstep(0.0, max(radius, 0.001), dist);
+
+    // No centro exato não existe direção: dividir por zero produziria NaN, e um
+    // NaN na coordenada de amostragem vira um pixel de lixo bem no meio.
+    vec2 direction = dist > 0.0001 ? offset / dist : vec2(0.0);
+    vec2 shift = direction * wave * falloff;
+    shift /= vec2(acAspect, 1.0);
+
+    fragColor = texture(inputImg, clamp(acScreenNorm + shift, 0.0, 1.0));
+}
+
+    ]]></shader>
+</effect>

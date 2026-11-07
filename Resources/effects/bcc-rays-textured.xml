@@ -1,0 +1,663 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC RAYS TEXTURED (Boris Continuum, `BCC3Rays Textured`)
+  ============================================================================
+
+  Pedido do snow (01/11/2026): "faz o bcc rays textured" (3 presets da pasta dele: Ryan's Textured Rays, v2, Ryan's Edge
+  Rays Transition v3). O efeito mora no `BCCTexturedLight.aex` e a conta no `Continuum_AE_8Bit.dll` (TexturedLightFilter
+  › BaseLightRaysFilter, LightRaysRenderer, PolarLightRayMap). Lido no Ghidra (tools/bccraystextured/leitura) e conferido
+  no AE 2023 em 8 bpc (tools/bccraystextured/benchmark, rodada 4: 42 casos).
+
+  A CONTA (o mapa polar do BCC):
+    luz      L = Luma da camada pré-multiplicada, em 8 bits · 256
+    mapa     na = ⌊W·1,4⌋ ângulos (o 1,4 em double), passo 360/na, começo passo/2; linhas de raio r = 0, 1, … px.
+             Em cada ângulo, de dentro para fora, em ponto fixo 16.16 (FUN_180e1da20):
+               acc0 = L(centro) >> 1;  acc += ((L(r) >> 1 − acc) · (c(r) >> 1)) >> 15
+               c(r) = ⌊(1 − ((1 − c0 − (1 − m))·k' + 1 − m)) · 65536 + 0,5⌋   (0x5e006b = 1: interpolação, não máximo)
+               k(r) = 1 − exp(−0,008 · (r − h)² · RL² / W²)                 (atenuação 0 "Exp Dist SQ"; h = Holdout % de W)
+               k'   = k · clamp(1 − (L − acc)/32768 · Extend/100)            (Extend modo 1: só quando a luz que entra é maior)
+               m    = (1 − c0) · (880·f³ + 120)/1000 + c0,  f = max(0, 30 − RL)/30,  c0 = Contract · 0,0003
+    volta    raio = isqrt((dx>>4)² + (dy>>4)²)·16, ângulo = atan2 inteiro por tabela (FUN_1803693a0), bilinear de 8 bits
+             entre os dois ângulos e as duas linhas vizinhas; alfa = min(v · ⌊I·2,56⌋ >> 13, 1024) >> 2.
+    Looks    (FUN_180d21ad0) Default: Extend 15, Contract 0, Holdout 1; Extended 1: 100/0/1; Extended 2: RL/7/1;
+             Extended Bloom: 100/0/−0,03·RL; Extend and Contract: 100/0,3·(RL−80)+0,3·(RL−150)/1; Tight: 0/25/1;
+             Tight and Extend: 0,7·(RL−80)/70−0,4·RL/1; Tight Bloom: 0/40/−4,5; Custom: os da interface.
+    cor      Colorize = gradiente de 6 cores em 0; 0,2; …; 1 pela luz de 10 bits; alfa = a luz. Light Matte = a luz em
+             cinza (o alfa de 8 bits) e OPACA — no In Front sobre a camada sai o próprio cinza.
+    modos    In Front/Behind/None: a luz pré-multiplicada por cima/por baixo/sozinha; do Lighten ao 50 50 Mix o RGBMix
+             do BCC (o modo entre a cor reta da luz e a camada, misturado pelo alfa da luz).
+    textura  (o Noise Map, lido na DLL e conferido contra ela chamada fora do AE) ruído global de semente 1, |n| preso em
+             1, grade (W+1)×(H+1), passo 1000/Scale/(W+1); Flow = 0,05·taxa·t·(cos θ, −sen θ), θ = 180° − Direction;
+             Morph = início + 0,1·taxa·t. Entra no k do raio (FUN_180e1d340), não na luz: t = tex − Bias·0,005,
+             esmaecida entre Radius e Radius+Falloff (% de W), k' = 1 − max(1 − t·Amount·0,025, 0)·(1 − k).
+
+  MEDIDO (8 bpc; este shader na GPU do PC, tools/bccraystextured/benchmark/gpu.py, contra 42 renders do AE): em 27
+  casos de raios (Ray Length 10 a 300, Intensity 45 a 1500, luz no meio, no canto e fora, os 10 Looks e o Custom) a
+  média é a do AE e 70–98% dos pixels saem IGUAIS (78–99% a ±1 nível; os piores são a luz fora da camada); Colorize,
+  In Front, Light Matte, Behind, os modos do RGBMix, as opacidades e o Mix with Original a ≤ 3 níveis. O shader dá o
+  mesmo que o modelo em numpy (polar.py) a ±1.
+  Textura (rodada 5, 8 bpc): Texture Mode = View 99,4–99,5% dos pixels iguais e 100% a ±1 (direção, escala e Morph fora
+  do padrão); ligada (Amount −100 a 150, Bias, Radius/Falloff, luz no canto, Colorize) a média do AE e 75–91% iguais,
+  o mesmo resíduo dos raios sem textura. Os presets do Ryan (renders em 16 bpc, quadros 0 e 20): ~1 nível na média.
+  O QUE NÃO É IGUAL: luz FORA da camada (o BCC cobre só os ângulos que a veem; aqui o círculo inteiro); o Downsample da
+  textura ≠ 1 (não feito; o conversor avisa); Flow/Morph ANIMADOS (o BCC integra no tempo, aqui taxa·t); o
+  Shimmer/Strings (modulação parecida); Color Image e os Light From que não o
+  Luma; Ray Style Fat (o BCC troca para o mapa cartesiano); o alfa de saída dos modos do RGBMix numa camada com
+  transparência (não medido); PixelChooser, Mocha e Beat Reactor. Nada rodou em aparelho.
+
+  CUSTO: o passe 1 guarda o acumulado de cada ângulo a cada K linhas (K ≥ 32, num buffer fixo de 1024×1024: o mapa
+  inteiro não cabe num buffer); cada pixel parte do ponto de controle dos seus dois ângulos e marcha no máximo K + 1
+  linhas (4 leituras cada). A conta é a mesma de marchar do centro (a posição na linha i é i·passo, exata em 16.16).
+  Antes, marchando do centro, eram 0,6 s por quadro 1080p na GPU do PC (2 s com a luz no canto).
+-->
+<effect
+    id="nova.effect.bccraystextured"
+    name="BCC Rays Textured"
+    name-en="BCC Rays Textured"
+    desc="Os raios de luz texturizados do Boris Continuum: a parte clara da camada solta raios a partir de uma fonte de luz, como no After Effects."
+    desc-en="Boris Continuum's textured light rays: the bright parts of the layer cast rays from a light source, as in After Effects."
+    category="stylize"
+    blend="true"
+    tags="bcc,boris,continuum,rays,raios,luz,light rays,textured,textura,god rays,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="permBuf" src="buffer" width="514" height="1" filter="nearest" />
+        <texture id="luzBuf" src="buffer" precision="highp" />
+        <texture id="texBuf" src="buffer" filter="nearest" />
+        <texture id="pontosBuf" src="buffer" width="1024" height="1024" filter="nearest" />
+
+        <point id="lightSource" label="Fonte de luz" defaultX="0.6" defaultY="0.4" min="-1.0" max="2.0" unit="px" />
+        <slider id="intensity" label="Intensidade" default="125.0" min="0.0" max="3000.0" step="1.0" snap="125.0" />
+        <slider id="rayLength" label="Comprimento dos raios" default="80.0" min="0.0" max="1000.0" step="1.0" snap="80.0" />
+        <selector id="look" label="Aparência" default="0" options="Padrão|Personalizado|Estendido 1|Estendido 2|Brilho estendido|Estender e contrair|Justo|Justo e estendido|Brilho justo" />
+        <slider id="extendRays" label="Estender os raios" default="15.0" min="-2000.0" max="2000.0" step="1.0" snap="15.0" showIf="look=1" />
+        <slider id="contractRays" label="Contrair os raios" default="0.0" min="0.0" max="1000.0" step="1.0" snap="0.0" showIf="look=1" />
+        <slider id="holdoutRadius" label="Raio de exclusão" default="1.0" min="-10000.0" max="1000.0" step="0.1" snap="1.0" showIf="look=1" />
+
+        <selector id="textureMode" group="Textura" label="Textura" default="0" options="Ligada|Ver|Desligada" />
+        <slider id="textureAmount" group="Textura" label="Quantidade da textura" default="75.0" min="-2000.0" max="2000.0" step="1.0" snap="75.0" />
+        <slider id="textureScale" group="Textura" label="Escala da textura" default="15.0" min="1.0" max="10000.0" step="0.1" snap="15.0" />
+        <slider id="textureBias" group="Textura" label="Viés da textura" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="flowRate" group="Textura" label="Velocidade do fluxo" default="35.0" min="-1000.0" max="1000.0" step="0.1" snap="35.0" />
+        <slider id="flowDirection" group="Textura" label="Direção do fluxo" default="90.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="90.0" />
+        <slider id="morphStart" group="Textura" label="Início da transformação" default="0.0" min="-1000.0" max="1000.0" step="0.1" snap="0.0" />
+        <slider id="morphRate" group="Textura" label="Velocidade da transformação" default="25.0" min="-1000.0" max="1000.0" step="0.1" snap="25.0" />
+        <slider id="textureRadius" group="Textura" label="Raio da textura" default="20.0" min="0.0" max="2000.0" step="0.1" snap="20.0" />
+        <slider id="textureFalloff" group="Textura" label="Esmaecimento da textura" default="10.0" min="0.0" max="2000.0" step="0.1" snap="10.0" />
+        <selector id="rayTexture" group="Textura" label="Riscos" default="0" options="Desligados|Cintilante" />
+        <slider id="shimmerIntensity" group="Textura" label="Intensidade da cintilação" default="60.0" min="0.0" max="1000.0" step="1.0" snap="60.0" showIf="rayTexture=1" />
+        <slider id="shimmerDetail" group="Textura" label="Detalhe da cintilação" default="40.0" min="0.0" max="1000.0" step="1.0" snap="40.0" showIf="rayTexture=1" />
+
+        <selector id="colorMode" group="Cor" label="Cor" default="0" options="Colorir|Máscara de luz" />
+        <color id="color1" group="Cor" label="Cor 1" default="#101010" />
+        <color id="color2" group="Cor" label="Cor 2" default="#801010" />
+        <color id="color3" group="Cor" label="Cor 3" default="#EB3C00" />
+        <color id="color4" group="Cor" label="Cor 4" default="#EB803C" />
+        <color id="color5" group="Cor" label="Cor 5" default="#EBEB80" />
+        <color id="color6" group="Cor" label="Cor 6" default="#EBEBEB" />
+
+        <selector id="applyMode" group="Composição" label="Modo de aplicação" default="2"
+                  options="Por trás|Nenhum|Na frente|Clarear|Escurecer|Multiplicar|Tela|Diferença|Mais claro|Mais escuro|Multiplicar em escala|Tela em escala|Diferença ×2|Diferença ×4|Somar|Subtrair|Sobrepor|Luz suave|Luz forte|Matiz|Saturação|Cor|Luminosidade|Boost Expo 1|Boost Expo 2|Boost Eq Power +|Boost Eq Power −|Boost Bias|50 50 Mix" />
+        <slider id="sourceOpacity" group="Composição" label="Opacidade da camada" default="1.0" min="0.0" max="1.0" step="0.001" type="percent" snap="1.0" />
+        <slider id="lightOpacity" group="Composição" label="Opacidade da luz" default="1.0" min="0.0" max="100.0" step="0.001" type="percent" snap="1.0" />
+        <slider id="mixOriginal" group="Composição" label="Misturar com o original" default="0.0" min="0.0" max="1.0" step="0.001" type="percent" snap="0.0" />
+    </params>
+
+    <preview amostra="figura">
+        <set param="rayLength" value="60.0" />
+    </preview>
+
+    <passes>
+        <pass target="permBuf" />    <!-- 0: a tabela de permutação do ruído do Continuum -->
+        <pass target="luzBuf" />     <!-- 1: a luz (o Luma pré-multiplicado), em 16 bits nos canais R e G -->
+        <pass target="texBuf" />     <!-- 2: a textura do BCC (o float em RGBA8) -->
+        <pass target="pontosBuf" />  <!-- 3: o mapa polar a cada K linhas (os pontos de controle) -->
+        <pass />                     <!-- 4: o mapa polar por pixel, a partir dos pontos; a cor e a composição -->
+    </passes>
+
+    <shader><![CDATA[
+const float GRAU = 0.017453292;            // π/180 em float, como o plugin
+const int MEIA_VOLTA = 0x1680000;          // 360° · 65536
+
+// ---- a camada do AE no buffer (como no CC Light Burst) -------------------------------------------
+ivec2 gBuf, gInicio;
+int W, H;
+bool dePe;
+float Lx, Ly;                               // a luz em px da camada, na orientação da imagem (linha 0 = topo)
+
+void preparar() {
+    gBuf = textureSize(inputImg, 0);
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(gBuf) + 0.5)), ivec2(1), gBuf);
+    gInicio = (gBuf - tam) / 2;
+    W = tam.x; H = tam.y;
+    dePe = acEntradaDePe == 1;
+    vec2 cb = acPontoNoBuffer(lightSource) * vec2(gBuf) - vec2(gInicio);
+    if (dePe) cb.y = float(H) - cb.y;
+    Lx = cb.x; Ly = cb.y;
+}
+ivec2 noBuffer(int x, int y) { return gInicio + ivec2(x, dePe ? H - 1 - y : y); }
+
+// ---- ruído de gradiente 3D (o Shimmer, aproximado) ----------------------------------------------
+vec3 hash3(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+float perlin3(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    float n000 = dot(hash3(i + vec3(0, 0, 0)), f - vec3(0, 0, 0));
+    float n100 = dot(hash3(i + vec3(1, 0, 0)), f - vec3(1, 0, 0));
+    float n010 = dot(hash3(i + vec3(0, 1, 0)), f - vec3(0, 1, 0));
+    float n110 = dot(hash3(i + vec3(1, 1, 0)), f - vec3(1, 1, 0));
+    float n001 = dot(hash3(i + vec3(0, 0, 1)), f - vec3(0, 0, 1));
+    float n101 = dot(hash3(i + vec3(1, 0, 1)), f - vec3(1, 0, 1));
+    float n011 = dot(hash3(i + vec3(0, 1, 1)), f - vec3(0, 1, 1));
+    float n111 = dot(hash3(i + vec3(1, 1, 1)), f - vec3(1, 1, 1));
+    return mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+               mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+}
+
+// ---- a textura do BCC (o Noise Map), lida na DLL -------------------------------------------------
+// FUN_18046dde0: o ruído de gradiente 3D global do Continuum (a tabela do FUN_18046d5a0: identidade de 0 a 256
+// embaralhada por LCG com semente 1; 16 gradientes), conta por conta na ordem do asm (conferido 0 de 27 mil pontos
+// contra a DLL chamada fora do AE: tools/bccraystextured/oraculo/ruido.py).
+// A tabela e os gradientes NÃO são listas constantes: indexar 514 + 16 constantes levava 8 s para compilar na GPU
+// do PC (1 s sem elas). A tabela sai do passe 0 (permBuf, 514×1): cada ponto refaz o LCG de trás para frente (o
+// estado final 0x1EF6C426 e o inverso do multiplicador 0xEEB9EB65) seguindo onde o seu valor estava; P[256+i] =
+// P[i mod 256], como a cópia do plugin (que sobrescreve o 256). Os gradientes são as 12 arestas + 4 repetidas.
+int permDoPasse(int i) {
+    int pos = i & 255;
+    uint s = 0x1EF6C426u;
+    for (int k = 129; k >= 1; k--) {
+        int idx = 256 - 2 * (k - 1), r = int((s >> 16) & 255u);
+        if (pos == idx) pos = r; else if (pos == r) pos = idx;
+        s = (s - 0x3039u) * 0xEEB9EB65u;
+    }
+    return pos;
+}
+int PERM(int i) {
+    ivec2 b = ivec2(floor(texelFetch(permBuf, ivec2(i, 0), 0).rg * 255.0 + 0.5));
+    return b.x + (b.y << 8);
+}
+const float G7 = 0.70710677;               // 0x3F3504F3
+vec3 gradBcc(int h) {
+    if (h >= 12) return h == 12 ? vec3(G7, G7, 0.0) : h == 13 ? vec3(-G7, G7, 0.0) : h == 14 ? vec3(0.0, -G7, G7) : vec3(0.0, -G7, -G7);
+    float s1 = (h & 1) != 0 ? -G7 : G7, s2 = (h & 2) != 0 ? -G7 : G7;
+    return h < 4 ? vec3(s1, s2, 0.0) : h < 8 ? vec3(s1, 0.0, s2) : vec3(0.0, s1, s2);
+}
+int pisoBcc(float v) { return int(v >= 0.0 ? v : v - 1.0); }    // cvttss2si de (v < 0 ? v − 1 : v)
+float curvaBcc(float t) { return ((((t * 6.0) - 15.0) * t + 10.0) * t) * (t * t); }
+float cantoBcc(int h, int c, float gx, float gy, float gz) {
+    vec3 g = gradBcc((h + c) & 15);
+    return (gy * g.y + gx * g.x) + gz * g.z;
+}
+float ruidoBcc(float x, float y, float z) {
+    int ix = pisoBcc(x), iy = pisoBcc(y), iz = pisoBcc(z);
+    int X0 = (ix + 32) & 255, X1 = (X0 + 1) & 255, Y0 = (iy + 32) & 255, Y1 = (Y0 + 1) & 255;
+    float fx = x - float(ix), fy = y - float(iy), fz = z - float(iz);
+    float fx1 = fx - 1.0, fy1 = fy - 1.0, fz1 = fz - 1.0;
+    float u = curvaBcc(fx), v = curvaBcc(fy), w = curvaBcc(fz);
+    int a = PERM(X0), b = PERM(X1);
+    int A0 = PERM(a + Y0), B0 = PERM(b + Y0), A1 = PERM(a + Y1), B1 = PERM(b + Y1);
+    float n000 = cantoBcc(A0, iz, fx, fy, fz), n100 = cantoBcc(B0, iz, fx1, fy, fz);
+    float nx00 = (n100 - n000) * u + n000;
+    float n010 = cantoBcc(A1, iz, fx, fy1, fz), n110 = cantoBcc(B1, iz, fx1, fy1, fz);
+    float nx10 = (n110 - n010) * u + n010;
+    float nxy0 = (nx10 - nx00) * v + nx00;
+    float n001 = cantoBcc(A0, iz + 1, fx, fy, fz1), n101 = cantoBcc(B0, iz + 1, fx1, fy, fz1);
+    float nx01 = (n101 - n001) * u + n001;
+    float n011 = cantoBcc(A1, iz + 1, fx, fy1, fz1), n111 = cantoBcc(B1, iz + 1, fx1, fy1, fz1);
+    float nx11 = (n111 - n011) * u + n011;
+    float nxy1 = (nx11 - nx01) * v + nx01;
+    return ((nxy1 - nxy0) * w + nxy0) * 1.5;
+}
+
+// FUN_180d23c00 + FUN_180d23930 (1 oitava, tipo 1): a imagem da textura tem (W+1)×(H+1) pontos; x anda 1000/Scale
+// na largura, y na mesma escala, o centro no meio. O Flow é ∫taxa·(cos θ, −sen θ)·0,05 e o Morph, início + 0,1·∫taxa
+// (θ = 180° − Direction; ∫ em segundos — com os controles parados, taxa·t). Conferido 100% igual ao View do AE nos quadros
+// 0 e 15. Valor = |ruído| preso em 1.
+float gTb0, gTpx, gTpy, gTy0, gTo24, gTo28, gTz;
+void prepararTextura() {
+    float S = max(textureScale, 1.0);
+    float Wl = float(W + 1), Hl = float(H + 1);
+    gTb0 = 1000.0 / S;                                  // 0xb0
+    gTpx = gTb0 * (1.0 / Wl);                           // 0xa8
+    float f9 = ((Hl / Wl) * 1000.0) / S;
+    gTy0 = f9 * -0.5;                                   // 0xa0
+    gTpy = f9 / Hl;                                     // 0xa4
+    float m = 0.05 * flowRate * acTime, a = (180.0 - flowDirection) * GRAU;   // θ = 180° − Direction (medido)
+    gTo24 = m * cos(a); gTo28 = -m * sin(a);
+    gTz = morphStart + 0.1 * morphRate * acTime;
+}
+float texturaBcc(int r, int c) {
+    float n = ruidoBcc((gTb0 * -0.5 + float(c) * gTpx) + gTo28, (float(r) * gTpy + gTy0) - gTo24, gTz);
+    return min(n <= 0.0 ? n * -1.0 : n, 1.0);
+}
+// o ponto (r, c) da imagem: do texBuf (os bits do float em RGBA8); a linha e a coluna a mais, na hora
+float pontoDaTextura(int r, int c) {
+    if (r >= H || c >= W) return texturaBcc(r, c);
+    uvec4 b = uvec4(floor(texelFetch(texBuf, noBuffer(c, r), 0) * 255.0 + 0.5));
+    return uintBitsToFloat(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
+}
+// FUN_18069d160: bilinear em float; py, px em 24.8; fora da imagem os vizinhos viram a borda (0 ou H/W)
+float amostraTextura(int py, int px) {
+    int r0 = py >> 8, c0 = px >> 8, r1 = r0 + 1, c1 = c0 + 1;
+    if (r0 < 0 || r0 >= H) { r0 = r0 < 0 ? 0 : H; r1 = r0; }
+    if (c0 < 0 || c0 >= W) { c0 = c0 < 0 ? 0 : W; c1 = c0; }
+    float wr = float(py & 255) * 0.00390625, wc = float(px & 255) * 0.00390625;
+    float a = ((1.0 - wc) * wr) * pontoDaTextura(r1, c0) + ((1.0 - wr) * (1.0 - wc)) * pontoDaTextura(r0, c0);
+    float b = ((1.0 - wr) * wc) * pontoDaTextura(r0, c1) + (wc * wr) * pontoDaTextura(r1, c1);
+    return a + b;
+}
+// a textura no k do raio (FUN_180e1d340): Amount·0,025, Bias·0,005, Radius e Falloff em % da largura
+bool gTexOn;
+float gTA, gTB, gTr1q, gTr2q, gTdif;
+void prepararTexturaNoRaio() {
+    gTexOn = textureMode == 0 && textureAmount != 0.0;
+    gTA = textureAmount * 0.025; gTB = textureBias * 0.005;
+    float r1 = textureRadius * float(W) * 0.01, r2 = textureFalloff * float(W) * 0.01 + r1;
+    gTr1q = r1 * r1; gTr2q = r2 * r2; gTdif = gTr2q - gTr1q;
+}
+float texturaNoK(float k, float r2, int py, int px) {
+    if (!gTexOn || r2 >= gTr2q) return k;
+    float t = amostraTextura(py, px) - gTB;
+    if (r2 > gTr1q) t *= (gTr2q - r2) / gTdif;
+    float a = t * gTA;
+    if (t > 0.0) return max(1.0 - max(1.0 - a, 0.0) * (1.0 - k), 0.0);
+    return k * min(a + 1.0, 0.0);                   // é o que o plugin faz (minss com 0): k vai a zero
+}
+
+// ---- a luz em 16 bits -----------------------------------------------------------------------------
+uint luz(int y, int x) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return 0u;
+    vec4 t = texelFetch(luzBuf, noBuffer(x, y), 0);
+    return uint(floor(t.r * 255.0 + 0.5)) * 256u + uint(floor(t.g * 255.0 + 0.5));
+}
+// FUN_180e1f280: bilinear de 8 bits; py, px em 24.8
+uint amostra(int py, int px) {
+    int y0 = py >> 8, x0 = px >> 8;
+    uint fy = uint(py & 255), fx = uint(px & 255);
+    uint i6 = luz(y0, x0), i5 = luz(y0, x0 + 1), i7 = luz(y0 + 1, x0), i8 = luz(y0 + 1, x0 + 1);
+    return ((fx * i5 + (256u - fx) * i6) * (256u - fy) + ((256u - fx) * i7 + fx * i8) * fy) >> 16;
+}
+
+// ---- o atan2 inteiro do BCC (FUN_1803693a0, tabela de FUN_180369e70, divisão de FUN_180369330) -----
+int divA(int a, int b) {
+    if (b < 0x4000) return (a << 16) / max(b, 1);
+    if (b < 0x10000) return (a << 14) / ((b + 3) >> 2);
+    if (b < 0x40000) return (a << 12) / ((b + 15) >> 4);
+    return int(float(a) * 65536.0 / float(b));
+}
+int tab(int i) { return int(atan(min(float(i) * 0.00390625, 1.0)) * 57.29578 * 65536.0 + 0.5); }
+int interp(int q, out bool ok) {
+    int i = q >> 8, f = q & 255;
+    ok = i >= 0 && i < 256;
+    int i0 = clamp(i, 0, 255);
+    int t0 = tab(i0);
+    return (((tab(i0 + 1) - t0) * f) >> 8) + t0;
+}
+int atan2Fixo(int p1, int p2) {
+    int a1 = abs(p1), a2 = abs(p2);
+    bool menor = a1 <= a2, ok;
+    int t = menor ? interp(divA(a1, a2 + 1), ok) : interp(divA(a2, max(a1, 1)), ok);
+    if (p1 >= 0 && p2 >= 0) return menor ? (ok ? t : 0) : (ok ? 0x5a0000 - t : 0x5a0000);
+    if (p1 >= 0) return menor ? (ok ? 0xb40000 - t : 0xb40000) : (ok ? t + 0x5a0000 : 0x5a0000);
+    if (p2 >= 0) return menor ? (ok ? -t : 0) : (ok ? t - 0x5a0000 : -0x5a0000);
+    return menor ? (ok ? t - 0xb40000 : -0xb40000) : (ok ? -0x5a0000 - t : -0x5a0000);
+}
+uint isqrtU(uint n) {
+    uint s = uint(sqrt(float(n)));
+    while (s > 0u && s * s > n) s--;
+    while (s < 65535u && (s + 1u) * (s + 1u) <= n) s++;
+    return s;
+}
+
+// ---- o Look (FUN_180d21ad0) e o coeficiente do raio -----------------------------------------------
+float gExt, gHold, gP0, gP1, gRL2, gW2;
+int gPot;
+void prepararLook() {
+    float rl = max(rayLength, 0.0), e = 15.0, c = 0.0, h = 1.0;
+    if (look == 1) { e = extendRays; c = contractRays; h = holdoutRadius; }
+    else if (look == 2) { e = 100.0; c = 0.0; h = 1.0; }
+    else if (look == 3) { e = rl; c = 7.0; h = 1.0; }
+    else if (look == 4) { e = 100.0; c = 0.0; h = rl * -0.03; }
+    else if (look == 5) { e = 100.0; float f8 = rl > 80.0 ? (rl - 80.0) * 0.3 : 0.0; c = rl > 150.0 ? (rl - 150.0) * 0.3 + f8 : f8; h = 1.0; }
+    else if (look == 6) { e = 0.0; c = 25.0; h = 1.0; }
+    else if (look == 7) { e = rl > 80.0 ? (rl - 80.0) * 0.7 : 0.0; c = 70.0 - rl * 0.4; h = 1.0; }
+    else if (look == 8) { e = 0.0; c = 40.0; h = -4.5; }
+    c = max(c, 0.0);
+    float f = max(0.0, 30.0 - rl) / 30.0;
+    float p4f = 880.0 * f * f * f + 120.0;          // 0x5e004f (0x5e0060 = 12, 0x5e006a = 30 na TexturedLight)
+    float a184 = min(c * 0.3, 1000.0) * 0.001;      // 0x5e000d = Contract · 0,3
+    float m = (1.0 - a184) * p4f * 0.001 + a184;    // 0x18c
+    gP0 = 1.0 - a184; gP1 = 1.0 - m;
+    gExt = e * 0.01;
+    gHold = h * float(W) * 0.01;                    // o Holdout é % da largura
+    gRL2 = rl * rl; gW2 = float(W) * float(W);
+    gPot = max(int(floor(1.0 / max(acEscalaDePixel, 1e-4) + 0.5)), 1);   // a prévia reduzida: k^n, como o BCC
+    prepararTextura(); prepararTexturaNoRaio();
+}
+// FUN_180e1b8d0 (atenuação 0, holdout pela raiz: 0x5e006c = 1) e FUN_180e1d340 (0x5e006b = 1); py, px = o ponto
+// do raio em 24.8 (onde a textura é lida)
+int coeficiente(int i, int v, int acc, int passo, int py, int px) {
+    float r = float(i);
+    float d = r - gHold;
+    float f = (gHold != 0.0) ? (d >= 0.0 ? d * d : 0.0) : r * r;
+    float x = (f * gRL2) / gW2;
+    float k = min(1.0 - exp(-x * 0.008), 1.0);
+    if (gExt != 0.0 && acc != v) {                  // FUN_180e1d660, modo 1
+        float dl = float(v) * 3.0517578e-05 - float(acc) * 3.0517578e-05;
+        if ((gExt > 0.0 && dl > 0.0) || (gExt < 0.0 && dl < 0.0)) k *= clamp(1.0 - dl * gExt, 0.0, 1.0);
+    }
+    k = min(texturaNoK(k, r * r, py, px), 1.0);
+    float f6 = (gP0 - gP1) * k + gP1;
+    int n = gPot * passo;
+    if (n > 1 && f6 != 0.0) f6 = n == 2 ? f6 * f6 : (n == 3 ? f6 * f6 * f6 : (n == 4 ? (f6 * f6) * (f6 * f6) : pow(f6, float(n))));
+    return int((1.0 - f6) * 65536.0 + 0.5);
+}
+// Um raio do mapa polar (FUN_180e1da20), da linha i0 (com o acumulado acc0 nela) até r1: o acumulado nas linhas r0
+// e r1. Na linha i a posição é a da luz + i·passo, a mesma de marchar do centro.
+ivec2 raio(float ang, int i0, int acc0, int r0, int r1) {
+    float s = sin(ang), c = cos(ang);
+    int dy = int(s * 65536.0 + 0.5), dx = int(c * 65536.0 + 0.5);   // (int) trunca para o zero
+    int y = int(Ly * 65536.0 + 0.5) + i0 * dy, x = int(Lx * 65536.0 + 0.5) + i0 * dx;
+    int acc = acc0;
+    ivec2 res = ivec2(acc);
+    for (int i = i0 + 1; i <= r1; i++) {
+        y += dy; x += dx;
+        int v = int(amostra(y >> 8, x >> 8) >> 1);
+        acc += ((v - acc) * (coeficiente(i, v, acc, 1, y >> 8, x >> 8) >> 1)) >> 15;
+        if (i <= r0) res.x = acc;
+        res.y = acc;
+    }
+    return res;
+}
+int accDoCentro() {
+    return min(int(amostra(int(Ly * 65536.0 + 0.5) >> 8, int(Lx * 65536.0 + 0.5) >> 8) >> 1), 0x8000);
+}
+int numeroDeAngulos(int w) {                        // (uint)((double)W · 1,4): o 1,4 em double é um pouco menos
+    int t = 14 * w, n = t / 10, p2 = 1;
+    while (p2 <= n / 2) p2 *= 2;                    // a maior potência de 2 até n (findMSB é do ES 3.1)
+    if (t % 10 == 0 && 4 * w > 5 * p2) n -= 1;
+    return max(n, 1);
+}
+
+// ---- o tamanho do mapa e os pontos de controle ---------------------------------------------------
+const int LADO_DOS_PONTOS = 1024;          // o pontosBuf (o passe que o escreve não pergunta o tamanho dele)
+int gNa, gNr, gNc, gK;
+float gPassoAng, gComeco;
+void prepararMapa() {
+    gNa = numeroDeAngulos(W);
+    gPassoAng = 360.0 / float(gNa); gComeco = gPassoAng * 0.5;
+    float dmax = max(max(length(vec2(Lx, Ly)), length(vec2(Lx - float(W), Ly))),
+                     max(length(vec2(Ly - float(H), Lx)), length(vec2(Ly - float(H), Lx - float(W)))));
+    gNr = int(dmax) + (fract(dmax) != 0.0 ? 1 : 0) + 2;
+    gNc = max(min((gNr + 31) / 32, LADO_DOS_PONTOS * LADO_DOS_PONTOS / gNa), 1);   // pontos por ângulo
+    gK = (gNr + gNc - 1) / gNc;                                                    // linhas entre eles
+}
+float anguloDaColuna(int c) { return (float(c) * gPassoAng + gComeco) * GRAU; }
+// O acumulado do ângulo c na linha j·K (j ≥ 1), guardado pelo passe 1 em 16 bits (R e G).
+int ponto(int c, int j) {
+    int i = c * gNc + j - 1;
+    vec4 t = texelFetch(pontosBuf, ivec2(i % LADO_DOS_PONTOS, i / LADO_DOS_PONTOS), 0);
+    return int(floor(t.r * 255.0 + 0.5)) * 256 + int(floor(t.g * 255.0 + 0.5));
+}
+// O raio do ângulo c nas linhas r0 e r1, a partir do ponto de controle de baixo.
+ivec2 raioDaColuna(int c, int r0, int r1) {
+    int j = r0 / gK;
+    return raio(anguloDaColuna(c), j * gK, j == 0 ? accDoCentro() : ponto(c, j), r0, r1);
+}
+
+// ---- o RGBMix do BCC (copiado do bcc-light-wrap.xml, medido 0 px lá) ---------------------------------------------------------------
+int div255(int t) { t += 128; return (t + (t >> 8)) >> 8; }          // m·a/255 arredondado
+int truncDiv(int a, int b) { int q = abs(a) / b; return a < 0 ? -q : q; }   // divisão truncada (b > 0)
+int luma(ivec3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
+
+ivec3 ajustaLuma(ivec3 d, int lq) {
+    int l2 = (d.r * 77 + d.g * 150 + d.b * 29) >> 8;
+    return clamp(d + ivec3(lq - l2), ivec3(0), ivec3(255));
+}
+
+// 0x180425fe0: o croma de P com a luma de Q.
+ivec3 setLum(ivec3 P, ivec3 Q) {
+    int lp = luma(P), lq = luma(Q);
+    ivec3 d = P - ivec3(lp);
+    float s = 1.0;
+    for (int i = 0; i < 3; i++) {
+        float si = 1.0;
+        if (d[i] + lq > 255) si = float(255 - lq) / float(d[i]);
+        else if (d[i] + lq < 0) si = float(-lq) / float(d[i]);
+        s = min(s, si);
+    }
+    if (s < 1.0) d = ivec3(trunc(s * vec3(d)));
+    return ajustaLuma(d, lq);
+}
+
+int amplitude(ivec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+
+// Hue e Saturation: o croma D escalado pela razão (limitada com 256 − luma) e a luma lq.
+ivec3 setSat(ivec3 D, int lq, float razao) {
+    float r = razao;
+    if (r > 1.0) {
+        for (int i = 0; i < 3; i++) {
+            if (D[i] == 0) continue;
+            float inv = 1.0 / float(D[i]);
+            float lim = D[i] > 0 ? (256.0 - float(lq)) * inv : -(inv * float(lq));
+            r = min(r, lim);
+        }
+    }
+    return ajustaLuma(ivec3(trunc(vec3(D) * r)), lq);
+}
+
+ivec3 matiz(ivec3 P, ivec3 Q) {           // 0x1804261c0: P = o wrap, Q = a camada
+    int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
+    if (sp == 0) return ivec3(lq);
+    return setSat(P - ivec3(luma(P)), lq, float(sq) / float(sp));
+}
+
+ivec3 saturacao(ivec3 P, ivec3 Q) {       // 0x180426450: P = o wrap, Q = a camada
+    int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
+    if (sq == 0) return Q;
+    return setSat(Q - ivec3(lq), lq, float(sp) / float(sq));
+}
+
+int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wrap
+    if (A > 128) {
+        int s = 255 - ((((255 - B) * (255 - A)) * 0x8081) >> 23);
+        return truncDiv((s - B) * (A - 128), 127) + B;
+    }
+    int u = ((B * A) >> 8) - B;
+    return truncDiv(u * (128 - A), 128) + B;
+}
+
+// 0x18042a480: a = o wrap, b = a camada (os dois em bytes). Devolve a cor e se a camada inteira foi escolhida.
+ivec3 modo(int m, ivec3 a, ivec3 b, out bool pegaB) {
+    pegaB = false;
+    if (m == 0) return max(a, b);                                          // Lighten
+    if (m == 1) return min(a, b);                                          // Darken
+    if (m == 2) return ivec3(a.r == 255 ? b.r : (b.r * a.r) >> 8, a.g == 255 ? b.g : (b.g * a.g) >> 8,
+                             a.b == 255 ? b.b : (b.b * a.b) >> 8);         // Multiply
+    if (m == 3) return ivec3(255) - ((((ivec3(0x80007f) - b * 0x8081) * (ivec3(255) - a)) >> 23) & 255);   // Screen
+    if (m == 4) return abs(a - b);                                         // Difference
+    if (m == 5 || m == 23) {                                               // Lighter (e o Boost Eq Power −, medido)
+        pegaB = (b.r * 77 + b.g * 150 + b.b * 29) > (a.r * 77 + a.g * 150 + a.b * 29);
+        return pegaB ? b : a;
+    }
+    if (m == 6) {                                                          // Darker
+        pegaB = (b.r * 77 + b.g * 150 + b.b * 29) < (a.r * 77 + a.g * 150 + a.b * 29);
+        return pegaB ? b : a;
+    }
+    if (m == 7) return min(ivec3(255), (b * a) >> 6);                      // Scale Multiply
+    if (m == 8) return ivec3(255) - min(ivec3(255), (((ivec3(255) - b) * (ivec3(255) - a)) * 0x8081) >> 22);   // Scale Screen
+    if (m == 9) return min(ivec3(255), abs(2 * (b - a)));                  // Difference X 2
+    if (m == 10) return min(ivec3(255), abs(4 * (b - a)));                 // Difference X 4
+    if (m == 11) return min(ivec3(255), a + b);                            // Add
+    if (m == 12) return (a - b) & 255;                                     // Subtract (com a volta do byte)
+    if (m == 13) {                                                         // Overlay
+        ivec3 r;
+        for (int i = 0; i < 3; i++) r[i] = b[i] < 128 ? (b[i] * a[i]) >> 7 : 255 - (((255 - b[i]) * (255 - a[i])) >> 7);
+        return r;
+    }
+    if (m == 14) return ((((a - ivec3(128)) * (ivec3(255) - b) * b) >> 15) + b) & 255;   // Soft Light
+    if (m == 15) return ivec3(luzDura(b.r, a.r), luzDura(b.g, a.g), luzDura(b.b, a.b)); // Hard Light
+    if (m == 16) return matiz(a, b);                                       // Hue
+    if (m == 17) return saturacao(a, b);                                   // Saturation
+    if (m == 18) return setLum(a, b);                                      // Color
+    if (m == 19) return setLum(b, a);                                      // Lightness
+    if (m == 24) {                                                         // Boost Bias: o mais próximo (Lighter)
+        pegaB = (b.r * 77 + b.g * 150 + b.b * 29) > (a.r * 77 + a.g * 150 + a.b * 29);
+        return pegaB ? b : a;
+    }
+    if (m == 25) return ivec3(a.r == 255 ? b.r : (b.r * a.r) >> 8, a.g == 255 ? b.g : (b.g * a.g) >> 8,
+                              a.b == 255 ? b.b : (b.b * a.b) >> 8);        // 50 50 Mix: o mais próximo (Multiply)
+    return a;                                                              // 21, 22 (medido) e 23: Normal
+}
+
+// 0x180426d00: Y sobre X em 8 bits.
+ivec4 sobre(ivec4 X, ivec4 Y) {
+    if (Y.a == 0) return X;
+    if (Y.a == 255 || X.a == 0) return Y;
+    if (X.a == 255) return ivec4(X.rgb + (((Y.rgb - X.rgb) * Y.a) >> 8), 255);
+    int k = ((255 - Y.a) * X.a) >> 8;
+    int ao = Y.a + k;
+    int inv = 0x10000 / ao;
+    return ivec4(((Y.rgb * Y.a + X.rgb * k) * inv) >> 16, ao);
+}
+
+// 0x1804283b0: M = o resultado do modo, X = o wrap, Y = a camada. Só a cor (o alfa sai o da camada).
+ivec3 compor(ivec4 M, ivec4 X, ivec4 Y) {
+    if (X.a == 0) return Y.rgb;
+    if (Y.a == 0) return X.rgb;
+    if (Y.a == 255) return X.a == 255 ? M.rgb : (Y.rgb + (((M.rgb - Y.rgb) * X.a) >> 8)) & 255;
+    ivec4 o68 = sobre(Y, ivec4(M.rgb, X.a));
+    if (X.a > Y.a) {
+        ivec4 o20 = sobre(Y, X);
+        int f = int(trunc(float(abs(Y.a - X.a)) * 255.0 / float(X.a)));
+        return (o68.rgb + (((o20.rgb - o68.rgb) * f) >> 8)) & 255;
+    }
+    return o68.rgb;
+}
+
+
+vec3 colorir(float g) {
+    float x = clamp(g, 0.0, 1.0) * 5.0;
+    int i = int(min(floor(x), 4.0));
+    float f = x - float(i);
+    vec3 c0 = i == 0 ? color1.rgb : i == 1 ? color2.rgb : i == 2 ? color3.rgb : i == 3 ? color4.rgb : color5.rgb;
+    vec3 c1 = i == 0 ? color2.rgb : i == 1 ? color3.rgb : i == 2 ? color4.rgb : i == 3 ? color5.rgb : color6.rgb;
+    return mix(c0, c1, f);
+}
+ivec4 bytes4(vec4 c) { return ivec4(floor(c * 255.0 + 0.5)); }
+
+void main() {
+    // 0. a tabela de permutação (514 pontos, valor até 256 em R e G)
+    if (acPass == 0) {
+        int v = permDoPasse(int(gl_FragCoord.x));
+        fragColor = vec4(float(v & 255) / 255.0, float(v >> 8) / 255.0, 0.0, 1.0);
+        return;
+    }
+    preparar();
+
+    // 3. os pontos de controle: um fragmento por (ângulo, j), marchando do centro até a linha j·K
+    if (acPass == 3) {
+        ivec2 f = ivec2(gl_FragCoord.xy);
+        prepararLook(); prepararMapa();
+        int i = f.y * LADO_DOS_PONTOS + f.x, c = i / gNc, j = i % gNc + 1;
+        if (c >= gNa || j >= gNc) { fragColor = vec4(0.0); return; }
+        int m = raio(anguloDaColuna(c), 0, accDoCentro(), j * gK, j * gK).x;
+        fragColor = vec4(float(m >> 8) / 255.0, float(m & 255) / 255.0, 0.0, 1.0);
+        return;
+    }
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gBuf))), gBuf - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, ivec2(W, H)));
+    int x = q.x, y = dePe ? H - 1 - q.y : q.y;
+
+    // 1. a luz: o Luma da camada pré-multiplicada em 8 bits · 256
+    if (acPass == 1) {
+        if (fora) { fragColor = vec4(0.0); return; }
+        ivec4 s = bytes4(texelFetch(inputImg, t, 0));
+        ivec3 pm = ivec3(div255(s.r * s.a), div255(s.g * s.a), div255(s.b * s.a));
+        int L16 = ((pm.r * 299 + pm.g * 587 + pm.b * 114 + 500) / 1000) * 256;
+        fragColor = vec4(float(L16 >> 8) / 255.0, float(L16 & 255) / 255.0, 0.0, 1.0);
+        return;
+    }
+    // 2. a textura: o float do ponto (y, x) da imagem do BCC, em bytes
+    if (acPass == 2) {
+        if (fora || textureMode == 2) { fragColor = vec4(0.0); return; }
+        prepararTextura();
+        uint b = floatBitsToUint(texturaBcc(y, x));
+        fragColor = vec4(uvec4(b & 255u, (b >> 8) & 255u, (b >> 16) & 255u, b >> 24)) / 255.0;
+        return;
+    }
+
+    vec4 src = texelFetch(inputImg, t, 0);
+    if (fora) { fragColor = src; return; }
+    // View (FUN_18069dd10): a textura em cinza, int(t·255), opaca
+    if (textureMode == 1) {
+        prepararTextura();
+        float tv = pontoDaTextura(y, x);
+        fragColor = vec4(vec3(float(clamp(int(tv * 255.0), 0, 255)) / 255.0), 1.0);
+        return;
+    }
+    prepararLook(); prepararMapa();
+
+    // 2. o raio e o ângulo do pixel, como na volta do mapa (FUN_180e1cde0)
+    int na = gNa, nr = gNr;
+    float passoAng = gPassoAng, comeco = gComeco;
+    int dxp = x * 256 - int(Lx * 256.0), dyp = y * 256 - int(Ly * 256.0);
+    int ax = dxp >> 4, ay = dyp >> 4;
+    int ri = int(isqrtU(uint(ax * ax) + uint(ay * ay))) * 16;
+    int ang = atan2Fixo(dyp, dxp) - int(comeco * 65536.0 + 0.5);
+    if (ang < 0) ang += MEIA_VOLTA;
+    int ai = min((ang << 6) / int(round(passoAng * 16384.0)), na * 256);
+    int r0 = min(ri >> 8, nr - 1), r1 = (ri >> 8) < nr ? (ri >> 8) + 1 : nr - 1, fr = ri & 255;
+    int c0 = min(ai >> 8, na - 1), c1 = (ai >> 8) < na - 1 ? c0 + 1 : 0, fa = ai & 255;
+
+    ivec2 m0 = raioDaColuna(c0, r0, r1), m1 = raioDaColuna(c1, r0, r1);
+    uint ufa = uint(fa), ufr = uint(fr);
+    uint v = (((256u - ufa) * uint(m0.y) + uint(m1.y) * ufa) * ufr + ((256u - ufa) * uint(m0.x) + uint(m1.x) * ufa) * (256u - ufr)) >> 16;
+    // a cintilação (Shimmer): uma modulação por ângulo que anda (aproximada)
+    float vf = float(v);
+    if (rayTexture == 1) {
+        float angf = atan(float(dyp), float(dxp));
+        float mm = perlin3(vec3(angf * (2.0 + shimmerDetail * 0.4), 0.0, acTime * 0.5)) * 2.0;
+        vf *= max(0.0, 1.0 + shimmerIntensity / 100.0 * mm);
+    }
+    int I = int(max(intensity, 0.0) * 0.01 * 256.0);
+    float u = min(floor(vf * float(I) / 8192.0), 1024.0);
+    float g = (u >= 1024.0 ? 255.0 : floor(u / 4.0)) / 255.0;     // o alfa da luz (8 bits)
+    float gc = u / 1024.0;                                         // a luz de 10 bits do Colorize
+
+    // 3. cor e composição (a cor sai da luz antes do Light Opacity)
+    // Light Matte: a luz em cinza e opaca (o Light Opacity num matte não foi medido: entra no cinza)
+    vec3 cor = (colorMode == 1) ? vec3(min(g * clamp(lightOpacity, 0.0, 100.0), 1.0)) : colorir(gc);
+    float gl = (colorMode == 1) ? 1.0 : min(g * clamp(lightOpacity, 0.0, 100.0), 1.0);
+    vec3 srcP = src.rgb * src.a * sourceOpacity;
+    float srcA = src.a * sourceOpacity;
+    vec3 luzP = cor * gl;
+    vec3 outP; float outA;
+    if (applyMode == 0) {            // Behind: a camada por cima da luz
+        outP = srcP + luzP * (1.0 - srcA); outA = srcA + gl * (1.0 - srcA);
+    } else if (applyMode == 1) {     // None: só a luz
+        outP = luzP; outA = gl;
+    } else if (applyMode == 2) {     // In Front (o padrão): a luz por cima da camada
+        outP = luzP + srcP * (1.0 - gl); outA = gl + srcA * (1.0 - gl);
+    } else {                         // do Lighten ao 50 50 Mix: o RGBMix (1º operando a luz, 2º a camada)
+        ivec4 X = ivec4(bytes4(vec4(cor, 1.0)).rgb, int(floor(gl * 255.0 + 0.5)));
+        ivec4 Y = bytes4(vec4(src.rgb, srcA));
+        bool pegaB;
+        ivec3 cm = modo(applyMode - 3, X.rgb, Y.rgb, pegaB);
+        ivec4 M = pegaB ? Y : ivec4(cm, X.a);
+        vec3 rgb = vec3(compor(M, X, Y)) / 255.0;
+        outA = gl + srcA * (1.0 - gl);              // não medido numa camada com transparência
+        outP = rgb * outA;
+    }
+    vec4 orig = vec4(src.rgb * src.a, src.a);
+    vec4 res = mix(vec4(outP, outA), orig, clamp(mixOriginal, 0.0, 1.0));
+    fragColor = res.a > 1e-6 ? vec4(res.rgb / res.a, res.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   OCLUSÃO DE AMBIENTE 2.5D — PELO MAPA DE PROFUNDIDADE
+  ============================================================================
+
+  Escurece cantos, dobras e o chão junto dos objetos de uma FOTO ou VÍDEO,
+  usando um mapa de profundidade de outra camada — o mesmo mecanismo do
+  `depth-map.xml` (`src="layer"`): gere o mapa (Depth Anything, no app), esconda
+  a camada dele e escolha-a aqui.
+
+  O AO do MODELO 3D não é este efeito: lá a geometria é exata e o AO mora no
+  painel do modelo (ver `PasseDeOclusao`). Aqui a superfície é RECONSTRUÍDA de um
+  mapa, e o resultado é plausível, não medido.
+
+  ============================================================================
+   O MAPA É DISPARIDADE, NÃO DISTÂNCIA
+  ============================================================================
+
+  O mapa vale 0..1 com 1 = perto, e é RELATIVO (cada quadro tem escala própria).
+  Tratá-lo como distância linear espalha o fundo e cria AO forte em céu e
+  parede; como INVERSO da distância, ele comprime o fundo como uma câmera real:
+
+      z(d) = 1 / (1/R + d (1 - 1/R))      d = 1 -> z = 1     d = 0 -> z = R
+
+  R é a "Profundidade da cena" (longe/perto). A unidade passa a ser "a distância
+  do objeto mais perto", e o Raio é medido nela: o mesmo raio dá o mesmo
+  resultado num retrato e numa paisagem. A mesma conta, testada, está em
+  `ContaDaOclusao.distanciaDaDisparidade`.
+
+  ============================================================================
+   OS PASSES
+  ============================================================================
+
+  0. RECONSTRUÇÃO (tamanho cheio): o mapa ampliado com filtro guiado pela COR da
+     imagem (bilateral conjunta) — o mapa vem em até 640 px e a borda dele cai
+     fora da borda da foto; assim ela volta para o lugar. Sai empacotado em 16
+     bits (r + g/255) e é lido sempre com `texelFetch`: interpolar os dois bytes
+     de um número empacotado daria lixo.
+  1. AO (meia resolução): SSAO em hemisfério com as correções do plano — alcance
+     `raio / |dz|`, comparação "a cena está na frente da amostra", normal por
+     diferença de UM LADO só (o de menor salto), ruído 4×4 preso à tela.
+  2. e 3. LIMPEZA horizontal e vertical, 4 texels cada (a largura do ruído),
+     respeitando a profundidade.
+  4. APLICAR (tamanho cheio): ampliação que respeita a profundidade, contraste,
+     intensidade, cor. Mexe só no RGB e devolve o alfa intacto — o motor usa
+     alfa direto.
+
+  ============================================================================
+   O HALO EM VOLTA DE RETRATOS
+  ============================================================================
+
+  O Depth Anything suaviza a transição pessoa/fundo, e a rampa vira uma parede
+  inclinada que oclui tudo em volta. Três defesas: o filtro guiado pela cor
+  (passe 0), o alcance corrigido (a amostra que cruza a borda não conta) e a
+  CONFIANÇA: onde o salto relativo de profundidade entre vizinhos é grande, ou o
+  alfa é baixo, o AO é atenuado. Pixel transparente não tem superfície.
+
+  Onde não esperar milagre: vidro, espelho, céu com nuvem, anime/2D e texto por
+  cima — os casos em que o próprio mapa erra. "Ver: Profundidade" e "Ver:
+  Normais" existem para mostrar POR QUE um canto escureceu.
+
+  Não faz (ainda): pirâmide de profundidade (SAO), histórico temporal e a oferta
+  de gerar o mapa quando falta — ver o plano.
+-->
+<effect
+    id="nova.effect.ao"
+    name="Oclusão de ambiente"
+    name-en="Ambient Occlusion"
+    desc="Escurece cantos, dobras e contatos de uma foto ou vídeo a partir de um mapa de profundidade (outra camada)."
+    desc-en="Darkens corners, creases and contact areas of a photo or video using a depth map layer."
+    category="stylize"
+    catalog="false"
+    tags="oclusão,ambiente,ao,ssao,ambient occlusion,sombra de contato,profundidade,depth,2.5d,element 3d">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="dispBuf" src="buffer" />
+        <texture id="aoRaw" src="buffer" scale="0.5" />
+        <texture id="aoBlurH" src="buffer" scale="0.5" />
+        <texture id="aoBlurV" src="buffer" scale="0.5" />
+
+        <texture id="depthMap" src="layer" label="Mapa de profundidade (branco = perto)" />
+        <switch id="invertDepth" label="Inverter (branco = longe)" default="false" />
+
+        <slider id="aoIntensity" label="Intensidade"
+                default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="aoRadius" label="Raio"
+                default="0.5" min="0.05" max="2.0" step="0.01" snap="0.5" />
+        <slider id="sceneDepth" label="Profundidade da cena"
+                default="8.0" min="2.0" max="50.0" step="0.5" snap="8.0" />
+        <color id="aoColor" label="Cor do AO" default="#000000" />
+        <selector id="aoOutput" label="Saída" options="Aplicar|Só o AO" default="0" />
+
+        <!-- ============================ Avançado ============================ -->
+        <slider id="aoContrast" group="Avançado" label="Contraste"
+                default="1.5" min="0.5" max="4.0" step="0.01" snap="1.5" />
+        <selector id="aoFalloff" group="Avançado" label="Queda"
+                  options="Linear|Suave|Exponencial" default="1" />
+        <slider id="aoBias" group="Avançado" label="Viés"
+                default="0.02" min="0.0" max="0.1" step="0.001" snap="0.02" />
+        <switch id="contactAo" group="Avançado" label="AO de contato" default="true" />
+        <slider id="contactStrength" group="Avançado" label="Força do contato" showIf="contactAo=true"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <selector id="aoQuality" group="Avançado" label="Qualidade"
+                  options="Rascunho|Prévia|Alta|Exportação" default="1" />
+        <slider id="fieldOfView" group="Avançado" label="Campo de visão"
+                default="50.0" min="10.0" max="120.0" step="1.0" snap="50.0" type="angle" />
+        <selector id="aoView" group="Avançado" label="Ver"
+                  options="Resultado|Profundidade|Normais|AO bruto|AO limpo|Contribuição" default="0" />
+    </params>
+
+    <passes>
+        <pass target="dispBuf" />
+        <pass target="aoRaw" />
+        <pass target="aoBlurH" />
+        <pass target="aoBlurV" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265359;
+
+/** O mapa naquele ponto, 0 (longe) a 1 (perto). */
+float lerMapa(vec2 uv) {
+    float v = dot(texture(depthMap, uv).rgb, vec3(0.299, 0.587, 0.114));
+    return invertDepth ? 1.0 - v : v;
+}
+
+// ------------------------------------------------ a superfície reconstruída
+
+ivec2 tamanhoCheio() {
+    return textureSize(dispBuf, 0);
+}
+
+/** A disparidade refinada (passe 0), desempacotada. Sempre por texel inteiro. */
+float disparidadeEm(ivec2 p) {
+    ivec2 t = tamanhoCheio();
+    vec4 v = texelFetch(dispBuf, clamp(p, ivec2(0), t - 1), 0);
+    return v.r + v.g / 255.0;
+}
+
+/** Disparidade -> distância. Ver o cabeçalho. */
+float distanciaEm(ivec2 p) {
+    float r = max(sceneDepth, 1.0001);
+    return 1.0 / (1.0 / r + disparidadeEm(p) * (1.0 - 1.0 / r));
+}
+
+float tangenteDoCampo() {
+    return tan(radians(clamp(fieldOfView, 1.0, 170.0)) * 0.5);
+}
+
+/** O ponto 3D atrás do pixel p. Câmera na origem, olhando para +z. */
+vec3 posicaoEm(ivec2 p) {
+    vec2 t = vec2(tamanhoCheio());
+    vec2 uv = (vec2(p) + 0.5) / t;
+    float z = distanciaEm(p);
+    float th = tangenteDoCampo();
+    return vec3((uv.x * 2.0 - 1.0) * z * th * (t.x / t.y), (uv.y * 2.0 - 1.0) * z * th, z);
+}
+
+/** Onde, na tela (0..1), cai um ponto 3D. */
+vec2 projetar(vec3 q) {
+    vec2 t = vec2(tamanhoCheio());
+    float th = tangenteDoCampo();
+    return vec2(q.x / (q.z * th * (t.x / t.y)), q.y / (q.z * th)) * 0.5 + 0.5;
+}
+
+ivec2 texelCheio(vec2 uv) {
+    return ivec2(uv * vec2(tamanhoCheio()));
+}
+
+/**
+ * A normal por diferença de UM LADO só em cada eixo — o lado de menor salto de
+ * profundidade. A diferença central atravessa dois objetos na borda e entorta a
+ * normal: é daí que vem o contorno escuro.
+ */
+vec3 normalEm(ivec2 p) {
+    vec3 c = posicaoEm(p);
+    vec3 xm = posicaoEm(p - ivec2(1, 0));
+    vec3 xp = posicaoEm(p + ivec2(1, 0));
+    vec3 ym = posicaoEm(p - ivec2(0, 1));
+    vec3 yp = posicaoEm(p + ivec2(0, 1));
+    vec3 dx = abs(xp.z - c.z) < abs(c.z - xm.z) ? xp - c : c - xm;
+    vec3 dy = abs(yp.z - c.z) < abs(c.z - ym.z) ? yp - c : c - ym;
+    vec3 n = normalize(cross(dx, dy));
+    // Virada para a câmera (que está na origem).
+    return dot(n, -c) < 0.0 ? -n : n;
+}
+
+/** O salto relativo de profundidade em volta de p: grande = borda de objeto. */
+float saltoEm(ivec2 p) {
+    float z = distanciaEm(p);
+    float m = max(
+        max(abs(distanciaEm(p + ivec2(1, 0)) - z), abs(distanciaEm(p - ivec2(1, 0)) - z)),
+        max(abs(distanciaEm(p + ivec2(0, 1)) - z), abs(distanciaEm(p - ivec2(0, 1)) - z))
+    );
+    return m / max(z, 1e-4);
+}
+
+// --------------------------------------------------------------- o estimador
+
+float bayer4(ivec2 p) {
+    int i = (p.y & 3) * 4 + (p.x & 3);
+    const float M[16] = float[16](
+         0.0,  8.0,  2.0, 10.0,
+        12.0,  4.0, 14.0,  6.0,
+         3.0, 11.0,  1.0,  9.0,
+        15.0,  7.0, 13.0,  5.0
+    );
+    return (M[i] + 0.5) / 16.0;
+}
+
+/**
+ * A amostra i de n do kernel, no hemisfério z >= 0, concentrada perto do
+ * centro (escala de 0,1 a 1 pelo quadrado do índice). Espiral dourada com peso
+ * de cosseno: determinística, sem tabela.
+ */
+vec3 amostraDoKernel(int i, int n, float semente) {
+    float t = (float(i) + 0.5) / float(n);
+    float fi = float(i) * 2.39996323 + semente;
+    float cosT = sqrt(1.0 - t * 0.95);
+    float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
+    float escala = mix(0.1, 1.0, t * t);
+    return vec3(cos(fi) * sinT, sin(fi) * sinT, cosT) * escala;
+}
+
+float pesoDaQueda(float t) {
+    if (aoFalloff == 0) return 1.0 - 0.75 * t;
+    if (aoFalloff == 2) return exp(-2.5 * t);
+    return 1.0 - 0.75 * t * t * (3.0 - 2.0 * t);
+}
+
+float ocluir(vec3 P, mat3 tbn, float raio, int n, float semente) {
+    float occ = 0.0;
+    float total = 0.0;
+    for (int i = 0; i < 32; i++) {
+        if (i >= n) break;
+        vec3 k = amostraDoKernel(i, n, semente);
+        float peso = pesoDaQueda(clamp(length(k), 0.0, 1.0));
+        total += peso;
+
+        vec3 Q = P + tbn * k * raio;
+        if (Q.z <= 0.0) continue;
+        vec2 suv = projetar(Q);
+        if (suv.x < 0.0 || suv.y < 0.0 || suv.x > 1.0 || suv.y > 1.0) continue;
+        float zCena = distanciaEm(texelCheio(suv));
+
+        // Alcance: cai com a distância entre o ponto e a superfície achada.
+        float alcance = smoothstep(0.0, 1.0, raio / max(abs(P.z - zCena), 1e-4));
+        // Bloqueada: a cena está NA FRENTE da amostra.
+        occ += (zCena <= Q.z - aoBias ? 1.0 : 0.0) * alcance * peso;
+    }
+    return total > 0.0 ? occ / total : 0.0;
+}
+
+int amostrasDaQualidade() {
+    if (aoQuality == 0) return 8;
+    if (aoQuality == 2) return 16;
+    if (aoQuality == 3) return 24;
+    return 12;
+}
+
+int amostrasDeContato() {
+    if (!contactAo || contactStrength <= 0.0 || aoQuality == 0) return 0;
+    return aoQuality == 3 ? 8 : 4;
+}
+
+// ------------------------------------------------------------------ limpeza
+
+float aoEm(sampler2D fonte, ivec2 q) {
+    ivec2 t = textureSize(fonte, 0);
+    return texelFetch(fonte, clamp(q, ivec2(0), t - 1), 0).r;
+}
+
+/** A distância na superfície embaixo do texel q de um buffer de meia resolução. */
+float distanciaDoTexelReduzido(ivec2 q, ivec2 tamanhoReduzido) {
+    vec2 uv = (vec2(q) + 0.5) / vec2(tamanhoReduzido);
+    return distanciaEm(texelCheio(uv));
+}
+
+float limpar(sampler2D fonte, ivec2 direcao) {
+    ivec2 t = textureSize(fonte, 0);
+    ivec2 q0 = ivec2(acScreenNorm * vec2(t));
+    float z0 = distanciaDoTexelReduzido(q0, t);
+    float tolerancia = max(aoRadius * 0.5, z0 * 0.02);
+    float soma = 0.0;
+    float peso = 0.0;
+    // 4 texels: a largura exata do ruído 4×4.
+    for (int i = -2; i < 2; i++) {
+        ivec2 q = q0 + direcao * i;
+        float z = distanciaDoTexelReduzido(q, t);
+        float w = exp(-abs(z - z0) / tolerancia);
+        soma += aoEm(fonte, q) * w;
+        peso += w;
+    }
+    return peso > 1e-4 ? soma / peso : aoEm(fonte, q0);
+}
+
+/** A ampliação ao tamanho cheio, pesando os 4 texels reduzidos pela profundidade. */
+float ampliar(sampler2D fonte) {
+    ivec2 t = textureSize(fonte, 0);
+    vec2 base = acScreenNorm * vec2(t) - 0.5;
+    ivec2 q0 = ivec2(floor(base));
+    vec2 f = fract(base);
+    float z0 = distanciaEm(texelCheio(acScreenNorm));
+    float tolerancia = max(aoRadius * 0.25, z0 * 0.01);
+    float soma = 0.0;
+    float peso = 0.0;
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 2; i++) {
+            ivec2 q = q0 + ivec2(i, j);
+            float bi = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+            float w = (bi + 1e-3) * exp(-abs(distanciaDoTexelReduzido(q, t) - z0) / tolerancia);
+            soma += aoEm(fonte, q) * w;
+            peso += w;
+        }
+    }
+    return peso > 1e-5 ? soma / peso : aoEm(fonte, q0);
+}
+
+// --------------------------------------------------------------------- main
+
+void main() {
+    // 0. A reconstrução: o mapa guiado pela cor, empacotado em 16 bits.
+    if (acPass == 0) {
+        vec3 c0 = texture(inputImg, acScreenNorm).rgb;
+        float soma = 0.0;
+        float peso = 0.0;
+        for (int j = -2; j <= 2; j++) {
+            for (int i = -2; i <= 2; i++) {
+                vec2 uv = acScreenNorm + vec2(float(i), float(j)) * 2.0 * acTexelSize;
+                vec3 c = texture(inputImg, uv).rgb - c0;
+                float w = exp(-dot(c, c) * 40.0) * exp(-float(i * i + j * j) / 8.0);
+                soma += lerMapa(uv) * w;
+                peso += w;
+            }
+        }
+        float d = clamp(soma / max(peso, 1e-5), 0.0, 1.0);
+        float alto = floor(d * 255.0) / 255.0;
+        fragColor = vec4(alto, fract(d * 255.0), 0.0, 1.0);
+        return;
+    }
+
+    // 1. O AO, em meia resolução.
+    if (acPass == 1) {
+        ivec2 p = texelCheio(acScreenNorm);
+        vec3 P = posicaoEm(p);
+        vec3 n = normalEm(p);
+        float ang = bayer4(ivec2(gl_FragCoord.xy)) * 2.0 * PI;
+        vec3 giro = vec3(cos(ang), sin(ang), 0.0);
+        vec3 t = giro - n * dot(giro, n);
+        if (dot(t, t) < 1e-4) {
+            giro = vec3(0.0, cos(ang), sin(ang));
+            t = giro - n * dot(giro, n);
+        }
+        t = normalize(t);
+        mat3 tbn = mat3(t, cross(n, t), n);
+
+        float ao = 1.0 - ocluir(P, tbn, aoRadius, amostrasDaQualidade(), 0.0);
+        int nContato = amostrasDeContato();
+        if (nContato > 0) {
+            float contato = 1.0 - ocluir(P, tbn, aoRadius * 0.125, nContato, 1.3);
+            ao = min(ao, mix(1.0, contato, contactStrength));
+        }
+
+        // Confiança: perto de borda de objeto e onde o alfa é baixo, menos AO.
+        float borda = smoothstep(0.08, 0.25, saltoEm(p));
+        float alfa = smoothstep(0.0, 0.5, texture(inputImg, acScreenNorm).a);
+        ao = mix(1.0, ao, (1.0 - borda) * alfa);
+        fragColor = vec4(ao, ao, ao, 1.0);
+        return;
+    }
+
+    // 2. e 3. A limpeza separável.
+    if (acPass == 2) {
+        float v = limpar(aoRaw, ivec2(1, 0));
+        fragColor = vec4(v, v, v, 1.0);
+        return;
+    }
+    if (acPass == 3) {
+        float v = limpar(aoBlurH, ivec2(0, 1));
+        fragColor = vec4(v, v, v, 1.0);
+        return;
+    }
+
+    // 4. Aplicar.
+    vec4 src = texture(inputImg, acScreenNorm);
+    ivec2 p = texelCheio(acScreenNorm);
+
+    if (aoView == 1) {
+        fragColor = vec4(vec3(disparidadeEm(p)), src.a);
+        return;
+    }
+    if (aoView == 2) {
+        fragColor = vec4(normalEm(p) * 0.5 + 0.5, src.a);
+        return;
+    }
+    if (aoView == 3) {
+        fragColor = vec4(vec3(texture(aoRaw, acScreenNorm).r), src.a);
+        return;
+    }
+
+    float ao = ampliar(aoBlurV);
+    if (aoView == 4) {
+        fragColor = vec4(vec3(ao), src.a);
+        return;
+    }
+
+    ao = pow(clamp(ao, 0.0, 1.0), aoContrast);
+    float escurecer = clamp((1.0 - ao) * aoIntensity, 0.0, 1.0);
+
+    if (aoView == 5) {
+        fragColor = vec4(vec3(escurecer), src.a);
+        return;
+    }
+
+    // "Só o AO": em cinza, para compor com Multiplicar — o jeito de quem vem do
+    // After Effects. Opaco onde a camada existe.
+    if (aoOutput == 1) {
+        fragColor = vec4(vec3(1.0 - escurecer), src.a);
+        return;
+    }
+
+    // Só o RGB: alfa direto, intacto.
+    vec3 cor = mix(vec3(1.0), aoColor.rgb, escurecer * aoColor.a);
+    fragColor = vec4(src.rgb * cor, src.a);
+}
+
+    ]]></shader>
+</effect>

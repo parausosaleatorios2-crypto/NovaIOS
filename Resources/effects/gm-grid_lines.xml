@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.grid_lines" name="Grid Lines" desc="A clean technical grid with independent line counts, thickness and colour. Add a scroll for a HUD." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/grid_lines.png"
+        tags="procedural,grid,lines,hud,tech" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Grid" />
+<spinner id="cols" default="16.0" min="2.0" max="100.0" step="1.0" label="Columns" type="integer" />
+<spinner id="rows" default="9.0" min="2.0" max="100.0" step="1.0" label="Rows" type="integer" />
+<spinner id="thickness" default="0.02" min="0.002" max="0.2" step="0.002" label="Thickness" />
+<color id="lineColor" default="#FF35E0C0" label="Line Colour" />
+<spinner id="scroll" default="0.0" min="0.0" max="10.0" step="0.05" label="Scroll Speed" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<!-- Na vitrine: grade grossa e andando, senao sao linhas de meio pixel paradas. (05/11/2026) -->
+<preview>
+<set param="cols" value="10.0" />
+<set param="rows" value="6.0" />
+<set param="thickness" value="0.06" />
+<set param="scroll" value="2.0" />
+</preview>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec2 p = uv * vec2(cols, rows) + vec2(0.0, acTime * scroll);
+  vec2 g = abs(fract(p) - 0.5);
+  vec2 l = smoothstep(0.5 - thickness, 0.5, g);
+  float line = max(l.x, l.y);
+  vec3 col = mix(c, lineColor.rgb, line * mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

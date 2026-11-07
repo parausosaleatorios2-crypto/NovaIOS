@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   FILME ANTIGO
+  ============================================================================
+
+  Transforma qualquer take num rolo dos anos 30: sépia, grão, cintilação e
+  arranhões verticais correndo pela tela. Tudo num passe, nada de preset de
+  outro efeito.
+
+  ============================================================================
+   AS QUATRO CAMADAS
+  ============================================================================
+
+  Um visual de filme antigo é a soma de quatro coisas que acontecem no mesmo
+  pixel:
+
+  1. **Sépia:** uma matriz 3×3 fixa que leva R, G, B aos tons quentes. É mais
+     fiel do que "desaturar + multiplicar por amarelo".
+  2. **Grão:** ruído alto-frequencial multiplicado na luma. Hash do pixel +
+     tempo, que é o que faz o grão DANÇAR.
+  3. **Cintilação (flicker):** a exposição inteira oscila, como a luz do
+     projetor passando por quadros de brilho diferente.
+  4. **Arranhões:** linhas verticais finas sorteadas por hash do tempo. Cada
+     "quadro" (acTime arredondado) tem um conjunto novo — é o que faz os
+     riscos aparecerem e sumirem, como no filme real que estava sujo.
+-->
+<effect
+    id="nova.effect.old-film"
+    name="Filme antigo"
+    name-en="Old Film"
+    desc="Sépia, grão, cintilação e arranhões no mesmo passe."
+    desc-en="Sepia, grain, flicker and scratches in a single pass."
+    category="stylize"
+    tags="filme antigo,old film,sépia,grão,arranhão,vintage,retrô,cinema">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="sepiaMix" label="Sépia"
+                default="0.85" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="grainStrength" label="Grão"
+                default="0.25" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="flickerStrength" label="Cintilação"
+                default="0.1" min="0.0" max="0.6" step="0.01" snap="0.0" />
+        <slider id="scratchCount" label="Arranhões"
+                default="4" min="0" max="12" step="1" type="integer" />
+        <slider id="scratchFreq" label="Troca de arranhão (Hz)"
+                default="8.0" min="1.0" max="30.0" step="0.5" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <!-- Na vitrine, mais grão pra assinar o look. -->
+    <preview>
+        <set param="grainStrength" value="0.4" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAXIMO_DE_ARRANHOES = 12;
+
+float hash1(float x) {
+    return fract(sin(x * 127.1 + float(seed) * 13.7) * 43758.5453);
+}
+
+float hash2(vec2 c) {
+    return fract(sin(dot(c, vec2(127.1, 311.7)) + float(seed) * 13.7) * 43758.5453);
+}
+
+/** A matriz clássica de sépia (Microsoft Office / IE "sepia" filter). */
+vec3 sepia(vec3 c) {
+    float r = dot(c, vec3(0.393, 0.769, 0.189));
+    float g = dot(c, vec3(0.349, 0.686, 0.168));
+    float b = dot(c, vec3(0.272, 0.534, 0.131));
+    return vec3(r, g, b);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // 1. Sépia
+    vec3 cor = mix(original.rgb, sepia(original.rgb), sepiaMix);
+
+    // 2. Grão: hash do pixel + tempo (o tempo faz o grão dançar).
+    float grao = hash2(acScreenNorm * 1000.0 + vec2(acTime * 60.0)) - 0.5;
+    cor += vec3(grao) * grainStrength;
+
+    // 3. Cintilação: brilho global oscila devagar.
+    float bruxuleio = 1.0 + (hash1(floor(acTime * 12.0)) - 0.5) * flickerStrength * 2.0;
+    cor *= bruxuleio;
+
+    // 4. Arranhões verticais: cada "quadro do projetor" (acTime arredondado por scratchFreq)
+    //    sorteia N posições; se o pixel está perto de alguma delas, risca.
+    int n = clamp(int(scratchCount + 0.5), 0, MAXIMO_DE_ARRANHOES);
+    float quadro = floor(acTime * scratchFreq);
+    float traco = 0.0;
+    for (int k = 0; k < MAXIMO_DE_ARRANHOES; k++) {
+        if (k >= n) break;
+        float x = hash1(quadro * 97.0 + float(k) * 13.1);
+        float largura = 0.0005 + 0.0015 * hash1(quadro * 7.0 + float(k) * 3.3);
+        float distancia = abs(acScreenNorm.x - x);
+        traco = max(traco, 1.0 - smoothstep(0.0, largura, distancia));
+    }
+    cor = mix(cor, vec3(1.0), traco * 0.7);
+
+    cor = clamp(cor, 0.0, 1.0);
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

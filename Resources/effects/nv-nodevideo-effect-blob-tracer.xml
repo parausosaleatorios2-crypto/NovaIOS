@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_blob_tracer
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blob-tracer"
+    name="Effect Blob Tracer (NV)"
+    name-en="Effect Blob Tracer (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_blob_tracer', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_blob_tracer', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="_color_key" label="Color Key" default="#FFFFFFFF" />
+        <slider id="_color_threshold" label="Color Threshold" default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+bool u_xlatb0;
+vec3 u_xlat1;
+void main()
+{
+    u_xlat0.xyz = texture(inputImg, acScreenNorm.xy).xyz;
+    u_xlat1.xyz = _color_key.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = _color_key.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat0.xyz = (-_color_key.xyz) * u_xlat1.xyz + u_xlat0.xyz;
+    u_xlat0.x = dot(u_xlat0.xyz, u_xlat0.xyz);
+    u_xlat0.x = sqrt(u_xlat0.x);
+    u_xlatb0 = u_xlat0.x<_color_threshold;
+    if(u_xlatb0){
+        fragColor = vec4(1.0, 1.0, 1.0, 1.0);
+        return;
+    }
+    fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+    return;
+}
+    ]]></shader>
+</effect>

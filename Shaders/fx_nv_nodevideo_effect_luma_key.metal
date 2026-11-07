@@ -1,0 +1,53 @@
+// ---------------------------------------------------------------------------
+// Effect Luma Key (NV)
+// origem : assets/effects/nv-nodevideo-effect-luma-key.xml
+// id     : nv.effect.nodevideo-effect-luma-key
+// passes : 1
+// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// ---------------------------------------------------------------------------
+#include <metal_stdlib>
+#include "NovaEngineUniforms.h"
+#include "NovaShaderHelpers.h"
+using namespace metal;
+
+struct nv_nodevideo_effect_luma_keyParams {
+    float _intensity;
+    float _interpolation;
+    float _show_mask;
+    float _invert;
+};
+
+// --- funcoes auxiliares do efeito
+float4 u_xlat0;
+float4 u_xlat1;
+float u_xlat3;
+bool2 u_xlatb5;
+
+fragment float4 fx_nv_nodevideo_effect_luma_key(
+    NovaVertexOut       in   [[stage_in]],
+    constant EngineUniforms& eng [[buffer(0)]],
+    constant nv_nodevideo_effect_luma_keyParams&  u    [[buffer(1)]],
+    sampler             __nv_smp [[sampler(0)]],
+    texture2d<float> inputImg [[texture(0)]])
+{
+    float4 __nv_fragCoord = in.position;
+    float2 __nv_pointCoord = in.uv;
+    float4 __nv_out = float4(0.0);
+
+    u_xlat0 = inputImg.sample(__nv_smp, in.acScreenNorm.xy);
+    u_xlat1 = float4(float4(u._interpolation, u._interpolation, u._interpolation, u._interpolation)) * (-u_xlat0) + u_xlat0;
+    u_xlat1.x = dot(u_xlat1, u_xlat1);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat1.x = log2(u_xlat1.x);
+    u_xlat1.x = u_xlat1.x * u._intensity;
+    u_xlat1.x = exp2(u_xlat1.x);
+    u_xlat1.x = min(u_xlat1.x, 1.0);
+    u_xlat3 = (-u_xlat1.x) + 1.0;
+    u_xlatb5.xy = equal(int4(u._invert, u._show_mask, u._invert, u._show_mask), int4(1, 1, 1, 1)).xy;
+    u_xlat1.x = (u_xlatb5.x) ? u_xlat3 : u_xlat1.x;
+    u_xlat0 = (u_xlatb5.y) ? float4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+    __nv_out.w = u_xlat1.x * u_xlat0.w;
+    __nv_out.xyz = u_xlat0.xyz;
+    return __nv_out;
+    return __nv_out;
+}

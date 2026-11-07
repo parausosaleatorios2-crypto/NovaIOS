@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AZULEJOS — o Tiles do Alight Motion, conta por conta (0.578.0)
+  ============================================================================
+
+  Pedido do snow (16/10/2026): "faz agora o efeito tiles 100% igual o do alight motion", da série "100% iguais ao
+  AM". Mesmos parâmetros, ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.tile` (um projeto do
+  AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/tile.xml` do APK
+  descompactado) e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é
+  `python tools/amazulejos/comparar.py`: o efeito do AM rodado na GPU do PC ao lado deste. O "Repetir" do Nova
+  (`tile.xml`, a grade com colunas e linhas) é outro efeito e fica como está.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A camada é repetida pela tela inteira em ladrilhos do tamanho do retângulo do conteúdo (a forma sem o traço, a
+    caixa do texto, a mídia), nos eixos da própria camada: mover, girar ou escalar a camada leva a grade junto. A
+    conta é na coordenada da CAMADA do AM (`acLayerNorm`: o retângulo do conteúdo de 0 a 1, com o Y para cima).
+  - Deslocamento (`phase`): as fileiras ímpares (y entre 1 e 2, 3 e 4… e −1 e 0…) andam esse tanto de ladrilhos em
+    X — o padrão de tijolo. Com "Deslocar verticalmente", são as colunas ímpares que andam em Y.
+  - Espelhar: cada ladrilho vizinho sai espelhado (`abs(mod(t − 1, 2) − 1)`), e as emendas casam; sem ele, a
+    camada se repete igual (`mod(t, 1)`).
+  - Recortar (`scale`) e Ângulo: dentro de cada ladrilho, a busca na camada é feita em volta do meio, dividida por
+    Recortar + 4 pixels (1 ÷ o tamanho da imagem renderizada × 4 — o AM encolhe cada ladrilho em 4 px, e com
+    Recortar 1 a camada inteira cabe com essa folguinha) e girada pelo Ângulo, com a correção do aspecto do
+    retângulo (o giro é redondo na tela). Recortar abaixo de 1 aumenta a camada dentro do ladrilho (e corta o que
+    sobra); acima de 1, diminui, e em volta aparece o que a camada tem em volta do retângulo (o brilho de um efeito
+    de antes, ou nada). O Ângulo usa o número do AM (× 0,0174533, não π/180).
+  - O AM roda o efeito NA TELA, depois de mover, girar e escalar a camada, e busca a camada JÁ na tela (filtro
+    linear sobre a cor PRÉ-multiplicada, a textura dele, presa na borda da tela). Aqui é igual ao Túnel (AM):
+    `stage="screen"`, a ida à camada pela volta da `acCamadaParaTela`, a volta pela própria matriz sem a divisão
+    da perspectiva quando ela é afim, e o filtro linear feito à mão nos 4 pixels sobre a cor pré-multiplicada (na
+    cor reta a borda escureceria).
+  - O Y da coordenada da camada do AM cresce para CIMA e o do buffer de camada do Nova para baixo (a linha 0 é o
+    topo). O Azulejos não é simétrico em Y (quais fileiras andam, o sentido do Ângulo), então a conta inverte o Y na
+    ida e na volta, como o Túnel.
+  - Os 4 pixels do AM são da imagem RENDERIZADA (`inputImg.size`, o tamanho da textura): na exportação, a
+    composição. Aqui, `acEscalaDePixel` ÷ o tamanho do buffer: na resolução cheia é o mesmo número, e a prévia
+    reduzida mostra o ladrilho da exportação (no AM a prévia dele muda um pouco com a resolução).
+  - `<spinner>` como no AM: o leitor dele (`readSpinnerParam`) lê `ticks` e não lê `snap`. O Ângulo é ângulo
+    (`type="angle"`): º e voltas na caixa.
+  - O `overdraw`/`max-overdraw` do AM só alarga a área que o EDITOR dele desenha fora da composição; a imagem
+    exportada não muda, e aqui não existe.
+  - Dentro de grupo (o filho), o corte na tela não existe: o efeito roda no buffer do filho, na coordenada dele.
+-->
+<effect
+    id="nova.effect.am-tiles"
+    name="Azulejos"
+    name-en="Tiles"
+    desc="Repete a camada em um padrão de ladrilho, preenchendo a tela (o Tiles do Alight Motion)."
+    desc-en="Repeats the layer in a tile pattern, filling the screen (Alight Motion's Tiles)."
+    category="distort"
+    tags="azulejos,ladrilho,ladrilhos,repetir,mosaico,tijolo,espelhar,tiles,tile,repeat,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="camadaInteira" src="camada" />
+        <spinner id="scale" label="Recortar" default="1.0" min="0.005" max="20.0" step="0.005" ticks="1.0" />
+        <spinner id="phase" label="Deslocamento" default="0.0" min="-100.0" max="100.0" step="0.005" ticks="0.0" />
+        <switch id="mirror" label="Espelhar" default="false" />
+        <switch id="vertoffs" label="Deslocar verticalmente" default="false" />
+        <spinner id="angle" label="Ângulo" default="0.0" min="-1800.0" max="1800.0" step="0.5"
+            ticks="-90.0,-45.0,0.0,45.0,90.0" type="angle" />
+    </params>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(sampler2D img, vec2 uv) {
+    ivec2 T = textureSize(img, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(img, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(img, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(img, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(img, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// O mesmo filtro no buffer da camada inteira, mas fora dele é NADA (transparente), e não a borda esticada. Fora do
+// buffer a camada não tem pixel: com Recortar abaixo de 1 numa camada do tamanho da tela, a busca passava da borda e
+// as fileiras de cima e de baixo viravam listras (relato do Discord, 25/10/2026).
+vec4 texelOuNada(sampler2D img, ivec2 a, ivec2 m) {
+    if (any(lessThan(a, ivec2(0))) || any(greaterThan(a, m))) return vec4(0.0);
+    return preMultiplicada(texelFetch(img, a, 0));
+}
+vec4 camadaSemBorda(sampler2D img, vec2 uv) {
+    ivec2 T = textureSize(img, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = texelOuNada(img, a, m);
+    vec4 c10 = texelOuNada(img, a + ivec2(1, 0), m);
+    vec4 c01 = texelOuNada(img, a + ivec2(0, 1), m);
+    vec4 c11 = texelOuNada(img, a + ivec2(1, 1), m);
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    // O pixel na tela (na tela, a identidade; no filho de grupo, o buffer dele levado à tela do grupo) e, de lá, a
+    // coordenada da camada do AM: o retângulo do conteúdo de 0 a 1, com o meio no meio do buffer (o buffer cobre a
+    // composição, `acTamanhoDaTela`).
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 st = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+    // O Y do AM cresce para CIMA (a matriz dele inverte o Y da tela) e o do buffer de camada do Nova para baixo
+    // (a linha 0 é o topo): sem isto, andam as fileiras erradas e o Ângulo gira ao contrário.
+    st.y = 1.0 - st.y;
+
+    // A conta do AM, linha por linha. Os 4 pixels são da imagem renderizada (ver o topo).
+    vec2 pixelSize = acEscalaDePixel / vec2(textureSize(inputImg, 0));
+    vec2 tiledCoord = st;
+    if (vertoffs) {
+        tiledCoord.y += step(1., mod(tiledCoord.x, 2.0)) * phase;
+    } else {
+        tiledCoord.x += step(1., mod(tiledCoord.y, 2.0)) * phase;
+    }
+    if (mirror) {
+        tiledCoord = abs(mod(tiledCoord - vec2(1.0, 1.0), vec2(2.0, 2.0)) - vec2(1.0, 1.0));
+    } else {
+        tiledCoord = mod(tiledCoord, vec2(1.0, 1.0));
+    }
+    float a = angle * 0.0174533;
+    mat2 rot = mat2(
+        cos(a), -sin(a),
+        sin(a), cos(a)
+    );
+    vec2 scaledCoord = tiledCoord;
+    scaledCoord -= vec2(0.5, 0.5);
+    scaledCoord *= vec2(1.0) / (scale + pixelSize * 4.0);
+    scaledCoord.x *= conteudo.x / conteudo.y;
+    scaledCoord *= rot;
+    scaledCoord.x *= conteudo.y / conteudo.x;
+    scaledCoord += vec2(0.5, 0.5);
+
+    // De volta ao buffer da camada e à imagem de entrada: na tela (a entrada é a camada já na tela), pela
+    // `acCamadaParaTela` sem a divisão da perspectiva quando ela é afim (como o `acLayerToScreen` do AM; o filho de
+    // grupo também vem por aqui desde a 0.622.0, na tela do grupo); numa camada desenhada à parte (o mapa de outro
+    // efeito), a própria UV do buffer. O Y volta para baixo.
+    vec2 b = 0.5 + (vec2(scaledCoord.x, 1.0 - scaledCoord.y) - 0.5) * conteudo / acTamanhoDaTela;
+    // Na tela com a camada inteira à mão: a busca vai ao buffer DELA, e não à camada já na tela. Lá o que a camada
+    // tem fora da tela não existe — arrastada para fora, a borda esticava em listras e depois sumia tudo (relato de
+    // 22/10/2026). Com a camada inteira na tela, dá o mesmo que antes. Fora do buffer dela, transparente.
+    if (acParaTela == mat3(1.0) && acCamadaPropria == 1) {
+        vec2 q = 0.5 + (b - 0.5) / max(acFolgaDaCamada, 1e-6);
+        // Longe demais o ivec2 do floor estoura: fora de [-1, 2] já é nada.
+        bool longe = any(isinf(q)) || any(isnan(q)) || any(lessThan(q, vec2(-1.0))) || any(greaterThan(q, vec2(2.0)));
+        vec4 d = longe ? vec4(0.0) : camadaSemBorda(camadaInteira, q);
+        fragColor = d.a > 0.0 ? vec4(min(d.rgb / d.a, vec3(1.0)), d.a) : vec4(0.0);
+        return;
+    }
+    vec2 p = b;
+    if (acParaTela == mat3(1.0)) {
+        vec3 c = acCamadaParaTela * vec3(b, 1.0);
+        bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+        p = afim ? c.xy : c.xy / c.z;
+    }
+
+    // Ponto infinito ou NaN (camada sem tamanho): a GPU decide, como no AM.
+    bool foraDaConta = any(isinf(p)) || any(isnan(p));
+    vec4 c = foraDaConta ? preMultiplicada(texture(inputImg, p)) : camadaNoPonto(inputImg, p);
+    fragColor = c.a > 0.0 ? vec4(min(c.rgb / c.a, vec3(1.0)), c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

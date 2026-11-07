@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BCC Magic Sharp (Boris Continuum, Image Restoration) — a conta do plugin.
+
+  Lida na `ContinuumAE/17/lib/Continuum_AE_8Bit.dll` (classe `MagicSharpFilter`) e conferida contra o After
+  Effects (`tools/bccmagicsharp/benchmark`, LEIAME.md): o modelo em numpy dá os mesmos pixels do AE em 8 bpc em
+  50 casos (cada controle sozinho, 4 fontes), menos 616 de 11,5 milhões (0,005%), todos a 1 nível — a aritmética
+  do OpenCL da GPU, que é por onde o plugin roda o desfoque.
+
+  A conta, em float32, sobre a cor RETA (o alfa passa direto):
+
+    1. A = v · float32(1/255) (o `0x3B808081` da DLL), por canal.
+    2. Para cada passe ligado k (Fine, Small, Medium, Coarse = 0..3), sempre a partir de A:
+       raio_k = Radius · 2^k; B_k = bilateral SEPARÁVEL de A (primeiro em x, depois em y), janela ±n
+       (n = ⌈raio⌉), borda repetida, peso espacial exp(−0,5·i²/raio) e peso de faixa 1 / (1 + d²·K),
+       K = float32(1/T²)·65536 (T = Sharpen Threshold), por canal; saída Σ w·c / Σ w.
+    3. x = (1 + 3a)·A − 3a·B_k, a = float32(float32(Amount·0,01)·Sharpen_k·2,56)/256; o ruído
+       n_r = 1 − (255 − Noise Suppression)/256 tira n_r de x (ou devolve A dentro de ±n_r): S_k.
+    4. Acumula: S do passe 0, depois (S_k − A) + acumulado.
+    5. A sintonia (`EffectScaler`): por canal (Red/Green/Blue Sharpen), luma/croma em YIQ (Luma/Chroma
+       Sharpen) e por faixa de luma (High/Mid/Shad, com as quatro faixas) — cada bloco só roda fora de 100%.
+    6. Reduce Grit: mais um bilateral, agora no resultado (Grit Radius e Grit Sensitivity).
+    7. ⌊float32(clamp(·)·255) + 0,5⌋; Mix with Original mistura com a fonte em 1/256.
+
+  Os buffers do motor são RGBA8: cada um guarda UM float32 inteiro (os 4 bytes). Passes 0–14: para cada canal,
+  os 4 bilaterais em x (h0..h3) e o passe em y que soma os níveis (accR/accG/accB); 15–17: o Grit em x; 18: o
+  Grit em y, a sintonia, o arredondamento e o Mix. Os constantes do host (Amount·0,01, ·2,56, 1/T²) saem
+  arredondados uma vez só, como na DLL (`divExata`): o float da GPU daria outro último bit.
+
+  O que NÃO é igual:
+    - a divisão e o exp da GPU (o peso e a média do bilateral) podem errar o último bit, e um valor que cai
+      em cima da fronteira do nível vira 1 nível — o mesmo tipo de resto que o AE tem contra o modelo;
+    - no RASCUNHO da prévia em movimento (`acRascunho`, play/arraste): com janela maior que ±24 px o
+      bilateral lê de passo em passo (até 49 amostras). Parado e na exportação, a conta inteira;
+    - Range Preview, Compare Mode e PixelChooser: fora (não mudam a imagem no padrão). O conversor avisa.
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.bccmagicsharp"
+    name="BCC Magic Sharp"
+    name-en="BCC Magic Sharp"
+    desc="O Magic Sharp do Boris Continuum: nitidez em até quatro tamanhos de detalhe que não acende as bordas fortes nem o ruído."
+    desc-en="Boris Continuum's Magic Sharp: sharpening over up to four detail sizes that leaves strong edges and noise alone."
+    category="stylize"
+    tags="sharpen,nitidez,detalhe,bcc,boris,continuum,magic sharp,foco,textura,cc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="h0" src="buffer" precision="highp" />
+        <texture id="h1" src="buffer" precision="highp" />
+        <texture id="h2" src="buffer" precision="highp" />
+        <texture id="h3" src="buffer" precision="highp" />
+        <texture id="accR" src="buffer" precision="highp" />
+        <texture id="accG" src="buffer" precision="highp" />
+        <texture id="accB" src="buffer" precision="highp" />
+
+        <slider id="amount" label="Sharpen Amount" default="30.0" min="0.0" max="3000.0" step="0.1" snap="30.0" />
+        <slider id="threshold" label="Sharpen Threshold" default="9.0" min="0.1" max="1000.0" step="0.1" snap="9.0" />
+        <slider id="radius" label="Sharpen Radius" default="1.6" min="0.0" max="100.0" step="0.01" snap="1.6" />
+        <slider id="noise" label="Noise Suppression" default="0.0" min="0.0" max="255.0" step="0.1" snap="0.0" />
+
+        <switch id="finePass" group="Detail Passes" label="Fine Pass" default="true" />
+        <slider id="fineSharpen" group="Detail Passes" label="Fine Sharpen" default="250.0" min="0.0" max="3000.0" step="1.0" snap="250.0" />
+        <switch id="smallPass" group="Detail Passes" label="Small Pass" default="true" />
+        <slider id="smallSharpen" group="Detail Passes" label="Small Sharpen" default="50.0" min="0.0" max="3000.0" step="1.0" snap="50.0" />
+        <switch id="mediumPass" group="Detail Passes" label="Medium Pass" default="false" />
+        <slider id="mediumSharpen" group="Detail Passes" label="Medium Sharpen" default="100.0" min="0.0" max="3000.0" step="1.0" snap="100.0" />
+        <switch id="coarsePass" group="Detail Passes" label="Coarse Pass" default="false" />
+        <slider id="coarseSharpen" group="Detail Passes" label="Coarse Sharpen" default="100.0" min="0.0" max="3000.0" step="1.0" snap="100.0" />
+
+        <slider id="lumaSharpen" group="Channel Tuning" label="Luma Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="chromaSharpen" group="Channel Tuning" label="Chroma Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="redSharpen" group="Channel Tuning" label="Red Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="greenSharpen" group="Channel Tuning" label="Green Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="blueSharpen" group="Channel Tuning" label="Blue Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+
+        <switch id="rangeOn" group="Range Tuning" label="High/Mid/Shad Sharpen On" default="true" />
+        <slider id="highlightRange" group="Range Tuning" label="Highlight Range" default="88.0" min="76.0" max="100.0" step="0.1" snap="88.0" />
+        <slider id="midHighRange" group="Range Tuning" label="Midtone High Range" default="64.0" min="50.0" max="75.0" step="0.1" snap="64.0" />
+        <slider id="midLowRange" group="Range Tuning" label="Midtone Low Range" default="36.0" min="25.0" max="49.0" step="0.1" snap="36.0" />
+        <slider id="shadowRange" group="Range Tuning" label="Shadow Range" default="12.0" min="0.0" max="24.0" step="0.1" snap="12.0" />
+        <slider id="highlightSharpen" group="Range Tuning" label="Highlight Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="midtoneSharpen" group="Range Tuning" label="Midtone Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="shadowSharpen" group="Range Tuning" label="Shadow Sharpen" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+
+        <switch id="reduceGrit" group="Reduce Grit" label="Reduce Grit" default="false" />
+        <slider id="gritRadius" group="Reduce Grit" label="Grit Radius" default="0.7" min="0.0" max="100.0" step="0.01" snap="0.7" />
+        <slider id="gritSensitivity" group="Reduce Grit" label="Grit Sensitivity" default="11.0" min="0.1" max="1000.0" step="0.1" snap="11.0" />
+
+        <slider id="mixWithOriginal" label="Mix with Original" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, a nitidez padrão não aparece a 64 dp, e a amostra da família é arte chapada de bordas duras, que
+         o limiar de 9 protege de propósito: limiar alto (vira nitidez comum) e forte. -->
+    <preview>
+        <set param="amount" value="600.0" />
+        <set param="radius" value="8.0" />
+        <set param="threshold" value="1000.0" />
+    </preview>
+
+    <passes>
+        <pass target="h0" skipIfZero="finePass" />   <!-- 0: vermelho, bilateral em x do Fine -->
+        <pass target="h1" skipIfZero="smallPass" />  <!-- 1: … do Small -->
+        <pass target="h2" skipIfZero="mediumPass" /> <!-- 2: … do Medium -->
+        <pass target="h3" skipIfZero="coarsePass" /> <!-- 3: … do Coarse -->
+        <pass target="accR" />                       <!-- 4: vermelho, em y + nitidez + soma dos níveis -->
+        <pass target="h0" skipIfZero="finePass" />   <!-- 5–9: o verde -->
+        <pass target="h1" skipIfZero="smallPass" />
+        <pass target="h2" skipIfZero="mediumPass" />
+        <pass target="h3" skipIfZero="coarsePass" />
+        <pass target="accG" />
+        <pass target="h0" skipIfZero="finePass" />   <!-- 10–14: o azul -->
+        <pass target="h1" skipIfZero="smallPass" />
+        <pass target="h2" skipIfZero="mediumPass" />
+        <pass target="h3" skipIfZero="coarsePass" />
+        <pass target="accB" />
+        <pass target="h0" skipIfZero="reduceGrit" /> <!-- 15–17: o Reduce Grit em x, por canal, sobre o resultado já sintonizado -->
+        <pass target="h1" skipIfZero="reduceGrit" />
+        <pass target="h2" skipIfZero="reduceGrit" />
+        <pass />               <!-- 18: o Grit em y, a sintonia, o nível e o Mix -->
+    </passes>
+
+    <shader><![CDATA[
+// ============================================================ o float32 da DLL
+// `um` vale 1, mas o compilador não sabe (vem de `acIterationCount`, que é 1 neste efeito). (a·b)·um não se funde
+// com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
+float um;
+float UM_255;                  // float32(1/255) da DLL: 0x3B808081
+float fixa(float x) { return x * um; }
+vec3 fixa3(vec3 x) { return x * um; }
+float mul(float a, float b) { return (a * b) * um; }
+vec3 mul3(vec3 a, vec3 b) { return (a * b) * um; }
+
+// 2^k exato (k de −126 a 127), sem o exp2 da GPU.
+float pot2(int k) { return uintBitsToFloat(uint(k + 127) << 23); }
+
+// float32 de num/den arredondado UMA vez (ao par), por divisão longa em inteiros: o que o host faz em double e
+// converte. num e den abaixo de 2^31.
+float divExata(uint num, uint den) {
+    if (num == 0u) return 0.0;
+    uint q = num / den;
+    uint r = num % den;
+    int e = 0;
+    for (int i = 0; i < 80 && q < 33554432u; i++) {      // até 26 bits significativos
+        r <<= 1;
+        q <<= 1;
+        if (r >= den) { r -= den; q |= 1u; }
+        e--;
+    }
+    bool resto = r != 0u;
+    for (int i = 0; i < 8 && q >= 67108864u; i++) {
+        if ((q & 1u) != 0u) resto = true;
+        q >>= 1;
+        e++;
+    }
+    uint fica = q >> 2;
+    if ((q & 1u) != 0u) resto = true;
+    if (((q >> 1) & 1u) == 1u && (resto || (fica & 1u) == 1u)) fica += 1u;
+    return float(fica) * pot2(e + 2);
+}
+
+// x = m·2^e com m de 24 bits (x > 0, normal).
+uint mantissa(float x) { return (floatBitsToUint(x) & 8388607u) | 8388608u; }
+int expoente(float x) { return int((floatBitsToUint(x) >> 23) & 255u) - 150; }
+
+// O AE entrega o slider ao BCC em ponto fixo 16.16 (o 1,6 chega como 1,60000610…).
+float fx16(float v) { return floor(v * 65536.0 + 0.5) * pot2(-16); }
+
+// float32(fx16(v) · 0,01) com a conta em double: |v|·65536 é inteiro, então é esse inteiro / 100 · 2^-16.
+float pct(float v) {
+    float f = fx16(v);
+    float r = divExata(uint(abs(f) * 65536.0), 100u) * pot2(-16);
+    return f < 0.0 ? -r : r;
+}
+
+// float32(x · 2,56) em double = x · 64 / 25, arredondado uma vez.
+float vezes256(float x) {
+    if (x <= 0.0) return 0.0;
+    return divExata(mantissa(x) * 64u, 25u) * pot2(expoente(x));
+}
+
+// float32(1 / x), arredondado uma vez.
+float inverso(float x) { return divExata(1u, mantissa(x)) * pot2(-expoente(x)); }
+
+// ============================================================ a imagem
+ivec2 gT;
+ivec2 gP;
+
+float canal(ivec2 p, int c) { return float(int(texelFetch(inputImg, p, 0)[c] * 255.0 + 0.5)) * UM_255; }
+vec3 fonte(ivec2 p) { return vec3(ivec3(texelFetch(inputImg, p, 0).rgb * 255.0 + 0.5)) * UM_255; }
+
+float lerF(highp sampler2D t, ivec2 p) {
+    uvec4 b = uvec4(texelFetch(t, p, 0) * 255.0 + 0.5);
+    return uintBitsToFloat(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
+}
+vec4 gravarF(float v) {
+    uint u = floatBitsToUint(v);
+    return vec4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
+}
+vec3 acumulado(ivec2 p) { return vec3(lerF(accR, p), lerF(accG, p), lerF(accB, p)); }
+
+// ============================================================ o bilateral (`DiffusionPassRenderer`)
+// Meia-largura n = ⌈raio⌉ e o peso espacial float32(exp(−0,5·i²/raio)).
+int meia(float raio) {
+    int n = int(raio);
+    if (raio > 0.0 && fract(raio) != 0.0) n++;
+    return min(n, 4000);
+}
+float peso(int i, float raio) {
+    if (i == 0) return 1.0;
+    float fi = float(i);
+    return exp((fi * -0.5) * fi / raio);
+}
+// No rascunho do play/arraste, janela maior que ±24 lê de passo em passo.
+int passoDaJanela(int n) { return (acRascunho == 1 && n > 24) ? (n + 23) / 24 : 1; }
+float limiar(float t) { return inverso(t * t) * 65536.0; }
+
+// Um bilateral ao longo de y num buffer (o 2º eixo): centro e vizinhos do próprio buffer.
+float bilateralY(highp sampler2D t, float raio, float K) {
+    int n = meia(raio);
+    int passo = passoDaJanela(n);
+    int ini = -(n / passo) * passo;
+    float centro = lerF(t, gP);
+    float sw = 0.0;
+    float swv = 0.0;
+    for (int j = ini; j <= n; j += passo) {
+        float q = lerF(t, ivec2(gP.x, clamp(gP.y + j, 0, gT.y - 1)));
+        float d = centro - q;
+        float w = peso(j, raio) / (mul(mul(d, d), K) + 1.0);
+        sw += w;
+        swv += mul(q, w);
+    }
+    return swv / sw;
+}
+
+// ============================================================ os controles
+bool passeLigado(int k) { return k == 0 ? finePass : (k == 1 ? smallPass : (k == 2 ? mediumPass : coarsePass)); }
+float nitidezDoPasse(int k) { return k == 0 ? fineSharpen : (k == 1 ? smallSharpen : (k == 2 ? mediumSharpen : coarseSharpen)); }
+float raioDoPasse(int k) {
+    float r = fx16(radius);
+    for (int i = 0; i < 3; i++) if (i < k) r = r * 2.0;            // o fator escondido 9962015 = 200 %
+    return r * acEscalaDePixel;
+}
+
+// `SharpenCompositeRenderer`: o 3a do passe k.
+float tresA(int k) {
+    float a1 = pct(amount) * fx16(nitidezDoPasse(k));
+    float a = vezes256(a1) * pot2(-8);
+    return a * 3.0;
+}
+float ruido() { return 1.0 - (255.0 - fx16(noise)) * pot2(-8); }
+
+float nitidez(float A, float B, float a3, float nr) {
+    float x = mul(a3 + 1.0, A) - mul(a3, B);
+    float xp = x > A + nr ? x - nr : (x < A - nr ? x + nr : A);
+    return fixa(xp - A) + A;
+}
+
+// `EffectScaler`: cada bloco só roda se algum ganho dele sair de 1 por mais de 1e-5.
+const float gYiq[15] = float[15](0.299, 0.587, 0.114, 0.596, -0.275, -0.321, 0.212, -0.523, 0.311, 0.956, 0.621, -0.272,
+                           -0.647, -1.105, 1.702);
+vec3 yiq(vec3 X) {
+    return vec3((mul(X.r, gYiq[0]) + mul(X.g, gYiq[1])) + mul(X.b, gYiq[2]),
+                (mul(X.r, gYiq[3]) + mul(X.g, gYiq[4])) + mul(X.b, gYiq[5]),
+                (mul(X.r, gYiq[6]) + mul(X.g, gYiq[7])) + mul(X.b, gYiq[8]));
+}
+vec3 sintonia(vec3 A, vec3 B) {
+    vec3 kc = vec3(pct(redSharpen), pct(greenSharpen), pct(blueSharpen));
+    if (max(max(abs(kc.r - 1.0), abs(kc.g - 1.0)), abs(kc.b - 1.0)) > 1e-5) B = mul3(B - A, kc) + A;
+    float kl = pct(lumaSharpen);
+    float kk = pct(chromaSharpen);
+    if (max(abs(kl - 1.0), abs(kk - 1.0)) > 1e-5) {
+        vec3 a = yiq(A);
+        vec3 b = yiq(B);
+        float Y = mul(b.x - a.x, kl) + a.x;
+        float I = mul(b.y - a.y, kk) + a.y;
+        float Q = mul(b.z - a.z, kk) + a.z;
+        B = vec3((mul(I, gYiq[9]) + fixa(Y)) + mul(Q, gYiq[10]),
+                 (mul(I, gYiq[11]) + fixa(Y)) + mul(Q, gYiq[12]),
+                 (mul(I, gYiq[13]) + fixa(Y)) + mul(Q, gYiq[14]));
+    }
+    float ks = pct(shadowSharpen);
+    float km = pct(midtoneSharpen);
+    float kh = pct(highlightSharpen);
+    if (rangeOn && max(max(abs(ks - 1.0), abs(km - 1.0)), abs(kh - 1.0)) > 1e-5) {
+        float t0 = pct(shadowRange);
+        float t1 = pct(midLowRange);
+        float t2 = pct(midHighRange);
+        float t3 = pct(highlightRange);
+        float lum = (mul(A.g, 0.5859375) + mul(A.r, 0.30078125)) + mul(A.b, 0.11328125);
+        float f01 = (lum - t0) / (t1 - t0);
+        float f23 = (lum - t2) / (t3 - t2);
+        float s = lum < t0 ? 1.0 : (lum < t1 ? 1.0 - f01 : 0.0);
+        float m = lum < t0 ? 0.0 : (lum < t1 ? f01 : (lum < t2 ? 1.0 : (lum < t3 ? 1.0 - f23 : 0.0)));
+        float h = lum < t2 ? 0.0 : (lum < t3 ? f23 : 1.0);
+        float g = (mul(s, ks) + mul(m, km)) + mul(h, kh);
+        B = mul3(vec3(g), B - A) + A;
+    }
+    return B;
+}
+vec3 sintonizado(ivec2 p) { return sintonia(fonte(p), acumulado(p)); }
+
+// ============================================================ os passes
+void main() {
+    um = float(min(acIterationCount, 1));
+    UM_255 = uintBitsToFloat(0x3B808081u);
+    gT = textureSize(inputImg, 0);
+    gP = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    float K = limiar(fx16(threshold));
+
+    if (acPass < 15) {
+        int c = acPass / 5;
+        int k = acPass - 5 * c;
+        if (k < 4) {
+            // ---- o bilateral em x do canal c no nível k, a partir da fonte
+            if (!passeLigado(k)) { fragColor = vec4(0.0); return; }
+            float raio = raioDoPasse(k);
+            int n = meia(raio);
+            int passo = passoDaJanela(n);
+            int ini = -(n / passo) * passo;
+            float centro = canal(gP, c);
+            float sw = 0.0;
+            float swv = 0.0;
+            for (int j = ini; j <= n; j += passo) {
+                float q = canal(ivec2(clamp(gP.x + j, 0, gT.x - 1), gP.y), c);
+                float d = centro - q;
+                float w = peso(j, raio) / (mul(mul(d, d), K) + 1.0);
+                sw += w;
+                swv += mul(q, w);
+            }
+            fragColor = gravarF(swv / sw);
+            return;
+        }
+        // ---- em y, a nitidez de cada nível e a soma (`SharpenPixWorldMixer`), sempre contra a fonte
+        float A = canal(gP, c);
+        float acc = A;
+        float nr = ruido();
+        for (int i = 0; i < 4; i++) {
+            if (!passeLigado(i)) continue;
+            float B = i == 0 ? bilateralY(h0, raioDoPasse(0), K) : (i == 1 ? bilateralY(h1, raioDoPasse(1), K)
+                    : (i == 2 ? bilateralY(h2, raioDoPasse(2), K) : bilateralY(h3, raioDoPasse(3), K)));
+            float S = nitidez(A, B, tresA(i), nr);
+            acc = i == 0 ? S : fixa(S - A) + acc;      // só o passe 0 começa do zero (o laço marca "já passou um")
+        }
+        fragColor = gravarF(acc);
+        return;
+    }
+
+    float Kg = limiar(fx16(gritSensitivity));
+    float raioG = fx16(gritRadius) * acEscalaDePixel;
+    if (acPass < 18) {
+        // ---- o Reduce Grit em x, sobre o resultado sintonizado
+        if (!reduceGrit) { fragColor = vec4(0.0); return; }
+        int c = acPass - 15;
+        int n = meia(raioG);
+        int passo = passoDaJanela(n);
+        int ini = -(n / passo) * passo;
+        float centro = sintonizado(gP)[c];
+        float sw = 0.0;
+        float swv = 0.0;
+        for (int j = ini; j <= n; j += passo) {
+            float q = sintonizado(ivec2(clamp(gP.x + j, 0, gT.x - 1), gP.y))[c];
+            float d = centro - q;
+            float w = peso(j, raioG) / (mul(mul(d, d), Kg) + 1.0);
+            sw += w;
+            swv += mul(q, w);
+        }
+        fragColor = gravarF(swv / sw);
+        return;
+    }
+
+    // ---- a saída
+    vec4 s = texelFetch(inputImg, gP, 0);
+    vec3 B = reduceGrit ? vec3(bilateralY(h0, raioG, Kg), bilateralY(h1, raioG, Kg), bilateralY(h2, raioG, Kg))
+                        : sintonizado(gP);
+    ivec3 o = ivec3(floor(fixa3(clamp(B, 0.0, 1.0) * 255.0) + 0.5));
+    float mx = pct(mixWithOriginal);
+    if (mx != 0.0) {
+        int b = 256 - int(floor(mx * 256.0 + 0.5));
+        ivec3 f = ivec3(s.rgb * 255.0 + 0.5);
+        ivec3 dif = (o - f) * b;
+        o = (f + ivec3(floor(vec3(dif) / 256.0))) & 255;
+    }
+    fragColor = vec4(vec3(o) / 255.0, s.a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COR SÓLIDA — o Solid Color do Alight Motion, conta por conta (0.545.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "faça agora o cor solida 100% igual o alight motion", da série "100%
+  iguais ao AM". Mesmos parâmetros, mesmos ids e mesmos padrões do `com.alightcreative.solidcolor` (um
+  projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281
+  (`assets/effects/solidcolor.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não
+  entra no repositório. A conferência é `tools/amcorsolida`: o efeito do AM rodado na GPU do PC ao lado
+  deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Pinta as partes opacas da camada com a Cor: o alfa da camada nunca muda, só a cor.
+  - Modo de mesclagem: Normal = a Cor no lugar da cor da camada; Multiplicar = cor × Cor; Tela =
+    1 − (1 − cor)(1 − Cor).
+  - "Alfa" (0 a 100%) mistura a camada original e a pintada. O AM mistura em cor PRÉ-multiplicada, mas
+    as duas têm o mesmo alfa, então na cor reta do Nova é a mesma mistura, sem divisão.
+  - O alfa da COR não entra na conta: o shader do AM só lê `color.rgb` (a Cor chega reta ao shader,
+    lido do bytecode). Uma Cor meio transparente pinta igual a opaca — é o que o AM faz.
+  - Onde a camada é transparente nada aparece. No Multiplicar e no Tela o AM divide 0 por 0 ali (NaN);
+    a GPU do PC grava 0, e aqui o pixel transparente fica como veio.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-solid-color"
+    name="Cor sólida"
+    name-en="Solid Color"
+    desc="Preenche as partes opacas da camada com uma cor sólida (o Solid Color do Alight Motion)."
+    desc-en="Fills the opaque parts of the layer with a solid color (Alight Motion's Solid Color)."
+    category="color"
+    tags="cor sólida,preencher,cor,fill,solid color,tint,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="color" label="Cor" default="#FF2D1EF6" />
+        <slider id="alpha" label="Alfa" default="1.0" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+        <selector id="blendMode" label="Modo de mesclagem" default="0" options="Normal|Multiplicar|Tela" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    vec4 c = texture(inputImg, acScreenNorm);   // alfa reto
+    if (c.a <= 0.0) {
+        fragColor = c;
+        return;
+    }
+    vec3 pintada;
+    if (blendMode == 1) {
+        pintada = c.rgb * color.rgb;
+    } else if (blendMode == 2) {
+        pintada = 1.0 - (1.0 - c.rgb) * (1.0 - color.rgb);
+    } else {
+        pintada = color.rgb;
+    }
+    // O AM: mix(camada, pintada, Alfa) na pré-multiplicada, as duas com o alfa da camada = a mesma mistura na reta.
+    fragColor = vec4(mix(c.rgb, pintada, alpha), c.a);
+}
+    ]]></shader>
+</effect>

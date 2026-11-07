@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FILL — o efeito nativo do After Effects (ADBE Fill), medido (0.452.0)
+
+  Pedido do snow (08/10/2026): "lote simples de cor".
+
+  MEDIDO (tools/lotecor/benchmark, 8 casos): a camada inteira vira a cor (a cor reta é a própria
+  cor, sem arredondar), e o alfa é o da fonte · Opacity. Opacity NÃO mistura com a imagem: em 50%
+  a camada fica meio transparente. Invert usa 1 − alfa (pinta o que estava vazio). O alfa da cor
+  não entra. Modelo × AE: 0,002 nível de 255.
+
+  FORA: Fill Mask / All Masks e os Feather (dependem de máscara da camada; sem máscara não mudam nada).
+-->
+<effect
+    id="nova.effect.aefill"
+    name="Fill (AE)"
+    name-en="Fill (AE)"
+    desc="O Fill do After Effects: pinta a camada de uma cor só, mantendo o recorte dela."
+    desc-en="After Effects' Fill: paints the layer a single colour, keeping its shape."
+    category="color"
+    tags="fill,preencher,preenchimento,cor,solido,sólido,silhueta,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="color" label="Color" default="#FF0000" />
+        <switch id="invert" label="Invert" default="false" />
+        <slider id="opacity" label="Opacity" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    float a = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0).a;
+    if (invert) a = 1.0 - a;
+    fragColor = vec4(color.rgb, a * clamp(opacity, 0.0, 1.0));
+}
+]]></shader>
+</effect>

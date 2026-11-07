@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_texture_transform_phone
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-texture-transform-phone"
+    name="Rendercommand Texture Transform Phone (NV)"
+    name-en="Rendercommand Texture Transform Phone (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_texture_transform_phone', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_texture_transform_phone', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tex_map" src="content" empty="transparent" />
+        <texture id="mask" src="content" empty="transparent" />
+        <point id="_tex_offset" label="Tex Offset" defaultX="0.5" defaultY="0.5" />
+        <slider id="_tex_angle" label="Tex Angle" default="0.0" min="-180.0" max="180.0" step="1.0" />
+        <point id="_tex_scale" label="Tex Scale" defaultX="0.5" defaultY="0.5" />
+        <slider id="_invert_y" type="integer" label="Invert Y" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+bvec4 u_xlatb0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec4 u_xlat2;
+float u_xlat4;
+float u_xlat7;
+void main()
+{
+    u_xlat0.x = _tex_angle * 0.0174532998;
+    u_xlat1.x = cos(u_xlat0.x);
+    u_xlat0.x = sin(u_xlat0.x);
+    u_xlat2.z = u_xlat0.x;
+    u_xlat2.y = u_xlat1.x;
+    u_xlat2.x = (-u_xlat0.x);
+    u_xlat0.y = dot(acScreenNorm.xy, u_xlat2.xy);
+    u_xlat0.x = dot(acScreenNorm.xy, u_xlat2.yz);
+    u_xlat0.xy = u_xlat0.xy + vec2(-0.700999975, -0.270000011);
+    u_xlat0.xy = u_xlat0.xy * _tex_scale.xy + vec2(0.700999975, 0.270000011);
+    u_xlat0.xy = u_xlat0.xy + (-_tex_offset.xy);
+    u_xlat1 = texture(inputImg, u_xlat0.xy);
+    u_xlatb0.zw = greaterThanEqual(u_xlat0.xxxy, vec4(0.0, 0.0, 0.0, 0.0)).zw;
+    u_xlat0.xy = (-u_xlat0.xy) + vec2(1.0, 1.0);
+    u_xlatb0.xy = greaterThanEqual(u_xlat0.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlat0.x = u_xlatb0.x ? float(1.0) : 0.0;
+    u_xlat0.y = u_xlatb0.y ? float(1.0) : 0.0;
+    u_xlat0.z = u_xlatb0.z ? float(1.0) : 0.0;
+    u_xlat0.w = u_xlatb0.w ? float(1.0) : 0.0;
+;
+    u_xlat1 = u_xlat0.zzzz * u_xlat1;
+    u_xlat1 = u_xlat0.xxxx * u_xlat1;
+    u_xlat1 = u_xlat0.wwww * u_xlat1;
+    u_xlat0 = u_xlat0.yyyy * u_xlat1;
+    u_xlatb1 = 0<int(_invert_y);
+    u_xlat4 = (-acScreenNorm.y) + 1.0;
+    u_xlat1.y = (u_xlatb1) ? u_xlat4 : acScreenNorm.y;
+    u_xlat1.x = acScreenNorm.x;
+    u_xlat7 = texture(mask, u_xlat1.xy).x;
+    u_xlat2 = texture(tex_map, u_xlat1.xy);
+    u_xlat0 = u_xlat0 * vec4(u_xlat7);
+    u_xlat1.x = (-u_xlat7) + 1.0;
+    fragColor = u_xlat2 * u_xlat1.xxxx + u_xlat0;
+    return;
+}
+    ]]></shader>
+</effect>

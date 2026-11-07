@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC DROP SHADOW (Boris Continuum, `BCC3Drop Shadow`)
+  ============================================================================
+
+  O efeito único que mais destrava presets da pasta do snow (docs/PRESETS-DA-PASTA-DO-SNOW.md, 26/10/2026):
+  está em 63 presets e sozinho libera 28 (os 30 do "Alvar Film Logo", os Ryan's Glow, os KINZA).
+
+  Os controles nascem em `ContinuumAE/17/lib/Continuum_AE_8Bit.dll` 0x1807ddd70 (ao lado da vtable da
+  `DropShadowFilter`); o render (0x1807de4e0) entrega tudo a um `DropShadowRenderer` (0x180480570). A sombra
+  final é o `sDropShadowApplySource` que está em texto na DLL: `color · intensity · opacity · shadow`. O resto
+  foi MEDIDO no AE 2023 (tools/bccdropshadow/benchmark: modelo.py contra as rodadas r1_8, r2_32, r3_32, r4_8,
+  r4_16 — ~170 renders):
+
+  1. A máscara é o ALFA da camada deslocado (dist · sin θ, −dist · cos θ), θ = Shadow Angle, y para baixo
+     (135° = para baixo e para a direita), com interpolação bilinear: 7,6 px a 90° acende as colunas +7 e +8
+     com 0,4 e 0,6. A distância é em px e não depende do tamanho da camada.
+  2. Blur Quality = Pyramid (o padrão, e o único nos 63 presets): um TRIÂNGULO separável, o mesmo em x e em y,
+     de raio R = 1,0019 + 1,6633 · Softness; pesos (R − i) / S, S = (2n + 1)·R − n(n + 1), n = ⌈R⌉ − 1.
+     O AE guarda os pesos em 1/1024 (a linha de 1 px mostra os inteiros); aqui em float, somando 1.
+  3. Avoid Clipping: a sombra é desfocada num buffer maior que a camada — a parte que o deslocamento leva para
+     fora do quadro volta pelo desfoque. Aqui, a moldura de 256 px dos buffers.
+  4. sombra = Intensity · (alfa desfocado)^(1 / Gamma), na cor Shadow Color.
+  5. A camada × Source Opacity vai por cima da sombra (normal, cor reta), em 8 bits como o AE: a máscara
+     (já com o gamma) arredondada, Intensity em 1/256, a sombra e a soma truncadas.
+
+  COMO FICOU — este XML rodado na GPU do PC (tools/bccdropshadow/benchmark/gpu.py) contra o AE em 8 bpc,
+  90 casos de r1_8 e r4_8: 0,08% e 0,02% dos pixels a mais de 1 nível; o resto igual ou a 1.
+  O QUE NÃO É IGUAL:
+    - com alfa parcial na camada (bordas suavizadas) a cor sai a 2 níveis em ~0,5% desses pixels;
+    - Gamma 2 com pouca sombra (a cauda): até 6 níveis em 0,2% dos pixels — a raiz aumenta a diferença dos pesos
+      de 1/1024 do AE (os 63 presets usam Gamma 1 e 1,2: até 1 nível);
+    - camada opaca até a borda do quadro com a sombra deslocada para dentro: o AE espelha a cauda do desfoque nas
+      2–3 primeiras linhas/colunas (até 18 níveis ali); aqui ela some;
+    - Blur Quality Gaussian Low…Highest e Pyramid Smoother: só o Pyramid (o conversor avisa);
+    - com Softness acima de ~150 (R passa da moldura de 256 px) a cauda que sai do quadro e voltaria fica fora.
+  Nada rodou em aparelho.
+
+  CUSTO: a máscara (4 leituras), 2 passadas de (2n + 1) leituras (n ≈ 1,66 · Softness) e a composição.
+-->
+<effect
+    id="nova.effect.bccdropshadow"
+    name="BCC Drop Shadow"
+    name-en="BCC Drop Shadow"
+    desc="O Drop Shadow do Boris Continuum: a sombra da camada, deslocada e suavizada, igual ao After Effects."
+    desc-en="Boris Continuum's Drop Shadow: the layer's shadow, offset and softened, as in After Effects."
+    category="stylize"
+    tags="bcc,boris,continuum,drop shadow,sombra,sombra projetada,shadow,profundidade,glow,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="dsA" src="buffer" margin="256" />
+        <texture id="dsB" src="buffer" margin="256" />
+
+        <slider id="sourceOpacity" label="Opacidade da camada" default="1.0" min="0.0" max="1.0" step="0.001" type="percent" snap="1.0" />
+        <slider id="shadowDistance" label="Distância da sombra" default="20.0" min="0.0" max="1000.0" step="0.1" snap="20.0" />
+        <slider id="shadowIntensity" label="Intensidade da sombra" default="0.6" min="0.0" max="1.0" step="0.001" type="percent" snap="0.6" />
+        <slider id="shadowAngle" label="Ângulo da sombra" default="135.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="135.0" />
+        <color id="shadowColor" label="Cor da sombra" default="#000000" />
+        <slider id="shadowSoftness" label="Suavidade da sombra" default="10.0" min="0.0" max="100.0" step="0.1" snap="10.0" />
+        <slider id="gamma" label="Gama" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+    </params>
+
+    <preview amostra="figura">
+        <set param="shadowDistance" value="30.0" />
+        <set param="shadowIntensity" value="0.8" />
+    </preview>
+
+    <passes>
+        <pass target="dsA" />                                <!-- 0: a máscara deslocada (bilinear) -->
+        <pass target="dsB" skipIfZero="shadowSoftness" />   <!-- 1: o triângulo na horizontal -->
+        <pass target="dsA" skipIfZero="shadowSoftness" />   <!-- 2: o triângulo na vertical -->
+        <pass />                                             <!-- 3: a sombra por baixo da camada -->
+    </passes>
+
+    <shader><![CDATA[
+const int MARGEM = 256;            // = margin dos buffers
+const float RAIO_A = 1.6633;       // R = RAIO_B + RAIO_A · Softness (medido: r2_32, r3_32, r4_16)
+const float RAIO_B = 1.0019;
+const float GRAUS = 0.017453292519943295;
+
+float escala() { return acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0; }
+
+// O deslocamento em px do buffer, y para baixo como no AE; com a cena de pé (a linha 0 é a base), o "para baixo" é
+// para cima aqui.
+vec2 deslocamento() {
+    float d = shadowDistance * escala();
+    float t = shadowAngle * GRAUS;
+    vec2 v = vec2(sin(t), -cos(t)) * d;
+    return vec2(v.x, acEntradaDePe == 1 ? -v.y : v.y);
+}
+
+// O alfa da camada; fora do quadro, transparente.
+float alfaDaCamada(ivec2 c) {
+    ivec2 t = textureSize(inputImg, 0);
+    if (any(lessThan(c, ivec2(0))) || any(greaterThanEqual(c, t))) return 0.0;
+    return texelFetch(inputImg, c, 0).a;
+}
+
+// 24 bits fixos no RGB de um RGBA8 (o alfa da passada fica em [0, 1]).
+vec4 guardar(float v) {
+    uint q = min(uint(clamp(v, 0.0, 1.0) * 16777216.0), 16777215u);
+    return vec4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
+}
+float abrir(sampler2D b, ivec2 c) {
+    ivec2 p = c + MARGEM;
+    ivec2 n = textureSize(b, 0);
+    if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, n))) return 0.0;
+    uvec3 k = uvec3(floor(texelFetch(b, p, 0).rgb * 255.0 + 0.5));
+    return float((k.x << 16u) | (k.y << 8u) | k.z) / 16777216.0;
+}
+
+void main() {
+    if (acPass == 0) {
+        // a máscara: o alfa em (c − deslocamento), bilinear
+        vec2 p = vec2(ivec2(gl_FragCoord.xy) - MARGEM) - deslocamento();
+        vec2 b = floor(p);
+        vec2 f = p - b;
+        ivec2 i = ivec2(b);
+        float m = mix(mix(alfaDaCamada(i), alfaDaCamada(i + ivec2(1, 0)), f.x),
+                      mix(alfaDaCamada(i + ivec2(0, 1)), alfaDaCamada(i + ivec2(1, 1)), f.x), f.y);
+        fragColor = guardar(m);
+        return;
+    }
+
+    if (acPass < 3) {
+        // o triângulo do Pyramid: horizontal no passe 1 (lê dsA), vertical no 2 (lê dsB)
+        ivec2 c = ivec2(gl_FragCoord.xy) - MARGEM;
+        ivec2 eixo = acPass == 1 ? ivec2(1, 0) : ivec2(0, 1);
+        float R = (RAIO_B + RAIO_A * shadowSoftness) * escala();
+        int n = int(ceil(R)) - 1;
+        float S = float(2 * n + 1) * R - float(n * (n + 1));
+        float soma = 0.0;
+        for (int k = -n; k <= n; k++) {
+            float w = R - float(abs(k));
+            soma += w * (acPass == 1 ? abrir(dsA, c + eixo * k) : abrir(dsB, c + eixo * k));
+        }
+        fragColor = guardar(soma / S);
+        return;
+    }
+
+    // A composição em 8 bits, como o AE (medido: r1_8 e r4_8, o alfa a até 1 nível com alfa parcial): o gamma em
+    // float, a máscara arredondada a 8 bits, Intensity em 1/256, a sombra e a soma truncadas. O 1e-4 segura o
+    // inteiro exato que a divisão da GPU devolve um tico abaixo.
+    ivec2 c = ivec2(gl_FragCoord.xy);
+    float m = clamp(abrir(dsA, c), 0.0, 1.0);
+    float g = max(gamma, 0.001);
+    float m8 = floor(255.0 * pow(m, 1.0 / g) + 0.5);
+    float i8 = floor(clamp(shadowIntensity, 0.0, 1.0) * 256.0 + 0.5) / 256.0;
+    float s8 = floor(m8 * i8 + 1e-4);
+    vec3 cor = shadowColor.rgb;
+
+    // a camada (reta) × Source Opacity por cima da sombra
+    vec4 l = texelFetch(inputImg, c, 0);
+    float l8 = floor(floor(l.a * 255.0 + 0.5) * clamp(sourceOpacity, 0.0, 1.0) + 1e-4);
+    float a8 = floor(l8 + s8 * (255.0 - l8) / 255.0 + 1e-4);
+    vec4 saida = a8 > 0.0 ? vec4((l.rgb * l8 + cor * (a8 - l8)) / a8, a8 / 255.0) : vec4(0.0);
+    if (l8 == 0.0 && a8 > 0.0) saida.rgb = cor;
+    fragColor = clamp(saida, 0.0, 1.0);
+}
+    ]]></shader>
+</effect>

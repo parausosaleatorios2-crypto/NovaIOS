@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE DE MOVIMENTO
+  ============================================================================
+
+  O borrão que uma câmera de verdade faz no que se mexe: quando a camada anda,
+  gira ou cresce, ela borra na direção desse movimento, e na medida dele.
+  Parada, não borra nada.
+
+  É diferente do Desfoque direcional, que borra sempre igual, numa direção
+  escolhida à mão. Este lê os keyframes da camada. Não há direção nem
+  comprimento para ajustar: quem decide é a animação.
+
+  ============================================================================
+   POR QUE ESTE ARQUIVO NÃO TEM O SHADER DE VERDADE
+  ============================================================================
+
+  `stage="transform"`: o efeito age DEPOIS de a camada ser movida, e não na
+  cadeia de efeitos, que roda com a camada ainda parada no espaço dela. O
+  movimento só existe depois da transformação, então é o compositor que
+  executa este efeito — ver `SceneRenderer.desfocarMovimento` e
+  `EngineShaders.MOTION_BLUR_FRAGMENT`.
+
+  Por isso a posição dele na lista de efeitos não importa, e os parâmetros
+  abaixo são lidos pelo motor, não pelo shader. O shader daqui só copia a
+  entrada, e só roda se algum caminho que não conhece `stage` o executar.
+
+  ============================================================================
+   UM PARÂMETRO SÓ
+  ============================================================================
+
+  Havia quatro: intensidade e uma chave para posição, escala e giro. A pedido,
+  ficou um — **intensidade**.
+
+  E o pedido tem razão de sobra: as três chaves nasciam ligadas, e desligar
+  qualquer uma produz um borrão que MENTE sobre o movimento (a camada gira
+  borrando só o deslocamento, por exemplo). É um controle para um caso raro de
+  efeito especial, cobrando espaço e atenção de todo mundo que só quer o borrão.
+
+  O motor continua borrando as três coisas juntas — ver
+  `DesfoqueDeMovimento.Ajuste`, cujos três campos agora nascem verdadeiros e
+  ninguém desliga. Projeto salvo com as chaves gravadas abre igual: o valor
+  simplesmente não é mais lido.
+-->
+<effect
+    id="nova.effect.motionblur"
+    name="Desfoque de movimento"
+    name-en="Motion Blur"
+    desc="Borra a camada na direção e na medida em que ela se move, gira ou cresce. Parada, não borra."
+    desc-en="Blurs the layer along its own animation — position, scale and rotation."
+    category="blur"
+    stage="transform"
+    tags="motion blur,movimento,desfoque,borrao,velocidade,obturador,shutter,automatico">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          1 = obturador aberto por meio quadro, os 180° do cinema: o borrão que
+          o olho aceita como natural. 4 = dois quadros inteiros, que já parece
+          velocidade exagerada de propósito.
+        -->
+        <slider id="intensity" label="Intensidade"
+                default="1.0" min="-1.0" max="4.0" step="0.05" snap="0.0,1.0" />
+
+        <!--
+          MOTION BLUR POR VETORES (0.357.0, o "RSMB"): num VÍDEO, o borrão
+          também pode vir do movimento DENTRO dele — o fluxo óptico entre o
+          quadro e os vizinhos (ver `DesfoqueDeVetores`). Animação = só os
+          keyframes (o de sempre); Conteúdo do vídeo = só o que anda na
+          imagem; Híbrido = os dois. Em camada que não é vídeo, só existe a
+          animação. Intensidade negativa tira borrão (experimental, só vídeo).
+        -->
+        <selector id="source" label="Fonte do movimento"
+                  options="Animação|Conteúdo do vídeo|Híbrido" default="2" />
+        <selector id="vectorQuality" group="Vídeo" label="Qualidade"
+                  options="Rascunho|Média|Alta" default="1" />
+        <slider id="sensitivity" group="Vídeo" label="Sensibilidade"
+                default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <selector id="blurTarget" group="Vídeo" label="Borrar"
+                  options="Tudo|Personagem|Fundo" default="0" />
+        <selector id="view" group="Vídeo" label="Ver"
+                  options="Resultado|Original|Vetores" default="0" />
+        <!--
+          Profundidade (0.358.0): o mapa de profundidade de cada quadro decide
+          quem fica na frente quando dois movimentos se cruzam. Melhor quando
+          objetos se cruzam; a análise demora mais (o modelo roda por quadro).
+        -->
+        <selector id="useDepth" group="Vídeo" label="Profundidade"
+                  options="Sem|Com (mais lento)" default="0" />
+
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

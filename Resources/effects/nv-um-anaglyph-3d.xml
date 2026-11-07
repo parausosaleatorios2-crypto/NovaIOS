@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Anaglyph 3D — estereoscopia vermelho/ciano. Equivale ao "Anaglyph 3D" do Ultra
+  e ao "3D Glasses" do After Effects (modo ana_RedBlue).
+-->
+<effect
+    id="nova.effect.um-anaglyph-3d"
+    name="Anáglifo 3D"
+    name-en="Anaglyph 3D"
+    desc="Separa a camada em canais vermelho e ciano para visualização com óculos 3D."
+    desc-en="Splits the layer into red/cyan channels for 3D glasses viewing."
+    category="distort"
+    tags="anaglyph,3d,glasses,red cyan,ultra motion,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="shift" label="Deslocamento" default="8.0" min="0.0" max="80.0" step="0.5" />
+        <spinner id="angleDeg" label="Ângulo" default="0.0" min="-180.0" max="180.0" step="1.0" />
+        <switch id="desat" label="Dessaturar fonte" default="true" />
+    </params>
+
+    <preview>
+        <set param="shift" value="14.0" />
+    </preview>
+
+    <shader><![CDATA[
+void main() {
+    vec2 uv = acScreenNorm;
+    float a = radians(angleDeg);
+    vec2 dir = vec2(cos(a), sin(a)) / acResolution;
+    vec2 off = dir * shift;
+
+    vec4 left = texture(inputImg, uv - off);
+    vec4 right = texture(inputImg, uv + off);
+
+    vec3 lRgb = left.rgb;
+    vec3 rRgb = right.rgb;
+    if (desat) {
+        lRgb = vec3(dot(lRgb, vec3(0.2126, 0.7152, 0.0722)));
+        rRgb = vec3(dot(rRgb, vec3(0.2126, 0.7152, 0.0722)));
+    }
+
+    // olho esquerdo = vermelho, olho direito = ciano (verde + azul)
+    vec3 col = vec3(lRgb.r, rRgb.g, rRgb.b);
+    float alpha = max(left.a, right.a);
+    fragColor = vec4(col, alpha);
+}
+    ]]></shader>
+</effect>

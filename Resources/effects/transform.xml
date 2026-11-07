@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TRANSFORMAR (TRANSFORM)
+  ============================================================================
+
+  O efeito Transform do After Effects: posição, escala, inclinação, giro e
+  opacidade como um EFEITO, e não como propriedade da camada. A diferença que
+  importa é a ordem: um efeito mora na pilha, então dá para pôr um Transform
+  ANTES de um brilho (o brilho acompanha o movimento) ou depois (o brilho fica
+  parado e a imagem anda por baixo dele), e empilhar quantos quiser, cada um com
+  o seu tremor.
+
+  Os doze parâmetros são os do original, com os mesmos nomes e padrões:
+
+    Anchor Point, Position, Uniform Scale, Scale Height, Scale Width, Skew, Skew
+    Axis, Rotation, Opacity, Use Composition's Shutter Angle, Shutter Angle,
+    Sampling.
+
+  ============================================================================
+   COMO A CONTA FECHA
+  ============================================================================
+
+  Para cada pixel de SAÍDA o passe descobre de que ponto da imagem de ENTRADA ele
+  vem — a transformação ao contrário. A direta, no After Effects, é:
+
+    saída = Position + Skew( Rotation( Scale( entrada - Anchor Point ) ) )
+
+  (medido no After Effects 2023 com uma imagem de coordenadas, tools/transform/benchmark: a
+  inclinação é a ÚLTIMA, por fora do giro. Posição, escala, giro e âncora batem em 0,01 px.)
+
+  Tudo se mede a partir do Anchor Point: escalar e girar acontecem em volta dele,
+  e o Position diz para onde ele vai. Os padrões deixam os dois no centro e nada
+  se mexe.
+
+  - **Rotation** positivo gira no sentido horário.
+  - **Skew** inclina a imagem: com o **Skew Axis** em 0°, um Skew positivo desce o lado direito e
+    sobe o esquerdo (y ganha tan(Skew) · x). O Skew Axis gira a direção dessa inclinação.
+  - **Uniform Scale** ligado: só o Scale Height vale, para os dois eixos (no
+    After Effects a mesma barra aparece com o nome "Scale"). Desligado, largura
+    e altura são separadas. Escala negativa espelha.
+
+  ## Leitura sem borrar as bordas
+
+  As leituras são feitas à mão, com `texelFetch`, em cor pré-multiplicada. O
+  filtro do hardware mistura a cor escondida de um pixel transparente com a de um
+  opaco e deixa um contorno escuro em volta do elemento assim que ele gira ou
+  encolhe. **Bilinear** = 4 leituras por pixel; **Bicubic** (Catmull-Rom) = 16, e
+  mantém mais nitidez ao ampliar. O que cai fora da imagem de entrada é
+  transparente.
+
+  ============================================================================
+   O OBTURADOR (Shutter Angle)
+  ============================================================================
+
+  Este é o desfoque de movimento da animação DO PRÓPRIO EFEITO — o tremor
+  keyframeado, o zoom que dispara. O Desfoque de movimento do app só enxerga a
+  animação da camada, então o do Transform é feito aqui, com ajuda do motor
+  (`<shutter>` abaixo; ver `EffectManifest.obturador`).
+
+  O motor lê cada parâmetro no começo e no fim do obturador e entrega os dois ao
+  shader (`id` e `idFim`). O shader tira 16 imagens entre eles (6 na amostragem
+  bicúbica) e faz a média. Se nada se mexe, o motor manda 1 e o custo é o de um
+  efeito comum.
+
+  **Use Composition's Shutter Angle** vem ligado, como no After Effects. Este app
+  não tem obturador de composição; quem faz esse papel é o Desfoque de movimento
+  da mesma camada (intensidade 1 = 180°). Camada sem ele, sem borrão. Desligue a
+  chave para usar o Shutter Angle daqui (0 a 720°; o padrão, 0, é sem borrão).
+-->
+<effect
+    id="nova.effect.transform"
+    name="Transformar (Transform)"
+    name-en="Transform"
+    desc="Posição, escala, inclinação, giro e opacidade como efeito, com o mesmo conjunto de parâmetros do After Effects."
+    desc-en="Anchor, position, scale, skew, rotation and opacity as an effect, with its own motion blur shutter."
+    category="distort"
+    tags="transform,transformar,posicao,position,escala,scale,skew,rotacao,rotation,opacity,anchor,shutter,motion blur,tremer,shake,zoom"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Em pixels, como no After Effects; o padrão é o centro da camada. -->
+        <point id="anchorPoint" label="Anchor Point"
+               defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <point id="position" label="Position"
+               defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+
+        <switch id="uniformScale" label="Uniform Scale" default="true" />
+        <slider id="scaleHeight" label="Scale Height"
+                default="1.0" min="-5.0" max="5.0" step="0.01"
+                type="relative-percent" snap="1.0" />
+        <slider id="scaleWidth" label="Scale Width"
+                default="1.0" min="-5.0" max="5.0" step="0.01"
+                type="relative-percent" snap="1.0" />
+
+        <slider id="skew" label="Skew"
+                default="0.0" min="-85.0" max="85.0" step="0.1" type="angle" snap="0.0" />
+        <slider id="skewAxis" label="Skew Axis"
+                default="0.0" min="-360.0" max="360.0" step="0.1" type="angle" snap="0.0" />
+        <slider id="rotation" label="Rotation"
+                default="0.0" min="-720.0" max="720.0" step="0.1" type="angle" snap="0.0" />
+        <slider id="opacity" label="Opacity"
+                default="1.0" min="0.0" max="1.0" step="0.01"
+                type="relative-percent" snap="1.0" />
+
+        <switch id="useCompShutter" label="Use Composition's Shutter Angle" default="true" />
+        <slider id="shutterAngle" label="Shutter Angle"
+                default="0.0" min="0.0" max="720.0" step="1.0" type="angle" snap="0.0,180.0,360.0" />
+
+        <selector id="sampling" label="Sampling" default="0" options="Bilinear|Bicubic" />
+    </params>
+
+    <!-- Os dois ids são lidos pelo motor, e não pelo shader. -->
+    <shutter angle="shutterAngle" composition="useCompShutter" />
+
+    <!-- Nasce neutro: a miniatura sairia igual à amostra. Um giro e uma redução mostram o que ele faz. -->
+    <preview>
+        <set param="rotation" value="14" />
+        <set param="scaleHeight" value="0.78" />
+    </preview>
+
+    <shader><![CDATA[
+
+vec4 premult(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+vec4 depremult(vec4 c) {
+    return c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);
+}
+
+// O Motion Tile que rodou logo antes na cadeia (camada de ajuste), dado pelo host: fora da imagem, em vez de
+// transparente, a continuação do ladrilho. Ver `LadrilhoDeMovimento.uniformsDaContinuacao`.
+uniform int   mtAtivo;     // 1: o efeito logo antes é o Motion Tile
+uniform vec2  mtCentro;    // Tile Center, como o shader dele recebeu
+uniform vec2  mtTam;       // Tile Width/Height, em fração da camada
+uniform vec2  mtSaida;     // Output Width/Height, em fração da camada
+uniform int   mtEspelhar;  // Mirror Edges
+uniform float mtFase;      // Phase, em voltas
+uniform int   mtFaseH;     // Horizontal Phase Shift
+
+bool impar(float k) { return mod(k, 2.0) == 1.0; }
+
+/** A fração `f` do ladrilho, posta no ladrilho `k`: espelhada nos ímpares com o Mirror Edges. */
+float noLadrilho(float f, float k) { return (mtEspelhar == 1 && impar(k)) ? 1.0 - f : f; }
+
+/**
+ * Num eixo: `x` (px da camada) levado ao mesmo ponto do desenho num ladrilho que caia dentro de [0, n). `kDe` sai
+ * com o ladrilho de `x`, `kPara` com o de destino. O ladrilho maior que a camada pode não ter o ponto: a borda.
+ */
+float dobrarNoEixo(float x, float org, float t, float n, out float kDe, out float kPara) {
+    float u = (x - org) / t;
+    kDe = floor(u);
+    float f = noLadrilho(u - kDe, kDe);
+    float k0 = floor(-org / t);
+    for (int i = 0; i < 3; i++) {
+        float k = k0 + float(i);
+        float y = org + (k + noLadrilho(f, k)) * t;
+        if (y >= 0.0 && y < n) { kPara = k; return y; }
+    }
+    kPara = kDe;
+    return clamp(x, 0.0, n - 0.5);
+}
+
+/** O deslocamento da Phase no ladrilho `k` (só os ímpares andam), no outro eixo. */
+float faseDe(float k, float t) { return impar(k) ? mtFase * t : 0.0; }
+
+/** O pixel `c`, fora da imagem, na continuação do ladrilho; (-1, -1) = fora da saída do Motion Tile. */
+ivec2 continuarLadrilho(ivec2 c, ivec2 tam) {
+    // A camada dentro do buffer, como o `motion-tile.xml` a mede.
+    vec2 T = vec2(tam);
+    vec2 n = clamp(floor(max(acCamada, vec2(0.001)) * T + 0.5), vec2(1.0), T);
+    vec2 inicio = floor((T - n) * 0.5);
+    vec2 x = vec2(c) + 0.5 - inicio;
+    if (any(greaterThan(abs(x / n - 0.5), mtSaida * 0.5))) return ivec2(-1);
+
+    vec2 t = max(mtTam * n, vec2(1e-3));
+    vec2 org = mtCentro * n - t * 0.5;
+    vec2 y = x;
+    float kDe = 0.0;
+    float kPara = 0.0;
+    if (mtFaseH == 0) {
+        // A Phase desce as colunas ímpares: trocar de coluna troca o deslocamento em y.
+        if (x.x < 0.0 || x.x >= n.x) {
+            y.x = dobrarNoEixo(x.x, org.x, t.x, n.x, kDe, kPara);
+            y.y += faseDe(kPara, t.y) - faseDe(kDe, t.y);
+        }
+        if (y.y < 0.0 || y.y >= n.y) y.y = dobrarNoEixo(y.y, org.y, t.y, n.y, kDe, kPara);
+    } else {
+        if (x.y < 0.0 || x.y >= n.y) {
+            y.y = dobrarNoEixo(x.y, org.y, t.y, n.y, kDe, kPara);
+            y.x += faseDe(kPara, t.x) - faseDe(kDe, t.x);
+        }
+        if (y.x < 0.0 || y.x >= n.x) y.x = dobrarNoEixo(y.x, org.x, t.x, n.x, kDe, kPara);
+    }
+    return clamp(ivec2(floor(y + inicio)), ivec2(0), tam - 1);
+}
+
+/** Um pixel da entrada, pré-multiplicado. Fora da imagem, transparente (ou o ladrilho que continua). */
+vec4 pixelDe(ivec2 c, ivec2 tam) {
+    if (c.x < 0 || c.y < 0 || c.x >= tam.x || c.y >= tam.y) {
+        if (mtAtivo != 1) return vec4(0.0);
+        c = continuarLadrilho(c, tam);
+        if (c.x < 0) return vec4(0.0);
+    }
+    return premult(texelFetch(inputImg, c, 0));
+}
+
+/** Bilinear à mão: 4 leituras. `pos` em pixels. */
+vec4 lerBilinear(vec2 pos, ivec2 tam) {
+    vec2 p = pos - 0.5;
+    vec2 base = floor(p);
+    vec2 f = p - base;
+    ivec2 i = ivec2(base);
+    vec4 a = pixelDe(i, tam);
+    vec4 b = pixelDe(i + ivec2(1, 0), tam);
+    vec4 c = pixelDe(i + ivec2(0, 1), tam);
+    vec4 d = pixelDe(i + ivec2(1, 1), tam);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/** Pesos de Catmull-Rom para os quatro vizinhos (-1, 0, 1, 2) a uma distância t. */
+vec4 pesosCubicos(float t) {
+    float t2 = t * t;
+    float t3 = t2 * t;
+    return vec4(
+        -0.5 * t3 + t2 - 0.5 * t,
+         1.5 * t3 - 2.5 * t2 + 1.0,
+        -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+         0.5 * t3 - 0.5 * t2
+    );
+}
+
+/** Bicúbico (Catmull-Rom) à mão: 16 leituras. */
+vec4 lerBicubico(vec2 pos, ivec2 tam) {
+    vec2 p = pos - 0.5;
+    vec2 base = floor(p);
+    vec2 f = p - base;
+    ivec2 i = ivec2(base);
+    vec4 wx = pesosCubicos(f.x);
+    vec4 wy = pesosCubicos(f.y);
+
+    vec4 soma = vec4(0.0);
+    for (int y = 0; y < 4; y++) {
+        vec4 linha = vec4(0.0);
+        for (int x = 0; x < 4; x++) {
+            linha += pixelDe(i + ivec2(x - 1, y - 1), tam) * wx[x];
+        }
+        soma += linha * wy[y];
+    }
+    // O lóbulo negativo do filtro pode passar de 0..1 perto de uma borda dura.
+    soma.a = clamp(soma.a, 0.0, 1.0);
+    soma.rgb = clamp(soma.rgb, vec3(0.0), vec3(soma.a));
+    return soma;
+}
+
+/** Gira `v` no sentido HORÁRIO da tela (o eixo y cresce para baixo). */
+vec2 girar(vec2 v, float angulo) {
+    float c = cos(angulo);
+    float s = sin(angulo);
+    return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
+}
+
+/**
+ * De que ponto da ENTRADA vem o pixel `p` da saída.
+ *
+ * É a inversa de: saída = pos + inclinação(giro(escala(entrada - âncora))).
+ * Medido no After Effects: a inclinação soma tan(Skew) · x ao y, no referencial
+ * girado pelo Skew Axis, e é aplicada por FORA do giro; desfazê-la é o
+ * cisalhamento oposto, no mesmo referencial, antes de desfazer o giro.
+ */
+vec2 origemDe(vec2 p, vec2 ancora, vec2 pos, vec2 escala, float inclina, float eixo, float giro) {
+    vec2 v = p - pos;
+    v = girar(v, eixo);
+    v.y -= tan(inclina) * v.x;
+    v = girar(v, -eixo);
+    v = girar(v, -giro);
+    v /= escala;
+    return v + ancora;
+}
+
+void main() {
+    ivec2 tam = textureSize(inputImg, 0);
+    vec2 tamF = vec2(tam);
+    vec2 p = acScreenNorm * tamF;
+
+    // Bicúbico custa 16 leituras por imagem: com o obturador ligado, menos imagens.
+    bool bicubico = sampling == 1;
+    int n = bicubico ? min(acAmostras, 6) : acAmostras;
+    n = max(n, 1);
+
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i < 16; i++) {
+        if (i >= n) break;
+
+        // Onde no obturador esta imagem cai: o meio de cada fatia.
+        float f = (float(i) + 0.5) / float(n);
+
+        vec2 ancora = mix(anchorPoint, anchorPointFim, f) * tamF;
+        vec2 pos = mix(position, positionFim, f) * tamF;
+
+        float altura = mix(scaleHeight, scaleHeightFim, f);
+        float largura = mix(scaleWidth, scaleWidthFim, f);
+        vec2 escala = uniformScale ? vec2(altura) : vec2(largura, altura);
+
+        // Escala zero some com a imagem, e dividir por ela daria infinito.
+        if (abs(escala.x) < 1e-4 || abs(escala.y) < 1e-4) continue;
+
+        float inclina = radians(clamp(mix(skew, skewFim, f), -85.0, 85.0));
+        float eixo = radians(mix(skewAxis, skewAxisFim, f));
+        float giro = radians(mix(rotation, rotationFim, f));
+        float opaco = clamp(mix(opacity, opacityFim, f), 0.0, 1.0);
+
+        vec2 q = origemDe(p, ancora, pos, escala, inclina, eixo, giro);
+        vec4 c = bicubico ? lerBicubico(q, tam) : lerBilinear(q, tam);
+
+        // Opacidade em cor pré-multiplicada: escala cor e alfa juntos.
+        soma += c * opaco;
+    }
+
+    fragColor = depremult(soma / float(n));
+}
+
+    ]]></shader>
+</effect>

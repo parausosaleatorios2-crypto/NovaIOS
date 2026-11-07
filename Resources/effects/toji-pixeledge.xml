@@ -1,0 +1,62 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="alightcreative.effects.pixelate_edge_gradient"
+        name="Pixelate Edge"
+        desc="Pixelated edge detection with 3-color gradient mapping. Adjustable pixel size and colors."
+        category="drawing"
+        thumb="thumb/pixeledge.webp"
+        experimental="false">
+
+    <params>
+        <texture id="inputImg" srcType="content" />
+        <spinner id="pixelSize" default="0.03" min="0.005" max="0.2" label="Pixel Size" step="0.001" />
+        <color id="color1" default="#000000" label="Edge Color 1" />
+        <color id="color2" default="#FF0000" label="Edge Color 2" />
+        <color id="color3" default="#FFFFFF" label="Edge Color 3" />
+        <spinner id="edgeThresh" default="0.2" min="0.01" max="1.0" label="Edge Threshold" step="0.01" />
+        <spinner id="gradientBias" default="0.5" min="0.0" max="1.0" label="Gradient Bias" step="0.01" />
+    </params>
+
+    <shader type="fragment" precision="high"><![CDATA[
+        // Pixelate Edge Detection with 3-Color Gradient
+        vec3 rgb2gray(vec3 c) { return vec3(dot(c, vec3(0.299, 0.587, 0.114))); }
+        void main() {
+            vec2 uv = acScreenNorm;
+            float p = pixelSize;
+            vec2 pixUV = floor(uv / p) * p + 0.5 * p;
+            // Pixelate sample
+            vec4 pixCol = texture2DCv(inputImg.texture, pixUV);
+
+            // Sobel edge detection (on pixelated image)
+            float s = p * 1.0;
+            float gx = 0.0;
+            float gy = 0.0;
+            float k[9];
+            k[0] = -1.0; k[1] = 0.0; k[2] = 1.0;
+            k[3] = -2.0; k[4] = 0.0; k[5] = 2.0;
+            k[6] = -1.0; k[7] = 0.0; k[8] = 1.0;
+            float l[9];
+            l[0] = -1.0; l[1] = -2.0; l[2] = -1.0;
+            l[3] = 0.0;  l[4] = 0.0;  l[5] = 0.0;
+            l[6] = 1.0;  l[7] = 2.0;  l[8] = 1.0;
+            int idx = 0;
+            for (int y = -1; y <= 1; ++y) {
+                for (int x = -1; x <= 1; ++x) {
+                    vec2 o = vec2(float(x), float(y)) * s;
+                    float gray = rgb2gray(texture2DCv(inputImg.texture, pixUV + o).rgb).r;
+                    gx += gray * k[idx];
+                    gy += gray * l[idx];
+                    idx++;
+                }
+            }
+            float edge = sqrt(gx * gx + gy * gy);
+            edge = smoothstep(edgeThresh, 1.0, edge);
+
+            // 3-color gradient mapping
+            float gradBias = gradientBias;
+            vec3 gradCol = mix(color1.rgb, color2.rgb, smoothstep(0.0, gradBias, edge));
+            gradCol = mix(gradCol, color3.rgb, smoothstep(gradBias, 1.0, edge));
+
+            gl_FragColor = vec4(gradCol, 1.0);
+        }
+    ]]></shader>
+</effect>

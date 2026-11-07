@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  POINT CONTROL — o `ADBE Point Control` do After Effects (0.768.0)
+  Expressão lê como `effect("Centro")("Point")`. Padrão: meio da composição (0,5 x 0,5 em acScreenNorm).
+-->
+<effect
+    id="nova.effect.aepointcontrol"
+    name="Point Control"
+    name-en="Point Control"
+    desc="O Point Control do After Effects: um ponto que uma expressão da camada pode ler. Não pinta nada."
+    desc-en="After Effects' Point Control: a 2D point an expression on the layer can read. Draws nothing."
+    category="expressao"
+    tags="expression,expressao,controle,ponto,point,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="point" label="Point" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    fragColor = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+}
+]]></shader>
+</effect>

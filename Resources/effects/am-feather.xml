@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PENA — o Feather do Alight Motion, conta por conta (0.539.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "pode fazer agora o efeito pena/feather 100% parecido com o do alight
+  motion?", o quarto da série "100% iguais ao AM". Mesmos parâmetros, mesmos ids e mesmos padrões do
+  `com.alightcreative.effects.feather` (um projeto do AM importado cai direto aqui). A conta foi LIDA do
+  efeito do AM 5.0.281 (`assets/effects/feather.xml` do APK descompactado) e do motor dele (o bytecode),
+  e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é `tools/ampena`: o
+  efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Só o ALFA é desfocado. A camada sai com a cor de sempre e o alfa vezes (alfa desfocado)²: a borda
+    some suave para dentro, e o que fica longe da borda não muda.
+  - O desfoque é feito em 1/4 da resolução: o alfa desce para 1/2 e depois para 1/4 (cada descida é
+    uma leitura no meio de 2 × 2 pixels, a média que o filtro linear da GPU dá), passa por uma caixa na
+    horizontal e outra na vertical, e sobe de volta pelo mesmo filtro linear. O tamanho do buffer é
+    o do AM: o piso da metade e o piso da quarta parte (`ladoDoBuffer` com `scale` faz a mesma conta).
+  - A caixa: alcance r = Intensidade ÷ 4 ÷ Iterações, em FRAÇÃO da imagem (da largura na horizontal,
+    da altura na vertical — numa imagem em pé, o alcance vertical é maior em pixels). n amostras de
+    cada lado, n = o inteiro de r × (lado do buffer de 1/4) entre 2 e 100, espaçadas até ±r, mais o
+    centro; a média das 2n − 1, cada uma com o filtro linear.
+  - "Iterações" (1 a 5) é o efeito INTEIRO de novo sobre a saída anterior — o motor do AM copia o
+    efeito na lista (`acIter` 0, 1, 2...), e a saída de cada um é guardada em 8 bits. Aqui é o
+    `<iterations>`, que faz o mesmo. Com 3, cada volta desfoca 1/3 do alcance e come mais um terço
+    para dentro: o alcance total é Intensidade ÷ 4 da imagem (com 2,0 e 5 voltas, um círculo de raio
+    0,22 da tela some inteiro).
+  - O alfa desfocado é o da PRÓPRIA camada, sem normalizar: no miolo de uma camada semitransparente
+    ele é o próprio alfa, e cada volta deixa α³. Uma camada a 50% com 3 voltas some. É o do AM.
+  - Intensidade até 0,005 devolve a camada como está.
+  - Os buffers do AM são de 8 bits; os daqui também. O alfa sai igual nos dois; a cor difere só no
+    arredondamento da cor pré-multiplicada (o AM) × reta (o Nova).
+  - A PRÉVIA PARADA FICA NA RESOLUÇÃO CHEIA (`screen-scale="full"`), embora o alcance seja fração da
+    imagem: a descida a 1/4 é em si um desfoque de 4 pixels DA RESOLUÇÃO EM QUE O EFEITO RODA. Montado
+    na metade, ele vira 8 px da imagem cheia e a borda sai mais mole (`tools/escaladatela/gpu.py`,
+    numa imagem com alfa: Intensidade 0,05 dá p99 de 12 níveis e máx de 110 contra a cheia reduzida;
+    um efeito neutro dá p99 4). No AM a mesma conta também depende da resolução em que roda; aqui a
+    prévia parada é a exportação.
+-->
+<effect
+    id="nova.effect.am-feather"
+    name="Pena"
+    name-en="Feather"
+    desc="Suaviza as bordas das partes opacas da camada, desfocando só o canal alfa (o Feather do Alight Motion)."
+    desc-en="Softens the edges of the opaque parts of the layer by blurring only the alpha channel (Alight Motion's Feather)."
+    category="matte"
+    tags="pena,suavizar,borda,alfa,feather,soft edge,desfoque,alight motion"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="ds1" src="buffer" scale="0.5" />
+        <texture id="ds2" src="buffer" scale="0.25" />
+        <texture id="hblur" src="buffer" scale="0.25" />
+
+        <slider id="strength" label="Intensidade" default="0.15" min="0.0" max="2.0" step="0.005" snap="0.0" />
+        <slider id="iter" label="Iterações" default="3.0" min="1.0" max="5.0" step="1.0" type="integer" />
+    </params>
+
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura" />
+
+    <iterations param="iter" />
+
+    <passes>
+        <pass target="ds1" />
+        <pass target="ds2" />
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// Uma caixa do AM no alfa de `fonte`: o centro e n amostras de cada lado até ±alcance, com o filtro linear. As contas
+// são escritas como as do AM (o ângulo em graus × 0,0174533, a velocidade ÷ o texel) para dar o mesmo n.
+float caixa(sampler2D fonte, float graus, float alcance) {
+    vec2 texel = 1.0 / vec2(textureSize(fonte, 0));
+    float rad = graus * 0.0174533;
+    vec2 velocidade = vec2(cos(rad) * alcance, -sin(rad) * alcance);
+    int n = int(clamp(length(velocidade / texel), 2.01, 100.01));
+    float soma = texture(fonte, acScreenNorm).a;
+    for (int i = 1; i < n; i++) {
+        vec2 d = velocidade * (float(i) / float(n - 1));
+        soma += texture(fonte, acScreenNorm + d).a;
+        soma += texture(fonte, acScreenNorm - d).a;
+    }
+    return soma / float(n * 2 - 1);
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    if (strength <= 0.005) {
+        fragColor = camada;
+        return;
+    }
+    float alcance = strength / 4.0 / iter;
+    // Um ramo por passe, cada um terminando em `return`: é o formato que a poda do motor (`PodaDoPasse`)
+    // corta por passe — um `else if` encadeado deixaria `else` solto no programa do último.
+    if (acPass == 0) {
+        fragColor = vec4(camada.a);                         // a metade: só o alfa interessa daqui em diante
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = vec4(texture(ds1, acScreenNorm).a);     // a quarta parte
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = vec4(caixa(ds2, 0.0, alcance));         // a caixa na horizontal
+        return;
+    }
+    float a = caixa(hblur, 90.0, alcance);                  // na vertical, já subindo para a resolução cheia
+    fragColor = vec4(camada.rgb, camada.a * a * a);         // reta: a cor fica, o alfa afina
+}
+    ]]></shader>
+</effect>

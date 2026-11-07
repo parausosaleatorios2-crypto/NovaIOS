@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.depth_fog" name="Depth Fog" desc="Fades toward a fog colour based on luminance or a vertical gradient. Simulates atmospheric depth." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/depth_fog.png"
+        tags="3d,fog,depth,atmosphere" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Fog" />
+<selector id="mode" style="dropdown" default="0" label="Depth Source">
+<choice value="0" label="Luminance" />
+<choice value="1" label="Vertical" />
+<choice value="2" label="Radial" />
+</selector>
+<color id="fogColor" default="#FFBFD4E8" label="Fog Colour" />
+<spinner id="density" default="0.7" min="0.0" max="2.0" step="0.01" label="Density" />
+<spinner id="near" default="0.3" min="0.0" max="1.0" step="0.01" label="Near" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float d;
+  if (mode <= 0) d = 1.0 - gmLum(c);
+  else if (mode <= 1) d = 1.0 - uv.y;
+  else d = length(uv - 0.5) * 2.0;
+  float f = clamp((d - near) * density, 0.0, 1.0) * mixAmt;
+  vec3 col = mix(c, fogColor.rgb, f);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

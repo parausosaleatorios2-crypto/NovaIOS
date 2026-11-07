@@ -1,0 +1,606 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC BURN FILM (Cycore, nativo do After Effects) — a conta do plugin (0.859.0)
+  ============================================================================
+
+  Da fila da pasta Desktop\Presets (docs/PRESETS-DA-PASTA-DO-SNOW.md): os Alvar Text Burn In/Out (Fast e Slow), o
+  Alvar Text Fade In & Out 3 e 4 e um da Random usam o efeito — Burn animado de 100 a 0, centro no meio, semente 670.
+  O algoritmo foi LIDO do BurnFilm.aex (CycoreFXHD; tools/ccburnfilm/leitura: Ghidra + o asm), reescrito em Python
+  com as mesmas contas (tools/ccburnfilm/benchmark/modelo.py) e conferido com o After Effects 2023 em 8 bpc: 0 pixels
+  diferentes em 16 milhões (tools/ccburnfilm/LEIAME.md).
+
+  O QUE O PLUGIN FAZ (e este shader repete), o render de 8 bpc `0x180003830`:
+
+  - b = Burn · 0,01 (double, do 16.16 do controle). b ≤ 0: a camada como está; b ≥ 1: vazia.
+  - Um buffer float do tamanho da camada começa em suave(2b − 1) (0 até Burn 50; suave(x) = (3 − 2x)·x²) e recebe 64
+    MANCHAS, em ordem: cada uma soma (1 − d²/R²)² · amp nos pixels a menos de R do centro dela.
+  - A primeira: no Center, R = √(W² + H²) · 2b, amp 1.
+  - As outras 63: um sorteio LCG (r · 0x41C64E6D + 0x3039, os 15 bits de cima; começa em Random Seed · 65536 + 1) dá
+    o ponto (r · W/32768, r · H/32768); se o buffer ali (com as manchas de antes) está entre 0 e 2, a mancha entra,
+    com amp = r · valor/98304 e R = (2 − valor) · r · R₀ · 0,2/32768. Cada mancha depende do que as anteriores
+    somaram no ponto dela: a ordem e o último bit importam.
+  - Cada pixel: v = buffer − 0,5. v ≤ 0: o pixel como está. v ≥ 1: transparente. Senão t = 1 − v, a cor (RETA: o AE
+    entrega a cor reta a este efeito, medido) vezes suave(t) e o alfa vezes suave(6t), truncados.
+
+  A PRECISÃO: tudo em float32 na ordem da SSE do plugin, com o `um` que impede o fma. A única conta que anda é o fx da
+  linha (0x1800045c0): o plugin subtrai 1/sx do fx a cada pixel, e na mancha grande o fx arredonda quando cruza uma
+  potência de 2 — `cadeia` dá o mesmo valor sem andar pixel a pixel (conferida contra o passo a passo). As constantes
+  do quadro (b, o 16.16, o suave em double, o sorteio · W/32768) no double emulado do CC Radial Blur; a diagonal em
+  dois floats.
+
+  OS PASSES: 0 — a tabela das 64 manchas (cada texel refaz o sorteio até a sua: a mancha j lê o buffer no ponto dela
+  somando as j − 1 de antes); 1 — o fx² de cada mancha em cada coluna (a `cadeia` uma vez por coluna, não por pixel)
+  e, por coluna e por linha, a máscara de 64 bits das manchas cuja caixa passa ali; 2 — cada pixel soma só as manchas
+  das duas máscaras, em ordem.
+
+  A ORIENTAÇÃO: a conta é na orientação da IMAGEM (a linha 0 é o topo, como no plugin). Numa cena de pé (camada de
+  ajuste, grupo solto) a linha 0 do buffer é a base: o centro chega cru (`pontos="camada"`, como no CC Light Burst).
+
+  O QUE NÃO ENTROU (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md): 16 e 32 bpc (o app é 8 bits; o plugin tem um render
+  para cada) e pixel não quadrado; a diagonal em dois floats (o double do plugin arredondado a float32: só erraria se
+  o produto caísse a 2⁻⁴⁴ do meio de dois floats); na prévia reduzida a escala do AE vira acEscalaDePixel (a mesma
+  conta do plugin numa resolução reduzida, não a da exportação reduzida); camada com mais de 8192 px de lado (as
+  tabelas param em 8192: além disso o pixel sai como está).
+-->
+<effect
+    id="nova.effect.ccburnfilm"
+    name="CC Burn Film"
+    name-en="CC Burn Film"
+    desc="O CC Burn Film do After Effects, conta por conta: a película queimando a partir de um centro, como no plugin."
+    desc-en="After Effects' CC Burn Film, step by step: the film burning through from a centre, as in the plugin."
+    category="stylize"
+    pontos="camada"
+    tags="cc burn film,burn film,queimar,queimado,burn,película,film,fogo,fire,transição,transition,cycore,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- as 64 manchas: xs, ys, R², 1/R², amp, x0|x1, y0|y1 (linhas 0..6); a linha 7 tem o fundo e o modo -->
+        <texture id="manchas" src="buffer" width="64" height="8" />
+        <!-- o fx² de cada mancha por coluna (linhas 0..511) e as máscaras das colunas e das linhas (512..543) -->
+        <texture id="colunas" src="buffer" width="1024" height="544" />
+
+        <slider id="burn" label="Burn" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0,50.0,100.0" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="seed" label="Random Seed" default="0.0" min="0.0" max="5000.0" step="1.0" />
+    </params>
+
+    <passes>
+        <pass target="manchas" />   <!-- 0: o sorteio e as 64 manchas -->
+        <pass target="colunas" />   <!-- 1: o fx² por coluna e as máscaras -->
+        <pass />                    <!-- 2: o pixel -->
+    </passes>
+
+    <shader><![CDATA[
+// ============================================================ o float32 do plugin
+// `um` vale 1, mas o compilador não sabe (vem de `acIterationCount`, que é 1 neste efeito). (a·b)·um não se funde
+// com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
+float um;
+float fixa(float x) { return x * um; }
+float mul(float a, float b) { return (a * b) * um; }
+
+/** a·b = p + e, exato (Dekker). */
+vec2 produtoExato(float a, float b) {
+    float p = mul(a, b);
+    float t = mul(4097.0, a);
+    float ah = t - fixa(t - a);
+    float al = a - ah;
+    t = mul(4097.0, b);
+    float bh = t - fixa(t - b);
+    float bl = b - bh;
+    float e = fixa(fixa(fixa(mul(ah, bh) - p) + mul(ah, bl)) + mul(al, bh)) + mul(al, bl);
+    return vec2(p, e);
+}
+
+float restoDaDivisao(float a, float b, float q) {
+    vec2 p = produtoExato(q, b);
+    return fixa(a - p.x) - p.y;
+}
+
+/** a / b arredondado como no IEEE (a ≥ 0, b > 0): a divisão da GPU pode errar o último bit. */
+float divisao(float a, float b) {
+    if (a == 0.0) return 0.0;
+    float q = a / b;
+    float e = restoDaDivisao(a, b, q);
+    for (int i = 0; i < 4; i++) {
+        float q2 = uintBitsToFloat(floatBitsToUint(q) + (e > 0.0 ? 1u : 0xFFFFFFFFu));
+        float e2 = restoDaDivisao(a, b, q2);
+        if (abs(e2) < abs(e)) { q = q2; e = e2; } else break;
+    }
+    return q;
+}
+
+/** O valor do controle em 16.16, como o AE o entrega ao plugin: o float32 · 65536, meio para longe do zero. */
+int fixo(float v) {
+    float m = abs(v) * 65536.0;
+    float i = floor(m);
+    int r = int(i) + (m - i >= 0.5 ? 1 : 0);
+    return v < 0.0 ? -r : r;
+}
+
+// ============================================================ dois floats (~48 bits)
+// v = hi + lo, |lo| ≤ meio ulp de hi. As somas e produtos exatos (Knuth, Dekker) com o `um` entre cada conta.
+vec2 somaExata(float a, float b) {
+    float s = fixa(a + b);
+    float bb = fixa(s - a);
+    return vec2(s, fixa(fixa(a - fixa(s - bb)) + fixa(b - bb)));
+}
+vec2 somaRapida(float a, float b) {
+    float s = fixa(a + b);
+    return vec2(s, fixa(b - fixa(s - a)));
+}
+vec2 dfSoma(vec2 a, vec2 b) {
+    vec2 s = somaExata(a.x, b.x);
+    vec2 t = somaExata(a.y, b.y);
+    s = somaRapida(s.x, fixa(s.y + t.x));
+    return somaRapida(s.x, fixa(s.y + t.y));
+}
+vec2 dfNeg(vec2 a) { return -a; }
+vec2 dfMul(vec2 a, vec2 b) {
+    vec2 p = produtoExato(a.x, b.x);
+    return somaRapida(p.x, fixa(p.y + fixa(mul(a.x, b.y) + mul(a.y, b.x))));
+}
+
+/** √a em dois floats (~2⁻⁴⁴): a primeira aproximação em float, um passo de correção exato. */
+vec2 dfRaiz(vec2 a) {
+    if (!(a.x > 0.0)) return vec2(0.0);
+    float h = sqrt(a.x);
+    vec2 r = dfSoma(a, dfNeg(produtoExato(h, h)));
+    return somaRapida(h, r.x / (2.0 * h));
+}
+
+// ============================================================ o double do plugin, emulado (o do CC Radial Blur)
+// uvec2(alto, baixo) com os bits de um double IEEE-754. Só números normais e zero. Só multiplicação, soma e a divisão
+// por inteiro (dígitos de 16 bits): nada de laço de 55 passos.
+const uvec2 D_UM = uvec2(0x3FF00000u, 0u);
+const uvec2 D_MEIO = uvec2(0x3FE00000u, 0u);
+
+bool dZero(uvec2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
+uint dSinal(uvec2 a) { return a.x >> 31; }
+int dExpo(uvec2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
+uvec2 dMant(uvec2 a) { return uvec2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
+uvec2 dNeg(uvec2 a) { return dZero(a) ? a : uvec2(a.x ^ 0x80000000u, a.y); }
+uvec2 dAbs(uvec2 a) { return uvec2(a.x & 0x7FFFFFFFu, a.y); }
+uvec2 dEscala2(uvec2 a, int k) { return dZero(a) ? a : uvec2(a.x + uint(k << 20), a.y); }
+
+uvec2 soma64(uvec2 a, uvec2 b) { uint lo = a.y + b.y; return uvec2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
+uvec2 sub64(uvec2 a, uvec2 b) { return uvec2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
+bool menor64(uvec2 a, uvec2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
+uvec2 shl64(uvec2 a, int n) {
+    if (n == 0) return a;
+    if (n >= 64) return uvec2(0u);
+    if (n >= 32) return uvec2(a.y << (n - 32), 0u);
+    return uvec2((a.x << n) | (a.y >> (32 - n)), a.y << n);
+}
+uvec2 shr64(uvec2 a, int n) {
+    if (n == 0) return a;
+    if (n >= 64) return uvec2(0u);
+    if (n >= 32) return uvec2(0u, a.x >> (n - 32));
+    return uvec2(a.x >> n, (a.y >> n) | (a.x << (32 - n)));
+}
+
+uvec2 dMontar(uint s, int e, uvec2 m) {
+    return uvec2((s << 31) | (uint(e + 1023) << 20) | (m.x & 0xFFFFFu), m.y);
+}
+
+/** m56 em [2^55, 2^56): 53 bits + guarda + 2 de resto (o último já com o que saiu); ao par. */
+uvec2 dArredondar(uint s, int e, uvec2 m56) {
+    uint extra = m56.y & 7u;
+    uvec2 m = shr64(m56, 3);
+    if (extra > 4u || (extra == 4u && (m.y & 1u) == 1u)) m = soma64(m, uvec2(0u, 1u));
+    if (m.x >= 0x200000u) { m = shr64(m, 1); e += 1; }
+    return dMontar(s, e, m);
+}
+
+/** O produto das mantissas em dígitos de 16 bits (laços de limite fixo: o compilador desenrola). */
+uvec2 dMul(uvec2 a, uvec2 b) {
+    if (dZero(a) || dZero(b)) return uvec2((dSinal(a) ^ dSinal(b)) << 31, 0u);
+    uvec2 ma = dMant(a), mb = dMant(b);
+    uint A[4];
+    uint B[4];
+    uint P[8];
+    A[0] = ma.y & 0xFFFFu; A[1] = ma.y >> 16; A[2] = ma.x & 0xFFFFu; A[3] = ma.x >> 16;
+    B[0] = mb.y & 0xFFFFu; B[1] = mb.y >> 16; B[2] = mb.x & 0xFFFFu; B[3] = mb.x >> 16;
+    for (int i = 0; i < 8; i++) P[i] = 0u;
+    for (int i = 0; i < 4; i++) {
+        uint c = 0u;
+        for (int j = 0; j < 4; j++) {
+            uint t = A[i] * B[j] + P[i + j] + c;
+            P[i + j] = t & 0xFFFFu;
+            c = t >> 16;
+        }
+        P[i + 4] = c;
+    }
+    uvec2 alto = uvec2((P[7] << 16) | P[6], (P[5] << 16) | P[4]);
+    uvec2 baixo = uvec2((P[3] << 16) | P[2], (P[1] << 16) | P[0]);
+    int e = dExpo(a) + dExpo(b);
+    int sh = 49;
+    if ((alto.x & 0x200u) != 0u) { sh = 50; e += 1; }
+    uvec2 m = shl64(alto, 64 - sh) | shr64(baixo, sh);
+    if (shl64(baixo, 64 - sh) != uvec2(0u)) m.y |= 1u;
+    return dArredondar(dSinal(a) ^ dSinal(b), e, m);
+}
+
+uvec2 dSoma(uvec2 a, uvec2 b) {
+    if (dZero(a)) return dZero(b) ? uvec2((dSinal(a) & dSinal(b)) << 31, 0u) : b;
+    if (dZero(b)) return a;
+    if (menor64(uvec2(a.x & 0x7FFFFFFFu, a.y), uvec2(b.x & 0x7FFFFFFFu, b.y))) { uvec2 t = a; a = b; b = t; }
+    int e = dExpo(a);
+    int d = e - dExpo(b);
+    uvec2 ma = shl64(dMant(a), 3), mb = shl64(dMant(b), 3);
+    if (d >= 60) {
+        mb = uvec2(0u, 1u);
+    } else if (d > 0) {
+        uvec2 r = shr64(mb, d);
+        if (shl64(r, d) != mb) r.y |= 1u;
+        mb = r;
+    }
+    uvec2 m;
+    if (dSinal(a) == dSinal(b)) {
+        m = soma64(ma, mb);
+        if (m.x >= 0x1000000u) {
+            uint st = m.y & 1u;
+            m = shr64(m, 1);
+            m.y |= st;
+            e += 1;
+        }
+    } else {
+        m = sub64(ma, mb);
+        if (m == uvec2(0u)) return uvec2(0u);
+        for (int i = 0; i < 60 && m.x < 0x800000u; i++) { m = shl64(m, 1); e -= 1; }
+    }
+    return dArredondar(dSinal(a), e, m);
+}
+
+uvec2 dSub(uvec2 a, uvec2 b) { return dSoma(a, dNeg(b)); }
+
+/** trunc (para o zero), para |a| < 2^31. */
+int dTrunc(uvec2 a) {
+    if (dZero(a)) return 0;
+    int e = dExpo(a);
+    if (e < 0) return 0;
+    if (e > 30) return dSinal(a) == 1u ? -0x7FFFFFFF : 0x7FFFFFFF;
+    int v = int(shr64(dMant(a), 52 - e).y);
+    return dSinal(a) == 1u ? -v : v;
+}
+
+uvec2 dDeInt(int i) {
+    if (i == 0) return uvec2(0u);
+    uint u = uint(abs(i));
+    int e = 31;
+    for (int k = 0; k < 31 && (u & 0x80000000u) == 0u; k++) { u <<= 1; e--; }
+    return dMontar(i < 0 ? 1u : 0u, e, shl64(uvec2(0u, u), 21));
+}
+
+uvec2 dDeFloat(float f) {
+    uint b = floatBitsToUint(f);
+    uint E = (b >> 23) & 0xFFu;
+    if (E == 0u) return uvec2(b & 0x80000000u, 0u);
+    uvec2 m = shl64(uvec2(0u, b & 0x7FFFFFu), 29);
+    return uvec2((b & 0x80000000u) | (uint(int(E) - 127 + 1023) << 20) | m.x, m.y);
+}
+
+/** O double para float32, ao par. */
+float dParaFloat(uvec2 d) {
+    if (dZero(d)) return uintBitsToFloat(d.x & 0x80000000u);
+    uvec2 m = dMant(d);
+    int e = dExpo(d);
+    uint m24 = shr64(m, 29).y;
+    uint resto = m.y & 0x1FFFFFFFu;
+    if (resto > 0x10000000u || (resto == 0x10000000u && (m24 & 1u) == 1u)) m24++;
+    if (m24 == 0x1000000u) { m24 >>= 1; e++; }
+    return uintBitsToFloat((dSinal(d) << 31) | (uint(e + 127) << 23) | (m24 & 0x7FFFFFu));
+}
+
+/** O double em dois floats: hi = o float mais perto, lo = o resto (perde só os 5 últimos bits). */
+vec2 dfDeD(uvec2 d) {
+    float hi = dParaFloat(d);
+    return vec2(hi, dParaFloat(dSub(d, dDeFloat(hi))));
+}
+
+/** a < b */
+bool dMenor(uvec2 a, uvec2 b) {
+    bool za = dZero(a), zb = dZero(b);
+    if (za && zb) return false;
+    if (za) return dSinal(b) == 0u;
+    if (zb) return dSinal(a) == 1u;
+    if (dSinal(a) != dSinal(b)) return dSinal(a) == 1u;
+    uvec2 ma = uvec2(a.x & 0x7FFFFFFFu, a.y), mb = uvec2(b.x & 0x7FFFFFFFu, b.y);
+    return dSinal(a) == 0u ? menor64(ma, mb) : menor64(mb, ma);
+}
+
+/** round(fração · lado · 65536), meio para longe do zero — a conta é exata em double (24 + 13 + 16 bits). */
+int pontoFixo(float fracao, int lado) {
+    uvec2 v = dEscala2(dMul(dDeFloat(abs(fracao)), dDeInt(lado)), 16);
+    int r = dTrunc(dSoma(v, D_MEIO));
+    return fracao < 0.0 ? -r : r;
+}
+
+// ============================================================ a camada
+int W, H;                 // a camada do AE (px), dentro do buffer a partir de `inicio`
+ivec2 inicio;
+bool dePe;
+float sx, sy, isx, isy;   // a escala da resolução no plugin (1 na exportação) e 1/escala, em float32
+
+/** Um pixel da camada (RGBA 0..255, cor reta) na orientação da IMAGEM (a linha 0 é o topo); fora, transparente. */
+ivec4 daCamada(int x, int y) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return ivec4(0);
+    ivec2 b = inicio + ivec2(x, dePe ? H - 1 - y : y);
+    return ivec4(texelFetch(inputImg, b, 0) * 255.0 + 0.5);
+}
+
+// Um uint inteiro nos 4 bytes de um texel RGBA8 (o buffer do motor é de 8 bits).
+vec4 guardar(uint b) {
+    return vec4(float(b & 255u), float((b >> 8) & 255u), float((b >> 16) & 255u), float(b >> 24)) / 255.0;
+}
+uint lerUint(sampler2D t, ivec2 p) {
+    uvec4 c = uvec4(texelFetch(t, p, 0) * 255.0 + 0.5);
+    return c.x | (c.y << 8) | (c.z << 16) | (c.w << 24);
+}
+float lerFloat(sampler2D t, ivec2 p) { return uintBitsToFloat(lerUint(t, p)); }
+
+// ============================================================ a linha da mancha (0x1800045c0)
+/**
+ * O fx depois de k subtrações de d em float32: o plugin anda a linha subtraindo 1/sx do fx a cada pixel. Sem andar
+ * passo a passo: enquanto fx ≥ d cada subtração é exata; de [0, d) para baixo, uma arredonda; e com |fx| crescendo,
+ * dentro de uma mesma potência de 2 a soma de d é exata — só arredonda quando |fx| cruza para a potência de cima (um
+ * passo por potência). Conferida contra o passo a passo em 20 mil sorteios (`modelo.py cadeia`).
+ */
+float cadeia(float fx0, int k, float d) {
+    float v = fx0;
+    int n = k;
+    if (n <= 0) return v;
+    if (v >= d) {
+        int s = min(n, int(floor(v / d)));
+        v = fixa(v - mul(float(s), d));
+        n -= s;
+    }
+    if (n > 0 && v >= 0.0) {
+        v = fixa(v - d);
+        n--;
+    }
+    float a = -v;
+    for (int i = 0; i < 64 && n > 0; i++) {
+        uint e = (floatBitsToUint(a) >> 23) & 0xFFu;      // a ∈ [2^(e−127), 2^(e−126))
+        float B = uintBitsToFloat((e + 1u) << 23);
+        int s = int(ceil(fixa(B - a) / d));
+        if (n < s) {
+            a = fixa(a + mul(float(n), d));
+            n = 0;
+        } else {
+            a = fixa(a + mul(float(s), d));
+            n -= s;
+        }
+    }
+    return -a;
+}
+
+// ============================================================ as 64 manchas (0x180002fc0 e o laço de 0x180003830)
+const int NM = 64;
+float mXs[NM], mYs[NM], mR2[NM], mInv[NM], mAmp[NM];
+int mX0[NM], mX1[NM], mY0[NM], mY1[NM];
+
+/** A mancha i: o centro em px do buffer, R², 1/R², amp e a caixa (x0..x1, y0..y1). Fora da camada, caixa vazia. */
+void mancha(int i, float x, float y, float raio, float amp) {
+    mX0[i] = 0; mX1[i] = 0; mY0[i] = 0; mY1[i] = 0;
+    if (1.0 > raio) raio = 1.0;
+    float xs = mul(sx, x), ys = mul(y, sy);
+    float rx = mul(raio, sx), ry = mul(raio, sy);
+    int x0 = int(fixa(xs - rx));
+    int x1 = int(fixa(fixa(xs + rx) + 1.0));
+    if (!(x0 < W) || x1 < 0) return;
+    int y0 = int(fixa(ys - ry));
+    int y1 = int(fixa(fixa(ys + ry) + 1.0));
+    if (!(y0 < H) || y1 < 0) return;
+    float R2 = mul(raio, raio);
+    mXs[i] = xs; mYs[i] = ys; mR2[i] = R2; mInv[i] = divisao(1.0, R2); mAmp[i] = amp;
+    mX0[i] = max(x0, 0); mX1[i] = min(x1, W); mY0[i] = max(y0, 0); mY1[i] = min(y1, H);
+}
+
+/** O que a mancha m soma ao pixel (x, y) do buffer que vale `acc`. */
+float somaMancha(int m, int x, int y, float acc) {
+    if (x < mX0[m] || x >= mX1[m] || y < mY0[m] || y >= mY1[m]) return acc;
+    float fx = cadeia(mul(fixa(mXs[m] - float(mX0[m])), isx), x - mX0[m], isx);
+    float fy = mul(fixa(mYs[m] - float(y)), isy);
+    float d2 = fixa(mul(fx, fx) + mul(fy, fy));
+    if (!(d2 < mR2[m])) return acc;
+    float t = fixa(1.0 - mul(d2, mInv[m]));
+    return fixa(mul(mul(t, mAmp[m]), t) + acc);
+}
+
+uint lcg(uint r) { return r * 0x41C64E6Du + 0x3039u; }
+int g15(uint r) { return int((r >> 16) & 0x7FFFu); }
+
+// ============================================================ as constantes do quadro
+const uvec2 D_0_01 = uvec2(0x3F847AE1u, 0x47AE147Bu);
+const uvec2 D_TRES = uvec2(0x40080000u, 0u);
+
+int modo;                  // 0 a conta; 1 Burn ≤ 0 (a camada como está); 2 Burn ≥ 100 (vazia)
+float fundo, R0, kRaio, xc, yc;
+uvec2 WD, HD;
+uint semente;
+
+void constantes(vec2 fr) {
+    int bF = fixo(burn);
+    modo = bF <= 0 ? 1 : (bF >= 6553600 ? 2 : 0);
+    if (modo != 0) return;
+    // b = Burn · 0,01 e 2b, em double
+    uvec2 b2 = dEscala2(dMul(dEscala2(dDeInt(bF), -16), D_0_01), 1);
+    // a camada em px do tamanho cheio: largura · (1/sx)
+    WD = dMul(dDeInt(W), dDeFloat(isx));
+    HD = dMul(dDeInt(H), dDeFloat(isy));
+    // R₀ = (float)(√(H² + W²) · 2b) — a raiz em dois floats
+    vec2 diag = dfRaiz(dfDeD(dSoma(dMul(HD, HD), dMul(WD, WD))));
+    R0 = dfMul(diag, dfDeD(b2)).x;
+    kRaio = mul(R0, uintBitsToFloat(0x36CCCCCDu));          // 0,2/32768 em float32
+    // o fundo: suave(2b − 1) em double, só acima de Burn 50
+    fundo = 0.0;
+    if (dMenor(D_UM, b2)) {
+        uvec2 x = dSub(b2, D_UM);
+        fundo = dParaFloat(dMul(dSub(D_TRES, dEscala2(x, 1)), dMul(x, x)));
+    }
+    // o centro: (1/sx) · (16.16 do ponto)/65536, em double, para float32
+    int pcx = pontoFixo(fr.x, W), pcy = pontoFixo(fr.y, H);
+    xc = dParaFloat(dMul(dDeFloat(isx), dEscala2(dDeInt(pcx), -16)));
+    yc = dParaFloat(dMul(dDeFloat(isy), dEscala2(dDeInt(pcy), -16)));
+    semente = uint(fixo(seed) + 1);
+}
+
+/** As manchas 0..alvo, em ordem: a 0 no centro; cada uma das outras lê o buffer no ponto sorteado dela. */
+void calcularManchas(int alvo) {
+    mancha(0, xc, yc, R0, 1.0);
+    uint st = semente;
+    for (int j = 1; j < NM; j++) {
+        if (j > alvo) break;
+        uint r1 = lcg(st), r2 = lcg(r1), r3 = lcg(r2), r4 = lcg(r3);
+        st = r4;
+        mX0[j] = 0; mX1[j] = 0; mY0[j] = 0; mY1[j] = 0;
+        // (r · W) · 1/32768 em double, para float32
+        float px = dParaFloat(dEscala2(dMul(dDeInt(g15(r1)), WD), -15));
+        float py = dParaFloat(dEscala2(dMul(dDeInt(g15(r2)), HD), -15));
+        int ix = int(mul(sx, px)), iy = int(mul(sy, py));
+        if (ix < 0 || iy < 0 || ix >= W || iy >= H) continue;
+        float val = fundo;
+        for (int m = 0; m < NM; m++) {
+            if (m >= j) break;
+            val = somaMancha(m, ix, iy, val);
+        }
+        if (!(val > 0.0 && val < 2.0)) continue;
+        float amp = mul(mul(float(g15(r3)), val), uintBitsToFloat(0x372AAAABu));   // 1/98304 em float32
+        float raio = mul(mul(fixa(2.0 - val), float(g15(r4))), kRaio);
+        mancha(j, px, py, raio, amp);
+    }
+}
+
+/** A máscara das manchas cuja caixa passa pela coluna (ou linha) `pos`: 64 bits, a mancha m no bit m. */
+uvec2 mascara(int pos, bool linha) {
+    int k = (linha ? 16384 : 0) + 2 * pos;
+    ivec2 p = ivec2(k & 1023, 512 + (k >> 10));
+    return uvec2(lerUint(colunas, p), lerUint(colunas, p + ivec2(1, 0)));
+}
+
+// ============================================================ o efeito
+void main() {
+    um = float(min(acIterationCount, 1));
+    ivec2 buf = textureSize(inputImg, 0);
+    // A camada do AE dentro do buffer (a mídia encaixada; texto, forma e sólido: a composição inteira): o efeito do AE
+    // roda no tamanho DELA. Fora dela não há saída.
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    inicio = (buf - tam) / 2;
+    W = tam.x; H = tam.y;
+    dePe = acEntradaDePe == 1;
+    // A escala da resolução do plugin: 1 na exportação; na prévia reduzida, a dela (a mesma conta numa resolução menor).
+    sx = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+    sy = sx;
+    isx = sx == 1.0 ? 1.0 : 1.0 / sx;
+    isy = isx;
+
+    if (acPass == 0) {
+        // O centro como FRAÇÃO da camada em float32 (o AE entrega round(px · 65536) do ponto); cru, como no CC Light
+        // Burst, e levado ao buffer só quando a camada não o ocupa inteiro.
+        vec2 uv = acPontoNoBuffer(center);
+        vec2 simples = dePe ? vec2(center.x, 1.0 - center.y) : center;
+        vec2 fr;
+        if (tam == buf && all(lessThan(abs(uv - simples), vec2(1.0e-6)))) {
+            fr = center;
+        } else {
+            vec2 cb = vec2(mul(uv.x, float(buf.x)), mul(uv.y, float(buf.y))) - vec2(inicio);
+            if (dePe) cb.y = fixa(float(H) - cb.y);
+            fr = vec2(sign(cb.x) * divisao(abs(cb.x), float(W)), sign(cb.y) * divisao(abs(cb.y), float(H)));
+        }
+        constantes(fr);
+        ivec2 t = ivec2(gl_FragCoord.xy);
+        if (t.y == 7) {
+            fragColor = guardar(t.x == 0 ? floatBitsToUint(modo == 0 ? fundo : 0.0) : (t.x == 1 ? uint(modo) : 0u));
+            return;
+        }
+        if (modo != 0) { fragColor = vec4(0.0); return; }
+        int i = t.x;
+        calcularManchas(i);
+        uint v = 0u;
+        if (t.y == 0) v = floatBitsToUint(mXs[i]);
+        else if (t.y == 1) v = floatBitsToUint(mYs[i]);
+        else if (t.y == 2) v = floatBitsToUint(mR2[i]);
+        else if (t.y == 3) v = floatBitsToUint(mInv[i]);
+        else if (t.y == 4) v = floatBitsToUint(mAmp[i]);
+        else if (t.y == 5) v = uint(mX0[i]) | (uint(mX1[i]) << 16);
+        else v = uint(mY0[i]) | (uint(mY1[i]) << 16);
+        fragColor = guardar(v);
+        return;
+    }
+
+    int modoDoQuadro = int(lerUint(manchas, ivec2(1, 7)));
+    if (acPass == 1) {
+        ivec2 t = ivec2(gl_FragCoord.xy);
+        if (modoDoQuadro != 0) { fragColor = vec4(0.0); return; }
+        if (t.y < 512) {
+            // o fx² da mancha m na coluna c: a `cadeia` uma vez por coluna
+            int m = t.y >> 3, c = ((t.y & 7) << 10) | t.x;
+            uint cx = lerUint(manchas, ivec2(m, 5));
+            int x0 = int(cx & 0xFFFFu), x1 = int(cx >> 16);
+            if (c < x0 || c >= x1) { fragColor = vec4(0.0); return; }
+            float fx = cadeia(mul(fixa(lerFloat(manchas, ivec2(m, 0)) - float(x0)), isx), c - x0, isx);
+            fragColor = guardar(floatBitsToUint(mul(fx, fx)));
+            return;
+        }
+        // as máscaras: k = 2·coluna + metade (0..16383), 16384 + 2·linha + metade
+        int k = ((t.y - 512) << 10) | t.x;
+        bool linha = k >= 16384;
+        k &= 16383;
+        int pos = k >> 1, metade = k & 1;
+        uint bits = 0u;
+        if (pos < (linha ? H : W)) {
+            for (int b = 0; b < 32; b++) {
+                uint cx = lerUint(manchas, ivec2(32 * metade + b, linha ? 6 : 5));
+                int lo = int(cx & 0xFFFFu), hi = int(cx >> 16);
+                if (pos >= lo && pos < hi) bits |= 1u << uint(b);
+            }
+        }
+        fragColor = guardar(bits);
+        return;
+    }
+
+    // A conta é na orientação da IMAGEM (a linha 0 é o topo, como no plugin). Numa cena de pé a linha 0 do buffer é a
+    // BASE. Fora da camada o efeito não escreve.
+    ivec2 local = ivec2(floor(acScreenNorm * acResolution)) - inicio;
+    if (local.x < 0 || local.y < 0 || local.x >= W || local.y >= H) { fragColor = vec4(0.0); return; }
+    int x = local.x, y = dePe ? H - 1 - local.y : local.y;
+    ivec4 p = daCamada(x, y);
+    if (modoDoQuadro == 2 || p.a == 0) { fragColor = vec4(0.0); return; }
+    if (modoDoQuadro == 1 || x >= 8192 || y >= 8192) { fragColor = vec4(p) / 255.0; return; }
+
+    // o buffer de queima no pixel: o fundo e as manchas das duas máscaras, em ordem
+    float acc = lerFloat(manchas, ivec2(0, 7));
+    uvec2 mm = mascara(x, false) & mascara(y, true);
+    for (int h = 0; h < 2; h++) {
+        uint bits = h == 0 ? mm.x : mm.y;
+        for (int q = 0; q < 32; q++) {
+            if (bits == 0u) break;
+            uint menor = bits & (~bits + 1u);                          // o bit mais baixo (findLSB é do 3.10)
+            int m = 32 * h + int(floatBitsToUint(float(menor)) >> 23) - 127;
+            bits ^= menor;
+            float fxx = lerFloat(colunas, ivec2(x & 1023, m * 8 + (x >> 10)));
+            float fy = mul(fixa(lerFloat(manchas, ivec2(m, 1)) - float(y)), isy);
+            float d2 = fixa(fxx + mul(fy, fy));
+            if (d2 < lerFloat(manchas, ivec2(m, 2))) {
+                float t = fixa(1.0 - mul(d2, lerFloat(manchas, ivec2(m, 3))));
+                acc = fixa(mul(mul(t, lerFloat(manchas, ivec2(m, 4))), t) + acc);
+            }
+        }
+    }
+
+    // o pixel (0x180002c60): a cor vezes suave(t), o alfa vezes suave(6t), truncados
+    float v = fixa(acc - 0.5);
+    if (!(v > 0.0)) { fragColor = vec4(p) / 255.0; return; }
+    if (v >= 1.0) { fragColor = vec4(0.0); return; }
+    float t = fixa(1.0 - v);
+    float s = t >= 1.0 ? 1.0 : mul(fixa(3.0 - mul(t, 2.0)), mul(t, t));
+    float u = mul(t, 6.0);
+    float a = u >= 1.0 ? 1.0 : mul(fixa(3.0 - mul(u, 2.0)), mul(u, u));
+    ivec3 c = ivec3(mul(float(p.r), s), mul(float(p.g), s), mul(float(p.b), s));
+    int A = int(mul(float(p.a), a));
+    fragColor = A == 0 ? vec4(0.0) : vec4(vec3(c), float(A)) / 255.0;
+}
+
+    ]]></shader>
+</effect>

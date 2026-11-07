@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SHARPEN — o Sharpen do Alight Motion, conta por conta (0.581.0)
+  ============================================================================
+
+  Pedido do snow (16/10/2026): "pode fzr o efeito sharpen do alight motion? 100% igual", da série "100% iguais ao AM".
+  Mesmos parâmetros, ids, faixas, passos e padrões do `com.alightcreative.effects.sharpen` do AM 5.0.281
+  (`assets/effects/sharpen.xml` do APK descompactado; o arquivo do AM não entra no repositório). Conferido rodando o
+  efeito do próprio AM na GPU do PC ao lado deste (`tools/amsharpen`). A "Nitidez" do Nova (`sharpen.xml`) e o
+  S_Sharpen continuam: são outros efeitos.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  1. A camada, pré-multiplicada em 8 bits (o AM guarda assim), é lida em cinco pontos: o próprio pixel e os quatro
+     vizinhos a Raio pixels dele (esquerda, direita, cima, baixo), pelo filtro linear da GPU — com Raio quebrado o
+     vizinho é a mistura de dois pixels.
+  2. Saída = centro × (1 + 4 × Intensidade) − cada vizinho × Intensidade, nos quatro canais, ALFA TAMBÉM, na mesma
+     ordem de soma do AM (norte, sul, leste, oeste, centro). Nada é limitado: o alvo de 8 bits corta abaixo de 0 e
+     acima de 1. Com Intensidade 0 sai a camada como está.
+
+  NA TELA (`stage="screen"`), como no AM: ele roda os efeitos DEPOIS de mover, girar e escalar a camada, na imagem do
+  tamanho da tela, e o Raio é em pixels dessa imagem (`getTexSize(inputImg.size)`). Uma camada ampliada 3× ganha o
+  mesmo Sharpen fino de uma de 100 %. Os efeitos de antes na lista rodam na camada; ele e os de depois, na tela
+  (`SceneRenderer.efeitosNaTela`). Dentro de grupo (o filho) ainda roda no buffer da camada, como os outros.
+
+  A PRÉVIA PARADA FICA NA RESOLUÇÃO CHEIA (`screen-scale="full"`): o Raio é em pixels da imagem; na metade, 1 px
+  viraria 2 px da composição. Igual ao AM, que mede no tamanho do que renderiza.
+
+  O que é do Nova e não do AM:
+  - O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. O passe 0 guarda a camada pré-multiplicada (o mesmo
+    buffer de 8 bits que o AM recebe, arredondado pelo mais perto como o premul do Android, por `oitoBits`: o Sharpen
+    multiplica a diferença de um nível por até 81, e o arredondamento não pode ser o da GPU que grava), o passe 1 faz a
+    conta do AM nele e grava em 8 bits como o alvo do AM (o `nitido`, conferido byte a byte com a saída do AM), e só a
+    saída volta para o alfa reto.
+  - A LUZ ACIMA DO ALFA: como o alfa também é afiado, numa borda semitransparente com cores diferentes a cor
+    pré-multiplicada passa do alfa (um pixel claro ao lado de um escuro opaco ganha cor e perde alfa). A composição do
+    AM soma essa luz ao fundo; a cor reta não guarda isso. Só nesses pixels a saída leva junto o fundo atrás dela
+    (`src="backdrop"`), com o menor alfa que reproduz a mesma soma na composição Normal com qualquer opacidade — o
+    `paraReta` do Anel (`am-ring.xml`). Não alcança: soma acima de 1 com opacidade menor que 100 %, outro modo de
+    mesclagem, fundo transparente, outro efeito depois deste na lista.
+  - Os passes (AM → aqui): o AM tem um passe só; aqui são o `pre`, o `nitido` (a conta dele) e a saída.
+-->
+<effect
+    id="nova.effect.am-sharpen"
+    name="Sharpen"
+    name-en="Sharpen"
+    desc="Aprimora os detalhes na camada, aumentando o contraste sempre que houver diferenças abruptas na luminância dos pixels mais próximos (o Sharpen do Alight Motion)."
+    desc-en="Enhances details in the layer by increasing the contrast wherever there are abrupt differences in the luminance of nearby pixels (Alight Motion's Sharpen)."
+    category="blur"
+    tags="sharpen,nitidez,afiar,nítido,detalhes,contraste,realçar,essenciais,alight motion"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena atrás da camada: só lida onde a cor passa do alfa (`paraReta`). -->
+        <texture id="comp" src="backdrop" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- A saída do AM, em 8 bits como o alvo dele (pré-multiplicada, cor podendo passar do alfa). -->
+        <texture id="nitido" src="buffer" />
+
+        <spinner id="strength" label="Intensidade" default="1.0" min="0.0" max="20.0" step="0.01" />
+        <spinner id="radius" label="Raio" default="1.0" min="1.0" max="10.0" step="0.1" />
+    </params>
+
+    <!-- Na vitrine, a nitidez padrão não aparece a 64 dp: forte. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="strength" value="8.0" />
+        <set param="radius" value="3.0" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="pre" skipIfZero="strength" />
+        <pass target="nitido" skipIfZero="strength" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta. O comum (cor ≤ alfa) é só dividir — no opaco, a
+// própria cor. Onde a cor passa do alfa (a luz que a composição do AM SOMA ao que está atrás, `p + fundo·(1 − op·alfa)`),
+// o pixel leva junto o fundo dele: com o menor alfa `a` em que a cor reta `s = fundo + (q − fundo·alfa)/a` cabe entre 0
+// e 1, a composição Normal do Nova, `s·a·op + fundo·(1 − a·op)`, dá o mesmo do AM com QUALQUER opacidade da camada. Não
+// cabe só quando a soma passa de 1: com a opacidade cheia ela vira 1 lá e aqui; com menos, aqui sai um pouco mais escuro.
+vec4 paraReta(vec4 q) {
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return q.a > 0.0 ? vec4(q.rgb / q.a, q.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+// O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
+// num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada do AM chega pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android). O Sharpen multiplica
+        // a diferença de um nível por até 81 (1 + 4 × 20): o arredondamento é o da conta, e não o da GPU que grava (a
+        // AMD do PC grava com viés). No opaco a cor já é o float da textura, bit a bit.
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 p = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        fragColor = vec4(p, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // A conta do AM, na mesma ordem. "Cima" é o +t do AM: na tela a entrada chega de pé (t = 0 embaixo, como
+        // lá); deitada, o vizinho de cima é o −t. Assim o norte e o sul entram na soma na mesma ordem que no AM.
+        float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+        vec2 fragSize = vec2(1.) / vec2(textureSize(pre, 0)) * radius;
+        vec4 w  = texture(pre, vec2(acScreenNorm.x - fragSize.x, acScreenNorm.y) );
+        vec4 e  = texture(pre, vec2(acScreenNorm.x + fragSize.x, acScreenNorm.y) );
+        vec4 n  = texture(pre, vec2(acScreenNorm.x, acScreenNorm.y + cima * fragSize.y) );
+        vec4 s  = texture(pre, vec2(acScreenNorm.x, acScreenNorm.y - cima * fragSize.y) );
+        vec4 texColor = texture(pre, acScreenNorm);
+
+        float centerWeight = 1. + strength*4.;
+        float sideWeight = -strength;
+
+        // O corte em 0..1 é o do alvo de 8 bits do AM; escrito aqui para o projeto de 32 bits sair igual.
+        fragColor = clamp(n*sideWeight + s*sideWeight + e*sideWeight + w*sideWeight + texColor*centerWeight, 0.0, 1.0);
+        return;
+    }
+
+    // Intensidade 0: o AM devolve a própria camada (centro × 1, vizinhos × 0).
+    if (strength == 0.0) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+    fragColor = paraReta(texture(nitido, acScreenNorm));
+}
+    ]]></shader>
+</effect>

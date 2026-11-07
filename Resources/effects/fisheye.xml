@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   OLHO DE PEIXE
+  ============================================================================
+
+  A lente que abre até 180° e entorta o mundo para caber. Foi pedida junto com a
+  rotação da câmera, e o motivo é bom: girar a câmera com focal curta já dá uma
+  perspectiva forte, e o olho de peixe é o que leva isso ao extremo — o que está
+  no centro fica grande e reto, o que está na borda se curva e escapa.
+
+  ============================================================================
+   O QUE ISTO NÃO É: A "DISTORÇÃO DE LENTE" QUE JÁ EXISTE
+  ============================================================================
+
+  O efeito `lens-distortion` usa um polinômio (r² e r⁴) — é o modelo com que se
+  CORRIGE a curvatura de uma lente real, e é o certo para isso. Ele não é um olho
+  de peixe: a conta dele não tem ângulo nenhum dentro, então não existe "abrir
+  para 180°", e forçando a curvatura o que aparece é a imagem inchando, não um
+  campo de visão maior.
+
+  Aqui a conta é de PROJEÇÃO, e o parâmetro é o ângulo:
+
+      θ = (raio na tela) × (metade do campo de visão)
+      raio na fonte = tan(θ) / tan(metade do campo)
+
+  Ou seja: cada pixel da tela é uma DIREÇÃO saindo do olho, e a fonte é lida
+  onde aquela direção bateria num plano. É a mesma família de conta da esfera
+  360° deste app, e é por isso que os dois combinam.
+
+  ============================================================================
+   AS TRÊS PROJEÇÕES, E QUANDO CADA UMA
+  ============================================================================
+
+  - **Equidistante** é a do olho de peixe clássico e a das câmeras de ação: cada
+    grau de ângulo ocupa a mesma distância na imagem.
+  - **Estereográfica** é a "little planet": estica menos a borda e mantém as
+    formas reconhecíveis mesmo a 180°.
+  - **Ortográfica** é a bola de vidro: comprime muito a borda, como um reflexo
+    numa esfera espelhada.
+
+  E o modo **desfazer** faz o caminho inverso — endireita material já gravado em
+  olho de peixe, que é o uso prático de quem filma com câmera de ação.
+-->
+<effect
+    id="nova.effect.fisheye"
+    name="Olho de peixe"
+    name-en="Fisheye"
+    desc="Lente ultragrande angular de verdade, com campo de visão em graus — e o caminho de volta."
+    desc-en="A real ultra-wide lens with field of view in degrees — and the way back."
+    category="distort"
+    tags="olho de peixe,fisheye,grande angular,lente,360,gopro,distorção"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="mode" label="Modo" default="0"
+                  options="Aplicar|Desfazer" />
+
+        <slider id="fov" label="Campo de visão"
+                default="120.0" min="20.0" max="179.0" step="1.0" type="angle" />
+
+        <selector id="projection" label="Projeção" default="0"
+                  options="Equidistante|Estereográfica|Ortográfica" />
+
+        <!-- ========================== Enquadramento ========================= -->
+        <slider id="zoom" group="Enquadramento" label="Aproximação"
+                default="1.0" min="0.3" max="3.0" step="0.01" snap="1.0" />
+        <point id="center" group="Enquadramento" label="Centro da lente"
+               defaultX="0.5" defaultY="0.5" />
+        <switch id="circular" group="Enquadramento" label="Recortar em círculo" default="false" />
+        <slider id="squeeze" group="Enquadramento" label="Achatar"
+                default="0.0" min="-0.8" max="0.8" step="0.01" snap="0.0" />
+
+        <!-- ============================== Borda ============================= -->
+        <selector id="edge" group="Borda" label="Fora da imagem" default="0"
+                  options="Transparente|Esticar|Espelhar" />
+    </params>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+void main() {
+    // Coordenada com a proporção corrigida: sem isso, o "círculo" do olho de
+    // peixe sai oval em composição que não é quadrada, e o efeito inteiro fica
+    // errado num vídeo vertical — que é a maioria aqui.
+    vec2 p = (acScreenNorm - center) * vec2(acAspect, 1.0) * 2.0 / max(zoom, 1e-3);
+
+    // Achatar: uma lente anamórfica de pobre. Positivo estica na horizontal.
+    p.x *= 1.0 + squeeze;
+    p.y *= 1.0 - squeeze;
+
+    float raio = length(p);
+    float meioCampo = radians(fov) * 0.5;
+    float tanMeio = tan(min(meioCampo, radians(89.0)));
+
+    float fator;
+
+    if (mode == 1) {
+        // ------------------------------------------------------ desfazer
+        //
+        // O caminho de volta: a tela é a imagem já entortada, e queremos onde
+        // aquele ponto estaria numa lente reta. É a mesma conta ao contrário.
+        float theta;
+        if (projection == 1) {
+            theta = 2.0 * atan(raio * tan(meioCampo * 0.5));
+        } else if (projection == 2) {
+            theta = asin(clamp(raio * sin(meioCampo), -1.0, 1.0));
+        } else {
+            theta = raio * meioCampo;
+        }
+        fator = (raio > 1e-5) ? (tan(min(theta, radians(89.0))) / tanMeio) / raio : 1.0;
+    } else {
+        // ------------------------------------------------------- aplicar
+        //
+        // O ângulo que este pixel representa, e onde a fonte reta seria lida.
+        float theta = atan(raio * tanMeio);
+
+        float rProjetado;
+        if (projection == 1) {
+            // Estereográfica: r = 2·tan(θ/2), normalizada pelo campo.
+            rProjetado = 2.0 * tan(theta * 0.5) / (2.0 * tan(meioCampo * 0.5));
+        } else if (projection == 2) {
+            // Ortográfica: r = sin(θ).
+            rProjetado = sin(theta) / sin(meioCampo);
+        } else {
+            // Equidistante: r = θ.
+            rProjetado = theta / meioCampo;
+        }
+
+        // A razão entre "onde deveria estar" e "onde está" é o que estica ou
+        // encolhe cada anel da imagem.
+        fator = (rProjetado > 1e-5) ? (raio / rProjetado) : 1.0;
+    }
+
+    vec2 fonte = center + (p * fator) / (2.0 * vec2(acAspect, 1.0));
+
+    // Fora da imagem: três respostas, e a diferença se vê nas quinas.
+    vec4 cor;
+    bool fora = fonte.x < 0.0 || fonte.x > 1.0 || fonte.y < 0.0 || fonte.y > 1.0;
+
+    if (!fora) {
+        cor = texture(inputImg, fonte);
+    } else if (edge == 1) {
+        // Esticar: a textura já é CLAMP_TO_EDGE, então basta ler aparado.
+        cor = texture(inputImg, clamp(fonte, 0.0, 1.0));
+    } else if (edge == 2) {
+        // Espelhar: dobra a coordenada de volta para dentro.
+        vec2 espelhada = abs(fract(fonte * 0.5) * 2.0 - 1.0);
+        cor = texture(inputImg, espelhada);
+    } else {
+        cor = vec4(0.0);
+    }
+
+    // O recorte circular, com a borda macia de um pixel e meio — é o que faz o
+    // resultado parecer uma lente, e não uma imagem entortada.
+    if (circular) {
+        float suave = 1.5 / max(acResolution.y, 1.0) * 2.0;
+        float dentro = 1.0 - smoothstep(1.0 - suave, 1.0, raio);
+        cor *= dentro;
+    }
+
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

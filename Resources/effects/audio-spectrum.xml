@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ESPECTRO DE ÁUDIO
+  ============================================================================
+
+  As barras que dançam com a música. E, diferente de todos os outros efeitos
+  deste app, ele não inventa o movimento: ele MEDE.
+
+  ============================================================================
+   POR QUE ISTO É BARATO AQUI E CARO EM OUTRO LUGAR
+  ============================================================================
+
+  O áudio do projeto já está decodificado em PCM no cache — a reprodução precisa
+  dele para tocar. Então a informação difícil já estava pronta, e faltava só
+  alguém perguntar: a cada quadro o motor lê 23 milissegundos de som em volta do
+  instante atual, faz uma FFT e entrega 32 níveis ao shader como textura.
+
+  Um plugin de edição comum teria que decodificar o arquivo de novo só para
+  desenhar isso.
+
+  ============================================================================
+   AS FAIXAS SÃO LOGARÍTMICAS, E É POR ISSO QUE ACOMPANHA A MÚSICA
+  ============================================================================
+
+  A FFT devolve frequências em passos iguais; o ouvido ouve em oitavas. Em
+  faixas lineares, grave, médio e voz se amontoam nas duas primeiras barras e o
+  resto da tela mostra chiado — as barras dançam com os pratos da bateria, e não
+  com a música. O agrupamento em oitavas acontece no motor. Ver `AudioSpectrum`.
+
+  Cada barra sobe na hora e cai devagar, como um VU de verdade: sem isso a
+  batida aparece por um quadro só e o olho não pega.
+-->
+<effect
+    id="nova.effect.audiospectrum"
+    name="Espectro de áudio"
+    name-en="Audio Spectrum"
+    desc="Barras, onda ou anel que reagem à música da composição, medidos de verdade."
+    desc-en="Bars, wave or ring reacting to the composition audio — actually measured."
+    category="procedural"
+    tags="áudio,som,música,espectro,barras,visualizador,fft">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- As 32 faixas do instante atual, medidas pelo motor. -->
+        <texture id="spectrumImg" src="audio" />
+
+        <selector id="mode" label="Formato" default="0"
+                  options="Barras|Onda|Anel|Espelhado" />
+        <slider id="height" label="Altura"
+                default="0.35" min="0.02" max="1.0" step="0.01" />
+        <color id="barColor" label="Cor" default="#FF6FE3C4" />
+
+        <!-- ============================= Arranjo =========================== -->
+        <slider id="bars" group="Arranjo" label="Quantas barras"
+                default="32" min="4" max="64" step="1" type="integer" />
+        <slider id="gapF" group="Arranjo" label="Espaço entre elas"
+                default="0.25" min="0.0" max="0.9" step="0.01" />
+        <point id="anchor" group="Arranjo" label="Base" defaultX="0.5" defaultY="0.95" />
+        <slider id="ringSize" group="Arranjo" label="Raio (anel)"
+                default="0.25" min="0.05" max="0.8" step="0.005" />
+        <slider id="rotation" group="Arranjo" label="Girar (anel)"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+
+        <!-- ============================== Cor ============================== -->
+        <color id="peakColor" group="Cor" label="Cor do topo" default="#FFFFFFFF" />
+        <slider id="glow" group="Cor" label="Brilho"
+                default="0.4" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="boost" group="Cor" label="Ganho"
+                default="1.0" min="0.2" max="4.0" step="0.05" snap="1.0" />
+    </params>
+
+    <preview anda="true" />
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+/** O nível de uma faixa, com o ganho aplicado. `t` vai de 0 a 1. */
+float nivel(float t) {
+    return clamp(texture(spectrumImg, vec2(clamp(t, 0.0, 1.0), 0.5)).r * boost, 0.0, 1.0);
+}
+
+/**
+ * O nível suavizado, para a onda.
+ *
+ * A textura do espectro tem 32 texels e o filtro é linear, então a leitura crua
+ * é uma poligonal: cada faixa vira um segmento reto e a linha sai em zigue-zague.
+ * Três amostras com peso 1-2-1, espaçadas de meia faixa, arredondam os vértices —
+ * é a mesma ideia de um filtro de suavização, e custa duas leituras a mais.
+ */
+float nivelSuave(float t) {
+    // Meia faixa na coordenada da textura: ela sempre tem 32 texels.
+    const float MEIA_FAIXA = 1.0 / 64.0;
+    return (nivel(t - MEIA_FAIXA) + 2.0 * nivel(t) + nivel(t + MEIA_FAIXA)) * 0.25;
+}
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    return vec4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    vec2 uv = acScreenNorm;
+    float quantas = float(clamp(int(bars + 0.5), 4, 64));
+
+    float dentro = 0.0;   // 1 onde a forma está
+    float topo = 0.0;     // 1 perto da ponta, para a cor do topo
+
+    // Um pixel e meio, na mesma medida das coordenadas. É com isto que as bordas
+    // ficam macias: um `step` cru serrilha o anel inteiro, e serrilhado é a
+    // primeira coisa que se nota num efeito que fica na tela o vídeo todo.
+    float px = max(1.5 * acEscalaDePixel, 1.0) / max(acResolution.y, 1.0);
+
+    if (mode == 2) {
+        // ------------------------------------------------------------- anel
+        vec2 p = (uv - anchor) * vec2(acAspect, 1.0);
+        float raio = length(p);
+        float ang = atan(p.y, p.x) + rotation * PI / 180.0;
+        float volta = fract(ang / (2.0 * PI) + 1.0);
+
+        float faixa = floor(volta * quantas);
+        float posicaoNaFaixa = fract(volta * quantas);
+        float valor = nivel(faixa / quantas);
+
+        float interno = ringSize;
+        float externo = ringSize + valor * height;
+
+        // A folga angular de um pixel depende do RAIO: perto do centro, um pixel
+        // cobre muito mais ângulo do que na ponta da barra.
+        //
+        // E ela só entra quando existe espaço entre as fatias. Com espaço zero, a
+        // divisa entre duas fatias é um degrau de verdade — barras de alturas
+        // diferentes encostadas —, e suavizar ali abriria uma costura escura.
+        // O `max` não é detalhe: com folga zero as duas bordas do `smoothstep`
+        // ficariam iguais, e a especificação não define divisão por zero ali.
+        float folgaAng = max(px * quantas / (6.2831853 * max(raio, 1e-3)) * step(0.001, gapF), 1e-5);
+        float dentroDaFatia =
+            smoothstep(gapF * 0.5 - folgaAng, gapF * 0.5 + folgaAng, posicaoNaFaixa) *
+            (1.0 - smoothstep(1.0 - gapF * 0.5 - folgaAng, 1.0 - gapF * 0.5 + folgaAng, posicaoNaFaixa));
+
+        dentro = smoothstep(interno - px, interno + px, raio) *
+                 (1.0 - smoothstep(externo - px, externo + px, raio)) *
+                 dentroDaFatia;
+        topo = dentro * smoothstep(externo - 0.01, externo, raio);
+    } else if (mode == 1) {
+        // -------------------------------------------------------------- onda
+        //
+        // A onda usa o nível como ALTURA de uma linha contínua, e não como barra.
+        float valor = nivelSuave(uv.x);
+        float linha = anchor.y - valor * height;
+
+        // A linha engrossa onde está alta: o traço fino some contra o vídeo, e
+        // engrossar só no que importa mantém a leitura sem virar uma faixa.
+        float espessura = 0.004 + valor * 0.01;
+
+        dentro = 1.0 - smoothstep(espessura, espessura * 2.0, abs(uv.y - linha));
+
+        // Na onda não existe "ponta da barra", então a cor do topo vira a cor do
+        // ALTO: quanto mais forte o trecho, mais ele puxa para ela. Deixar
+        // `topo = dentro` pintaria a linha inteira de branco e apagaria a cor.
+        topo = dentro * valor;
+    } else {
+        // ------------------------------------------------- barras / espelhado
+        float faixa = floor(uv.x * quantas);
+        float posicaoNaFaixa = fract(uv.x * quantas);
+        float valor = nivel(faixa / quantas);
+
+        float dentroDaBarra = step(gapF * 0.5, posicaoNaFaixa) *
+                              step(posicaoNaFaixa, 1.0 - gapF * 0.5);
+
+        if (mode == 3) {
+            // Espelhado: cresce para os dois lados a partir da base.
+            float distancia = abs(uv.y - anchor.y);
+            float meio = valor * height * 0.5;
+            dentro = (1.0 - smoothstep(meio - px, meio + px, distancia)) * dentroDaBarra;
+            topo = dentro * smoothstep(meio - 0.01, meio, distancia);
+        } else {
+            float alto = anchor.y - valor * height;
+            dentro = smoothstep(alto - px, alto + px, uv.y) *
+                     (1.0 - smoothstep(anchor.y - px, anchor.y + px, uv.y)) *
+                     dentroDaBarra;
+            // `smoothstep` com as bordas invertidas e COMPORTAMENTO INDEFINIDO pela
+            // especificação — alguns drivers devolvem o que se espera, outros não.
+            // A forma certa é a subtração de 1.
+            topo = dentro * (1.0 - smoothstep(alto, alto + 0.02, uv.y));
+        }
+    }
+
+    vec3 cor = mix(barColor.rgb, peakColor.rgb, clamp(topo, 0.0, 1.0) * peakColor.a);
+
+    // O brilho vem do próprio nível da faixa daquela coluna: barra alta acende
+    // mais. Sem isso o brilho seria um véu uniforme por cima de tudo.
+    float brilhoDaColuna = nivel(uv.x) * glow;
+    cor += brilhoDaColuna * barColor.rgb * dentro;
+
+    vec4 desenhado = vec4(cor, clamp(dentro, 0.0, 1.0) * barColor.a);
+    fragColor = sobre(original, desenhado);
+}
+
+    ]]></shader>
+</effect>

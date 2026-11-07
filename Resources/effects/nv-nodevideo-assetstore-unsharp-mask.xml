@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_unsharp_mask
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-unsharp-mask"
+    name="Unsharp Mask (NV)"
+    name-en="Unsharp Mask (NV)"
+    desc="NodeVideo Asset Store effect 'unsharp_mask', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'unsharp_mask', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- O AEUnSharpMask desfoca a camada no C# (RenderCommand.DoGaussianBlur) e manda como _bluredTex: aqui são
+             os passes 0 e 1, em cor pré-multiplicada (a dos RTs do Node). -->
+        <texture id="blurH" src="buffer" />
+        <texture id="bluredTex" src="buffer" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_amount" label="Amount" default="1" min="0" max="3" step="0.01" />
+        <!-- O _radius o C# lê (AnimParam, 0 a 2, partida 1) e o shader não: o porte automático não o trouxe. -->
+        <slider id="_radius" label="Radius" default="1" min="0" max="2" step="0.01" />
+        <slider id="_threshold" label="Threshold" default="0" min="0" max="1" step="0.01" />
+        <slider id="_show_mask" type="integer" label="Show Mask" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <!-- A miniatura do catálogo: o padrão do Node é neutro (o efeito não faz nada até mexer). -->
+    <preview>
+        <set param="_amount" value="3" />
+        <set param="_radius" value="2" />
+    </preview>
+
+    <passes>
+        <pass target="blurH" />
+        <pass target="bluredTex" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// O desfoque do C# (0.915.0): DoGaussianBlur(quantidade = _radius x 0,01). A gaussiana do Node (node-gaussian-blur.xml)
+// tem meio-lado = quantidade x 0,0475 x a diagonal da composicao em px da METADE, sigma = meio-lado x 0,4660; aqui na
+// resolucao cheia (o dobro), separavel em dois passes, em cor pre-multiplicada.
+vec4 lerPre(sampler2D t, vec2 uv) { vec4 c = texture(t, uv); return vec4(c.rgb * c.a, c.a); }
+vec4 desfoque(sampler2D t, vec2 eixo, bool preMultiplicar) {
+    float diag = length(acTamanhoDaTela);
+    float sigma = 2.0 * (_radius * 0.01) * 0.0475 * diag * 0.4660 * acEscalaDePixel;
+    vec2 passo = eixo / vec2(textureSize(t, 0));
+    if (sigma < 0.05) return preMultiplicar ? lerPre(t, acScreenNorm) : texture(t, acScreenNorm);
+    int raio = min(int(ceil(sigma * 3.0)), 48);
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int i = -48; i <= 48; i++) {
+        if (i < -raio || i > raio) continue;
+        float w = exp(-0.5 * float(i * i) / (sigma * sigma));
+        vec2 uv = clamp(acScreenNorm + passo * float(i), 0.0, 1.0);
+        soma += w * (preMultiplicar ? lerPre(t, uv) : texture(t, uv));
+        pesos += w;
+    }
+    return soma / pesos;
+}
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+ivec4 u_xlati2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+ivec4 u_xlati3;
+bool u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+void main()
+{
+    if (acPass == 0) { fragColor = desfoque(inputImg, vec2(1.0, 0.0), true); return; }
+    if (acPass == 1) { fragColor = desfoque(blurH, vec2(0.0, 1.0), false); return; }
+    // o passe do Node, em cor pre-multiplicada como os RTs dele
+    u_xlat0 = lerPre(inputImg, acScreenNorm.xy);
+    u_xlat1 = texture(bluredTex, acScreenNorm.xy);
+    u_xlat1 = u_xlat0 + (-u_xlat1);
+    u_xlati2 = ivec4(uvec4(lessThan(vec4(0.0, 0.0, 0.0, 0.0), u_xlat1)) * 0xFFFFFFFFu);
+    u_xlati3 = ivec4(uvec4(lessThan(u_xlat1, vec4(0.0, 0.0, 0.0, 0.0))) * 0xFFFFFFFFu);
+    u_xlati2 = (-u_xlati2) + u_xlati3;
+    u_xlat2 = vec4(u_xlati2);
+    u_xlat1 = abs(u_xlat1) + (-vec4(vec4(_threshold, _threshold, _threshold, _threshold)));
+    u_xlat1 = max(u_xlat1, vec4(0.0, 0.0, 0.0, 0.0));
+    u_xlat1 = u_xlat2 * u_xlat1;
+    u_xlat2.x = (-_threshold) + 1.0;
+    u_xlat1 = u_xlat1 / u_xlat2.xxxx;
+    u_xlat2.xyz = u_xlat1.xyz * vec3(_amount);
+    u_xlat1 = u_xlat1 * vec4(_amount) + u_xlat0;
+    u_xlatb3 = int(_show_mask)==1;
+    u_xlat2.w = u_xlat0.w;
+    u_xlat1 = (bool(u_xlatb3)) ? u_xlat2 : u_xlat1;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    // o Nova guarda a cor reta
+    fragColor = clamp(fragColor, 0.0, 1.0);
+    fragColor = fragColor.a > 1e-5 ? vec4(fragColor.rgb / fragColor.a, fragColor.a) : vec4(0.0);
+    return;
+}
+    ]]></shader>
+</effect>

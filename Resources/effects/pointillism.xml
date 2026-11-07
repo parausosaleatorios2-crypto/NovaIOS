@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PONTILHISMO
+  ============================================================================
+
+  A imagem repintada como quadro de Seurat: pontos coloridos num grid, cada um
+  do tamanho e da cor que a imagem tem ali. De perto, pontos; de longe, a cena
+  reconstrói sozinha no olho — foi ESSE o truque do movimento, a cor misturar
+  no observador, não no pincel.
+
+  ============================================================================
+   RECEITA
+  ============================================================================
+
+  O plano vira uma grade de células. Dentro de cada célula:
+    1. O centro é lido da imagem (a cor do ponto).
+    2. O raio do ponto cresce com a luma (claro = ponto grande, escuro =
+       pequeno, como no half-tone, para simular a sobreposição de luz).
+    3. Um `smoothstep` anti-serrilhado desenha o círculo.
+    4. O fundo entre os pontos pode ser papel (opaco) ou transparente.
+
+  É o mesmo truque do HALF-TONE, mas colorido, e com os pontos no PRÓPRIO grid
+  (sem rotação clássica CMYK).
+-->
+<effect
+    id="nova.effect.pointillism"
+    name="Pontilhismo"
+    name-en="Pointillism"
+    desc="Imagem repintada como grade de pontos coloridos, no estilo de Seurat."
+    desc-en="Image repainted as a grid of colored dots, Seurat-style."
+    category="stylize"
+    tags="pontilhismo,pontos,seurat,impressionismo,pintura,dots,half-tone">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="dotSize" label="Tamanho do ponto (px)"
+                default="10.0" min="2.0" max="40.0" step="0.5" snap="0.0" />
+        <slider id="radius" label="Raio máximo"
+                default="0.75" min="0.1" max="1.2" step="0.01" snap="0.0" />
+        <slider id="softness" label="Suavidade"
+                default="0.15" min="0.0" max="0.5" step="0.01" snap="0.0" />
+        <color id="paperColor" label="Cor do papel" default="#F5F0E0FF" />
+        <slider id="paperAlpha" label="Opacidade do papel"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, pontos maiores pra a textura aparecer. -->
+    <preview>
+        <set param="dotSize" value="18.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    float tamDaCelula = max(dotSize, 1.0);
+    vec2 grade = tam / tamDaCelula;
+
+    vec2 escalado = acScreenNorm * grade;
+    vec2 i = floor(escalado);
+    vec2 f = fract(escalado) - 0.5;
+
+    // UV do centro da célula (lê a imagem UMA vez por célula, não por pixel).
+    vec2 uvDoCentro = (i + 0.5) / grade;
+    vec4 corDaCelula = texture(inputImg, uvDoCentro);
+
+    // O raio cresce com a luma: claro = ponto grande.
+    float r = luma(corDaCelula.rgb) * radius * 0.5;
+
+    // Desenha o ponto com anti-serrilhagem suave.
+    float d = length(f);
+    float ponto = 1.0 - smoothstep(r - max(softness * 0.25, 1e-4), r + max(softness * 0.25, 1e-4), d);
+
+    // Fundo: papel com opacidade controlada; o original passa onde o papel não cobre.
+    vec4 fundo = mix(original, vec4(paperColor.rgb, 1.0), paperAlpha * paperColor.a);
+
+    vec4 saida = mix(fundo, vec4(corDaCelula.rgb, 1.0), ponto);
+
+    fragColor = saida;
+}
+
+    ]]></shader>
+</effect>

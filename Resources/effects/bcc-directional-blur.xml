@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BCC Directional Blur (Boris Continuum, `BCC3Directional Blur`) — a conta do plugin.
+
+  O efeito é código de CPU (`ContinuumAE/17/lib/Continuum_AE_8Bit.dll`): a conta foi LIDA no binário e
+  conferida contra o After Effects (`tools/bccdirectionalblur/benchmark`, LEIAME.md). Em 8 bpc, no miolo
+  do quadro, o modelo dá os mesmos pixels do AE (nenhum diferente em 9 casos de foto e no quadro de
+  1480 × 1080 com os valores do projeto headlock).
+
+  A conta:
+
+    1. NÚCLEO 1D — gaussiana de pesos INTEIROS: `trunc(100 · exp(−i² / 2σ²))`, σ = Blur Amount em px,
+       do meio para fora até o primeiro peso menor que 1 (≈ 3,03 σ), cortada na metade do quadro.
+       Com mais de 100 pesos, cada um encaixa numa escada de 100 níveis tirada do próprio núcleo.
+    2. THIN — o espaçamento das amostras ao longo do traço: só ficam as que caem a cada
+       `Thin + 1` px do centro (Thin 0 = todas).
+    3. NÚCLEO 2D — o traço desenhado na grade de pixels. Angle 0 é VERTICAL, 90 é horizontal. Traço
+       mais deitado: para cada coluna, as (até duas) linhas a menos de 1 px do traço levam o peso do
+       1D na posição projetada. Traço mais em pé: para cada linha, as colunas a menos de 1 px levam
+       o peso × (1 − distância).
+    4. SOMA — saída = Σ peso · fonte ÷ Σ peso, só com o que cai dentro do quadro, em inteiros:
+       multiplicar por M = 2²³ ÷ soma e deslocar 23 bits, devolvendo o resto.
+
+  Dois passes: o 0 desenha o núcleo 2D num buffer pequeno (por coluna ou por linha: os dois pesos e
+  onde começam); o 1 soma a imagem. O núcleo é calculado uma vez por quadro, não por pixel.
+
+  O que NÃO é igual:
+    - junto da borda (até o alcance do núcleo) o AE escolhe, linha a linha, entre devolver o resto e
+      a divisão inteira por um byte que o plugin não inicializa: até 1 nível, em ~12% desses pixels;
+    - a cor onde há transparência: pesada pelo alfa, até 1 nível (mais com alfa abaixo de 8);
+    - Angle quebrado (não inteiro): seno e cosseno são os da GPU e um peso pode sair 1/100
+      diferente — até 1 nível em alguns pixels. Nos inteiros de −360 a 720 vêm de uma tabela com os
+      valores exatos do plugin (`assets/bccdb/graus.png`);
+    - no RASCUNHO da prévia em movimento (`acRascunho`, play/arraste): a soma usa até ~128 entradas do
+      núcleo, espaçadas por igual a partir do centro (o núcleo vai até a metade do quadro: com Blur Amount
+      alto são centenas). Parado e na exportação, a conta inteira;
+    - Spread, Blur Threshold / Maximum Deviation, Avoid Clipping, Displace Pixels, Apply Mode / Mix,
+      Channels, Mix with Original, PixelChooser e Beat Reactor: fora (no padrão em 176 instâncias de
+      32 projetos e presets). O conversor avisa quando o projeto mexe neles.
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.bccdirectionalblur"
+    name="BCC Directional Blur"
+    name-en="BCC Directional Blur"
+    desc="O Directional Blur do Boris Continuum: desfoque gaussiano numa direção, igual ao After Effects."
+    desc-en="Boris Continuum's Directional Blur: a gaussian blur along one direction, as in After Effects."
+    category="blur"
+    tags="bcc,boris,continuum,directional blur,desfoque,direcional,movimento,motion blur,rastro,transicao,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="nucleo" src="buffer" scale="0.25" />
+        <texture id="graus" src="image" files="bccdb/graus.png" />
+
+        <slider id="blurAmount" label="Blur Amount" default="10.0" min="0.0" max="1000.0" step="0.1" snap="0.0,10.0" />
+        <slider id="angle" label="Angle" default="90.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="0.0,90.0,180.0,270.0" />
+        <slider id="thin" label="Thin" default="0.0" min="0.0" max="500.0" step="1.0" snap="0.0" />
+    </params>
+
+    <passes>
+        <pass target="nucleo" />   <!-- 0: o núcleo 2D, por coluna (traço deitado) ou por linha (traço em pé) -->
+        <pass />                   <!-- 1: a soma -->
+    </passes>
+
+    <shader><![CDATA[
+// float32(3.141593 / 180): a constante de graus do plugin. Com π/180 exato o traço a 45° sai de 1 px;
+// o AE dá o padrão de uma tangente de 1,0000001 (tools/bccdirectionalblur/benchmark, "45 graus").
+const float GRAUS = 0.017453294;
+const int CABECALHO = 1;                // texels de cabeçalho no buffer do núcleo
+const int ENTRADAS_DO_RASCUNHO = 128;   // na prévia em movimento (`acRascunho`), quantas entradas do núcleo a soma lê
+const int MEIA_MAXIMA = 2000;
+
+// Cosseno, seno e tangente EXATOS (os do ucrtbase.dll, que é quem o plugin chama) para todo Angle inteiro de −360
+// a 720: `assets/bccdb/graus.png`, uma linha por grau, 12 bytes = 3 float32 (tools/bccdirectionalblur/benchmark/
+// gerar_tabela.py). O desenho do traço depende do último bit desses números, e a GPU não devolve os mesmos.
+const int TABELA_DE = -360;
+const int TABELA_ATE = 720;
+
+float daTabela(int linha, int k) {          // o k-ésimo float32 da linha
+    int b = 4 * k;
+    ivec3 t0 = ivec3(texelFetch(graus, ivec2(b / 3, linha), 0).rgb * 255.0 + 0.5);
+    ivec3 t1 = ivec3(texelFetch(graus, ivec2(b / 3 + 1, linha), 0).rgb * 255.0 + 0.5);
+    int o = b - (b / 3) * 3;
+    int v[6] = int[6](t0.r, t0.g, t0.b, t1.r, t1.g, t1.b);
+    uint bits = uint(v[o]) | (uint(v[o + 1]) << 8) | (uint(v[o + 2]) << 16) | (uint(v[o + 3]) << 24);
+    return uintBitsToFloat(bits);
+}
+
+ivec2 gT;                 // o quadro, em px
+float gC;                 // 1 / (2 σ²)
+int gMeia0;               // a meia-largura do laço (antes da escada e dos cortes)
+int gMeia;                // a final
+int gN;                   // 2 · meia − 1
+bool gPente; int gPasso; float gFrac;
+float gCs, gSn, gTg;
+int gW2, gH2, gCx, gCy;
+bool gEmPe, gVale;
+
+int cru(int j) { return int(exp(-float(j * j) * gC) * 100.0); }
+int bruto(int j) { return j >= gMeia0 ? 0 : cru(j); }
+
+// trunc(a · (1 − f) + float(b) · f) como o plugin faz: o segundo produto em float, a soma em double.
+// Aqui em inteiros: (1 − f) é múltiplo de 2^-24.
+int misturar(int a, int b, float f) {
+    float um = 1.0 - f;
+    int qn = a * int(um * 16777216.0);
+    int inteiro = qn >> 24;
+    int resto = qn & 16777215;
+    float p = float(b) * f;
+    float pi = floor(p);
+    int vai = (resto > 0 && (p - pi) >= float(16777216 - resto) / 16777216.0) ? 1 : 0;
+    return inteiro + int(pi) + vai;
+}
+
+// A escada de 100 níveis (só com mais de 100 pesos).
+int nivel(int k) {
+    if (k <= 0) return 100;
+    if (k >= 100) return 0;
+    float x = float(k) * float(gMeia0);
+    x = x * 0.01;
+    int i0 = int(x);
+    return misturar(bruto(i0), bruto(i0 + 1), x - float(i0));
+}
+
+int escada(int j) {
+    int v = bruto(j);
+    if (gMeia0 <= 100) return v;
+    // o primeiro nível k com v > (nível[k] + nível[k + 1]) / 2. A varredura começa do 0: os níveis NÃO descem
+    // sempre (a mistura de dois pesos iguais às vezes trunca um a menos), e um nível "baixo demais" lá atrás decide.
+    int k = 0;
+    int a = nivel(k);
+    for (int i = 0; i < 100; i++) {
+        if (k >= 100) break;
+        int b = nivel(k + 1);
+        if (v > (a + b) / 2) return a;
+        a = b;
+        k++;
+    }
+    return 0;
+}
+
+// O núcleo 1D final: a escada e o pente do Thin.
+int nucleo1d(int i) {
+    int j = i - (gMeia - 1);
+    if (j < 0) j = -j;
+    int q = escada(j);
+    if (!gPente) return q;
+    int a = (j % gPasso) == 0 ? q : 0;
+    int b = (j % (gPasso + 1)) == 0 ? q : 0;
+    float x = float(a) * (1.0 - gFrac);
+    float y = float(b) * gFrac;
+    return int(x + y);
+}
+
+// O 1D numa posição quebrada.
+int em(float t) {
+    if (!(t > -1.0)) return 0;
+    if (t > float(gN)) return 0;
+    if (t < 0.0) return int((t + 1.0) * float(nucleo1d(0)));
+    if (t > float(gN - 1)) return int(float(nucleo1d(gN - 1)) * (float(gN) - t));
+    float ft = floor(t);
+    int i = int(ft);
+    return misturar(nucleo1d(i), i + 1 < gN ? nucleo1d(i + 1) : 0, t - ft);
+}
+
+// trunc(k · d) exato, com 0 < d <= 1 e k de 0 a 100 (no plugin, em double).
+int vezes(int k, float d) {
+    if (k == 0 || !(d > 0.0)) return 0;
+    int s = 0;
+    for (int i = 0; i < 7; i++) {
+        if (d >= 0.5) break;
+        d *= 2.0;
+        s++;
+    }
+    if (d < 0.5) return 0;
+    return (k * int(d * 16777216.0)) >> (24 + s);
+}
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gVale = false;
+    float escala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+    float r = blurAmount * escala;
+    if (!(r > 0.0)) return;
+    gC = 1.0 / ((r + r) * r);
+
+    // a meia-largura: o primeiro j >= 1 com peso menor que 1 (perto de σ · √(2 ln 100))
+    gMeia0 = MEIA_MAXIMA;
+    int j = max(int(r * 3.0348544) - 3, 1);
+    for (int i = 0; i < 12; i++) {
+        if (j >= MEIA_MAXIMA) break;
+        if (cru(j) < 1) { gMeia0 = j; break; }
+        j++;
+    }
+    gMeia = gMeia0;
+    for (int i = 0; i < 64; i++) {
+        if (gMeia < 1 || escada(gMeia - 1) != 0) break;
+        gMeia--;
+    }
+    gMeia = min(gMeia, gT.x / 2 - 1);
+    gMeia = max(1, min(gMeia, gT.y / 2 - 1));
+    gN = 2 * gMeia - 1;
+    if (gN <= 1) return;
+
+    // o Thin: o passo das amostras (no render final o plugin não impõe o mínimo de 3)
+    float passo = escala * thin;
+    passo = passo + 1.0;
+    passo = min(float(gN - 1), passo);
+    gPente = passo > 1.0;
+    if (gPente) {
+        passo = min(float(gMeia - 1), passo);
+        gPasso = int(passo);
+        gFrac = passo - float(gPasso);
+        if (gPasso < 1) gPente = false;
+    }
+
+    float g = angle - 90.0;
+    if (angle == floor(angle) && angle >= float(TABELA_DE) && angle <= float(TABELA_ATE) && textureSize(graus, 0).y > TABELA_ATE - TABELA_DE) {
+        int linha = int(angle) - TABELA_DE;
+        gCs = daTabela(linha, 0);
+        gSn = daTabela(linha, 1);
+        gTg = daTabela(linha, 2);
+    } else {
+        float th = g * GRAUS;
+        gCs = cos(th);
+        gSn = sin(th);
+        gTg = abs(gCs) > 0.001 ? tan(th) : gSn * 1000.0;
+    }
+    gW2 = max(int(float(gN + 1) * abs(gCs)), 2) + 1;
+    gH2 = max(int(float(gN + 1) * abs(gSn)), 2) + 1;
+    if (gH2 % 2 == 0) gH2++;
+    if (gW2 % 2 == 0) gW2++;
+    gH2 = min(gH2, (gT.y - 1) / 2);
+    gW2 = min(gW2, (gT.x - 1) / 2);
+    gCy = gH2 / 2;
+    gCx = gW2 / 2;
+    gEmPe = gH2 > gW2;
+    gVale = gH2 >= 1 && gW2 >= 1;
+}
+
+// O peso da célula (linha r, coluna c) da grade, a uma distância d (< 1) do traço.
+int celula(int r, int c, float d) {
+    float a1 = float(c - gCx) * gCs;
+    float a2 = gSn * float(r - gCy);
+    float t = a1 + a2;
+    t = t + float(gMeia - 1);
+    int v = em(t);
+    if (gEmPe) v = vezes(v, 1.0 - d);
+    if (v == 0 && r == gCy && c == gCx) v = 1;      // o centro leva pelo menos 1
+    return v;
+}
+
+// A entrada i do núcleo: os dois pesos e onde começam (em relação ao centro).
+void entrada(int i, out int wa, out int wb, out int inicio) {
+    wa = 0;
+    wb = 0;
+    if (!gEmPe) {
+        float yl = float(i - gCx) * gTg;
+        yl = yl + float(gCy);
+        int base = int(floor(yl));
+        inicio = base - gCy;
+        for (int q = 0; q < 2; q++) {
+            int r = base + q;
+            if (r < 0 || r >= gH2) continue;
+            float d = abs(float(r) - yl);
+            if (d >= 1.0) continue;
+            int v = celula(r, i, d);
+            if (q == 0) wa = v; else wb = v;
+        }
+    } else {
+        float inv = 1.0 / gTg;
+        float xl = float(i - gCy) * inv;
+        xl = xl + float(gCx);
+        int base = int(floor(xl));
+        inicio = base - gCx;
+        for (int q = 0; q < 2; q++) {
+            int c = base + q;
+            if (c < 0 || c >= gW2) continue;
+            float d = abs(float(c) - xl);
+            if (d >= 1.0) continue;
+            int v = celula(i, c, d);
+            if (q == 0) wa = v; else wb = v;
+        }
+    }
+}
+
+// A soma pesada -> o nível: M = 2^23 / soma, deslocar 23 bits, devolvendo o resto (× 256) quando cabe.
+int dividir(int acc, int soma) {
+    int m = 8388608 / soma;
+    int resto = 8388608 - m * soma;
+    if (resto <= 32767) return (acc * m + resto * 256) >> 23;
+    return acc / soma;
+}
+
+// piso((alto · 65536 + baixo) / a), exato: a soma pesada pelo alfa não cabe em 32 bits (vai em duas palavras).
+// O quociente é um nível (0 a 255): a conta em float acha o candidato e o resto em inteiros acerta.
+int dividirLongo(int alto, int baixo, int a) {
+    alto += baixo >> 16;
+    baixo = baixo & 65535;
+    int q = clamp(int((float(alto) * 65536.0 + float(baixo)) / float(a)), 0, 255);
+    int aAlto = a >> 16;
+    int aBaixo = a & 65535;
+    for (int i = 0; i < 4; i++) {
+        int resto = (alto - q * aAlto) * 65536 + (baixo - q * aBaixo);
+        if (resto < 0) q--;
+        else if (resto >= a) q++;
+        else break;
+    }
+    return clamp(q, 0, 255);
+}
+
+vec4 bytes2(int v) { return vec4(float(v / 256), float(v % 256), 0.0, 255.0) / 255.0; }
+int ler2(vec4 v) { return int(v.r * 255.0 + 0.5) * 256 + int(v.g * 255.0 + 0.5); }
+
+void main() {
+    if (acPass == 0) {
+        // ---- o núcleo: texel 0 = quantas entradas e se o traço está em pé; depois, 2 texels por entrada
+        ivec2 alvo = ivec2(acResolution);
+        ivec2 p = min(ivec2(floor(acScreenNorm * acResolution)), alvo - ivec2(1));
+        int idx = p.y * alvo.x + p.x;
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        ivec2 quadro = textureSize(inputImg, 0);
+        if (idx > CABECALHO + max(quadro.x, quadro.y) + 2) return;
+        preparar();
+        int n = gVale ? (gEmPe ? gH2 : gW2) : 0;
+        if (CABECALHO + 2 * n > alvo.x * alvo.y) n = 0;
+        if (idx == 0) {
+            fragColor = vec4(float(n / 256), float(n % 256), gEmPe ? 255.0 : 0.0, 255.0) / 255.0;
+            return;
+        }
+        int e = (idx - CABECALHO) / 2;
+        if (e >= n) return;
+        int wa, wb, inicio;
+        entrada(e, wa, wb, inicio);
+        if ((idx - CABECALHO) % 2 == 0) fragColor = vec4(float(wa), float(wb), 0.0, 255.0) / 255.0;
+        else fragColor = bytes2(inicio + 2048);
+        return;
+    }
+
+    // ---- a soma
+    gT = textureSize(inputImg, 0);
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    vec4 s = texelFetch(inputImg, t, 0);
+    ivec2 ts = textureSize(nucleo, 0);
+    vec4 cab = texelFetch(nucleo, ivec2(0), 0);
+    int n = ler2(cab);
+    if (n < 1) {
+        fragColor = s;
+        return;
+    }
+    bool emPe = cab.b > 0.5;
+    int centro = n / 2;
+    // O rascunho do play/arraste: até ~128 entradas, de `salto` em `salto`, passando pelo centro.
+    int salto = acRascunho == 1 ? max(1, (n + ENTRADAS_DO_RASCUNHO - 1) / ENTRADAS_DO_RASCUNHO) : 1;
+
+    int den = 0;
+    int accA = 0;
+    ivec3 accC = ivec3(0);
+    ivec3 accAlto = ivec3(0);       // Σ peso · alfa · cor, em duas palavras de 16 bits
+    ivec3 accBaixo = ivec3(0);
+    for (int i = centro % salto; i < n; i += salto) {
+        int e = CABECALHO + 2 * i;
+        vec4 w = texelFetch(nucleo, ivec2(e % ts.x, e / ts.x), 0);
+        int wa = int(w.r * 255.0 + 0.5);
+        int wb = int(w.g * 255.0 + 0.5);
+        if (wa == 0 && wb == 0) continue;
+        int inicio = ler2(texelFetch(nucleo, ivec2((e + 1) % ts.x, (e + 1) / ts.x), 0)) - 2048;
+        for (int q = 0; q < 2; q++) {
+            int wq = q == 0 ? wa : wb;
+            if (wq == 0) continue;
+            // saída(x) = Σ peso(d) · fonte(x + d), com d = (dx, dy) e a linha crescendo para baixo
+            ivec2 d = emPe ? ivec2(inicio + q, i - centro) : ivec2(i - centro, inicio + q);
+            ivec2 p = t + d;
+            if (p.x < 0 || p.y < 0 || p.x >= gT.x || p.y >= gT.y) continue;
+            ivec4 c = ivec4(texelFetch(inputImg, p, 0) * 255.0 + 0.5);
+            den += wq;
+            accA += wq * c.a;
+            accC += wq * c.rgb;
+            ivec3 pa = (wq * c.a) * c.rgb;
+            accAlto += pa >> 16;
+            accBaixo += pa & 65535;
+        }
+    }
+    if (den == 0) {
+        fragColor = s;
+        return;
+    }
+    int a = dividir(accA, den);
+    vec3 cor;
+    if (a == 0) cor = vec3(0.0);
+    else if (accA == 255 * den) cor = vec3(float(dividir(accC.r, den)), float(dividir(accC.g, den)), float(dividir(accC.b, den)));
+    else cor = vec3(float(dividirLongo(accAlto.r, accBaixo.r, accA)), float(dividirLongo(accAlto.g, accBaixo.g, accA)),
+                    float(dividirLongo(accAlto.b, accBaixo.b, accA)));
+    fragColor = vec4(cor, float(a)) / 255.0;
+}
+
+    ]]></shader>
+</effect>

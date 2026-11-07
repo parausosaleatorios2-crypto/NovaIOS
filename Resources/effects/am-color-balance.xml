@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EQUILÍBRIO DE COR — o Color Balance do Alight Motion, conta por conta (0.546.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "pode fazer o efeito equilibrio de cor 100% igual o do alight motion?", da série
+  "100% iguais ao AM". Mesmos parâmetros, mesmos ids, padrões e seções do `com.alightcreative.effects.colorbalance`
+  (um projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281
+  (`assets/effects/colorbalance.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no
+  repositório. A conferência é `python tools/amequilibrio/comparar.py`: o efeito do AM rodado na GPU do PC ao lado
+  deste.
+
+  O "Balanço de cor" que já existia (`color-balance.xml`) é outra conta (temperatura, matiz, lift/gamma/gain); ESTE
+  é o do AM, com o nome dele. Em inglês os dois seriam "Color Balance": este leva "(AM)" no nome em inglês.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Três faixas pela luminância Y (a do Y'UV BT.601, 0,299 R + 0,587 G + 0,114 B): Sombras, Meios-tons e Realces.
+    Cada faixa tem três controles de −100 a 100 (padrão 0): C/V (ciano ↔ vermelho), M/V (magenta ↔ verde) e A/A
+    (amarelo ↔ azul). O controle multiplica o canal: 100 dobra o vermelho (ou o verde, ou o azul), −100 zera.
+  - O peso de cada faixa: Sombras = 1 − smoothstep(0,222; 0,444; Y); Realces = smoothstep(0,555; 0,777; Y); Meios-tons
+    é o que sobra de um lado e do outro, em dois pedaços que se encostam em Y = 0,555. Os pesos somam 1 — menos em
+    Y = 0,555 cravado, onde os dois pedaços valem 1 e os Meios-tons contam em dobro (é a conta do AM; o desvio somado
+    é cortado em −100 e 100 depois). São 112 cores pré-multiplicadas (299 R + 587 G + 114 B = 141525), e se o Y em
+    float sai IGUAL à constante 0,555 depende do último bit da conta: por isso a cor entra aqui bit a bit igual à
+    que a textura de 8 bits devolve ao AM (`oitoBits`) e a ida para Y'UV é a mesma expressão dele. Na GPU do PC,
+    com a pré-multiplicada da mesma conta, as 112 batem com o AM em todos os casos. Pelo mesmo motivo o efeito só
+    ABRE uma "cor junta" da prévia (`render/FusaoDeCor.kt`): depois de outro, a entrada não seria a do buffer.
+  - "Preservar Luminância" (ligado no padrão): depois de multiplicar, volta para Y'UV, põe de volta o Y de antes e
+    volta para RGB. Desligado, também passa pela ida e volta do Y'UV — as matrizes do AM (arredondadas) não são a
+    inversa exata uma da outra; com tudo em 0 a conta devolve a cor a menos de um centésimo de nível (0,0052, em
+    todas as cores de 8 bits) antes do arredondamento a 8 bits.
+  - Tudo na cor PRÉ-MULTIPLICADA (p = cor × alfa), como o AM: a faixa de uma borda suave sai do Y de p, e não do Y
+    da cor (uma borda de alfa 0,5 de um branco cai nos Meios-tons). A camada do AM é pré-multiplicada em 8 bits
+    antes do efeito; aqui é arredondada do mesmo jeito (o premul do Android, pelo mais perto). O resultado é cortado
+    em 0 e 1 (o buffer de 8 bits do AM) e só então volta para a cor reta do Nova. O alfa nunca muda.
+  - Com um controle acima de 0 a borda de alfa parcial pode passar do alfa no AM (o pré-multiplicado cabe no buffer)
+    e a cor reta do Nova corta em 1: por cima de branco dá igual; por cima de preto, a borda do AM sai mais clara. É
+    a mesma diferença do Colorizar e da Exposição/gama.
+  - O slider do AM sem `step` anda de (máx − mín) ÷ 100 = 2 (`UserParamParserKt.readSliderParam`): o passo aqui é 2.
+  - A seção Sombras abre sozinha no AM (`hintType="editFirst"`); no painel do Nova a primeira seção já abre.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-color-balance"
+    name="Equilíbrio de cor"
+    name-en="Color Balance (AM)"
+    desc="Ajusta vermelho, verde e azul separadamente nas sombras, nos meios-tons e nos realces (o Color Balance do Alight Motion)."
+    desc-en="Makes targeted adjustments to the red, green and blue channels in the shadows, midtones and highlights (Alight Motion's Color Balance)."
+    category="color"
+    tags="equilíbrio,equilibrio,balanço,cor,sombras,meios-tons,realces,ciano,magenta,amarelo,correção de cor,color balance,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="crLow" group="Sombras" label="C/V" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+        <slider id="mgLow" group="Sombras" label="M/V" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+        <slider id="ybLow" group="Sombras" label="A/A" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+
+        <slider id="crMid" group="Meios-tons" label="C/V" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+        <slider id="mgMid" group="Meios-tons" label="M/V" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+        <slider id="ybMid" group="Meios-tons" label="A/A" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+
+        <slider id="crHigh" group="Realces" label="C/V" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+        <slider id="mgHigh" group="Realces" label="M/V" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+        <slider id="ybHigh" group="Realces" label="A/A" default="0.0" min="-100.0" max="100.0" step="2.0" snap="0.0" />
+
+        <switch id="fixLum" group="Outros" label="Preservar Luminância" default="true" />
+    </params>
+
+    <!-- Na vitrine, o padrão (tudo em 0) não mexe na cor: meios-tons para o ciano e realces para o azul. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="crMid" value="-70.0" />
+        <set param="ybMid" value="60.0" />
+        <set param="ybHigh" value="60.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve (o AM lê a camada assim). A
+// divisão do shader vai pelo recíproco e erra o último bit em metade dos k (130 de 256 na AMD do PC), e o último
+// bit decide a costura em Y = 0,555. Aqui: n·2^e ÷ 255 pelo mais perto, em 24 bits, montado direto nos bits do float.
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    // A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android). No
+    // opaco a cor já é o float da textura, bit a bit.
+    vec3 p = camada.rgb;
+    if (a < 1.0) {
+        vec3 k = floor(camada.rgb * a * 255.0 + 0.5);
+        p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+
+    // Y'UV BT.601 com os coeficientes do AM (colunas do mat3; `rgb * m` = uma linha por coluna). A ida para Y'UV é a
+    // mesma expressão do AM, no mesmo vec3: na costura em 0,555 o Y tem de sair do mesmo jeito, até o último bit.
+    mat3 rgbParaYuv = mat3(
+         0.299,    0.587,    0.114,
+        -0.14713, -0.28886,  0.436,
+         0.615,   -0.51499, -0.10001);
+    mat3 yuvParaRgb = mat3(
+        1.0,  0.0,      1.13983,
+        1.0, -0.39465, -0.58060,
+        1.0,  2.03211,  0.0);
+    vec3 yuvDeAntes = p * rgbParaYuv;
+    float luz = yuvDeAntes.x;
+
+    // O peso de cada faixa. Os dois pedaços dos meios-tons se encostam em 0,555 (ali os dois valem 1, como no AM).
+    float sombras = 1.0 - smoothstep(0.222, 0.444, luz);
+    float medios = smoothstep(0.222, 0.444, luz) * step(luz, 0.555)
+                 + (1.0 - smoothstep(0.555, 0.777, luz)) * step(0.555, luz) * step(luz, 0.777);
+    float realces = smoothstep(0.555, 0.777, luz);
+    vec3 desvio = vec3(crLow, mgLow, ybLow) * sombras
+                + vec3(crMid, mgMid, ybMid) * medios
+                + vec3(crHigh, mgHigh, ybHigh) * realces;
+    vec3 ganho = (clamp(desvio, -100.0, 100.0) + vec3(100.0)) / 100.0;
+
+    vec3 yuv = (p * ganho) * rgbParaYuv;
+    if (fixLum) yuv.x = luz;
+    vec3 saida = clamp(yuv * yuvParaRgb, 0.0, 1.0);               // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = a > 0.0 ? vec4(min(saida / a, vec3(1.0)), a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

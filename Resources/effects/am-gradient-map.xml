@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MAPA DE GRADIENTE (AM) — o Gradient Map do Alight Motion, conta por conta (0.553.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "faz o Gradient Map (Mapa de gradiente) 100% parecido com o alight motion", da
+  série "100% iguais ao AM". Mesmos parâmetros, mesmos ids e mesmos padrões do `com.alightcreative.gradientmap`
+  (um projeto do AM importado cai direto aqui). "(AM)" no nome porque o "Mapa de gradiente" do Nova (três
+  cores e ponto médio, `gradient-map.xml`) já existia — como no Inverter (AM). A conta foi LIDA do efeito do
+  AM 5.0.281 (`assets/effects/gradientmap.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM
+  não entra no repositório. A conferência é `python tools/ammapa/comparar.py`: o efeito do AM rodado na GPU do
+  PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - O brilho de cada pixel (Rec. 709: 0,2126 R + 0,7152 G + 0,0722 B) escolhe a cor entre a Cor 1 (preto)
+    e a Cor 2 (branco), numa mistura em linha reta; a saída leva o alfa da camada.
+  - Tudo isso o AM faz na cor PRÉ-MULTIPLICADA (p = cor × alfa): o brilho é o do pré-multiplicado, então
+    na borda suave a cor anda para a Cor 1 junto com o alfa. Aqui é a mesma conta, na mesma ordem: a cor é
+    pré-multiplicada no shader e só no fim volta para a cor reta do Nova.
+  - As duas cores têm alfa (o seletor do AM tem `alpha="true"`): o alfa da saída é o da mistura × o da
+    camada. Elas chegam RETAS ao shader do AM (lido do bytecode, `ssl/W`) e entram na saída como se fossem
+    pré-multiplicadas. Com cor de alfa menor que o canal (um vermelho a 50%), o AM guarda o canal acima do
+    alfa e a cor reta do Nova não guarda: por cima de branco dá igual; por cima de preto, o do AM sai mais
+    forte. A mesma diferença do Colorizar e do Gradiente de contorno. Com as cores opacas (o padrão), não há.
+  - O AM roda este shader em `mediump` (o `<shader>` dele não pede `precision`): no celular, meia precisão. As
+    variáveis daqui levam o mesmo `mediump`. A GPU do PC ignora a precisão, então isso só o celular confere.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-gradient-map"
+    name="Mapa de gradiente (AM)"
+    name-en="Gradient Map (AM)"
+    desc="Troca as cores da camada pelas de um gradiente de duas cores, pelo brilho (o Gradient Map do Alight Motion)."
+    desc-en="Maps colors in the layer onto a two-color gradient based on their lightness (Alight Motion's Gradient Map)."
+    category="color"
+    tags="mapa de gradiente,gradiente,degradê,brilho,luminância,duotone,duas cores,gradient map,gradient,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="color1" label="Cor 1" default="#FFEE5533" />
+        <color id="color2" label="Cor 2" default="#FFFFEE88" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    // Na MESMA precisão do AM: o `<shader>` dele não pede `precision`, e aí o AM compila com `precision mediump
+    // float` (`ssl/BI`, `ShaderPrecision.MEDIUM`) — no celular, meia precisão. Variável por variável: um
+    // `precision` global vazaria para os efeitos da cor junta. A GPU do PC ignora a precisão; o celular, não.
+    mediump vec4 pre = vec4(camada.rgb * a, a);                  // o AM trabalha pré-multiplicado
+    mediump vec4 cor1 = color1;
+    mediump vec4 cor2 = color2;
+    mediump float brilho = dot(pre.rgb, vec3(0.2126, 0.7152, 0.0722));
+    // As cores do parâmetro entram RETAS, como no AM; a saída é pré-multiplicada (o buffer de 8 bits corta em 0 e 1).
+    vec4 saida = clamp(mix(cor1, cor2, brilho) * pre.a, 0.0, 1.0);
+    fragColor = saida.a > 0.0 ? vec4(min(saida.rgb / saida.a, vec3(1.0)), saida.a) : vec4(0.0);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   WAVE WARP — o efeito nativo do After Effects, lido do plugin e conferido no AE
+  ============================================================================
+
+  Pedido do snow (13/10/2026): "agora faça o efeito wave warp, batendo 100% com o after effects". A
+  "Onda" (`wave-warp.xml`) é um desenho próprio da Nova; ESTE é a conta do Wave Warp do AE, para os
+  presets converterem com os valores deles (23 presets da pasta do snow usam o efeito).
+
+  DE ONDE VEIO (tools/wavewarp/benchmark — o Wave_Warp.aex desmontado e 143 renders do AE):
+
+  - a onda é uma TABELA de 256 valores em 16.16 por tipo (seno, quadrada, triângulo, serra, círculo,
+    semicírculo, uncircle, ruído e ruído suave — o ruído é o gerador Park-Miller do plugin, semente
+    17245; o suave é ele com 10 rodadas de média de 3) — as 9 estão em `assets/wavewarp/tabelas.png`;
+  - o render do AE é o caminho de ALTA qualidade do plugin, sempre (as configurações "Best" do
+    render forçam a qualidade Best): cada pixel é uma grade de AA x AA pontos (AA = Antialiasing + 1:
+    Low 2, Medium 3, High 4), cada ponto lê o pixel MAIS PRÓXIMO da camada (sem filtro), e a saída é
+    a média — alfa = média arredondada, cor = Σ cor·alfa / Σ alfa arredondada (meio para cima);
+  - o índice na tabela de cada ponto é trunc((linha·passoY + (coluna + 1)·passoX) / 65536 + fase),
+    só os 8 bits de baixo, com os passos rnd(128 / Wave Width · (cos, sin)(Direction − 90°) / AA ·
+    65536): uma volta da tabela = 2 · Wave Width;
+  - a FASE entra em GRAUS somados direto ao índice (360° = 360 entradas da tabela, não uma volta: é
+    assim no AE), e o tempo como −256 · Wave Speed · t;
+  - o deslocamento: Wave Height · (sin, −cos)(Direction − 90°) · onda, cortado em 16.16 três vezes
+    (a onda e o amortecimento de cada borda fixada — ¼ do lado, ou a distância² ao meio no Center);
+  - os pontos começam meio px antes (0x7fff / 65536) e andam 1/AA de px (65536 / AA, inteiro).
+
+  QUANTO BATE: o modelo (`modelo.py`) dá o mesmo pixel que o AE em 57 milhões de pixels de 8 bpc
+  (0 diferenças), em 58 casos com os 9 tipos, os 3 antialias, as 9 fixações, foto com alfa, fase,
+  velocidade com o tempo andando (até 10 s; 24, 25, 30 e 60 fps), 1080p e os valores dos presets
+  do snow. O shader faz a MESMA conta em inteiros (64 bits feitos de dois de 32 onde precisa).
+
+  APROXIMADO (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md): direção não inteira (quadro-chave no meio do
+  caminho) e prévia reduzida usam sin/cos de float; fps não inteiro (29,97) usa o tempo em float;
+  e o arredondamento do double do AE no termo do tempo, quando ele cai exato num inteiro.
+-->
+<effect
+    id="nova.effect.aewavewarp"
+    name="Wave Warp (AE)"
+    name-en="Wave Warp (AE)"
+    desc="O Wave Warp do After Effects: ondula a camada ao longo de uma direção (seno, quadrada, triângulo, serra, círculos ou ruído), com o mesmo resultado do AE."
+    desc-en="After Effects' Wave Warp: waves the layer along a direction (sine, square, triangle, sawtooth, circles or noise), matching AE."
+    category="distort"
+    tags="wave warp,onda,wave,ondular,ondulação,distorcer,distort,after effects,ruido,noise,glitch,1 frame,shake">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tabelas" src="image" files="wavewarp/tabelas.png" />
+
+        <selector id="waveType" label="Wave Type" default="0"
+                  options="Sine|Square|Triangle|Sawtooth|Circle|Semicircle|Uncircle|Noise|Smooth Noise" />
+        <slider id="waveHeight" label="Wave Height" default="10.0" min="-32000.0" max="32000.0" step="0.1" snap="10.0" />
+        <slider id="waveWidth" label="Wave Width" default="40.0" min="1.0" max="32000.0" step="0.1" snap="40.0" />
+        <slider id="direction" label="Direction" default="90.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="90.0" />
+        <slider id="waveSpeed" label="Wave Speed" default="1.0" min="-100.0" max="100.0" step="0.01" snap="1.0" />
+        <selector id="pinning" label="Pinning" default="0"
+                  options="None|All Edges|Center|Left Edge|Top Edge|Right Edge|Bottom Edge|Horizontal Edges|Vertical Edges" />
+        <slider id="phase" label="Phase" default="0.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="0.0" />
+        <selector id="antialiasing" label="Antialiasing (Best Quality)" default="0" options="Low|Medium|High" />
+    </params>
+
+    <shader><![CDATA[
+// ------------------------------------------------------------------ inteiros
+
+// 64 bits sem sinal em (alto, baixo); os com sinal em complemento de dois.
+uvec2 mul64(uint a, uint b) {
+    uint a0 = a & 0xFFFFu, a1 = a >> 16, b0 = b & 0xFFFFu, b1 = b >> 16;
+    uint p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
+    uint meio = (p00 >> 16) + (p01 & 0xFFFFu) + (p10 & 0xFFFFu);
+    return uvec2(p11 + (p01 >> 16) + (p10 >> 16) + (meio >> 16), (p00 & 0xFFFFu) | (meio << 16));
+}
+uvec2 soma64(uvec2 a, uvec2 b) {
+    uint baixo = a.y + b.y;
+    return uvec2(a.x + b.x + (baixo < a.y ? 1u : 0u), baixo);
+}
+uvec2 neg64(uvec2 a) { return soma64(uvec2(~a.x, ~a.y), uvec2(0u, 1u)); }
+uvec2 de32(int a) { return uvec2(a < 0 ? 0xFFFFFFFFu : 0u, uint(a)); }
+bool menor64(uvec2 a, uvec2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }     // sem sinal
+
+/** n / d e o resto, com d < 65536 (a divisão longa em 16 bits). */
+uvec2 div64(uvec2 n, uint d, out uint r) {
+    uint t = n.x >> 16;                 uint q3 = t / d; t = ((t % d) << 16) | (n.x & 0xFFFFu);
+    uint q2 = t / d; t = ((t % d) << 16) | (n.y >> 16);
+    uint q1 = t / d; t = ((t % d) << 16) | (n.y & 0xFFFFu);
+    uint q0 = t / d; r = t % d;
+    return uvec2((q3 << 16) | q2, (q1 << 16) | q0);
+}
+
+/** trunc(a · b / 65536), com |a| < 2^31 e |b| ≤ 65536 — o produto vai a 47 bits, como no double do plugin. */
+int corte16(int a, int b) {
+    uvec2 p = mul64(uint(abs(a)), uint(abs(b)));
+    int m = int((p.x << 16) | (p.y >> 16));
+    return (a < 0) != (b < 0) ? -m : m;
+}
+
+/** O ponto fixo 16.16 que o AE daria ao valor (arredonda, meio para longe do zero). O valor chega em float: um
+ *  494,8 vira 494,79998 — com até 4 casas decimais, a conta volta ao decimal antes de converter. */
+int fixo(float v) {
+    float m = abs(v);
+    float i = floor(m);
+    float f = m - i;
+    float l = floor(f * 10000.0 + 0.5);
+    int r;
+    if (abs(f * 10000.0 - l) < 0.002 && i < 32768.0) {
+        int li = int(l);
+        r = int(i) * 65536 + (2 * li * 4096 + 625) / 1250;
+    } else {
+        r = int(floor(m * 65536.0 + 0.5));
+    }
+    return v < 0.0 ? -r : r;
+}
+
+int rndf(float v) { return int(v < 0.0 ? ceil(v - 0.5) : floor(v + 0.5)); }
+
+// ------------------------------------------------------------------ as tabelas
+
+ivec3 bytes(int x, int y) { return ivec3(texelFetch(tabelas, ivec2(x, y), 0).rgb * 255.0 + 0.5); }
+int tres(int x, int y) { ivec3 b = bytes(x, y); return b.r | (b.g << 8) | (b.b << 16); }
+
+/** A onda do tipo `t` (0..8) no índice i, em 16.16. */
+int onda(int t, int i) { return tres(i, t) - 65536; }
+
+/** |valor|·2^53 (64 bits) e o sinal, da direção em graus inteiros. */
+uvec2 dupla(int x, int y, out bool negativo) {
+    ivec3 a = bytes(x, y), b = bytes(x + 1, y), c = bytes(x + 2, y);
+    negativo = c.g == 1;
+    return uvec2(uint(b.g | (b.b << 8) | (c.r << 16)), uint(a.r | (a.g << 8) | (a.b << 16) | (b.r << 24)));
+}
+
+/** rnd(2^39 · |valor| / d) para o valor dado por M = |valor|·2^53: floor((M + 2^13·d) / 2^14 / d). d < 2^33. */
+int passoExato(uvec2 M, uvec2 d) {
+    uvec2 u = soma64(M, uvec2((d.x << 13) | (d.y >> 19), d.y << 13));
+    uvec2 u14 = uvec2(u.x >> 14, (u.y >> 14) | (u.x << 18));
+    float aprox = (float(u14.x) * 4294967296.0 + float(u14.y)) / (float(d.x) * 4294967296.0 + float(d.y));
+    int q = int(floor(aprox));
+    for (int k = 0; k < 3; k++) {      // corrige o float: q·d <= u14 < (q+1)·d
+        uvec2 qd = soma64(mul64(uint(q), d.y), uvec2(uint(q) * d.x, 0u));
+        if (menor64(u14, qd)) { q -= 1; continue; }
+        uvec2 q1d = soma64(qd, d);
+        if (!menor64(u14, q1d)) { q += 1; continue; }
+        break;
+    }
+    return q;
+}
+
+// ------------------------------------------------------------------ o efeito
+
+void main() {
+    ivec2 buf = ivec2(acResolution + 0.5);
+    ivec2 aqui = ivec2(floor(acScreenNorm * acResolution));
+    // A camada do AE dentro do buffer (a mídia encaixada; texto, forma e sólido: a composição inteira): o efeito do AE
+    // roda no tamanho DELA — a fixação (¼ do lado) e o "fora da camada = transparente" são dela.
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    ivec2 inicio = (buf - tam) / 2;
+    ivec2 local = aqui - inicio;
+    if (any(lessThan(local, ivec2(0))) || any(greaterThanEqual(local, tam))) {
+        fragColor = texelFetch(inputImg, aqui, 0);     // fora da camada: no AE não há camada aqui
+        return;
+    }
+    // A conta é na orientação da IMAGEM (a linha 0 é o topo, como no plugin). Numa cena guardada de pé (camada de
+    // ajuste, grupo solto) a linha 0 do buffer é a BASE.
+    bool dePe = acEntradaDePe == 1;
+    ivec2 pix = ivec2(local.x, dePe ? tam.y - 1 - local.y : local.y);
+    int AA = antialiasing + 2;
+    float escala = acEscalaDePixel;
+    bool inteira = abs(escala - 1.0) < 1.0e-6;
+
+    // os parâmetros em 16.16, como o plugin os recebe
+    int hraw = fixo(waveHeight);
+    int wraw = max(fixo(waveWidth), 1);
+    int draw = fixo(direction);
+    int vraw = fixo(waveSpeed);
+    int fraw = fixo(phase);
+
+    // a direção: as quatro constantes do plugin (deslocamento e passos)
+    int dxu, dyu, passoX, passoY;
+    if (inteira && (draw & 0xFFFF) == 0) {
+        int g = draw >> 16;
+        g -= 360 * int(floor(float(g) / 360.0));          // o % do GLSL ES é indefinido com negativo
+        int y = 9 + g / 64, x0 = (g % 64) * 8;
+        dxu = tres(x0, y) - 65536;
+        dyu = tres(x0 + 1, y) - 65536;
+        uvec2 d = mul64(uint(wraw), uint(AA));
+        bool ns, nc;
+        uvec2 S = dupla(x0 + 2, y, ns);
+        uvec2 C = dupla(x0 + 5, y, nc);
+        passoY = passoExato(S, d) * (ns ? -1 : 1);
+        passoX = passoExato(C, d) * (nc ? -1 : 1);
+    } else {
+        float a = (float(draw) - 5898240.0) / 65536.0 * 0.017453292519943295;
+        float s = sin(a), c = cos(a);
+        float k = 128.0 / (float(wraw) / 65536.0);
+        dxu = rndf(escala * s * 65536.0);
+        dyu = rndf(escala * c * 65536.0);
+        passoY = rndf(k * s / escala / float(AA) * 65536.0);
+        passoX = rndf(k * c / escala / float(AA) * 65536.0);
+    }
+    int dispX = corte16(hraw, dxu);
+    int dispY = -corte16(hraw, dyu);
+
+    // a fase em 1/65536 de entrada: F = fase·65536 − 256·Wave Speed·65536·t, guardada como parte inteira (64 bits) e
+    // "tem fração". Com fps inteiro e o quadro inteiro, t = n / fps EXATO (como o AE); senão, float.
+    uvec2 Fi;
+    bool fracao;
+    float fps = acFrameDuration > 0.0 ? 1.0 / acFrameDuration : 0.0;
+    float fpsI = floor(fps + 0.5);
+    float nf = floor(acTime * fpsI + 0.5);
+    if (fpsI >= 1.0 && fpsI < 65536.0 && abs(fps - fpsI) < 1.0e-3 && abs(acTime * fpsI - nf) < 1.0e-2 && nf >= 0.0) {
+        uint r;
+        uvec2 Q = div64(mul64(256u * uint(abs(vraw)), uint(nf)), uint(fpsI), r);
+        fracao = r > 0u;
+        Fi = vraw >= 0 ? soma64(de32(fraw), neg64(soma64(Q, uvec2(0u, fracao ? 1u : 0u)))) : soma64(de32(fraw), Q);
+    } else {
+        float F = float(fraw) - 256.0 * float(vraw) * acTime;
+        float fl = floor(F);
+        fracao = F > fl;
+        Fi = de32(int(fl));
+    }
+
+    // a fixação: o código do menu do AE (com os separadores) e as quedas (¼ do lado, na grade de pontos)
+    int codigo = pinning < 3 ? pinning + 1 : (pinning < 7 ? pinning + 2 : pinning + 3);
+    bool esq = codigo == 5 || codigo == 2 || codigo == 11;
+    bool topo = codigo == 6 || codigo == 2 || codigo == 10;
+    bool dir = codigo == 7 || codigo == 2 || codigo == 11;
+    bool base = codigo == 8 || codigo == 2 || codigo == 10;
+    bool centro = codigo == 3;
+    int Wg = tam.x * AA, Hg = tam.y * AA;
+    int qx = Wg / 4, qy = Hg / 4;
+    int qq = qx * qx;
+
+    int t = waveType;
+    int passo = 65536 / AA;
+    int somaA = 0;
+    ivec3 somaCA = ivec3(0);
+    for (int j = 0; j < 4; j++) {
+        if (j >= AA) break;
+        int linha = pix.y * AA + j;
+        int fy = 65536;
+        if (!centro) {
+            if (topo && linha < qy && qy > 0) fy = (linha * 65536) / qy;
+            else if (base && linha >= Hg - qy - 1 && qy > 0) fy = ((Hg - linha - 1) * 65536) / qy;
+        }
+        for (int i = 0; i < 4; i++) {
+            if (i >= AA) break;
+            int col = pix.x * AA + i;
+            // o índice: trunc((acc + F) / 65536), os 8 bits de baixo (acc dá a volta em 32 bits, como no plugin)
+            uint acc = uint(linha) * uint(passoY) + uint(col + 1) * uint(passoX);
+            uvec2 X = soma64(de32(int(acc)), Fi);
+            int alto = int(X.x);
+            int ind;
+            if (alto >= 0x8000 || alto < -0x8000) {
+                ind = 0;                                   // fora do int32 do plugin: cvttsd2si dá 0x80000000
+            } else if (alto >= 0) {
+                ind = int((X.y & 0xFFFFFFu) >> 16);
+            } else {
+                uint y = (0u - X.y - (fracao ? 1u : 0u)) & 0xFFFFFFu;
+                ind = (256 - int(y >> 16)) & 255;
+            }
+            int v = onda(t, ind);
+
+            int fx = 65536;
+            if (centro) {
+                int dx = col - (Wg >> 1), dy = linha - (Hg >> 1);
+                int d2 = dx * dx + dy * dy;
+                if (d2 < qq && qq > 0) {
+                    // floor(d2 · 65536 / qq), exato: o float dá o palpite e os inteiros corrigem
+                    uvec2 alvo = mul64(uint(d2), 65536u);
+                    int f = int(floor(float(d2) / float(qq) * 65536.0));
+                    for (int k = 0; k < 3; k++) {
+                        if (menor64(alvo, mul64(uint(f), uint(qq)))) { f -= 1; continue; }
+                        if (!menor64(alvo, mul64(uint(f + 1), uint(qq)))) { f += 1; continue; }
+                        break;
+                    }
+                    fx = f;
+                }
+            } else {
+                if (esq && col < qx && qx > 0) fx = (col * 65536) / qx;
+                else if (dir && col >= Wg - qx - 1 && qx > 0) fx = ((Wg - col - 1) * 65536) / qx;
+            }
+
+            int ox = corte16(corte16(-corte16(dispX, v), fx), fy);
+            int oy = corte16(corte16(-corte16(dispY, v), fx), fy);
+            int X16 = int(uint(col) * uint(passo) - uint(ox) - 0x7FFFu);
+            int Y16 = int(uint(pix.y) * 65536u + uint(j) * uint(passo) - uint(oy) - 0x7FFFu);
+            ivec2 p = ivec2((X16 + 0x8000) >> 16, (Y16 + 0x8000) >> 16);
+            if (p.x < 0 || p.y < 0 || p.x >= tam.x || p.y >= tam.y) continue;
+            ivec2 noBuffer = inicio + ivec2(p.x, dePe ? tam.y - 1 - p.y : p.y);
+            ivec4 c = ivec4(texelFetch(inputImg, noBuffer, 0) * 255.0 + 0.5);
+            somaA += c.a;
+            somaCA += c.rgb * c.a;
+        }
+    }
+    int n = AA * AA;
+    int a = (2 * somaA + n) / (2 * n);
+    if (somaA == 0) { fragColor = vec4(0.0); return; }
+    ivec3 cor = (2 * somaCA + somaA) / (2 * somaA);
+    fragColor = vec4(vec3(cor), float(a)) / 255.0;
+}
+
+    ]]></shader>
+</effect>

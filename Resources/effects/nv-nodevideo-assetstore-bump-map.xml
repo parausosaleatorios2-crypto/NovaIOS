@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_bump_map
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-bump-map"
+    name="Bump Map (NV)"
+    name-en="Bump Map (NV)"
+    desc="NodeVideo Asset Store effect 'bump_map', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'bump_map', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="source" src="content" empty="transparent" />
+        <texture id="texture0" src="content" empty="transparent" />
+        <texture id="texture1" src="content" empty="transparent" />
+        <texture id="texture2" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_height" label="Height" default="1" min="0" max="2" step="0.01" />
+        <point id="_tex_scale" label="Tex Scale" defaultX="1" defaultY="1" vetor="true" />
+        <slider id="_tex_angle" label="Tex Angle" default="0" min="0" max="360" step="1" />
+        <point id="_tex_offset" label="Tex Offset" defaultX="0" defaultY="0" vetor="true" />
+        <xyz id="_light_pos" label="Light Pos" defaultX="0.5" defaultY="0.5" defaultZ="0.125" />
+        <xyz id="_light_direction" label="Light Direction" defaultX="0.5" defaultY="0.5" defaultZ="0.125" />
+        <color id="_light_color" label="Light Color" default="#FFFFFFFF" />
+        <color id="_ambient_color" label="Ambient Color" default="#FF2B2B2B" />
+        <slider id="_brightness" label="Brightness" default="3" min="0" max="4" step="0.01" />
+        <xyz id="_specular" label="Specular" defaultX="0.9" defaultY="1" defaultZ="1" />
+        <slider id="_bumpmap" type="integer" label="Bumpmap" default="2" min="0" max="3" step="1" />
+        <slider id="_light_type" type="integer" label="Light Type" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+bool u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec2 u_xlat6;
+bool u_xlatb7;
+bool u_xlatb9;
+float u_xlat12;
+vec2 u_xlat14;
+float u_xlat18;
+bool u_xlatb18;
+float u_xlat19;
+void main()
+{
+    u_xlat0.xyz = (int(_light_type) != 0) ? _light_pos.xyz : _light_direction.xyz;
+    u_xlat1.xy = acScreenNorm.xy;
+    u_xlat1.z = 0.0;
+    u_xlat1.xyz = u_xlat0.xyz + (-u_xlat1.xyz);
+    u_xlat1.xyz = (int(_light_type) != 0) ? u_xlat1.xyz : _light_direction.xyz;
+    u_xlat18 = _tex_angle * 0.0174532998;
+    u_xlat2.xy = vec2(_height) * vec2(0.00100000005, 0.00100000005) + acScreenNorm.xy;
+    u_xlat2.zw = acScreenNorm.yx;
+    u_xlat2 = u_xlat2.xzwy + vec4(-0.5, -0.5, -0.5, -0.5);
+    u_xlat3.x = sin(u_xlat18);
+    u_xlat4.x = cos(u_xlat18);
+    u_xlat5.x = (-u_xlat3.x);
+    u_xlat5.y = u_xlat4.x;
+    u_xlat5.z = u_xlat3.x;
+    u_xlat3.x = dot(u_xlat2.xy, u_xlat5.yz);
+    u_xlat3.y = dot(u_xlat2.xy, u_xlat5.xy);
+    u_xlat2.xy = u_xlat3.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat2.xy = u_xlat2.xy + _tex_offset.xy;
+    u_xlat2.xy = u_xlat2.xy + vec2(0.5, 0.5);
+    u_xlatb18 = int(_light_type)==1;
+    if(int(_bumpmap) == 0) {
+        u_xlat19 = texture(inputImg, u_xlat2.xy).x;
+    } else {
+        u_xlatb3 = int(_bumpmap)==1;
+        if(u_xlatb3){
+            u_xlat19 = texture(source, u_xlat2.xy).x;
+        } else {
+            u_xlatb3 = int(_bumpmap)==2;
+            if(u_xlatb3){
+                u_xlat19 = texture(texture0, u_xlat2.xy).x;
+            } else {
+                u_xlatb3 = int(_bumpmap)==3;
+                if(u_xlatb3){
+                    u_xlat19 = texture(texture1, u_xlat2.xy).x;
+                } else {
+                    u_xlat19 = texture(texture2, u_xlat2.xy).x;
+                }
+            }
+        }
+    }
+    u_xlat3.xy = (-vec2(_height)) * vec2(0.00100000005, 0.00100000005) + acScreenNorm.xy;
+    u_xlat3.zw = acScreenNorm.yx;
+    u_xlat3 = u_xlat3.xzwy + vec4(-0.5, -0.5, -0.5, -0.5);
+    u_xlat2.x = dot(u_xlat3.xy, u_xlat5.yz);
+    u_xlat2.y = dot(u_xlat3.xy, u_xlat5.xy);
+    u_xlat2.xy = u_xlat2.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat2.xy = u_xlat2.xy + _tex_offset.xy;
+    u_xlat2.xy = u_xlat2.xy + vec2(0.5, 0.5);
+    if(int(_bumpmap) == 0) {
+        u_xlat3.x = texture(inputImg, u_xlat2.xy).x;
+    } else {
+        u_xlatb9 = int(_bumpmap)==1;
+        if(u_xlatb9){
+            u_xlat3.x = texture(source, u_xlat2.xy).x;
+        } else {
+            u_xlatb9 = int(_bumpmap)==2;
+            if(u_xlatb9){
+                u_xlat3.x = texture(texture0, u_xlat2.xy).x;
+            } else {
+                u_xlatb9 = int(_bumpmap)==3;
+                if(u_xlatb9){
+                    u_xlat3.x = texture(texture1, u_xlat2.xy).x;
+                } else {
+                    u_xlat3.x = texture(texture2, u_xlat2.xy).x;
+                }
+            }
+        }
+    }
+    u_xlat2.x = u_xlat19 + (-u_xlat3.x);
+    u_xlat3.x = dot(u_xlat2.zw, u_xlat5.yz);
+    u_xlat3.y = dot(u_xlat2.zw, u_xlat5.xy);
+    u_xlat14.xy = u_xlat3.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat14.xy = u_xlat14.xy + _tex_offset.xy;
+    u_xlat14.xy = u_xlat14.xy + vec2(0.5, 0.5);
+    if(int(_bumpmap) == 0) {
+        u_xlat19 = texture(inputImg, u_xlat14.xy).x;
+    } else {
+        u_xlatb3 = int(_bumpmap)==1;
+        if(u_xlatb3){
+            u_xlat19 = texture(source, u_xlat14.xy).x;
+        } else {
+            u_xlatb3 = int(_bumpmap)==2;
+            if(u_xlatb3){
+                u_xlat19 = texture(texture0, u_xlat14.xy).x;
+            } else {
+                u_xlatb3 = int(_bumpmap)==3;
+                if(u_xlatb3){
+                    u_xlat19 = texture(texture1, u_xlat14.xy).x;
+                } else {
+                    u_xlat19 = texture(texture2, u_xlat14.xy).x;
+                }
+            }
+        }
+    }
+    u_xlat3.x = dot(u_xlat3.zw, u_xlat5.yz);
+    u_xlat3.y = dot(u_xlat3.zw, u_xlat5.xy);
+    u_xlat14.xy = u_xlat3.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat14.xy = u_xlat14.xy + _tex_offset.xy;
+    u_xlat14.xy = u_xlat14.xy + vec2(0.5, 0.5);
+    if(int(_bumpmap) == 0) {
+        u_xlat3.x = texture(inputImg, u_xlat14.xy).x;
+    } else {
+        u_xlatb9 = int(_bumpmap)==1;
+        if(u_xlatb9){
+            u_xlat3.x = texture(source, u_xlat14.xy).x;
+        } else {
+            u_xlatb9 = int(_bumpmap)==2;
+            if(u_xlatb9){
+                u_xlat3.x = texture(texture0, u_xlat14.xy).x;
+            } else {
+                u_xlatb9 = int(_bumpmap)==3;
+                if(u_xlatb9){
+                    u_xlat3.x = texture(texture1, u_xlat14.xy).x;
+                } else {
+                    u_xlat3.x = texture(texture2, u_xlat14.xy).x;
+                }
+            }
+        }
+    }
+    u_xlat2.y = u_xlat19 + (-u_xlat3.x);
+    u_xlat14.xy = u_xlat2.xy * vec2(-0.5, -0.5) + vec2(0.5, 0.5);
+    u_xlat19 = dot(u_xlat14.xy, u_xlat14.xy);
+    u_xlat19 = (-u_xlat19) + 1.0;
+    u_xlat3.z = sqrt(u_xlat19);
+    u_xlat3.xy = (-u_xlat2.xy);
+    u_xlat19 = dot(u_xlat3.xyz, u_xlat3.xyz);
+    u_xlat19 = inversesqrt(u_xlat19);
+    u_xlat2.xyz = vec3(u_xlat19) * u_xlat3.xyz;
+    u_xlat19 = dot(u_xlat1.xyz, u_xlat1.xyz);
+    u_xlat19 = inversesqrt(u_xlat19);
+    u_xlat1.xyz = vec3(u_xlat19) * u_xlat1.xyz;
+    u_xlat1.x = dot(u_xlat1.xyz, u_xlat2.xyz);
+    u_xlat2.xy = acScreenNorm.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat2.z = 0.0;
+    u_xlat0.xyz = u_xlat0.xyz + (-u_xlat2.xyz);
+    u_xlat0.x = dot(u_xlat0.xyz, u_xlat0.xyz);
+    u_xlat0.x = sqrt(u_xlat0.x);
+    u_xlat0.x = u_xlatb18 ? u_xlat0.x : float(0.0);
+    u_xlat0.x = (-u_xlat0.x) + 1.0;
+    u_xlat6.x = u_xlat0.x * _brightness;
+    u_xlat6.x = u_xlat1.x * u_xlat6.x;
+    u_xlat2 = u_xlat6.xxxx * _light_color;
+    u_xlat2 = clamp(u_xlat2, 0.0, 1.0);
+    u_xlat6.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat3.x = dot(u_xlat6.xy, u_xlat5.yz);
+    u_xlat3.y = dot(u_xlat6.xy, u_xlat5.xy);
+    u_xlat6.xy = u_xlat3.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat6.xy = u_xlat6.xy + _tex_offset.xy;
+    u_xlat6.xy = u_xlat6.xy + vec2(0.5, 0.5);
+    if(int(_bumpmap) == 0) {
+        u_xlat18 = texture(inputImg, u_xlat6.xy).z;
+    } else {
+        u_xlatb7 = int(_bumpmap)==1;
+        if(u_xlatb7){
+            u_xlat18 = texture(source, u_xlat6.xy).z;
+        } else {
+            u_xlatb7 = int(_bumpmap)==2;
+            if(u_xlatb7){
+                u_xlat18 = texture(texture0, u_xlat6.xy).z;
+            } else {
+                u_xlatb7 = int(_bumpmap)==3;
+                if(u_xlatb7){
+                    u_xlat18 = texture(texture1, u_xlat6.xy).z;
+                } else {
+                    u_xlat18 = texture(texture2, u_xlat6.xy).z;
+                }
+            }
+        }
+    }
+    u_xlat6.x = u_xlat18 * _specular.xxyz.w;
+    u_xlat0.x = log2(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * _specular.xxyz.y;
+    u_xlat0.x = exp2(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * _brightness;
+    u_xlat12 = _specular.xxyz.z * _specular.xxyz.y;
+    u_xlat18 = log2(u_xlat1.x);
+    u_xlat12 = u_xlat18 * u_xlat12;
+    u_xlat12 = exp2(u_xlat12);
+    u_xlat0.x = u_xlat12 * u_xlat0.x;
+    u_xlat1 = u_xlat0.xxxx * _light_color;
+    u_xlat0.x = u_xlat6.x * 0.5;
+    u_xlat0 = u_xlat0.xxxx * u_xlat1;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat1 = u_xlat2 + _ambient_color;
+    u_xlat0 = u_xlat0 + u_xlat1;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat0 = u_xlat0 * u_xlat1;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

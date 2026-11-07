@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.smear"
+    name="Desfoque Arrastar (Blurrr)"
+    name-en="Smear (Blurrr)"
+    desc="Rastro direcional longo, só pra um lado — arrasto de movimento."
+    desc-en="Long one-sided directional trail — motion smear."
+    category="blur"
+    tags="blurrr,smear,arrastar,motion,direcional,desfoque,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="comprimento" label="Comprimento" default="0.08" min="0.0" max="0.4" step="0.002" />
+        <slider id="angle"   label="Ângulo" default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="samples" label="Amostras" default="24" min="4" max="48" step="1" type="integer" />
+        <slider id="falloff" label="Queda do rastro" default="2.0" min="0.5" max="6.0" step="0.1" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+void main() {
+    vec4 o = texture(inputImg, acScreenNorm);
+    if (comprimento <= 0.0) { fragColor = o; return; }
+    int n = clamp(int(samples), 4, 48);
+    float a = angle * PI / 180.0;
+    vec2 d = vec2(cos(a), sin(a));
+    d.x /= max(acAspect, 1e-4);
+
+    vec4 soma = vec4(0.0);
+    float peso = 0.0;
+    for (int i = 0; i <= 48; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n);
+        float w = pow(1.0 - t, falloff);
+        vec2 uv = acScreenNorm - d * comprimento * t;
+        soma += texture(inputImg, uv) * w;
+        peso += w;
+    }
+    fragColor = soma / max(peso, 1e-4);
+}
+    ]]></shader>
+</effect>

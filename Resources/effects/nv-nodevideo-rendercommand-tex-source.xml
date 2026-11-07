@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_tex_source
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-tex-source"
+    name="Rendercommand Tex Source (NV)"
+    name-en="Rendercommand Tex Source (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_tex_source', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_tex_source', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="sam2_mask" src="content" empty="transparent" />
+        <texture id="camera_tracker_mask" src="content" empty="transparent" />
+        <color id="_tex_size" label="Tex Size" default="#FFFFFFFF" />
+        <color id="_viewport_ratio" label="Viewport Ratio" default="#FFFFFFFF" />
+        <slider id="_tex_rotation" type="integer" label="Tex Rotation" default="0" min="-180" max="180" step="1" />
+        <slider id="_start_pos" label="Start Pos" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_end_pos" label="End Pos" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_crop_offset" label="Crop Offset" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_ratio" label="Ratio" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_has_sam2_mask" type="integer" label="Has Sam2 Mask" default="0" min="0" max="10" step="1" />
+        <slider id="_sam2_state" type="integer" label="Sam2 State" default="0" min="0" max="10" step="1" />
+        <slider id="_sam2_dilate" label="Sam2 Dilate" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_sam2_color_channel" type="integer" label="Sam2 Color Channel" default="0" min="0" max="1" step="1" />
+        <color id="_sam2_outline_color" label="Sam2 Outline Color" default="#FFFFFFFF" />
+        <slider id="_sam2_outline" label="Sam2 Outline" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <point id="_sam2_resolution" label="Sam2 Resolution" defaultX="0.5" defaultY="0.5" />
+        <slider id="_sam2_invert" type="integer" label="Sam2 Invert" default="0" min="0" max="10" step="1" />
+        <slider id="_has_camera_tracker_mask" type="integer" label="Has Camera Tracker Mask" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec2 u_xlat0;
+bvec2 u_xlatb0;
+vec4 u_xlat1;
+bvec4 u_xlatb1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+bool u_xlatb3;
+vec4 u_xlat4;
+int u_xlati4;
+vec3 u_xlat5;
+vec3 u_xlat6;
+vec2 u_xlat7;
+vec3 u_xlat8;
+bool u_xlatb8;
+float u_xlat11;
+bvec2 u_xlatb11;
+vec2 u_xlat12;
+bool u_xlatb12;
+float u_xlat16;
+bool u_xlatb16;
+vec2 u_xlat17;
+float u_xlat19;
+bool u_xlatb19;
+float u_xlat20;
+float u_xlat24;
+bool u_xlatb24;
+float u_xlat27;
+void main()
+{
+    u_xlatb0.xy = equal(ivec4(ivec4(_tex_rotation, _tex_rotation, _tex_rotation, _tex_rotation)), ivec4(90, 270, 0, 0)).xy;
+    u_xlatb0.x = u_xlatb0.y || u_xlatb0.x;
+    u_xlat8.x = (-_viewport_ratio.y) + _viewport_ratio.x;
+    u_xlatb8 = abs(u_xlat8.x)<0.00100000005;
+    u_xlatb16 = _ratio>=1.0;
+    u_xlat24 = (-_start_pos) + _end_pos;
+    u_xlat1.zw = acScreenNorm.yx * vec2(u_xlat24) + vec2(vec2(_start_pos, _start_pos));
+    u_xlat1.xy = acScreenNorm.xy + vec2(vec2(_crop_offset, _crop_offset));
+    u_xlat2 = (bool(u_xlatb16)) ? u_xlat1.xzxz : u_xlat1.wywy;
+    u_xlatb16 = _viewport_ratio.y<_viewport_ratio.x;
+    u_xlat7.xy = (u_xlatb0.x) ? u_xlat1.xz : u_xlat1.wy;
+    u_xlat3.xy = (u_xlatb0.x) ? u_xlat1.wy : u_xlat1.xz;
+    u_xlat1.xy = u_xlat7.xy;
+    u_xlat1 = (bool(u_xlatb16)) ? u_xlat3.xyxy : u_xlat1.xyxy;
+    u_xlat1 = (bool(u_xlatb8)) ? u_xlat2 : u_xlat1;
+    u_xlat1 = u_xlat1 + vec4(-0.5, -0.5, -0.5, -0.5);
+    u_xlat1 = u_xlat1 / _tex_size.yxxy;
+    u_xlat8.xy = (u_xlatb0.x) ? u_xlat1.xy : u_xlat1.zw;
+    u_xlat8.xy = u_xlat8.xy + vec2(0.5, 0.5);
+    u_xlatb1.xy = greaterThanEqual(u_xlat8.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlat17.xy = (-u_xlat8.xy) + vec2(1.0, 1.0);
+    u_xlatb1.zw = greaterThanEqual(u_xlat17.xxxy, vec4(0.0, 0.0, 0.0, 0.0)).zw;
+    u_xlat1.x = u_xlatb1.x ? float(1.0) : 0.0;
+    u_xlat1.y = u_xlatb1.y ? float(1.0) : 0.0;
+    u_xlat1.z = u_xlatb1.z ? float(1.0) : 0.0;
+    u_xlat1.w = u_xlatb1.w ? float(1.0) : 0.0;
+;
+    u_xlat2 = texture(inputImg, u_xlat8.xy);
+    u_xlat2 = u_xlat1.xxxx * u_xlat2;
+    u_xlat2 = u_xlat1.zzzz * u_xlat2;
+    u_xlat2 = u_xlat1.yyyy * u_xlat2;
+    u_xlat2 = u_xlat1.wwww * u_xlat2;
+    u_xlatb24 = 0<_has_sam2_mask;
+    u_xlatb3 = _sam2_state!=0;
+    u_xlatb24 = u_xlatb24 && u_xlatb3;
+    if(u_xlatb24){
+        u_xlat3.xy = vs_TEXCOORD1.xy + vec2(-0.5, -0.5);
+        u_xlat3.xy = u_xlat3.xy / _tex_size.xy;
+        u_xlat3.xy = u_xlat3.xy + vec2(0.5, 0.5);
+        u_xlat0.xy = (u_xlatb0.x) ? u_xlat3.xy : u_xlat8.xy;
+        u_xlat16 = texture(sam2_mask, u_xlat0.xy).x;
+        u_xlat24 = u_xlat16 * 0.305306017 + 0.682171106;
+        u_xlat24 = u_xlat16 * u_xlat24 + 0.0125228781;
+        u_xlat16 = u_xlat24 * u_xlat16;
+        u_xlat24 = (-_sam2_dilate) + 1.0;
+        u_xlat24 = float(1.0) / u_xlat24;
+        u_xlat16 = u_xlat24 * u_xlat16;
+        u_xlat16 = clamp(u_xlat16, 0.0, 1.0);
+        u_xlat3.x = u_xlat16 * -2.0 + 3.0;
+        u_xlat16 = u_xlat16 * u_xlat16;
+        u_xlat11 = u_xlat16 * u_xlat3.x;
+        u_xlatb19 = 0<_sam2_invert;
+        u_xlat16 = (-u_xlat3.x) * u_xlat16 + 1.0;
+        u_xlat16 = (u_xlatb19) ? u_xlat16 : u_xlat11;
+        u_xlatb3 = _sam2_state==1;
+        if(u_xlatb3){
+            u_xlat3.x = (-u_xlat16) + 1.0;
+            u_xlat4 = u_xlat2.xyzz * u_xlat3.xxxx;
+            u_xlatb11.xy = equal(ivec4(ivec4(_sam2_color_channel, _sam2_color_channel, _sam2_color_channel, _sam2_color_channel)), ivec4(1, 2, 0, 0)).xy;
+            u_xlat3.xw = u_xlat2.xy * u_xlat3.xx;
+            u_xlat5.xy = (u_xlatb11.y) ? u_xlat3.xw : u_xlat2.xy;
+            u_xlat6.xz = u_xlat4.xw;
+            u_xlat6.y = u_xlat2.y;
+            u_xlat5.z = u_xlat2.z;
+            u_xlat3.xyz = (u_xlatb11.x) ? u_xlat6.xyz : u_xlat5.xyz;
+            u_xlat4.x = u_xlat2.x;
+            u_xlat2.xyz = (int(_sam2_color_channel) != 0) ? u_xlat3.xyz : u_xlat4.xyz;
+            u_xlat3.x = _sam2_outline * 10.0;
+            u_xlat3.xy = u_xlat3.xx / vec2(_sam2_resolution.x, _sam2_resolution.y);
+            u_xlat19 = float(0.0);
+            u_xlat27 = float(0.0);
+            for(int u_xlati_loop_1 = 0 ; u_xlati_loop_1<16 ; u_xlati_loop_1++)
+            {
+                u_xlat27 = u_xlat27 + 0.392699093;
+                u_xlat5.x = sin(u_xlat27);
+                u_xlat6.x = cos(u_xlat27);
+                u_xlat6.x = u_xlat3.x * u_xlat6.x;
+                u_xlat6.y = u_xlat3.y * u_xlat5.x;
+                u_xlat12.xy = u_xlat0.xy + u_xlat6.xy;
+                u_xlat12.xy = clamp(u_xlat12.xy, 0.0, 1.0);
+                u_xlat12.x = texture(sam2_mask, u_xlat12.xy).x;
+                u_xlat12.x = u_xlat24 * u_xlat12.x;
+                u_xlat12.x = clamp(u_xlat12.x, 0.0, 1.0);
+                u_xlat20 = u_xlat12.x * -2.0 + 3.0;
+                u_xlat12.x = u_xlat12.x * u_xlat12.x;
+                u_xlat12.x = u_xlat12.x * u_xlat20;
+                u_xlat12.x = u_xlat1.x * u_xlat12.x;
+                u_xlat12.x = u_xlat1.z * u_xlat12.x;
+                u_xlat12.x = u_xlat1.y * u_xlat12.x;
+                u_xlat12.x = u_xlat1.w * u_xlat12.x;
+                u_xlat19 = max(u_xlat19, u_xlat12.x);
+            }
+            u_xlat0.x = u_xlat19 + -0.899999976;
+            u_xlat0.x = u_xlat0.x * 9.99999809;
+            u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+            u_xlat8.x = u_xlat0.x * -2.0 + 3.0;
+            u_xlat0.x = u_xlat0.x * u_xlat0.x;
+            u_xlat0.x = u_xlat0.x * u_xlat8.x;
+            u_xlat8.x = u_xlat0.x * _sam2_outline_color.w;
+            u_xlat1 = u_xlat8.xxxx * _sam2_outline_color;
+            u_xlat0.x = (-u_xlat0.x) * _sam2_outline_color.w + 1.0;
+            u_xlat3 = (-u_xlat8.xxxx) * _sam2_outline_color + u_xlat2;
+            u_xlat1 = vec4(u_xlat16) * u_xlat3 + u_xlat1;
+            u_xlat1 = u_xlat8.xxxx * u_xlat1;
+            u_xlat2 = u_xlat2 * u_xlat0.xxxx + u_xlat1;
+            fragColor.w = u_xlat2.w;
+        } else {
+            u_xlat2 = vec4(u_xlat16) * u_xlat2;
+            fragColor.w = u_xlat2.w;
+        }
+    } else {
+        fragColor.w = u_xlat2.w;
+    }
+    u_xlatb0.x = 0<_has_camera_tracker_mask;
+    if(u_xlatb0.x){
+        u_xlat0.x = texture(camera_tracker_mask, acScreenNorm.xy).x;
+        u_xlatb0.x = u_xlat0.x<0.5;
+        u_xlat2.w = 0.0;
+        u_xlat8.xyz = u_xlat2.xyz * vec3(0.200000003, 1.0, 0.200000003);
+        fragColor.xyz = (u_xlatb0.x) ? u_xlat2.xww : u_xlat8.xyz;
+    } else {
+        fragColor.xyz = u_xlat2.xyz;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.ripplelight"
+    name="Ondas de Luz (Ultra Motion)"
+    name-en="Ripple Light (Ultra Motion)"
+    desc="Anéis de luz expandindo do ponto — pulso de energia."
+    desc-en="Light rings expanding from a point — energy pulse."
+    category="stylize"
+    tags="ultramotion,ripple,ring,pulse,energy,light">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point  id="source"    label="Fonte"     defaultX="0.5" defaultY="0.5" />
+        <slider id="speed"     label="Velocidade" default="0.4" min="0.0" max="2.0" step="0.01" />
+        <slider id="spacing"   label="Espaçamento" default="0.15" min="0.03" max="0.6" step="0.01" />
+        <slider id="width"     label="Espessura" default="0.02" min="0.002" max="0.08" step="0.001" />
+        <slider id="intensity" label="Intensidade" default="0.8" min="0.0" max="2.0" step="0.02" />
+        <color  id="tint"      label="Cor"       default="#ffc8f0ff" />
+    </params>
+
+    <!-- Na vitrine: anéis de 0,02 de espessura somem em 320 px. -->
+    <preview>
+        <set param="width" value="0.05" />
+        <set param="spacing" value="0.12" />
+        <set param="intensity" value="1.6" />
+    </preview>
+
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    vec2 p = acScreenNorm - source;
+    p.x *= acAspect;
+    float r = length(p);
+    float onda = fract((r - acTime * speed) / spacing);
+    float dist = min(onda, 1.0 - onda);
+    float anel = smoothstep(width, 0.0, dist);
+    float decai = exp(-r * 1.5);
+    vec3 cor = orig.rgb + tint.rgb * tint.a * anel * intensity * decai;
+    fragColor = vec4(cor, orig.a);
+}
+    ]]></shader>
+</effect>

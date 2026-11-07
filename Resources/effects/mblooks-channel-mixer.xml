@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Channel Mixer (`cmix`, vídeo): cada canal de saída é uma mistura do R, G e B da
+  entrada (os pesos da linha dele), presa em 0; no Monochrome, os três canais saem da mesma mistura (os pesos RGB).
+  Lido no `MBLooksUI_5_0.dll` (23/10/2026): o render `0x1803ebcc0` e os kernels `ExpKernel_ChannelMixer` e
+  `ExpKernel_ChannelMixerMono` (tools/looks/benchmark/cmix.py); o host é o `ContasDoLooks.channelMixer`.
+  Normalize leva a soma de cada linha a 1: m = (R + G + B − 1)/3, cada peso − m·Normalize. saída = c + (o − c)·Strength.
+
+  Os padrões NÃO estão no motor (o slot 9 devolve 0 para todos): Normalize 100, Strength 100, Monochrome desligado,
+  Reserved 1 50 e os pesos da luma Rec. 709 são o que os 13 blocos da pasta de presets têm; a matriz começa na
+  identidade (não muda nada). Os limites também não estão no motor: saíram dos presets, com folga. O Reserved 1 fica
+  guardado e escondido (o render não o lê).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.channelmixer"
+    name="Looks: Channel Mixer"
+    name-en="Looks: Channel Mixer"
+    desc="A ferramenta Channel Mixer do Magic Bullet Looks: cada canal de saída é uma mistura do vermelho, verde e azul da imagem — ou tudo numa mistura só, em preto e branco."
+    desc-en="Magic Bullet Looks' Channel Mixer tool: each output channel is a mix of the image's red, green and blue — or all of them from a single mix, in black and white."
+    category="looks"
+    stage="mblooks"
+    looks="cmix"
+    tags="magic bullet,looks,red giant,channel mixer,misturador de canais,canais,rgb,cor,preto e branco,monocromático">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="normalizeAmount" label="Normalize" default="100.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="strength" label="Strength" default="100.0" min="0.0" max="100.0" step="0.1" />
+        <switch id="monochrome" label="Monochrome" default="false" />
+        <slider id="reserved" label="Reserved 1" default="50.0" min="0.0" max="100.0" step="0.1" hidden="true" />
+        <slider id="monoRed" group="Monochrome" label="RGB Red" default="0.2126" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="monoGreen" group="Monochrome" label="RGB Green" default="0.7152" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="monoBlue" group="Monochrome" label="RGB Blue" default="0.0722" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="redRed" group="Red" label="Red from Red" default="1.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="redGreen" group="Red" label="Red from Green" default="0.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="redBlue" group="Red" label="Red from Blue" default="0.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="greenRed" group="Green" label="Green from Red" default="0.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="greenGreen" group="Green" label="Green from Green" default="1.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="greenBlue" group="Green" label="Green from Blue" default="0.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="blueRed" group="Blue" label="Blue from Red" default="0.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="blueGreen" group="Blue" label="Blue from Green" default="0.0" min="-3.0" max="3.0" step="0.0001" />
+        <slider id="blueBlue" group="Blue" label="Blue from Blue" default="1.0" min="-3.0" max="3.0" step="0.0001" />
+    </params>
+
+    <!-- Na vitrine, o padrão (a identidade) não muda nada: o vermelho e o azul trocados. -->
+    <preview>
+        <set param="redRed" value="0.0" />
+        <set param="redBlue" value="1.0" />
+        <set param="blueRed" value="1.0" />
+        <set param="blueBlue" value="0.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

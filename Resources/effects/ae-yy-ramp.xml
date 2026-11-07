@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   YY_RAMP+ — o plugin YY_Ramp+ do After Effects (Andrew Yang), lido no binário (0.725.0)
+  ============================================================================
+
+  Pedido do snow (21/10/2026): "faça o efeito yy_ramp 100% igual do after effects". O plugin
+  (`YY_Ramp+.aex`, 62 KB, matchName `YY_Ramp+/2/AndrewYY's _3ECF151`) foi decompilado inteiro
+  (tools/yyramp/ghidra) e conferido contra o AE do snow (tools/yyramp/benchmark, 161 renders em 8 bpc).
+
+  O QUE O PLUGIN FAZ (e este shader repete):
+
+  1. Os dois pontos chegam em px da camada (16.16), as cores em 8 bits e os alfas TRUNCADOS de
+     Master · Alpha / 10000 · 255. Invert Points troca as CORES e os ALFAS, não os pontos.
+  2. t pela forma, com d = pixel − início (o pixel pelo CANTO, x e y inteiros) e v = fim − início:
+     Linear  d·v / |v|²          Radial    √(|d|² / |v|²)
+     Angled  o ângulo de d menos o de v, em voltas, de 0 a 1 (no próprio início, 1)
+     Reflected |d·v| / |v|²      Diamond   (|v × d| + |v·d|) / |v|²
+  3. O Midpoint m: duas retas que se encontram em (m, 0,5). O Ramp Scatter soma um ruído de
+     −256..255 (o hash 0x45d9f3b do pixel e da semente (int)(Scatter² · 256)) vezes Scatter / 1000 / |v|.
+     Corta em [0, 1]; Smooth = (1 − cos πt) / 2. Cada canal = trunca((fim − início) · t + início).
+  4. Início = fim: a camada inteira com a cor (e o alfa) do FIM.
+  5. A rampa é posta sobre a camada com o Blend Mode — os modos de camada do AE, os mesmos números
+     medidos no CC Composite (cc-composite.xml), a rampa por cima. Com Clip RGB (ligado de fábrica), o alfa
+     da saída vezes o da camada (Stencil Alpha).
+
+  MEDIDO (8 bpc, a rampa sozinha em None): 0 pixel diferente em 40 dos 42 casos; com ponto fracionário,
+  ~5 pixels em 2 milhões a 1 nível (o AE converte o ponto a 16.16 de um jeito que não fechou). Os modos:
+  1 a 2 níveis (a conta em inteiros de 8 bits do AE), e Lighter/Darker Color comparam a luminância
+  ARREDONDADA a 8 bits, com a camada SOBRE a rampa por fundo, como o Hue/Color do AE.
+
+  O QUE NÃO ENTROU / NÃO FECHOU: ver docs/PENDENCIAS-DOS-EFEITOS-AE.md (YY_Ramp+). Na GPU a rampa é em
+  float (o plugin, double): os empates do truncamento podem cair 1 nível para o outro lado.
+-->
+<effect
+    id="nova.effect.yyramp"
+    name="YY_Ramp+"
+    name-en="YY_Ramp+"
+    desc="O YY_Ramp+ do After Effects: rampa linear, radial, angular, refletida ou em diamante, com Midpoint, Scatter e os modos de mesclagem."
+    desc-en="After Effects' YY_Ramp+: linear, radial, angled, reflected or diamond ramp, with Midpoint, Scatter and blend modes."
+    category="procedural"
+    tags="yy ramp,yy_ramp,ramp,rampa,gradiente,degrade,gradient ramp,radial,diamante,angular,andrew yang,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="startPoint" label="Início da rampa" defaultX="0.5" defaultY="0.0" />
+        <color id="startColor" label="Cor inicial" default="#000000" />
+        <slider id="startAlpha" label="Alfa inicial" default="100.0" min="0.0" max="100.0" step="0.1" snap="0.0,100.0" />
+        <point id="endPoint" label="Fim da rampa" defaultX="0.5" defaultY="1.0" />
+        <color id="endColor" label="Cor final" default="#FFFFFF" />
+        <slider id="endAlpha" label="Alfa final" default="100.0" min="0.0" max="100.0" step="0.1" snap="0.0,100.0" />
+        <slider id="midpoint" label="Ponto médio" default="50.0" min="5.0" max="95.0" step="0.1" snap="50.0" />
+        <slider id="masterAlpha" label="Alfa geral" default="100.0" min="0.0" max="100.0" step="0.1" snap="100.0" />
+        <switch id="invertPoints" label="Inverter pontos" default="false" />
+        <slider id="rampScatter" label="Dispersão" default="0.0" min="0.0" max="512.0" step="0.1" snap="0.0" />
+        <selector id="rampShape" label="Forma" default="0"
+                  options="Linear|Radial|Angular|Refletida|Diamante" />
+        <selector id="interpolation" label="Interpolação" default="0" options="Linear|Suave" />
+        <selector id="blendMode" label="Modo de mesclagem" default="1"
+                  options="None|Normal|Multiply|Linear Dodge (Add)|Screen|Overlay|Darken|Color Burn|Linear Burn|Darker Color|Lighten|Color Dodge|Lighter Color|Soft Light|Hard Light|Linear Light|Vivid Light|Pin Light|Hard Mix|Difference|Exclusion|Subtract|Divide|Hue|Saturation|Color|Luminosity|Behind|Stencil Alpha" />
+        <switch id="clipRgb" label="Recortar pelo alfa (Clip RGB)" default="true" />
+    </params>
+
+    <!-- Só para a MINIATURA do catálogo: uma rampa radial de duas cores em Soft Light sobre a amostra. -->
+    <preview>
+        <set param="startPoint" x="0.5" y="0.45" />
+        <set param="endPoint" x="0.95" y="0.95" />
+        <set param="startColor" color="#FFFFB040" />
+        <set param="endColor" color="#FF3020C0" />
+        <set param="rampShape" value="1" />
+        <set param="blendMode" value="13" />
+    </preview>
+
+    <shader><![CDATA[
+// Os índices do seletor (o menu do AE sem o separador do item 7).
+const int NONE = 0, NORMAL = 1, MULTIPLY = 2, ADD = 3, SCREEN = 4, OVERLAY = 5, DARKEN = 6, COLOR_BURN = 7,
+          LINEAR_BURN = 8, DARKER_COLOR = 9, LIGHTEN = 10, COLOR_DODGE = 11, LIGHTER_COLOR = 12, SOFT_LIGHT = 13,
+          HARD_LIGHT = 14, LINEAR_LIGHT = 15, VIVID_LIGHT = 16, PIN_LIGHT = 17, HARD_MIX = 18, DIFFERENCE = 19,
+          EXCLUSION = 20, SUBTRACT = 21, DIVIDE = 22, HUE = 23, SATURATION = 24, COLOR = 25, LUMINOSITY = 26,
+          BEHIND = 27, STENCIL_ALPHA = 28;
+
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+const float PI = 3.141592653589793;
+
+// ---------- a rampa (FUN_180003520 do plugin) ----------
+
+/** (int)u % 512 − 256 do hash do plugin: o resto com sinal do C, então o ruído pende para baixo. */
+float ruido(ivec2 p, int semente) {
+    uint u = uint(p.y) * uint(p.y) + uint(semente) + uint(p.x);   // em uint: o estouro dá a volta, como no int do C
+    u = ((u >> 16u) ^ u) * 0x45d9f3bu;
+    u = ((u >> 16u) ^ u) * 0x45d9f3bu;
+    u = (u >> 16u) ^ u;
+    int m = int(u & 511u);
+    if ((u & 0x80000000u) != 0u && m != 0) m -= 512;
+    return float(m - 256);
+}
+
+/** O t do pixel (canto em p, px da composição), antes da curva. */
+float parametro(vec2 d, vec2 v, float l2, int forma) {
+    if (forma == 1) return sqrt(dot(d, d) / l2);
+    if (forma == 2) {
+        if (d.x == 0.0 && d.y == 0.0) return 1.0;
+        return mod((atan(d.y, d.x) - atan(v.y, v.x)) / (2.0 * PI) + 1.0, 1.0);
+    }
+    if (forma == 3) return abs(dot(d, v)) / l2;
+    if (forma == 4) return (abs(v.y * d.x - v.x * d.y) + abs(dot(d, v))) / l2;
+    return dot(d, v) / l2;
+}
+
+// ---------- os modos (os de camada do AE, como no cc-composite.xml; b = a camada, s = a rampa) ----------
+
+float dodge(float b, float s) { return b <= 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
+float burn(float b, float s)  { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+float dodgeC(float b, float s) { return s >= 1.0 ? 1.0 : (b <= 0.0 ? 0.0 : min(1.0, b / (1.0 - s))); }
+float burnC(float b, float s)  { return s <= 0.0 ? 0.0 : (b >= 1.0 ? 1.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+
+float macia(float b, float s) {
+    if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
+    float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
+    return b + (2.0 * s - 1.0) * (d - b);
+}
+
+/** Os separáveis, nas cores retas. */
+float canal(int m, float b, float s) {
+    if (m == MULTIPLY) return b * s;
+    if (m == SCREEN) return 1.0 - (1.0 - b) * (1.0 - s);
+    if (m == OVERLAY) return b <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
+    if (m == DARKEN) return min(b, s);
+    if (m == COLOR_BURN) return burn(b, s);
+    if (m == LINEAR_BURN) return max(b + s - 1.0, 0.0);
+    if (m == LIGHTEN) return max(b, s);
+    if (m == COLOR_DODGE) return dodge(b, s);
+    if (m == SOFT_LIGHT) return macia(b, s);
+    if (m == HARD_LIGHT) return s <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
+    if (m == LINEAR_LIGHT) return clamp(b + 2.0 * s - 1.0, 0.0, 1.0);          // medido (rodada 2)
+    if (m == VIVID_LIGHT) return s <= 0.5 ? burnC(b, 2.0 * s) : dodgeC(b, 2.0 * s - 1.0);
+    if (m == PIN_LIGHT) return s <= 0.5 ? min(b, 2.0 * s) : max(b, 2.0 * s - 1.0);
+    if (m == HARD_MIX) return (s < 0.5 ? b + s >= 1.0 - 1e-6 : b + s > 1.0 + 1e-6) ? 1.0 : 0.0;
+    if (m == DIFFERENCE) return abs(b - s);
+    if (m == EXCLUSION) return b + s - 2.0 * b * s;
+    if (m == SUBTRACT) return clamp(b - s, 0.0, 1.0);
+    if (m == DIVIDE) return s > 0.0 ? min(b / s, 1.0) : (b > 0.0 ? 1.0 : 0.0);
+    return s;
+}
+
+vec3 cortarCor(vec3 c) {
+    float l = dot(c, LUMA), n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
+    if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-12);
+    if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-12);
+    return c;
+}
+vec3 comLuma(vec3 c, float l) { return cortarCor(c + (l - dot(c, LUMA))); }
+float satDe(vec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+vec3 comSat(vec3 c, float s) {
+    float n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
+    return x > n ? (c - n) * s / (x - n) : vec3(0.0);
+}
+/** Lighter/Darker Color: medido, a luminância ARREDONDADA a 8 bits. */
+float luma8(vec3 c) { return floor(dot(c, LUMA) * 255.0 + 0.5); }
+
+vec3 componente(int m, vec3 b, vec3 s) {
+    if (m == HUE) return comLuma(comSat(s, satDe(b)), dot(b, LUMA));
+    if (m == SATURATION) return comLuma(comSat(b, satDe(s)), dot(b, LUMA));
+    if (m == COLOR) return comLuma(s, dot(b, LUMA));
+    if (m == LUMINOSITY) return comLuma(b, dot(s, LUMA));
+    if (m == LIGHTER_COLOR) return luma8(s) > luma8(b) ? s : b;
+    return luma8(s) < luma8(b) ? s : b;     // DARKER_COLOR
+}
+
+/** A rampa (cs, as_) sobre a camada (cb, ab) no modo m; devolve a cor RETA e o alfa. */
+vec4 compor(int m, vec3 cs, float as_, vec3 cb, float ab) {
+    if (m == NONE) return vec4(cs, as_);
+    vec3 pb = cb * ab, ps = cs * as_;
+    float uni = ab + as_ - ab * as_;
+    vec3 cor;
+    float a = uni;
+    if (m == STENCIL_ALPHA) return vec4(cb, ab * as_);
+    if (m == NORMAL) cor = ps + (1.0 - as_) * pb;
+    else if (m == BEHIND) cor = pb + (1.0 - ab) * ps;
+    else if (m == ADD) cor = min(pb + ps, vec3(uni));                           // nas pré-multiplicadas
+    else if (m == HUE || m == SATURATION || m == COLOR || m == LUMINOSITY || m == LIGHTER_COLOR || m == DARKER_COLOR) {
+        // o fundo da fórmula é a CAMADA SOBRE A RAMPA (cor reta); a saída mistura esse fundo com ela pelo alfa da rampa
+        vec3 bl = uni > 0.0 ? (pb + (1.0 - ab) * ps) / uni : vec3(0.0);
+        cor = uni * mix(bl, clamp(componente(m, bl, cs), 0.0, 1.0), as_);
+    }
+    else {
+        vec3 f = vec3(canal(m, cb.r, cs.r), canal(m, cb.g, cs.g), canal(m, cb.b, cs.b));
+        cor = (1.0 - as_) * pb + (1.0 - ab) * ps + ab * as_ * clamp(f, 0.0, 1.0);
+    }
+    return vec4(a > 0.0 ? clamp(cor / a, 0.0, 1.0) : vec3(0.0), a);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 pi = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    vec4 camada = floor(texelFetch(inputImg, pi, 0) * 255.0 + 0.5) / 255.0;
+
+    // Em px da composição, do canto do pixel; com a cena de pé (camada de ajuste) a linha 0 é a base:
+    // o Angled giraria para o outro lado (e o ruído sairia espelhado) sem desvirar o y.
+    ivec2 q = acEntradaDePe == 1 ? ivec2(pi.x, T.y - 1 - pi.y) : pi;
+    vec2 lado = vec2(T) / acEscalaDePixel;
+    vec2 p = vec2(q) / acEscalaDePixel;
+    vec2 ini = startPoint * lado, fim = endPoint * lado;
+    if (acEntradaDePe == 1) { ini.y = lado.y - ini.y; fim.y = lado.y - fim.y; }
+
+    // As cores em 8 bits e os alfas truncados de Master · Alpha (Invert Points troca cores e alfas).
+    vec4 c0 = vec4(floor(startColor.rgb * 255.0 + 0.5), floor(masterAlpha * startAlpha / 10000.0 * 255.0 + 1e-4));
+    vec4 c1 = vec4(floor(endColor.rgb * 255.0 + 0.5), floor(endAlpha * masterAlpha / 10000.0 * 255.0 + 1e-4));
+    if (invertPoints) { vec4 t0 = c0; c0 = c1; c1 = t0; }
+
+    vec2 v = fim - ini;
+    float l2 = dot(v, v);
+    vec4 g;
+    if (l2 == 0.0) {
+        g = c1;                                                                  // início = fim: a cor do FIM
+    } else {
+        vec2 d = p - ini;
+        float t = parametro(d, v, l2, rampShape);
+        float m = midpoint * 0.01;
+        t = m < t ? 1.0 - ((1.0 - t) * 0.5) / (1.0 - m) : (t * 0.5) / m;
+        if (rampScatter > 0.0) {
+            int semente = int(rampScatter * rampScatter * 256.0);
+            t += ruido(q, semente) * (rampScatter * 0.001 / sqrt(l2));
+        }
+        t = clamp(t, 0.0, 1.0);
+        if (interpolation == 1) t = (1.0 - cos(t * PI)) * 0.5;
+        g = floor((c1 - c0) * t + c0);
+    }
+    g /= 255.0;
+
+    vec4 r = compor(blendMode, g.rgb, g.a, camada.rgb, camada.a);
+    if (clipRgb) r.a *= camada.a;                                                // Stencil Alpha da própria camada
+    fragColor = r.a > 0.0 ? r : vec4(0.0);
+}
+    ]]></shader>
+</effect>

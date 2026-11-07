@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rampa de gradiente — outro GERADOR.
+
+  Serve de fundo, de máscara, de mapa de deslocamento e de base para o mapa de
+  cor. É o gerador mais simples que existe e um dos mais usados justamente por
+  isso.
+
+  O "espalhamento" no fim não é enfeite: um gradiente suave em 8 bits por canal
+  mostra faixas visíveis (banding), porque não existem valores intermediários
+  suficientes. Um ruído minúsculo somado antes de arredondar quebra a faixa e o
+  olho lê como contínuo. É a mesma técnica de impressão que existe desde sempre.
+-->
+<effect
+    id="nova.effect.gradientramp"
+    name="Rampa de gradiente"
+    name-en="Gradient Ramp"
+    desc="Gera um gradiente linear ou radial entre duas cores."
+    desc-en="A linear or radial gradient generated in the layer."
+    category="procedural"
+    blend="mode"
+    tags="gradiente,rampa,fundo,degrade,gerador,mapa"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="shape" label="Formato" options="Linear|Radial|Ângulo" default="0" />
+
+        <point id="startPoint" label="Início" defaultX="0.5" defaultY="0.0" />
+        <point id="endPoint" label="Fim" defaultX="0.5" defaultY="1.0" />
+
+        <color id="startColor" label="Cor inicial" default="#FFFFFF" />
+        <color id="endColor" label="Cor final" default="#000000" />
+
+        <slider id="rampCurve" label="Curva"
+                default="1.0" min="0.1" max="5.0" step="0.01" snap="1.0" />
+
+        <slider id="scatter" label="Espalhamento"
+                default="0.02" min="0.0" max="0.3" step="0.005" snap="0.0" />
+
+    </params>
+
+    <shader><![CDATA[
+
+const float TAU = 6.28318530718;
+
+float hash21(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 uv = acScreenNorm * vec2(acAspect, 1.0);
+    vec2 from = startPoint * vec2(acAspect, 1.0);
+    vec2 to = endPoint * vec2(acAspect, 1.0);
+
+    float t;
+    if (shape == 1) {
+        // Radial: a distância até o início, medida em "quantos raios".
+        float radius = max(length(to - from), 0.0001);
+        t = length(uv - from) / radius;
+    } else if (shape == 2) {
+        // Ângulo: uma volta completa em torno do início. Vira cone de cor.
+        vec2 axis = to - from;
+        float base = atan(axis.y, axis.x);
+        float here = atan(uv.y - from.y, uv.x - from.x);
+        t = fract((here - base) / TAU);
+    } else {
+        vec2 axis = to - from;
+        float lengthSquared = max(dot(axis, axis), 0.0001);
+        // Projeção do ponto sobre o eixo: dá exatamente "o quanto andei do
+        // início para o fim", sem precisar de trigonometria.
+        t = dot(uv - from, axis) / lengthSquared;
+    }
+
+    t = clamp(t, 0.0, 1.0);
+    t = pow(t, max(rampCurve, 0.01));
+
+    if (scatter > 0.0) {
+        t = clamp(t + (hash21(acScreenNorm * acResolution) - 0.5) * scatter, 0.0, 1.0);
+    }
+
+    vec4 ramp = mix(startColor, endColor, t);
+    fragColor = vec4(ramp.rgb, ramp.a * original.a);
+}
+
+    ]]></shader>
+</effect>

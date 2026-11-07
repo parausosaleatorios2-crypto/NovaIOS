@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.mono_contrast" name="Mono Contrast" desc="Black and white with independent contrast, gamma and an optional warm/cool tint. The workhorse mono converter." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/mono_contrast.png"
+        tags="color,mono,bw,contrast" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Mono" />
+<spinner id="contrast" default="1.15" min="0.2" max="3.0" step="0.01" label="Contrast" />
+<spinner id="gamma" default="1.00" min="0.2" max="3.0" step="0.01" label="Gamma" />
+<spinner id="brightness" default="0.0" min="-0.5" max="0.5" step="0.01" label="Brightness" />
+<color id="tint" default="#FFF6EFE2" label="Tint" />
+<spinner id="tintAmt" default="0.20" min="0.0" max="1.0" step="0.01" label="Tint Amount" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  l = clamp((l - 0.5) * contrast + 0.5 + brightness, 0.0, 1.0);
+  l = pow(l, 1.0 / max(gamma, 0.05));
+  vec3 col = mix(vec3(l), vec3(l) * tint.rgb, tintAmt);
+  col = mix(c, col, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

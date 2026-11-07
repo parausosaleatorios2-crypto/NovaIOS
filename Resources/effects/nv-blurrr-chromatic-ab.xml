@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.chromab"
+    name="Aberração Cromática (Blurrr)"
+    name-en="Chromatic Aberration (Blurrr)"
+    desc="Fringe de cor nas bordas, mais forte longe do centro."
+    desc-en="Color fringing at the edges, stronger away from center."
+    category="blur"
+    tags="blurrr,aberracao,chromatic,fringe,lente,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="strength" label="Intensidade" default="0.02" min="0.0" max="0.15" step="0.001" />
+        <slider id="power"    label="Queda" default="2.0" min="1.0" max="5.0" step="0.1" />
+        <point  id="center"   label="Centro" default-x="0.5" default-y="0.5" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec2 p = acScreenNorm - center;
+    float r = length(p);
+    float k = pow(r, power) * strength;
+    vec2 dir = (r > 1e-5) ? p / r : vec2(0.0);
+
+    float cr = texture(inputImg, acScreenNorm + dir * k * 1.0).r;
+    float cg = texture(inputImg, acScreenNorm + dir * k * 0.5).g;
+    float cb = texture(inputImg, acScreenNorm + dir * k * 0.0).b;
+    float a  = texture(inputImg, acScreenNorm).a;
+    fragColor = vec4(cr, cg, cb, a);
+}
+    ]]></shader>
+</effect>

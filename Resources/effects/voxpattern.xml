@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VOX PATTERN — o Vox Pattern (Grape) do After Effects, medido no plugin (0.422.0)
+  ============================================================================
+
+  Pedido do snow (06/10/2026): "agora o vox e faça 3d também... faça o benchmark". Medido no plugin
+  dele (matchName "Grape_VoxPattern"), numa instância separada do AE: 310 renders em 16 bits —
+  cada tipo de elemento, cada controle, quatro tamanhos de composição e câmera na composição
+  parada, perto, longe, deslocada e girada (tools/vox/benchmark/).
+
+  O QUE FOI MEDIDO (S = Spacing; unidades = px da composição):
+
+  - É uma grade 3D sem fim, fixa no MUNDO, com a câmera DENTRO dela. Os pontos da grade ficam em
+    canto + S/2 + (i, j, k) · S, com canto = (50 − Offset X, 50 − Offset Y, −Offset Z). Rotation
+    (ordem Z·Y·X) e Scale giram e esticam a grade em volta desse canto.
+  - Sem câmera na composição, o olho fica na ORIGEM do mundo (o canto do quadro, z = 0) olhando
+    para +z, com 60° de campo vertical (foco = 0,866 × altura).
+  - Com câmera, o plugin usa a posição e o giro dela, mas com foco = zoom × altura / 1920 — NÃO é
+    o campo de visão da câmera do AE. Repetido aqui (o raio da câmera do Nova é alargado por
+    1920 / altura) para dar a mesma imagem. E o canto da grade é aplicado nos eixos da câmera.
+  - Os cinco tipos: Lines (retas ao longo de X), Grid (retas nos três eixos), Dots (esferas de
+    raio Scale/2 × 1,05), Crosses (três braços de meio-comprimento Scale/2; com Cross Width são
+    caixas dessa largura, sem ele um fio de 1,17 px) e Cubes (lado = Scale, brancos, sem luz).
+    As retas têm largura Scale + 0,6 px de cada lado.
+  - Depth: pontos e cubos somem além do PLANO z = Depth; as cruzes, além do RAIO Depth em volta
+    do olho. Depth Fade: opacidade linear nos últimos `fade` antes do Depth, no eixo da câmera.
+    Os três braços da cruz são pintados um por cima do outro (no cruzamento: 1 − (1 − a)³).
+  - Crop: seis planos a partir do canto da grade (−X corta abaixo de canto − valor; +X acima de
+    canto + valor), nos eixos da câmera (Camera View) ou nos do mundo; Fade amacia para fora.
+  - Random: Visibility esconde essa fração; Opacity tira até essa fração; Color troca por uma cor
+    sorteada; Scale varia o tamanho em ±0,6 × valor (mínimo 0,1×).
+
+  QUANTO BATE (GPU do PC × AE, 305 casos): as imagens são quase todas pretas, então o erro é dado
+  em relação à TINTA de cada caso. Nos 239 casos sem sorteio, o erro mediano é 12% da tinta (0,29%
+  do quadro) e 233 ficam abaixo de 30%. Nos 66 com Random o desenho é outro por construção: bate a
+  estatística, não o elemento.
+
+  FORA / DIFERENTE: Max Elements (aqui o limite é de 64 células por raio); Random Position fica
+  dentro da própria célula (no plugin espalha a grade inteira); a Phase anima o sorteio, mas não
+  igual; elementos maiores que a célula (Scale > Spacing) são cortados na divisa; o Crop −Z/+Z com
+  Camera View desligado e câmera na composição não bateu.
+-->
+<effect
+    id="nova.effect.voxpattern"
+    name="Vox Pattern"
+    name-en="Vox Pattern"
+    desc="O Vox Pattern do After Effects: uma grade 3D infinita de linhas, pontos, cruzes ou cubos, vista de dentro pela câmera."
+    desc-en="After Effects' Vox Pattern: an endless 3D lattice of lines, dots, crosses or cubes, seen from inside by the camera."
+    category="generate"
+    tags="vox,vox pattern,voxpattern,grape,grade,grid,3d,cruz,cruzes,cross,crosses,pontos,dots,cubos,cubes,linhas,lines,hud,sci-fi,padrao,padrão,pattern,lattice,estrelas,tunel,túnel">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="patternType" group="Pattern" label="Pattern Type" default="1" options="Lines|Grid|Dots|Crosses|Cubes" />
+        <slider id="spacing" group="Pattern" label="Spacing" default="500.0" min="1.0" max="10000.0" step="1.0" snap="500.0" />
+        <slider id="elementScale" group="Pattern" label="Scale" default="10.0" min="0.1" max="1000.0" step="0.1" snap="10.0" />
+        <slider id="depth" group="Pattern" label="Depth" default="3000.0" min="1.0" max="10000.0" step="1.0" snap="3000.0" />
+
+        <color id="color" group="Appearance" label="Color" default="#FFFFFFFF" />
+        <slider id="opacity" group="Appearance" label="Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <slider id="depthFade" group="Appearance" label="Depth Fade" default="500.0" min="0.0" max="50000.0" step="1.0" snap="500.0" />
+        <slider id="crossWidth" group="Appearance" label="Cross Width" default="0.0" min="0.0" max="500.0" step="0.1" snap="0.0" />
+
+        <slider id="rotationX" group="Transform" label="Rotation X" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="rotationY" group="Transform" label="Rotation Y" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="rotationZ" group="Transform" label="Rotation Z" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <switch id="uniformScale" group="Transform" label="Uniform Scale" default="true" />
+        <slider id="scaleX" group="Transform" label="Scale X" default="100.0" min="30.0" max="1000.0" step="1.0" snap="100.0" />
+        <slider id="scaleY" group="Transform" label="Scale Y" default="100.0" min="30.0" max="1000.0" step="1.0" snap="100.0" />
+        <slider id="scaleZ" group="Transform" label="Scale Z" default="100.0" min="30.0" max="1000.0" step="1.0" snap="100.0" />
+        <point id="offsetXY" group="Transform" label="Offset XY" defaultX="0.5" defaultY="0.5" />
+        <slider id="offsetZ" group="Transform" label="Offset Z" default="0.0" min="-10000.0" max="10000.0" step="1.0" snap="0.0" />
+
+        <slider id="seed" group="Random" label="Seed" type="integer" default="0.0" min="0.0" max="10000.0" step="1.0" snap="0.0" />
+        <slider id="randomPosition" group="Random" label="Position" default="0.0" min="0.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="randomScale" group="Random" label="Scale" default="0.0" min="0.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="randomRotation" group="Random" label="Rotation" type="angle" default="0.0" min="0.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="randomVisibility" group="Random" label="Visibility" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="randomColor" group="Random" label="Color" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="randomOpacity" group="Random" label="Opacity" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="phase" group="Random" label="Phase" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+
+        <switch id="cameraView" group="Crop" label="Camera View" default="true" />
+        <switch id="cropXn" group="Crop" label="Crop -X" default="false" />
+        <slider id="xn" group="Crop" label="-X" default="0.0" min="-5000.0" max="5000.0" step="1.0" snap="0.0" />
+        <switch id="cropXp" group="Crop" label="Crop +X" default="false" />
+        <slider id="xp" group="Crop" label="+X" default="0.0" min="-5000.0" max="5000.0" step="1.0" snap="0.0" />
+        <switch id="cropYn" group="Crop" label="Crop -Y" default="false" />
+        <slider id="yn" group="Crop" label="-Y" default="0.0" min="-5000.0" max="5000.0" step="1.0" snap="0.0" />
+        <switch id="cropYp" group="Crop" label="Crop +Y" default="false" />
+        <slider id="yp" group="Crop" label="+Y" default="0.0" min="-5000.0" max="5000.0" step="1.0" snap="0.0" />
+        <switch id="cropZn" group="Crop" label="Crop -Z" default="false" />
+        <slider id="zn" group="Crop" label="-Z" default="0.0" min="-5000.0" max="5000.0" step="1.0" snap="0.0" />
+        <switch id="cropZp" group="Crop" label="Crop +Z" default="false" />
+        <slider id="zp" group="Crop" label="+Z" default="0.0" min="-5000.0" max="5000.0" step="1.0" snap="0.0" />
+        <slider id="cropFade" group="Crop" label="Fade" default="0.0" min="0.0" max="5000.0" step="1.0" snap="0.0" />
+
+        <switch id="compositeOnOriginal" group="Render Settings" label="Composite on Original" default="false" />
+    </params>
+
+    <shader><![CDATA[
+// Medidos no plugin (tools/vox/benchmark):
+const float FOCO = 0.8660254;          // sem câmera na composição: o foco, em alturas do quadro (60° de campo vertical)
+const int PASSOS = 64;        // quantas células da grade o raio atravessa, no máximo
+
+vec2 tamanho() { return vec2(textureSize(inputImg, 0)); }
+
+mat3 giro() {
+    vec3 a = radians(vec3(rotationX, rotationY, rotationZ));
+    vec3 s = sin(a), c = cos(a);
+    mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);
+    mat3 ry = mat3(c.y, 0.0, -s.y, 0.0, 1.0, 0.0, s.y, 0.0, c.y);
+    mat3 rz = mat3(c.z, s.z, 0.0, -s.z, c.z, 0.0, 0.0, 0.0, 1.0);
+    return rz * ry * rx;
+}
+
+/**
+ * Quanto do pixel o segmento (centro c, eixo e, meio-comprimento L, raio r + `folga` px) cobre; t = a
+ * distância no raio. As pontas são retas.
+ */
+float segmento(vec3 ro, vec3 rd, vec3 c, vec3 e, float L, float r, float ang, float folga, out float t) {
+    vec3 w = ro - c;
+    float b = dot(rd, e), dd = dot(rd, w), ee = dot(e, w);
+    float den = max(1.0 - b * b, 1e-6);
+    float s = (ee - b * dd) / den;                     // onde, na reta do segmento, o raio passa mais perto
+    vec3 q = c + e * s;
+    t = dot(q - ro, rd);
+    if (t <= 0.0) return 0.0;
+    float px = t * ang;
+    float dist = length(ro + rd * t - q);
+    // (medido: a linha fina nunca some — tem pelo menos 1.17 px de largura)
+    float lado = clamp((max(r, 0.5 * 1.17 * px) + folga * px - dist) / px + 0.5, 0.0, 1.0);
+    float ponta = clamp((L - abs(s)) / (px / max(sqrt(den), 0.05)) + 0.5, 0.0, 1.0);
+    return lado * ponta;
+}
+
+float esfera(vec3 ro, vec3 rd, vec3 c, float r, float ang, out float t) {
+    vec3 oc = c - ro;
+    t = dot(oc, rd);
+    if (t <= 0.0) return 0.0;
+    float px = t * ang;
+    return clamp((r - sqrt(max(dot(oc, oc) - t * t, 0.0))) / px + 0.5, 0.0, 1.0);
+}
+
+float caixa(vec3 ro, vec3 rd, vec3 c, vec3 h, out float t) {
+    vec3 inv = 1.0 / (abs(rd) + 1e-9) * sign(rd + 1e-12);
+    vec3 a = (c - h - ro) * inv, b = (c + h - ro) * inv;
+    vec3 mn = min(a, b), mx = max(a, b);
+    float t0 = max(mn.x, max(mn.y, mn.z)), t1 = min(mx.x, min(mx.y, mx.z));
+    t = t0;
+    return t1 >= max(t0, 0.0) ? 1.0 : 0.0;
+}
+
+/** Um sorteio 0..1 por elemento e por canal; a Phase faz ele andar devagar, sem pular. */
+float sorteio(vec3 cel, float canal) {
+    vec3 p = fract((cel + vec3(seed * 0.731, seed * 1.377, canal * 7.13)) * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    float h = fract((p.x + p.y) * p.z), h2 = fract((p.x + p.z) * p.y);
+    return abs(fract(h + phase / 360.0 * (0.3 + 0.7 * h2)) * 2.0 - 1.0);
+}
+
+mat3 giroDe(vec3 graus) {
+    vec3 a = radians(graus), s = sin(a), c = cos(a);
+    return mat3(c.z, s.z, 0.0, -s.z, c.z, 0.0, 0.0, 0.0, 1.0) * mat3(c.y, 0.0, -s.y, 0.0, 1.0, 0.0, s.y, 0.0, c.y) * mat3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);
+}
+
+/** Um plano do Crop: 1 dentro, caindo a 0 ao longo de `cropFade` para fora. `d` = quanto o ponto está para dentro. */
+float corte(bool ligado, float d) {
+    if (!ligado) return 1.0;
+    return cropFade > 0.5 ? clamp(d / cropFade + 1.0, 0.0, 1.0) : step(0.0, d);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec4 orig = texture(inputImg, uv);
+    vec2 R = tamanho() / acEscalaDePixel;               // o quadro em px da composição: a unidade do mundo
+    vec2 p = uv * R;
+
+    // O RAIO. Medido: sem câmera na composição, o olho do plugin fica na ORIGEM do mundo (o canto do
+    // quadro, z = 0) olhando para +z, com 60° de campo vertical, e o centro da imagem é o eixo dele.
+    // Com câmera, ele usa a posição e o giro dela, mas com o foco = zoom × altura / 1920 (não é o
+    // campo de visão da câmera do AE — repetido aqui para dar a mesma imagem).
+    vec3 ro, rd, frente, direita, baixo;
+    if (acCamera3D == 1) {
+        vec2 tela = acTela(uv);
+        vec3 dc = (acCameraInvVP * vec4(0.0, 0.0, 1.0, 1.0)).xyz;
+        vec3 dx = (acCameraInvVP * vec4(1.0, 0.0, 1.0, 1.0)).xyz - dc, dy = (acCameraInvVP * vec4(0.0, -1.0, 1.0, 1.0)).xyz - dc;
+        dc -= acCameraOlhoNova;
+        frente = normalize(dc); direita = normalize(dx); baixo = normalize(dy);
+        rd = dc + (dx * (tela.x * 2.0 - 1.0) + dy * (tela.y * 2.0 - 1.0)) * (1920.0 / R.y);
+        ro = acCameraOlho;
+    } else {
+        ro = vec3(0.0);
+        frente = vec3(0.0, 0.0, 1.0); direita = vec3(1.0, 0.0, 0.0); baixo = vec3(0.0, 1.0, 0.0);
+        rd = vec3(p - 0.5 * R, FOCO * R.y);
+    }
+    rd = normalize(rd);
+    float ang = max(length(dFdx(rd)), length(dFdy(rd)));        // o tamanho angular de um pixel
+
+    // A GRADE, no espaço dela: gira e estica em volta do canto da grade (medido: 50 − Offset em X e Y, −Offset Z).
+    float S = max(spacing, 1.0);
+    vec3 esc = (uniformScale ? vec3(scaleX) : vec3(scaleX, scaleY, scaleZ)) / 100.0;
+    mat3 M = giro();
+    // (medido com a câmera girada: o plugin aplica esse canto nos eixos da CÂMERA, não nos do mundo)
+    vec3 canto = vec3(50.0 - offsetXY * R, -offsetZ);
+    vec3 pivo = direita * canto.x + baixo * canto.y + frente * canto.z;
+    vec3 o = transpose(M) * (ro - pivo) / esc + pivo;
+    vec3 d = transpose(M) * rd / esc;
+    float estica = length(d);                                  // (unidades da grade por unidade do mundo, ao longo do raio)
+    d /= estica;
+    float angG = ang * estica;
+    vec3 base = pivo + 0.5 * S;                                // os pontos da grade: de S em S a partir daqui
+
+    vec3 cel = floor((o - base) / S + 0.5);
+    vec3 passo = sign(d + 1e-12);
+    vec3 inv = 1.0 / (abs(d) + 1e-9) * passo;
+    vec3 tProx = ((cel + 0.5 * passo) * S + base - o) * inv;
+    vec3 tDelta = abs(S * inv);
+    vec3 acum = vec3(0.0); float alfa = 0.0;
+    float tCel = 0.0;
+    bool aleatorio = randomPosition + randomScale + randomRotation + randomVisibility + randomColor + randomOpacity > 0.0;
+    for (int n = 0; n < PASSOS; n++) {
+        if (tCel / estica > depth * 1.8 + 2.0 * S || alfa > 0.995) break;
+        vec3 c = cel * S + base;
+        float raio = 0.5 * elementScale, a0 = opacity / 100.0;
+        vec3 cor = color.rgb;
+        mat3 G = mat3(1.0);
+        bool some = false;
+        if (aleatorio) {
+            // Random (as faixas foram medidas com pontos; o sorteio em si é outro)
+            some = sorteio(cel, 1.0) < randomVisibility / 100.0;
+            raio *= max(0.1, 1.0 + (2.0 * sorteio(cel, 2.0) - 1.0) * 0.6 * randomScale / 100.0);
+            a0 *= 1.0 - sorteio(cel, 3.0) * randomOpacity / 100.0;
+            cor = mix(cor, vec3(sorteio(cel, 4.0), sorteio(cel, 5.0), sorteio(cel, 6.0)), randomColor / 100.0);
+            // (a posição sorteada fica dentro da própria célula — é o que o raio consegue achar)
+            vec3 desvio = vec3(sorteio(cel, 7.0), sorteio(cel, 8.0), sorteio(cel, 9.0)) * 2.0 - 1.0;
+            c += desvio * min(randomPosition / 100.0, 1.0) * max(0.5 * S - raio, 0.0);
+            if (randomRotation > 0.0) G = giroDe((vec3(sorteio(cel, 10.0), sorteio(cel, 11.0), sorteio(cel, 12.0)) * 2.0 - 1.0) * randomRotation * 2.0);
+        }
+        vec3 doOlho = M * ((c - pivo) * esc) + pivo - ro;       // o elemento, visto do olho, no mundo
+        float longe = length(doOlho), z = dot(doOlho, frente);
+        // Crop (medido): planos a partir do canto da grade, no espaço da câmera (Camera View) ou no do mundo
+        vec3 pc = cameraView ? vec3(dot(doOlho, direita), dot(doOlho, baixo), z) : doOlho + ro;
+        float recorte = corte(cropXn, pc.x - (canto.x - xn)) * corte(cropXp, (canto.x + xp) - pc.x)
+                      * corte(cropYn, pc.y - (canto.y - yn)) * corte(cropYp, (canto.y + yp) - pc.y)
+                      * corte(cropZn, pc.z - (canto.z - zn)) * corte(cropZp, (canto.z + zp) - pc.z);
+        // Depth Fade (medido): linear nos últimos `fade` antes do Depth, contado no eixo da câmera
+        float some2 = clamp((depth - z) / max(depthFade, 1e-3), 0.0, 1.0) * a0 * recorte;
+        if (!some && z > 0.0 && z < depth && some2 > 0.0) {
+            float t;
+            vec3 ol = transpose(G) * (o - c) + c, dl = transpose(G) * d;       // o raio no espaço do elemento
+            if (patternType == 2) {
+                float a = esfera(o, d, c, raio * 1.05, angG, t) * some2;
+                acum += (1.0 - alfa) * a * cor; alfa += (1.0 - alfa) * a;
+            } else if (patternType == 4) {
+                float a = caixa(ol, dl, c, vec3(raio), t) * some2;
+                acum += (1.0 - alfa) * a * cor; alfa += (1.0 - alfa) * a;
+            } else if (patternType == 3 && longe < depth) {
+                // CRUZ: três braços nos eixos, cada um pintado por cima do outro (medido: no cruzamento a
+                // opacidade é 1 − (1 − a)³). Com Cross Width são caixas de ponta reta; sem, um fio de
+                // largura fixa na tela. Medido: a cruz some além do Depth em RAIO, não em plano.
+                float h = 0.5 * crossWidth;
+                bool grosso = h > 0.75 * max(dot(c - o, d), 0.0) * angG;
+                for (int e = 0; e < 3; e++) {
+                    vec3 eixo = e == 0 ? vec3(1.0, 0.0, 0.0) : e == 1 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
+                    float a = (grosso ? caixa(ol, dl, c, eixo * (raio - h) + h, t) : segmento(ol, dl, c, eixo, raio, h, angG, 0.0, t)) * some2;
+                    acum += (1.0 - alfa) * a * cor; alfa += (1.0 - alfa) * a;
+                }
+            }
+        }
+        if (patternType < 2) {
+            // LINHAS (só em X) e GRADE (nos três eixos): retas inteiras pelos pontos da grade, de largura
+            // = Scale, com 0.6 px a mais de cada lado (medido).
+            for (int e = 0; e < 3; e++) {
+                if (patternType == 0 && e != 0) break;
+                vec3 eixo = e == 0 ? vec3(1.0, 0.0, 0.0) : e == 1 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
+                float t;
+                float a = segmento(o, d, c, eixo, 0.5 * S, 0.5 * elementScale, angG, 0.6, t);
+                if (a <= 0.0) continue;
+                vec3 q = M * ((o + d * t - pivo) * esc) + pivo - ro;
+                float zq = dot(q, frente);
+                if (zq <= 0.0 || length(q) > depth) continue;
+                a *= clamp((depth - zq) / max(depthFade, 1e-3), 0.0, 1.0) * opacity / 100.0;
+                acum += (1.0 - alfa) * a * color.rgb; alfa += (1.0 - alfa) * a;
+            }
+        }
+        // anda para a próxima célula
+        if (tProx.x < tProx.y && tProx.x < tProx.z) { tCel = tProx.x; tProx.x += tDelta.x; cel.x += passo.x; }
+        else if (tProx.y < tProx.z) { tCel = tProx.y; tProx.y += tDelta.y; cel.y += passo.y; }
+        else { tCel = tProx.z; tProx.z += tDelta.z; cel.z += passo.z; }
+    }
+    vec4 saida = vec4(alfa > 0.0 ? acum / alfa : vec3(0.0), alfa);
+    if (compositeOnOriginal) {
+        float a = saida.a + orig.a * (1.0 - saida.a);
+        saida = vec4(a > 0.0 ? (saida.rgb * saida.a + orig.rgb * orig.a * (1.0 - saida.a)) / a : vec3(0.0), a);
+    }
+    fragColor = saida;
+}
+]]></shader>
+</effect>

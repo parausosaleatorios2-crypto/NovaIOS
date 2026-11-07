@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Desfoque direcional: borra só num eixo.
+
+  É o desfoque que imita movimento. Um desfoque gaussiano espalha para todos os
+  lados e parece "fora de foco"; este espalha numa direção só e parece
+  "andando rápido" — que é uma leitura completamente diferente para o olho.
+-->
+<effect
+    id="nova.effect.directionalblur"
+    name="Desfoque direcional"
+    name-en="Directional Blur"
+    desc="Borra a imagem numa direção só, como um objeto em movimento."
+    desc-en="Blur along one direction — the classic motion streak."
+    category="blur"
+    tags="desfoque,movimento,motion blur,velocidade,rastro,direcao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="angle" label="Direção"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,90.0,-90.0" />
+
+        <slider id="reach" label="Comprimento"
+                default="40.0" min="0.0" max="400.0" step="1.0" snap="0.0" />
+
+        <!-- Escondida (pedido do snow, 25/09/2026): sempre no máximo agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <slider id="quality" label="Amostras" hidden="true"
+                default="48.0" min="2.0" max="48.0" step="1.0" type="integer" />
+
+        <switch id="trail" label="Rastro para um lado só" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+const int MAX_TAPS = 48;
+
+void main() {
+    float rad = radians(angle);
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 stride = vec2(cos(rad), sin(rad)) * (reach * acEscalaDePixel) * acTexelSize;
+
+    int taps = clamp(int(quality + 0.5), 1, MAX_TAPS);
+    if (taps == 1 || reach <= 0.0) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+
+    vec4 total = vec4(0.0);
+    for (int i = 0; i < MAX_TAPS; i++) {
+        if (i >= taps) break;
+        float t = float(i) / float(taps - 1);
+        // Centrado borra dos dois lados (parece fora de foco em movimento);
+        // rastro puxa só para trás (parece velocidade com direção).
+        float offset = trail ? -t : (t - 0.5);
+        total += texture(inputImg, clamp(acScreenNorm + stride * offset, 0.0, 1.0));
+    }
+
+    fragColor = total / float(taps);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,788 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CAMPO DE ESTRELAS
+  ============================================================================
+
+  Estrelas com PARALAXE: as de perto correm, as de longe quase não se mexem. É a
+  paralaxe que dá a sensação de profundidade — sem ela, um campo de estrelas é
+  um papel de parede deslizando.
+
+  ============================================================================
+   COMO SE DESENHAM MILHARES DE ESTRELAS SEM TER UMA LISTA DELAS
+  ============================================================================
+
+  Não se guarda estrela nenhuma. O plano é dividido em células, e cada célula
+  sorteia — de um jeito reprodutível, a partir do próprio índice — se tem uma
+  estrela, onde dentro da célula ela fica, o tamanho e o brilho dela.
+
+  A conta é local: cada pixel olha só a própria célula e as oito vizinhas, e isso
+  basta porque uma estrela nunca é maior que uma célula. Dez mil estrelas custam
+  o mesmo que dez.
+
+  ============================================================================
+   TRÊS MODOS — DOIS DE ILUSÃO 2D, UM DE GEOMETRIA DE VERDADE
+  ============================================================================
+
+  - **Deslizar** — o campo anda numa direção. É o céu visto de um carro.
+  - **Atravessar** — as estrelas saem do centro e aceleram em direção à borda.
+    É a viagem espacial, e ela precisa de uma conta diferente: a velocidade
+    cresce com a distância ao centro, senão o efeito parece um zoom. É uma
+    ILUSÃO 2D: cada estrela é um ponto num esquema log-polar que cresce e
+    brilha mais perto da borda — não existe posição (x, y, z) nenhuma.
+  - **Atravessar 3D** — pedido explícito do snow em 26/09/2026 depois de ouvir
+    que "o motor não tem geometria de partícula pra isso": agora tem. Cada
+    estrela é um QUAD DE VERDADE, desenhado por instancing
+    (`glDrawArraysInstanced`, ver `EffectManifest.PassKind.INSTANCED`), com
+    posição (x, y, profundidade) calculada no VÉRTICE — não no fragmento. A
+    profundidade encolhe com o tempo (`fract()`, sem estado entre quadros: um
+    corte no meio do voo continua instantâneo) e a projeção em perspectiva
+    de verdade (`posição / profundidade`) é o que faz a estrela crescer e se
+    espalhar ao se aproximar, em vez de só multiplicar um tamanho por uma
+    fórmula que finge distância. Ver o passe `kind="instanced"` abaixo.
+
+  Enxugado em 22/09/2026 (o do Alight Motion tem quatro controles): as camadas
+  de profundidade ficaram em 3 e a variação de cor em 0,35, e a mistura com a
+  camada passou a ser a do motor.
+
+  ============================================================================
+   CORES POR ESTRELA, E ESTRELAS BRILHANTES (pedido do snow, com foto de
+   referência: um campo denso de pontinhos brancos, algumas estrelas grandes
+   e coloridas com halo (a laranja, a azul), e poeira quente ao fundo)
+  ============================================================================
+
+  Até aqui toda estrela tinha a MESMA cor, só que mais quente ou mais fria
+  conforme o próprio brilho — o céu saía uniforme. Um céu de verdade tem
+  estrelas de cor bem diferente lado a lado (azuis, brancas, amareladas,
+  laranjas, vermelhas — a temperatura de cada uma, não a distância). Agora
+  cada estrela sorteia sua cor numa paleta com o mesmo peso de uma população
+  estelar real: a maioria branca/amarela, poucas azuis, algumas laranja e
+  vermelhas. `colorVariety` mistura entre o tom antigo (0) e a paleta rica
+  (1) — pensado pra quem já usava o efeito poder manter o visual de antes.
+
+  As "estrelas brilhantes" são uma segunda camada, bem mais rala e bem maior,
+  com DOIS raios de queda (um núcleo apertado + um halo largo e fraco) —
+  é o halo que faz uma estrela parecer BRILHAR, e não só "ser um ponto maior".
+  `heroDensity` começa em 0 (nenhuma) para não mudar quem já tinha o efeito
+  aplicado; a predefinição "Nebulosa quente" liga tudo de uma vez.
+
+  A poeira/névoa ao fundo: até 06/10/2026 era o efeito "Nuvens" empilhado
+  abaixo; agora é o grupo "Nebulosa" deste efeito (ver "O CÉU PROFUNDO" acima).
+-->
+<!--
+  ============================================================================
+   O CÉU PROFUNDO (06/10/2026, com o vídeo de referência do snow)
+  ============================================================================
+
+  O "Deslizar" foi refeito para o estilo do vídeo: milhares de pontinhos de UM
+  pixel (medidos: ~1400 por altura², 7% passando de 150 de brilho — lei de
+  potência, quase todos neutros), poucas estrelas fortes coloridas com um brilho
+  suave e SEM espigas, manchinhas difusas de aglomerados distantes e uma
+  nebulosa marrom/azul-petróleo de contraste baixíssimo (±6 níveis) sobre um
+  fundo marrom-escuro. O movimento é uma deriva diagonal com paralaxe forte: a
+  camada de perto anda ~4× a de longe. A nebulosa agora mora AQUI (antes era o
+  efeito Nuvens empilhado), e vale nos três modos. As espigas viraram um
+  controle (padrão 0). Benchmark em `tools/starfield/`.
+-->
+<effect
+    id="nova.effect.starfield"
+    name="Campo de estrelas"
+    name-en="Starfield"
+    desc="Estrelas com paralaxe: deslizando pelo céu ou atravessando o espaço."
+    desc-en="Parallax stars, twinkling, drifting or flying past."
+    category="procedural"
+    blend="mode"
+    tags="estrelas,espaço,céu,paralaxe,gerador,noite,nebulosa,galáxia">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Onde o passe instanciado desenha as partículas 3D — só existe
+             (e só é lido) quando mode=2. Tamanho cheio (sem `scale`): um
+             ponto de estrela reamostrado por um buffer menor perde o brilho
+             concentrado que faz ele ler como PONTO, não como mancha. -->
+        <texture id="particulas3d" src="buffer" />
+
+        <slider id="density" label="Quantidade"
+                default="0.5" min="0.05" max="1.0" step="0.01" />
+        <slider id="speed" label="Velocidade"
+                default="0.12" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <selector id="mode" label="Movimento" default="0"
+                  options="Deslizar|Atravessar|Atravessar 3D" />
+
+        <!-- ============================ Estrelas =========================== -->
+        <slider id="starSize" group="Estrelas" label="Tamanho"
+                default="0.5" min="0.05" max="2.0" step="0.01" />
+        <slider id="twinkle" group="Estrelas" label="Cintilação"
+                default="0.15" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="colorVariety" group="Estrelas" label="Variedade de cor"
+                default="0.6" min="0.0" max="1.0" step="0.01" />
+        <slider id="depthLayers" group="Estrelas" label="Camadas de profundidade"
+                default="3" min="2" max="5" step="1" type="integer" />
+        <color id="starColor" group="Estrelas" label="Cor base" default="#FFFFFFFF" />
+
+        <!-- ===================== Estrelas brilhantes ====================== -->
+        <slider id="heroDensity" group="Estrelas brilhantes" label="Quantidade"
+                default="0.5" min="0.0" max="1.0" step="0.005" snap="0.0" />
+        <slider id="heroSize" group="Estrelas brilhantes" label="Tamanho"
+                default="1.0" min="0.2" max="3.0" step="0.01" />
+        <slider id="heroGlow" group="Estrelas brilhantes" label="Brilho do halo"
+                default="1.0" min="0.0" max="3.0" step="0.01" />
+        <slider id="heroSpikes" group="Estrelas brilhantes" label="Espigas"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ============================ Nebulosa =========================== -->
+        <slider id="nebula" group="Nebulosa" label="Quantidade"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="nebulaScale" group="Nebulosa" label="Tamanho"
+                default="1.0" min="0.3" max="3.0" step="0.01" />
+        <color id="nebulaWarm" group="Nebulosa" label="Cor quente" default="#FF9A5A3A" />
+        <color id="nebulaCool" group="Nebulosa" label="Cor fria" default="#FF3E6A86" />
+        <slider id="clusters" group="Nebulosa" label="Aglomerados"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+
+        <!-- ============================== Céu ============================== -->
+        <color id="skyColor" group="Céu" label="Cor do céu" default="#FF15100F" />
+        <slider id="angle" group="Céu" label="Direção (deslizar)"
+                default="27.0" min="0.0" max="360.0" step="1.0" type="angle" />
+
+        <!-- ========================= Atravessar 3D ========================= -->
+        <!-- Só aparece no modo 3D: é a única coisa que o 2D não tinha e o 3D
+             precisa perguntar — quantas partículas de verdade desenhar. As
+             outras sensações (tamanho, cintilação, velocidade, cor) reusam os
+             sliders de "Estrelas" de cima; um controle novo por parâmetro que
+             já existe seria pedir duas vezes a mesma coisa. -->
+        <slider id="starCount3D" group="Atravessar 3D" label="Quantidade de partículas"
+                default="220" min="20" max="600" step="10" type="integer" showIf="mode=2" />
+    </params>
+
+    <presets>
+        <preset id="warmNebula" name="🌌 Nebulosa quente" name-en="🌌 Warm Nebula">
+            <value param="density" value="0.9" />
+            <value param="speed" value="0.05" />
+            <value param="starSize" value="0.5" />
+            <value param="twinkle" value="0.25" />
+            <value param="colorVariety" value="0.85" />
+            <!-- 5 camadas (o máximo): é a diferença entre "algumas estrelas
+                 espalhadas" e "um fundo tomado de pontinhos", como numa foto
+                 de exposição longa de verdade — a camada extra é bem mais
+                 fina e mais fraca (a progressão de escala/peso já existente
+                 cuida disso sozinha, sem parâmetro novo). -->
+            <value param="depthLayers" value="5" />
+            <value param="heroDensity" value="0.05" />
+            <value param="heroSize" value="1.3" />
+            <value param="heroGlow" value="1.4" />
+            <!-- A poeira agora é deste efeito (não mais o Nuvens empilhado): carregada e quente. -->
+            <value param="nebula" value="2.2" />
+            <value param="nebulaScale" value="1.4" />
+        </preset>
+    </presets>
+
+    <!--
+      ============================================================================
+       O PASSE INSTANCIADO — SÓ DESENHA QUANDO mode=2, MAS SEMPRE EXISTE
+      ============================================================================
+
+      Um passe instanciado não compartilha o `<shader>` lá embaixo — tem o
+      próprio par de vértice/fragmento, porque o vértice dele faz uma conta
+      que nenhum outro passe deste motor faz: uma posição POR INSTÂNCIA, a
+      partir de `gl_InstanceID`, não "cobre o alvo inteiro". Ver o comentário
+      grande em `ShaderPrelude.buildInstancedVertexShader`.
+
+      Ele desenha em `particulas3d` (o buffer transparente declarado acima)
+      incondicionalmente, TODO quadro — mesmo fora do modo 3D. Rodar um passe
+      a mais nos outros dois modos custa GPU à toa; a alternativa (um "if"
+      dentro do motor pulando o passe por parâmetro) exigiria um jeito de um
+      passe se desativar sozinho, que este motor não tem e não vale a pena
+      criar só para isto — o passe final abaixo só LÊ esse buffer quando
+      mode=2, e sobra invisível (o buffer nasce transparente) nos outros dois.
+      Uma limpeza futura, se o custo incomodar num efeito com mais partículas,
+      seria um <pass> condicional — não este.
+    -->
+    <passes>
+        <pass kind="instanced" target="particulas3d" countParam="starCount3D" blend="additive">
+            <vertex><![CDATA[
+
+/**
+ * Um hash de UM float só (o índice da instância) — não precisa de vec2/vec3
+ * de entrada porque a única "posição" de origem de uma estrela É o índice
+ * dela. Multiplicar por constantes irracionais diferentes antes de chamar
+ * dá números praticamente independentes pro x, pro y, pra fase etc. — a
+ * mesma ideia de `hash3` do fragmento principal, adaptada pra 1 entrada.
+ */
+float hash13(float p) {
+    vec3 p3 = fract(vec3(p) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+/** A MESMA paleta do fragmento principal — duplicada, não compartilhada: um
+ *  passe instanciado é um programa GLSL à parte, sem jeito de incluir código
+ *  de outro shader neste motor (ver ShaderPrelude). */
+vec3 corDaEstrela3D(float t) {
+    vec3 azul     = vec3(0.66, 0.78, 1.00);
+    vec3 branca   = vec3(1.00, 1.00, 1.00);
+    vec3 amarela  = vec3(1.00, 0.92, 0.70);
+    vec3 laranja  = vec3(1.00, 0.68, 0.40);
+    vec3 vermelha = vec3(1.00, 0.42, 0.32);
+
+    if (t < 0.10) return azul;
+    if (t < 0.65) return branca;
+    if (t < 0.85) return amarela;
+    if (t < 0.95) return laranja;
+    return vermelha;
+}
+
+const float DIST_LONGE = 6.0;
+const float DIST_PERTO = 0.12;
+
+void main() {
+    vUv = aTexCoord;
+
+    float indice = float(gl_InstanceID);
+    float sx = hash13(indice * 1.618034) * 2.0 - 1.0;
+    float sy = hash13(indice * 3.141593 + 7.0) * 2.0 - 1.0;
+    float faseInicial = hash13(indice * 2.718282 + 19.0);
+    float tempPaleta = hash13(indice * 9.973 + 41.0);
+    float faseTwinkle = hash13(indice * 5.443 + 61.0) * 6.2831853;
+
+    /*
+     * A PROFUNDIDADE CICLA — nasce longe, cresce vindo pra câmera, e some
+     * pra renascer longe de novo — só com `fract()` num valor que cresce com
+     * o tempo. Nenhum buffer, nenhum estado de um quadro pro outro: pular
+     * pra qualquer instante da timeline dá a MESMA posição que chegar lá
+     * tocando o vídeo do começo, porque a conta não lembra de nada, só lê
+     * `acTime` de agora.
+     */
+    float ciclo = fract(faseInicial + acTime * speed * 0.12);
+    float profundidade = mix(DIST_LONGE, DIST_PERTO, ciclo);
+
+    /*
+     * PROJEÇÃO EM PERSPECTIVA DE VERDADE: dividir a posição lateral pela
+     * profundidade — não multiplicar um "tamanho" por uma fórmula que finge
+     * distância, que era o que a versão 2D (`perspectiva` no shader
+     * principal) fazia. Aqui `sx`/`sy` são a posição real da estrela no
+     * espaço 3D; quanto mais perto (profundidade pequena), mais ela se
+     * espalha pra fora do centro — exatamente como um objeto de verdade
+     * passando perto de uma câmera.
+     */
+    float fov = 1.4;
+    float ndcX = (sx / profundidade) * fov / acAspect;
+    float ndcY = (sy / profundidade) * fov;
+
+    // Some suave nas duas pontas do ciclo — acabou de nascer (bem longe, gl_Position
+    // ainda quase no centro) e prestes a renascer (bem perto, saindo da tela)
+    // — sem isso, cada estrela "pisca" de existência do nada em vez de
+    // aparecer/sumir aos poucos.
+    float entrando = smoothstep(0.0, 0.06, ciclo);
+    float saindo = 1.0 - smoothstep(0.85, 1.0, ciclo);
+    float envelope = entrando * saindo;
+
+    float tamanhoBase = 0.05 * starSize;
+    float tamanho = clamp(tamanhoBase / profundidade, tamanhoBase * 0.5, tamanhoBase * 12.0);
+
+    // O quad (-1..1) vira o TAMANHO físico da estrela na tela; dividir o
+    // eixo X por acAspect é o que mantém a estrela REDONDA em telas não
+    // quadradas (NDC x e y mapeiam pixels físicos diferentes quando a
+    // largura e a altura do alvo não são iguais).
+    vec2 deslocamento = aPosition * vec2(tamanho / acAspect, tamanho);
+    gl_Position = vec4(ndcX + deslocamento.x, ndcY + deslocamento.y, 0.0, 1.0);
+
+    float pisca = 1.0 - twinkle * 0.4 * (0.5 + 0.5 * sin(acTime * (2.0 + tempPaleta * 4.0) + faseTwinkle));
+    float brilho = clamp(0.6 / profundidade, 0.2, 3.0) * envelope * pisca * starColor.a;
+
+    vCorDaParticula = vec4(corDaEstrela3D(tempPaleta) * starColor.rgb * brilho, brilho);
+}
+
+            ]]></vertex>
+            <fragment><![CDATA[
+
+void main() {
+    // Núcleo apertado + halo largo e fraco — a MESMA ideia das "estrelas
+    // brilhantes" do modo 2D (núcleo + halo é o que faz ler como "brilhando
+    // de verdade", não só "um círculo"), só que aqui o tamanho já veio certo
+    // do vértice — o fragmento só precisa da forma, não de mais nenhuma conta
+    // de distância.
+    vec2 centrado = (vUv - 0.5) * 2.0;
+    float d = length(centrado);
+    float nucleo = exp(-pow(d / 0.45, 1.7));
+    float halo = exp(-d / 0.9) * 0.35;
+    float ponto = nucleo + halo;
+
+    fragColor = vCorDaParticula * ponto;
+}
+
+            ]]></fragment>
+        </pass>
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+vec3 hash3(vec2 c) {
+    // Três números de uma célula: onde a estrela fica (x, y) e o quanto ela
+    // brilha (z). Um hash só, três usos.
+    vec3 p = fract(vec3(c.xyx) * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.xxy + p.yzz) * p.zyx);
+}
+
+/**
+ * A cor de UMA estrela, por temperatura — sorteada à parte do brilho, com o
+ * mesmo peso de uma população estelar de verdade: a maioria branca/amarela,
+ * poucas azuis, algumas laranja e vermelhas. Antes, a cor vinha só do
+ * brilho (fraca = vermelha, forte = azul) e todo céu saía com a MESMA
+ * variação — bonito uma vez, monótono na segunda.
+ */
+vec3 corDaEstrela(float t) {
+    vec3 azul     = vec3(0.66, 0.78, 1.00);
+    vec3 branca   = vec3(1.00, 1.00, 1.00);
+    vec3 amarela  = vec3(1.00, 0.92, 0.70);
+    vec3 laranja  = vec3(1.00, 0.68, 0.40);
+    vec3 vermelha = vec3(1.00, 0.42, 0.32);
+
+    if (t < 0.10) return azul;
+    if (t < 0.65) return branca;
+    if (t < 0.85) return amarela;
+    if (t < 0.95) return laranja;
+    return vermelha;
+}
+
+/**
+ * Uma camada de estrelas, na escala pedida.
+ *
+ * Olha a célula do pixel e as oito ao redor porque uma estrela perto da borda da
+ * célula precisa acender também no vizinho — senão aparece uma grade invisível
+ * cortando as estrelas ao meio.
+ *
+ * `corAcc` recebe a cor de cada estrela já ponderada pelo próprio brilho —
+ * quem chama soma as camadas todas e divide pelo brilho total no final, o
+ * que dá a média certa nas bordas onde duas estrelas se tocam.
+ */
+float camadaDeEstrelas(
+    vec2 p, float escala, float brilhoMin, float tempo, float peso, inout vec3 corAcc,
+    // "3D DE VERDADE, NÃO SÓ PARALAXE" (pedido do snow, 26/09/2026, com
+    // referência do Alight Motion): as duas contas abaixo são o que faz uma
+    // estrela parecer estar se APROXIMANDO, e não só deslizando na mesma
+    // distância pra sempre.
+    //
+    // `perspectiva` cresce a estrela (tamanho E brilho) conforme ela se
+    // afasta do centro no modo Atravessar — no esquema log-polar deste
+    // efeito, afastar do centro JÁ SIGNIFICA "mais perto da câmera, prestes
+    // a sair da tela": sem multiplicar por isso, toda estrela nascia e
+    // morria do MESMO tamanho, e a viagem parecia um zoom parado, não um
+    // vôo de verdade.
+    float perspectiva,
+    // `esticar` alonga a estrela num eixo só — o eixo RADIAL, que no
+    // esquema log-polar é o eixo Y da própria célula (afastar-se no tempo é
+    // andar em Y). Uma estrela rápida vira um RISCO curto na direção de
+    // onde ela veio, do jeito que "velocidade de dobra" sempre foi
+    // desenhada em qualquer viagem espacial.
+    float esticar
+) {
+    vec2 posicao = p * escala;
+    vec2 celula = floor(posicao);
+    vec2 dentro = fract(posicao);
+
+    float soma = 0.0;
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 vizinha = vec2(float(x), float(y));
+            vec3 sorte = hash3(celula + vizinha);
+
+            // A densidade decide se a célula tem estrela. Com 1.0 todas têm.
+            if (sorte.z > density) continue;
+
+            vec2 centro = vizinha + sorte.xy;
+            vec2 diferenca = vec2(dentro.x - centro.x, (dentro.y - centro.y) / esticar);
+            float d = length(diferenca);
+
+            // Raio pequeno e queda exponencial: estrela é um ponto com halo, e
+            // não um disco. Disco parece bolha de sabão.
+            float raio = (0.02 + 0.05 * sorte.z) * starSize * perspectiva;
+            float ponto = exp(-pow(d / max(raio, 1e-4), 1.6));
+
+            // Cintilação: cada estrela pisca no próprio ritmo e na própria fase,
+            // senão o céu inteiro pulsa junto como um pisca-pisca de Natal.
+            float ritmo = 2.0 + sorte.x * 6.0;
+            float pisca = 1.0 - twinkle * 0.5 * (0.5 + 0.5 * sin(tempo * ritmo + sorte.y * 6.28));
+
+            float intensidade = ponto * pisca * mix(brilhoMin, 1.0, sorte.z) * peso
+                * clamp(perspectiva, 0.5, 2.0);
+            soma += intensidade;
+
+            float semente = hash3(celula + vizinha + vec2(7.0, 3.0)).x;
+            corAcc += corDaEstrela(semente) * intensidade;
+        }
+    }
+
+    return soma;
+}
+
+/**
+ * As estrelas GRANDES e BRILHANTES — uma camada bem mais rala, com um halo
+ * largo além do núcleo apertado. É o halo que faz a diferença entre "um
+ * ponto maior" e "uma estrela que brilha de verdade", como a alaranjada da
+ * foto de referência do snow. `heroDensity` em 0 desliga a camada inteira
+ * (o `if` sai antes de tocar em `corAcc`) — o padrão de fábrica, para quem
+ * já tinha o efeito aplicado não ganhar estrelas novas sem pedir.
+ */
+float estrelasBrilhantes(
+    vec2 p, float escala, float tempo, inout vec3 corAcc, float perspectiva, float esticar
+) {
+    if (heroDensity <= 0.0) return 0.0;
+
+    vec2 posicao = p * escala;
+    vec2 celula = floor(posicao);
+    vec2 dentro = fract(posicao);
+
+    float soma = 0.0;
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 vizinha = vec2(float(x), float(y));
+            vec3 sorte = hash3(celula + vizinha + vec2(31.0, 17.0));
+
+            // ×0,1: no Atravessar a escala é outra — o padrão do Deslizar (0,5) dá aqui
+            // as ~0,05 que este modo sempre usou.
+            if (sorte.z > heroDensity * 0.1) continue;
+
+            vec2 centro = vizinha + sorte.xy;
+            vec2 diferenca = vec2(dentro.x - centro.x, (dentro.y - centro.y) / esticar);
+            float d = length(diferenca);
+            float tamanho = heroSize * perspectiva;
+
+            float nucleo = exp(-pow(d / max(0.012 * tamanho, 1e-4), 1.6));
+            float halo = exp(-d / max(0.25 * tamanho, 1e-4));
+
+            /*
+             * AS ESPIGAS DE DIFRAÇÃO — o "brilho de verdade" pedido com a
+             * referência do Alight Motion: um halo redondo lê como "bolha
+             * de luz"; o que faz ler como ESTRELA BRILHANDO é o risco fino
+             * cruzando o núcleo, como toda foto de estrela tirada com uma
+             * lente de verdade (difração na abertura). Quatro raios (duas
+             * retas, duas diagonais), cada um decaindo rápido só NAQUELE
+             * eixo — e multiplicado por um decaimento radial normal, pra
+             * não virar uma cruz atravessando o céu inteiro.
+             */
+            float ex = abs(diferenca.x);
+            float ey = abs(diferenca.y) * esticar; // volta ao eixo real pra não alongar a espiga vertical demais
+            float diag1 = abs(diferenca.x - diferenca.y) * 0.70710678;
+            float diag2 = abs(diferenca.x + diferenca.y) * 0.70710678;
+            float larguraDaEspiga = max(0.0035 * tamanho, 1e-4);
+            float espigasRetas = exp(-ex / larguraDaEspiga) + exp(-ey / larguraDaEspiga);
+            float espigasDiagonais = exp(-diag1 / larguraDaEspiga) + exp(-diag2 / larguraDaEspiga);
+            float alcanceDaEspiga = exp(-d / max(0.9 * tamanho, 1e-4));
+            float espigas = (espigasRetas + espigasDiagonais * 0.6) * alcanceDaEspiga * heroSpikes;
+
+            float ritmo = 1.0 + sorte.x * 2.0;
+            float pisca = 1.0 - twinkle * 0.3 * (0.5 + 0.5 * sin(tempo * ritmo + sorte.y * 6.28));
+
+            float intensidade = (nucleo + halo * 0.6 + espigas * 0.5) * heroGlow
+                * mix(0.6, 1.0, sorte.z) * pisca * clamp(perspectiva, 0.5, 2.2);
+            soma += intensidade;
+
+            float semente = hash3(celula + vizinha + vec2(53.0, 29.0)).x;
+            corAcc += corDaEstrela(semente) * intensidade;
+        }
+    }
+
+    return soma;
+}
+
+
+// ============================================================================
+//  O CÉU PROFUNDO — o "Deslizar" no estilo do vídeo de referência (06/10/2026)
+// ============================================================================
+
+float ruidoDeValor(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash3(i).x;
+    float b = hash3(i + vec2(1.0, 0.0)).x;
+    float c = hash3(i + vec2(0.0, 1.0)).x;
+    float d = hash3(i + vec2(1.0, 1.0)).x;
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+/** Ruído fractal: a poeira tem detalhe em toda escala, como fumaça. */
+float fbm(vec2 p) {
+    float soma = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 5; i++) {
+        soma += amp * ruidoDeValor(p);
+        p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(5.3, 1.7);
+        amp *= 0.5;
+    }
+    return soma;
+}
+
+/**
+ * A nebulosa: duas manchas de poeira (quente e fria) que quase não aparecem —
+ * medido na referência, ela só sobe o fundo de ~1 a ~12 níveis. É o que tira o
+ * "preto chapado" e dá o fundo de foto de céu de verdade.
+ */
+vec3 nebulosa(vec2 p) {
+    if (nebula <= 0.0) return vec3(0.0);
+    vec2 q = p * 5.0 / nebulaScale;
+    // Onde há poeira: manchas de várias escalas, com vãos escuros entre elas.
+    float base = fbm(q);
+    float grao = fbm(q * 2.5 + vec2(3.0, 9.0));
+    float poeira = smoothstep(0.32, 0.78, base * 0.55 + grao * 0.55);
+    // De que cor: regiões grandes quentes OU frias — separadas, como na referência,
+    // e não misturadas num marrom só.
+    float regiao = smoothstep(0.38, 0.62, fbm(q * 0.35 + vec2(13.1, 7.7)));
+    vec3 cor = mix(nebulaCool.rgb, nebulaWarm.rgb, regiao);
+    return cor * poeira * 0.125 * nebula;
+}
+
+/** A cor de um pontinho comum: quase sempre neutro, de vez em quando com tom. */
+vec3 corDoPontinho(float t, float forca) {
+    vec3 tom = corDaEstrela(t);
+    return mix(vec3(1.0), tom, (0.25 + 0.75 * colorVariety) * forca);
+}
+
+/**
+ * Uma camada de pontinhos. Uma estrela no máximo por célula e longe da borda dela,
+ * então basta olhar a PRÓPRIA célula — barato o bastante para cinco camadas finas.
+ * O raio é em unidades de altura, com um piso de ~0,55 px: menor que isso a estrela
+ * cairia entre os pixels e piscaria ao andar; com o piso, a energia é conservada
+ * (o brilho cai na mesma proporção que a área cresce).
+ */
+vec3 camadaDePontinhos(vec2 p, float celulas, float prob, float brilho, float tam, float px, float semente) {
+    vec2 q = p * celulas;
+    vec2 c = floor(q);
+    vec3 s = hash3(c + semente);
+    if (s.z > prob) return vec3(0.0);
+    vec3 s2 = hash3(c + semente + vec2(17.0, 41.0));
+    vec2 centro = 0.18 + 0.64 * s.xy;
+    vec2 d = (fract(q) - centro) / celulas;
+    float b = pow(s2.x, 5.0);
+    float r = (0.0006 + 0.0012 * b) * starSize * tam;
+    float sigma = max(r, 0.55 * px);
+    float energia = (r * r) / (sigma * sigma);
+    float ponto = exp(-dot(d, d) / (2.0 * sigma * sigma)) * energia;
+    float pisca = 1.0 - twinkle * 0.7 * (0.5 + 0.5 * sin(acTime * (1.5 + s2.y * 5.0) + s2.z * 6.2831));
+    float forca = s2.z < 0.12 ? 1.0 : 0.15;
+    return corDoPontinho(s2.y, forca) * ponto * mix(0.13, 1.9, b) * brilho * pisca;
+}
+
+/** As estrelas fortes: miolo pequeno de cor saturada e um brilho suave em volta. */
+vec3 estrelasFortes(vec2 p, float px) {
+    if (heroDensity <= 0.0) return vec3(0.0);
+    float celulas = 5.0;
+    vec2 q = p * celulas;
+    vec2 c = floor(q);
+    vec3 soma = vec3(0.0);
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 v = c + vec2(float(x), float(y));
+            vec3 s = hash3(v + vec2(31.0, 17.0));
+            if (s.z > heroDensity) continue;
+            vec3 s2 = hash3(v + vec2(53.0, 29.0));
+            vec2 d = (q - v - s.xy) / celulas;
+            float l2 = dot(d, d);
+            float r = (0.0019 + 0.0018 * s2.x) * heroSize;
+            float sigma = max(r, 0.6 * px);
+            float miolo = exp(-l2 / (2.0 * sigma * sigma)) * (r * r) / (sigma * sigma);
+            float rh = 0.008 * heroSize;
+            float halo = exp(-l2 / (2.0 * rh * rh)) * 0.28 * heroGlow;
+            float espigas = 0.0;
+            if (heroSpikes > 0.0) {
+                float l = sqrt(l2);
+                float w = max(0.0007 * heroSize, 0.5 * px);
+                espigas = (exp(-abs(d.x) / w) + exp(-abs(d.y) / w)) * exp(-l / (0.02 * heroSize)) * heroSpikes * 0.6;
+            }
+            // Cor: as fortes são as COLORIDAS da referência (laranja, vermelha, azul, branca).
+            float t = s2.y;
+            vec3 cor = t < 0.35 ? vec3(1.0, 0.72, 0.36)
+                     : t < 0.55 ? vec3(1.0, 0.36, 0.28)
+                     : t < 0.75 ? vec3(0.72, 0.82, 1.0)
+                     : vec3(1.0, 0.95, 0.88);
+            cor = mix(vec3(1.0), cor, 0.3 + 0.7 * colorVariety);
+            float pisca = 1.0 - twinkle * 0.3 * (0.5 + 0.5 * sin(acTime * (1.0 + s2.z * 2.0) + s.y * 6.28));
+            soma += (cor * miolo * 2.6 + cor * halo + cor * espigas) * mix(0.6, 1.0, s2.z) * pisca;
+        }
+    }
+    return soma;
+}
+
+/** Manchinhas difusas: aglomerados e galáxias distantes, cinza-amarronzadas. */
+vec3 aglomerados(vec2 p) {
+    if (clusters <= 0.0) return vec3(0.0);
+    float celulas = 9.0;
+    vec2 q = p * celulas;
+    vec2 c = floor(q);
+    vec3 soma = vec3(0.0);
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 v = c + vec2(float(x), float(y));
+            vec3 s = hash3(v + vec2(71.0, 3.0));
+            if (s.z > 0.10) continue;
+            vec3 s2 = hash3(v + vec2(5.0, 93.0));
+            vec2 d = (q - v - s.xy) / celulas;
+            float r = 0.006 + 0.008 * s2.x;
+            float m = exp(-dot(d, d) / (2.0 * r * r));
+            vec3 cor = mix(vec3(0.75, 0.75, 0.78), vec3(0.9, 0.7, 0.45), step(0.6, s2.y));
+            soma += cor * m * (0.035 + 0.04 * s2.z);
+        }
+    }
+    return soma * clusters;
+}
+
+/**
+ * O céu inteiro do modo Deslizar. `deriva` é o quanto o céu já andou (em alturas);
+ * cada camada anda uma fração dela — perto 1, longe ~0,25 —, que é a paralaxe.
+ */
+vec3 ceuProfundo(vec2 centrado, vec2 deriva, float px) {
+    int camadas = clamp(int(depthLayers + 0.5), 2, 5);
+    float prob = clamp(density * 0.95, 0.0, 1.0);
+    vec3 cor = vec3(0.0);
+    for (int i = 0; i < 5; i++) {
+        if (i >= camadas) break;
+        float fi = float(i);
+        float vel = pow(0.62, fi);
+        vec2 p = centrado + deriva * vel;
+        float celulas = 26.0 * pow(1.32, fi);
+        float brilho = mix(1.0, 0.55, fi / 4.0);
+        float tam = mix(1.35, 0.8, fi / 4.0);
+        cor += camadaDePontinhos(p, celulas, prob, brilho, tam, px, fi * 11.0);
+        // Uma segunda grade deslocada na mesma camada: tira a regularidade da grade.
+        cor += camadaDePontinhos(p + vec2(0.37, 0.71) / celulas, celulas * 1.17, prob * 0.6, brilho * 0.8, tam * 0.85, px, fi * 11.0 + 5.0);
+    }
+    cor += estrelasFortes(centrado + deriva * 0.8, px);
+    vec2 longe = centrado + deriva * 0.22;
+    cor += aglomerados(longe);
+    return cor;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec3 cor;
+    float alfa;
+
+    if (mode == 2) {
+        /*
+         * ATRAVESSAR 3D: as partículas já foram desenhadas, DE VERDADE, num
+         * passe à parte (instanciado, com posição própria por vértice) — ver
+         * <passes> acima. Aqui só se lê o resultado (já vem com o alfa
+         * pré-multiplicado, mesclagem aditiva) e soma sobre o céu, exatamente
+         * como o resto deste efeito já compõe camadas de cor.
+         */
+        vec4 estrelas = texture(particulas3d, acScreenNorm);
+        vec3 neb = nebulosa((acScreenNorm - 0.5) * vec2(acAspect, 1.0));
+        cor = skyColor.rgb + neb + estrelas.rgb;
+        alfa = clamp(skyColor.a + estrelas.a + dot(neb, vec3(6.0)), 0.0, 1.0);
+    } else if (mode == 0) {
+        vec2 centrado = (acScreenNorm - 0.5) * vec2(acAspect, 1.0);
+        float a = angle * PI / 180.0;
+        // A velocidade é a da camada de perto, em alturas por segundo.
+        vec2 deriva = vec2(cos(a), sin(a)) * acTime * speed * 0.9;
+        float px = 1.0 / max(acResolution.y, 1.0);
+        vec3 neb = nebulosa(centrado + deriva * 0.18);
+        vec3 estrelas = ceuProfundo(centrado, deriva, px) * starColor.rgb * starColor.a;
+        cor = skyColor.rgb + neb + estrelas;
+        alfa = clamp(skyColor.a + dot(neb, vec3(6.0)) + max(estrelas.r, max(estrelas.g, estrelas.b)), 0.0, 1.0);
+    } else {
+        vec2 centrado = (acScreenNorm - 0.5) * vec2(acAspect, 1.0);
+        int camadas = clamp(int(depthLayers + 0.5), 2, 5);
+
+        float total = 0.0;
+        vec3 corAcc = vec3(0.0);
+        float escala = 8.0;
+        float peso = 1.0;
+
+        for (int i = 0; i < 5; i++) {
+            if (i >= camadas) break;
+
+            // A camada mais distante anda mais devagar: é disso que a profundidade
+            // é feita.
+            float distancia = 1.0 / (1.0 + float(i) * 0.9);
+            vec2 p;
+            float perspectiva = 1.0;
+            float esticar = 1.0;
+
+            if (mode == 1) {
+                // Atravessar: a posição é radial, e o tempo EMPURRA para fora com
+                // velocidade proporcional à distância do centro.
+                float raio = length(centrado) + 1e-4;
+                float ang = atan(centrado.y, centrado.x);
+                float avanco = acTime * speed * distancia;
+                p = vec2(ang * 1.2, log(raio) * 1.5 - avanco);
+
+                /*
+                 * ================================================================
+                 *  "3D DE VERDADE" — A ILUSÃO 2D QUE VEIO ANTES DO "Atravessar 3D"
+                 * ================================================================
+                 *
+                 * No esquema log-polar acima, afastar do centro da tela JÁ
+                 * significa "mais perto da câmera, quase saindo do quadro" — é
+                 * a mesma matemática que faz o avanço acelerar. Só que o
+                 * TAMANHO e o BRILHO de cada estrela nunca liam essa distância:
+                 * toda estrela nascia e morria do mesmo jeito, e a viagem
+                 * parecia um zoom de imagem parada, não um vôo pelo espaço.
+                 *
+                 * `perspectiva` cresce a estrela conforme ela se afasta do
+                 * centro — perto do centro (recém-nascida, longe) ela é
+                 * pequena; perto da borda (prestes a cruzar a tela) ela é
+                 * grande, como estrela de verdade passando perto da câmera.
+                 *
+                 * `esticar` alonga a MESMA estrela no eixo radial conforme ela
+                 * anda mais rápido (raio grande × velocidade alta) — o risco de
+                 * "velocidade de dobra" de qualquer viagem espacial, sem
+                 * simular rastro nenhum: é só a MESMA estrela, esticada num
+                 * eixo só, no mesmo quadro.
+                 */
+                perspectiva = clamp(0.35 + raio * 1.4, 0.35, 3.0);
+                esticar = clamp(1.0 + speed * distancia * raio * 2.2, 1.0, 7.0);
+            } else {
+                float a = angle * PI / 180.0;
+                p = centrado + vec2(cos(a), sin(a)) * acTime * speed * distancia * 0.35;
+            }
+
+            total += camadaDeEstrelas(p, escala, 0.35, acTime, peso, corAcc, perspectiva, esticar);
+
+            // As brilhantes só na camada mais próxima: elas já nascem grandes,
+            // e repetir nas outras escalas dobraria/triplicaria o brilho no
+            // mesmo ponto da tela.
+            if (i == 0) {
+                total += estrelasBrilhantes(p, escala * 0.35, acTime, corAcc, perspectiva, esticar);
+            }
+
+            escala *= 1.9;
+            peso *= 0.75;
+        }
+
+        // A cor de cada estrela já foi somada em `corAcc`, ponderada pelo
+        // próprio brilho — dividir pelo total dá a média certa nas bordas onde
+        // duas estrelas se tocam. `colorVariety` mistura com o tom antigo
+        // (brilho vira quente/frio) para quem já usava o efeito poder manter o
+        // visual de antes em 0, ou pedir a paleta rica em 1.
+        vec3 quente = vec3(1.0, 0.78, 0.62);
+        vec3 fria = vec3(0.72, 0.84, 1.0);
+        vec3 tomAntigo = mix(quente, fria, clamp(total * 0.8, 0.0, 1.0));
+        vec3 tomRico = corAcc / max(total, 1e-4);
+        vec3 tom = mix(tomAntigo, tomRico, colorVariety);
+        vec3 corEstrela = starColor.rgb * mix(vec3(1.0), tom, 0.35 + 0.5 * colorVariety);
+
+        float brilho = clamp(total, 0.0, 1.0) * starColor.a;
+        vec3 neb = nebulosa(centrado);
+        cor = mix(skyColor.rgb + neb, corEstrela, brilho);
+        alfa = max(brilho, clamp(skyColor.a + dot(neb, vec3(6.0)), 0.0, 1.0));
+    }
+
+    vec4 desenhado = vec4(cor, alfa);
+    float saidaAlfa = desenhado.a + original.a * (1.0 - desenhado.a);
+    vec3 saidaCor = saidaAlfa > 0.0
+        ? (desenhado.rgb * desenhado.a + original.rgb * original.a * (1.0 - desenhado.a)) / saidaAlfa
+        : vec3(0.0);
+
+    fragColor = vec4(saidaCor, saidaAlfa);
+}
+
+    ]]></shader>
+</effect>

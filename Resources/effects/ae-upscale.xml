@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DETAIL-PRESERVING UPSCALE (AE) — o ADBE Upscale nativo do After Effects, a 100% (0.809.0)
+  ============================================================================
+
+  Pedido do snow (26/10/2026): "faça o próximo efeito que desbloqueia mais presets" — o primeiro EFEITO da fila de
+  docs/PRESETS-DA-PASTA-DO-SNOW.md (+34 presets inteiros; 43 da pasta o usam). Os presets o usam todos com Scale 100:
+  nos CCs ele é o REDUTOR DE RUÍDO do fim da cadeia (Reduce Noise de 25 a 100).
+
+  Não foi ajustado por medida: a conta foi LIDA no Upscale.aex do AE 2023 (23.2.1), decompilado
+  (tools/upscale/leitura, LEIAME.md), e o modelo em Python dela (tools/upscale/benchmark/modelo.py) reproduz as
+  estatísticas dos renders do AE de 07/10 nos quatro casos (90,24 % dos pixels mudam, 5,921 níveis em média, máximo
+  83 na foto; 10,674 e 91 na foto com ruído; o alfa a 22) — e o filtro de 7 tomadas que a medida de 07/10 tinha
+  achado no Reduce Noise 25 é o K∘K daqui.
+
+  O QUE O AE FAZ COM SCALE 100 (e este shader repete), nos três planos R, G e B em float (a cor RETA, byte / 255):
+  1. Reamostra a imagem "na escala 1,0" com o núcleo do FUN_180009710: o cúbico de Keys com a = −0,625 ESTICADO
+     1,15× (um leve desfoque com anel: tomadas −2..2 = −0,0314; 0,1082; 1; 0,1082; −0,0314), horizontal e depois
+     vertical, normalizando só pelas tomadas dentro da camada. É o K.
+  2. Uma passada da super-resolução no modo "só ruído" (passada 0 com Reduce Noise > 0): cada pixel do miolo é
+     refeito por um non-local means (FUN_180005fb0) — até 37 candidatos de uma tabela fixa (os 13 primeiros a 1 px,
+     os outros com o passo dobrado), distância = soma dos quadrados entre o trecho 5×5 de K(fonte) em volta do
+     pixel e o trecho 5×5 da FONTE em volta do candidato, nos 3 canais; peso = tabela exp(−i/20) com 4 casas,
+     i = ⌊min(d · 12,5 / σ / 75; 10) · 20⌋; o resultado é (10 · K(fonte) + Σ peso · candidato) / (10 + Σ peso).
+     σ = 0,05 · m, m = o Reduce Noise em três faixas (0–50 % → 0,4 · n; 50–80 % → 2 · (n − 0,5) + 0,2; acima, n),
+     e os candidatos são 1 + ⌊m^0,25 · 37⌋, no máximo 37.
+     O miolo é x de 12 a W − 11 e y de 12 a H − 11 (os blocos de 1024 do plugin começam em 12); na moldura fica K(fonte).
+  3. K de novo na imagem inteira (a reamostragem final do plugin para o tamanho de saída) e 8 bits: ⌊v · 255 + 0,5⌋.
+  O alfa: no "Bicubic" (o padrão; 21 dos 33 presets), um Keys a = −0,75 sem esticar — na escala 1, igual. No
+  "Detail-preserving", o mesmo caminho da cor, com o alfa repetido nos 3 planos.
+  Reduce Noise 0 com Scale 100: o plugin copia a camada (sai igual).
+
+  COMO ISSO CABE NOS BUFFERS: K(fonte) e o resultado do passo 2 passam pelo meio em float32 EXATO — os 4 bytes de
+  cada canal (floatBitsToUint) em quatro RGBA8, `fragColor` a `fragColor3`. Até a 0.809.0 eram 16 bits fixos, e era
+  só isso que separava o shader do AE (1 nível em ~0,3 % dos pixels: o arredondamento do meio mudava o índice da
+  tabela de pesos e o meio nível do fim); a ordem das somas não muda nada (medido no modelo, 26/10).
+
+  O QUE NÃO ENTROU: Scale acima de 100 (a super-resolução de verdade, que aumenta a camada — nenhum preset da pasta
+  usa) e o Detail (só age quando aumenta): os dois ficam OCULTOS, guardando o valor do AE no projeto. Ver docs/PENDENCIAS-DOS-EFEITOS-AE.md.
+
+  CUSTO: 25 leituras por pixel em cada K e 25 por candidato no passo 2 (925 com Reduce Noise acima de 90).
+  No play e no arraste (`acRascunho`), só os 13 candidatos de 1 px.
+-->
+<effect
+    id="nova.effect.aeupscale"
+    name="Detail-preserving Upscale (AE)"
+    name-en="Detail-preserving Upscale (AE)"
+    desc="O Detail-preserving Upscale do After Effects a 100%: o redutor de ruído que fecha os CCs, igual ao do AE."
+    desc-en="After Effects' Detail-preserving Upscale at 100%: the noise reducer at the end of CC presets, matching AE."
+    category="blur"
+    tags="upscale,detail preserving,reduce noise,reduzir ruído,denoise,ruído,nitidez,after effects,adbe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="upA" src="buffer" />
+        <texture id="upB" src="buffer" />
+        <texture id="upC" src="buffer" />
+        <texture id="upD" src="buffer" />
+        <texture id="upE" src="buffer" />
+        <texture id="upF" src="buffer" />
+        <texture id="upG" src="buffer" />
+        <texture id="upH" src="buffer" />
+
+        <slider id="scale" label="Scale" default="100.0" min="100.0" max="30000.0" step="1.0" hidden="true" />
+        <slider id="reduceNoise" label="Reduce Noise" default="0.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="detail" label="Detail" default="50.0" min="0.0" max="100.0" step="0.1" hidden="true" />
+        <selector id="alphaMode" label="Alpha" default="1" options="Detail-preserving|Bicubic" />
+    </params>
+
+    <!-- Na vitrine: o Reduce Noise padrão é 0, como no AE (a camada sai igual). -->
+    <preview>
+        <set param="reduceNoise" value="100.0" />
+    </preview>
+
+    <passes>
+        <pass target="upA,upB,upC,upD" skipIfZero="reduceNoise" />   <!-- 0: K(fonte), float32 exato -->
+        <pass target="upE,upF,upG,upH" skipIfZero="reduceNoise" />   <!-- 1: o non-local means no miolo, float32 -->
+        <pass />                                                      <!-- 2: K de novo, 8 bits -->
+    </passes>
+
+    <shader><![CDATA[
+// (dy, dx) dos candidatos, na orientação do AE (linha 0 = o topo): DAT_18001f330
+const ivec2 CAND[37] = ivec2[37](
+    ivec2(0, 0), ivec2(0, 1), ivec2(1, 0), ivec2(0, -1), ivec2(-1, 0), ivec2(1, 1), ivec2(1, -1), ivec2(-1, -1),
+    ivec2(-1, 1), ivec2(0, 2), ivec2(2, 0), ivec2(0, -2), ivec2(-2, 0), ivec2(1, 2), ivec2(1, -2), ivec2(-1, -2),
+    ivec2(-1, 2), ivec2(2, 1), ivec2(2, -1), ivec2(-2, -1), ivec2(-2, 1), ivec2(2, 2), ivec2(2, -2), ivec2(-2, -2),
+    ivec2(-2, 2), ivec2(0, 3), ivec2(3, 0), ivec2(0, -3), ivec2(-3, 0), ivec2(1, 3), ivec2(-1, 3), ivec2(3, 1),
+    ivec2(3, -1), ivec2(1, -3), ivec2(-1, -3), ivec2(-3, -1), ivec2(-3, 1));
+
+// O peso de cada distância: DAT_18001f000 (exp(−i/20) com 4 casas; as duas últimas, 1e−5)
+const float PESO[201] = float[201](
+    1.0, 0.951200008, 0.904799998, 0.860700011, 0.818700016, 0.778800011, 0.740800023, 0.704699993, 0.670300007,
+    0.637600005, 0.60650003, 0.576900005, 0.548799992, 0.522000015, 0.496600002, 0.47240001, 0.449299991,
+    0.427399993, 0.406599998, 0.386700004, 0.367900014, 0.349900007, 0.332899988, 0.316599995, 0.301200002,
+    0.286500007, 0.272500008, 0.259200007, 0.246600002, 0.234599993, 0.223100007, 0.212200001, 0.201900005,
+    0.192000002, 0.182699993, 0.173800007, 0.165299997, 0.157199994, 0.149599999, 0.142299995, 0.135299996,
+    0.128700003, 0.122500002, 0.116499998, 0.110799998, 0.105400003, 0.100299999, 0.0953999981, 0.0907000005,
+    0.0863000005, 0.0820999965, 0.0781000033, 0.0742999986, 0.0706999972, 0.0671999976, 0.0639000013, 0.060800001,
+    0.0577999987, 0.0549999997, 0.0522999987, 0.0498000011, 0.0474000014, 0.0450000018, 0.0428999998, 0.0408000015,
+    0.0388000011, 0.0368999988, 0.0351000018, 0.0333999991, 0.0317000002, 0.0302000009, 0.0286999997, 0.0273000002,
+    0.0260000005, 0.0247000009, 0.0234999992, 0.0223999992, 0.0212999992, 0.0201999992, 0.0193000007, 0.0183000006,
+    0.0174000002, 0.0165999997, 0.0157999992, 0.0149999997, 0.0142999999, 0.0136000002, 0.0129000004, 0.0122999996,
+    0.0116999997, 0.0110999998, 0.0105999997, 0.0100999996, 0.00960000046, 0.00910000037, 0.00870000012,
+    0.00820000004, 0.00779999979, 0.0074, 0.00710000005, 0.00669999979, 0.00639999984, 0.00609999988, 0.00579999993,
+    0.00549999997, 0.00520000001, 0.00499999989, 0.00469999993, 0.00449999981, 0.00430000015, 0.00410000002,
+    0.00389999989, 0.0037, 0.00350000011, 0.00329999998, 0.00319999992, 0.00300000003, 0.00289999996, 0.00270000007,
+    0.00260000001, 0.00249999994, 0.00240000011, 0.00219999999, 0.00209999993, 0.00200000009, 0.00190000003,
+    0.00179999997, 0.00170000002, 0.00170000002, 0.00159999996, 0.00150000001, 0.00139999995, 0.00139999995, 0.0013,
+    0.00120000006, 0.00120000006, 0.00109999999, 0.00109999999, 0.00100000005, 0.00100000005, 0.000899999985,
+    0.000899999985, 0.00079999998, 0.00079999998, 0.000699999975, 0.000699999975, 0.000699999975, 0.000600000028,
+    0.000600000028, 0.000600000028, 0.000600000028, 0.000500000024, 0.000500000024, 0.000500000024, 0.000500000024,
+    0.00039999999, 0.00039999999, 0.00039999999, 0.00039999999, 0.00039999999, 0.000300000014, 0.000300000014,
+    0.000300000014, 0.000300000014, 0.000300000014, 0.000300000014, 0.000199999995, 0.000199999995, 0.000199999995,
+    0.000199999995, 0.000199999995, 0.000199999995, 0.000199999995, 0.000199999995, 0.000199999995, 0.000199999995,
+    0.000199999995, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05,
+    9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05,
+    9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05, 9.99999975e-05,
+    9.99999975e-05, 9.99999975e-05, 9.99999975e-06, 9.99999975e-06);
+
+// As tomadas do K a −2..2 (a de −3 pesa 0), em float como na tabela do plugin
+const float K1 = 0.10824360698461533;
+const float K2 = -0.03143749386072159;
+
+ivec2 gTam;    // a camada do AE no buffer
+ivec2 gIni;    // o canto dela
+bool gDePe;    // a linha 0 do buffer é a BASE da imagem
+
+void preparar() {
+    ivec2 buf = textureSize(inputImg, 0);
+    gTam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    gIni = (buf - gTam) / 2;
+    gDePe = acEntradaDePe == 1;
+}
+
+// (x, y) do AE (y = 0 no topo da camada) <-> buffer
+ivec2 noBuffer(ivec2 a) { return ivec2(gIni.x + a.x, gDePe ? gIni.y + gTam.y - 1 - a.y : gIni.y + a.y); }
+ivec2 doBuffer(ivec2 b) { return ivec2(b.x - gIni.x, gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y); }
+
+// A fonte: a cor reta em k / 255 exato
+vec4 fonte(ivec2 a) { return floor(texelFetch(inputImg, noBuffer(a), 0) * 255.0 + 0.5) / 255.0; }
+
+// O float32 exato em quatro RGBA8: o byte k de cada canal no k-ésimo buffer (do mais baixo ao mais alto)
+uvec4 byteDe(sampler2D t, ivec2 b) { return uvec4(floor(texelFetch(t, b, 0) * 255.0 + 0.5)); }
+vec4 ler32(sampler2D b0, sampler2D b1, sampler2D b2, sampler2D b3, ivec2 a) {
+    ivec2 b = noBuffer(a);
+    return uintBitsToFloat(byteDe(b0, b) | (byteDe(b1, b) << 8u) | (byteDe(b2, b) << 16u) | (byteDe(b3, b) << 24u));
+}
+vec4 kFonte(ivec2 a) { return ler32(upA, upB, upC, upD, a); }
+vec4 doMeio(ivec2 a) { return ler32(upE, upF, upG, upH, a); }
+void gravar32(vec4 v) {
+    uvec4 u = floatBitsToUint(v);
+    fragColor = vec4(u & 255u) / 255.0;
+    fragColor1 = vec4((u >> 8u) & 255u) / 255.0;
+    fragColor2 = vec4((u >> 16u) & 255u) / 255.0;
+    fragColor3 = vec4(u >> 24u) / 255.0;
+}
+
+float pesoK(int d) { int m = abs(d); return m == 0 ? 1.0 : (m == 1 ? K1 : K2); }
+
+// K numa imagem (0 = a fonte, 1 = o resultado do passo 2): horizontal (Σ w·c / Σ w das tomadas dentro), depois
+// vertical, em float
+vec4 kDe(int qual, ivec2 a) {
+    vec4 soma = vec4(0.0);
+    float pv = 0.0;
+    for (int dy = -2; dy <= 2; dy++) {
+        int y = a.y + dy;
+        if (y < 0 || y >= gTam.y) continue;
+        vec4 linha = vec4(0.0);
+        float ph = 0.0;
+        for (int dx = -2; dx <= 2; dx++) {
+            int x = a.x + dx;
+            if (x < 0 || x >= gTam.x) continue;
+            float w = pesoK(dx);
+            vec4 c = qual == 0 ? fonte(ivec2(x, y)) : doMeio(ivec2(x, y));
+            linha += w * c;
+            ph += w;
+        }
+        float w = pesoK(dy);
+        soma += w * (linha * (1.0 / ph));
+        pv += w;
+    }
+    return soma * (1.0 / pv);
+}
+
+void main() {
+    preparar();
+    ivec2 b = ivec2(gl_FragCoord.xy);
+    ivec2 a = doBuffer(b);
+    bool dentro = all(greaterThanEqual(a, ivec2(0))) && all(lessThan(a, gTam));
+    if (reduceNoise <= 0.0 || !dentro) {
+        if (acPass == 2) fragColor = texelFetch(inputImg, b, 0);
+        else gravar32(vec4(0.0));
+        return;
+    }
+
+    if (acPass == 0) {
+        gravar32(kDe(0, a));
+        return;
+    }
+
+    if (acPass == 1) {
+        vec4 cur = kFonte(a);
+        // o miolo: x de 12 a W − 11, y de 12 a H − 11
+        if (a.x < 12 || a.y < 12 || a.x > gTam.x - 11 || a.y > gTam.y - 11) {
+            gravar32(cur);
+            return;
+        }
+        // σ e os candidatos (FUN_18000eb30 e FUN_180002790)
+        float n = reduceNoise / 100.0;
+        float m = n > 0.5 ? (n > 0.8 ? n : (n - 0.5) * 2.0 + 0.2) : n * 2.0 * 0.2;
+        float sigma = m * 0.05;
+        int nc = min(1 + int(pow(sigma / 0.05, 0.25) * 37.0), 37);
+        if (acRascunho == 1) nc = min(nc, 13);
+        float k = 12.5 / sigma / 75.0;
+        bool alfaJunto = alphaMode == 0;
+
+        // o trecho 5×5 de K(fonte) em volta do pixel
+        vec4 ref[25];
+        for (int j = 0; j < 25; j++) ref[j] = kFonte(a + ivec2(j % 5 - 2, j / 5 - 2));
+
+        vec3 acc = vec3(0.0);
+        float soma = 0.0, accA = 0.0, somaA = 0.0;
+        for (int i = 0; i < 37; i++) {
+            if (i >= nc) break;
+            ivec2 o = CAND[i].yx * (i <= 12 ? 1 : 2);   // (dx, dy)
+            ivec2 c = a + o;
+            float ssd = 0.0, ssdA = 0.0;
+            for (int j = 0; j < 25; j++) {
+                vec4 d = ref[j] - fonte(c + ivec2(j % 5 - 2, j / 5 - 2));
+                ssd += dot(d.rgb, d.rgb);
+                ssdA += d.a * d.a;
+            }
+            vec4 v = fonte(c);
+            float w = PESO[int(min(ssd * k, 10.0) * 20.0)];
+            acc += w * v.rgb;
+            soma += w;
+            if (alfaJunto) {
+                float wa = PESO[int(min(3.0 * ssdA * k, 10.0) * 20.0)];
+                accA += wa * v.a;
+                somaA += wa;
+            }
+        }
+        vec3 rgb = (cur.rgb * 10.0 + soma * (acc / (soma + 1e-9))) / (soma + 10.0);
+        float al = alfaJunto ? (cur.a * 10.0 + somaA * (accA / (somaA + 1e-9))) / (somaA + 10.0) : cur.a;
+        gravar32(vec4(rgb, al));
+        return;
+    }
+
+    // K de novo e 8 bits; o alfa no Bicubic é o da camada
+    vec4 r = floor(clamp(kDe(1, a), 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+    if (alphaMode != 0) r.a = fonte(a).a;
+    fragColor = r;
+}
+    ]]></shader>
+</effect>

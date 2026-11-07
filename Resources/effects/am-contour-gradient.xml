@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   GRADIENTE DE CONTORNO — o Contour Gradient do Alight Motion, conta por conta (0.537.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora o gradiente de contorno", o segundo da série "100% iguais ao
+  Alight Motion" (o primeiro foi `am-contour-lines.xml`). Mesmos parâmetros, ids e padrões do
+  `com.alightcreative.contourgrad`. A conta foi LIDA do efeito do AM 5.0.281 (`contour-grad.xml` do
+  APK descompactado) e escrita de novo; o arquivo do AM não entra no repositório. Conferência:
+  `tools/amcontour/comparar.py gradiente`.
+
+  É o irmão das Linhas de contorno, com a mesma distância (ver o comentário de lá: medida em
+  "pixels de 1024²", dois passes, distância guardada em 16 bits, a ponta de fora da procura):
+
+  - p = (distância − Início) ÷ Largura, de 0 a 1, e a cor é a mistura Cor 1 → Cor 2 por p (em cor
+    reta, como o AM recebe do seletor). Borda suave de meio pixel nas duas pontas da faixa;
+    "Desaparecer" apaga de dentro para fora (1 − p, suave).
+  - Só fora da camada (× (1 − alfa da camada)); "Preencher" é a opacidade da própria camada.
+  - A mistura é a do AM, pré-multiplicada: camada · Preencher · (1 − cor.a) + cor. Aqui o buffer é
+    de alfa reto: a conta é feita pré-multiplicada e devolvida reta.
+-->
+<effect
+    id="nova.effect.am-contour-gradient"
+    name="Gradiente de contorno"
+    name-en="Contour Gradient"
+    desc="Renderiza um gradiente em torno dos contornos das partes opacas da camada (o Contour Gradient do Alight Motion)."
+    desc-en="Renders a gradient around the contours of the opaque parts of the layer (Alight Motion's Contour Gradient)."
+    category="stylize"
+    tags="contorno,gradiente,degradê,borda,outline,contour,gradient,sticker,alight motion"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="distX" src="buffer" />
+
+        <color id="color1" label="Cor 1" default="#FFFAE965" />
+        <color id="color2" label="Cor 2" default="#FFF16751" />
+        <slider id="width" label="Largura" default="25.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="offset" label="Início" default="0.0" min="0.0" max="150.0" step="0.1" snap="0.0" />
+        <slider id="alpha" label="Alfa" default="1.0" min="0.0" max="1.0" step="0.01" type="relative-percent" snap="1.0" />
+        <slider id="fill" label="Preencher" default="1.0" min="0.0" max="1.0" step="0.01" type="relative-percent" snap="0.0,1.0" />
+        <switch id="fade" label="Desaparecer" default="false" />
+    </params>
+
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura" />
+
+    <passes>
+        <pass target="distX" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// O buffer guarda a distância como fração deste teto (16 bits em dois canais de 8).
+const float TETO = 16383.0;
+
+vec2 guardar(float d) {
+    float v = d / TETO;
+    float baixo = fract(v * 255.0);
+    return vec2(v - baixo / 255.0, baixo);
+}
+
+float ler(vec2 rg) {
+    return (rg.x + rg.y / 255.0) * TETO;
+}
+
+// O smoothstep com as pontas em qualquer ordem (o GLSL não garante o resultado com e0 > e1).
+float degrau(float e0, float e1, float x) {
+    float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+void main() {
+    // "Pixels de 1024²" → pixels deste buffer.
+    float escala = length(acResolution) / length(vec2(1024.0));
+    float inicio = offset * escala;
+    float largura = width * escala;
+    float alcance = inicio + largura;
+    int n = max(1, int(alcance));
+    float longe = alcance * 2.0;
+
+    if (acPass == 0) {
+        // Na linha: o pixel opaco mais perto, de −n a n − 1. Do centro para fora, o primeiro achado é o menor.
+        float melhor = longe;
+        for (int k = 0; k <= n; k++) {
+            if (texture(inputImg, acScreenNorm + vec2(-float(k) * acTexelSize.x, 0.0)).a > 0.0
+                || (k < n && texture(inputImg, acScreenNorm + vec2(float(k) * acTexelSize.x, 0.0)).a > 0.0)) {
+                melhor = float(k);
+                break;
+            }
+        }
+        fragColor = vec4(guardar(melhor), 0.0, 0.0);
+        return;
+    }
+
+    // Na coluna: o menor √(dx² + dy²), de −n a n − 1 linhas; a ponta +n (de fora) é a de CIMA na tela, como no AM.
+    float sentido = acEntradaDePe == 1 ? 1.0 : -1.0;
+    float melhor = 1e9;
+    for (int k = 0; k <= n; k++) {
+        float dy = float(k);
+        if (dy >= melhor) break;    // daqui para fora nada fica mais perto
+        float dx = ler(texture(distX, acScreenNorm - vec2(0.0, sentido * dy * acTexelSize.y)).rg);
+        melhor = min(melhor, length(vec2(dx, dy)));
+        if (k < n) {
+            dx = ler(texture(distX, acScreenNorm + vec2(0.0, sentido * dy * acTexelSize.y)).rg);
+            melhor = min(melhor, length(vec2(dx, dy)));
+        }
+    }
+
+    vec4 base = texture(inputImg, acScreenNorm);
+    vec4 camada = vec4(base.rgb * base.a, base.a) * fill;   // pré-multiplicada
+
+    vec4 c = vec4(0.0);
+    if (largura > 0.0) {
+        float aa = 1.0 / largura / 2.0;
+        float p = clamp((melhor - inicio) / largura, 0.0, 1.0);
+        float mascara = fade
+            ? degrau(1.0, 0.0, p) * degrau(0.0, aa, p)
+            : degrau(0.0, aa, p) * degrau(1.0, 1.0 - aa, p);
+        c = mix(color1, color2, p) * (alpha * mascara * (1.0 - base.a));
+    }
+
+    vec4 saida = camada * (1.0 - c.a) + c;
+    fragColor = saida.a > 0.0 ? vec4(saida.rgb / saida.a, saida.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

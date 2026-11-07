@@ -1,0 +1,1298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VHS — a fita, a câmera e o glitch filmado
+  ============================================================================
+
+  A segunda versão (0.175.0), pedida pelo snow com um print do After Effects de
+  referência: a imagem num quadro 4:3 com barras pretas, a tela da câmera (OSD)
+  por cima e glitch de fita de verdade.
+
+  O que mudou em relação ao primeiro VHS:
+
+   - As "faixas de rastreamento" (uma banda que empurrava cada linha para um
+     lado ao acaso) saíram: o padrão delas era a coisa mais falsa do efeito. O
+     tracking agora é uma dobra LISA das linhas, que anda devagar, com riscos de
+     dropout dentro dela — e vem baixo.
+   - O glitch principal é FILMADO: 20 glitches de fita, a estática e o rebobinar,
+     em `assets/vhs/`, tocando em laço sob a camada (`src="video"`, novo no
+     motor). E eles não ficam só por cima: as linhas claras do glitch RASGAM a
+     imagem na horizontal naquela altura ("Glitch rasga a imagem") — a junção do
+     filmado com o simulado.
+   - A tela da câmera: 12 OSDs de camcorder (Play, REC, data, Nightshot…),
+     gravados sobre azul puro (25, 49, 229) e recortados aqui por croma.
+   - A fita de verdade: luma com pouca nitidez, croma borrada e ATRASADA para a
+     direita (a cor sai do lugar, a luz não), o contorno claro do realce que o
+     videocassete fazia, preto lavado, tremor de base de tempo (as linhas
+     tremendo um pouco cada uma), o ruído colorido em riscos horizontais e o
+     "head switching" — a faixa torta e ruidosa no pé da imagem.
+   - Aberração cromática já vem ligada (2,5 px), como o snow pediu.
+
+  Os parâmetros que já existiam (tracking, bandSpeed, bleed, noiseAmount,
+  softness, saturation) mantêm o id: projetos salvos continuam com os valores.
+
+  A terceira versão (0.177.0): a fita passando numa TV de tubo. O snow chegou
+  no resultado que queria empilhando VHS → CRT Screen → TV Damage, e pediu que
+  isso virasse o próprio VHS ("ninguém precisa saber"). O passe 2 é essa cadeia,
+  na mesma ordem e com as mesmas contas dos dois efeitos, só com o que ele
+  usou:
+
+   - do CRT: a curvatura do tubo (as bordas da tela 4:3 envergam), as linhas,
+     a tremida do brilho e a vinheta do vidro. O desalinhamento de cor dele
+     somou na aberração.
+   - da TV Damage: a TV vendo a imagem em 720 pixels, o horizontal solto, as
+     listras de cor, as barras de zumbido, o chuvisco (que pega as barras
+     pretas também) e os pontos de interferência — tudo escalado pela
+     "Recepção ruim", como o Reception Master. E o que ele não usou mas cabe
+     numa TV velha: a imagem rolando (desligada no padrão: ela roda sozinha de
+     tempos em tempos) e o desligar da TV, para animar.
+
+  "scanlines" mudou de sentido: eram as linhas finas da fita (0,3 × valor);
+  agora é a força das linhas do tubo, a conta do CRT. O id ficou.
+
+   passe 0 → fita (1/1): geometria (quadro 4:3, tremores, tracking, head switch,
+             rasgo do glitch), nitidez, croma, realce, cor
+   passe 1 → tela (1/1): aberração, OSD, glitch filmado, ruído, vinheta, barras
+   passe 2 → saída: a TV — curvatura, linhas, tremida, vinheta do tubo, a
+             resolução da TV, horizontal/vertical soltos, listras, barras de
+             zumbido, chuvisco, interferência e o desligar
+
+  ============================================================================
+   ENXUGADO (0.188.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 42 controles no painel. Agora são 17: Intensidade da fita, Barras
+  pretas, Tela da câmera, Glitch filmado, Força do glitch, Tracking, Tremor,
+  Aberração cromática e Ruído soltos; Perda de nitidez, Cor borrada e
+  Saturação no grupo Fita; Curvatura, Linhas, Vinheta, Recepção ruim e
+  Desligar a TV no grupo TV de tubo. O resto continua aqui, com
+  `hidden="true"`: as predefinições mexem neles (o verde do Nightshot, o pulo
+  do Pausado, a imagem rolando do Fim da fita).
+
+  O que se sobrepunha virou um controle só:
+   - Vinheta: a da fita e a do vidro. Abaixo do padrão (0,3) a "Vinheta" apaga
+     as duas juntas; acima, só a da fita cresce. Em zero, nenhuma vinheta.
+   - Tremor: o das linhas e o horizontal solto da TV. Abaixo do padrão (0,25)
+     o "Tremor" acalma os dois; acima, só o das linhas cresce.
+  Toda predefinição tem Vinheta >= 0,3 e Tremor >= 0,25 (ou a recepção em
+  zero), então nenhuma mudou.
+  O resto da recepção (chuvisco, pontos, barras de zumbido, listras, imagem
+  rolando) responde à "Recepção ruim", como o Reception Master da TV Damage.
+
+-->
+<effect
+    id="nova.effect.vhs"
+    name="VHS"
+    name-en="VHS Camcorder"
+    desc="Fita VHS passando numa TV de tubo: quadro 4:3, tela da câmera, glitch filmado, cor borrada, curvatura e chuvisco."
+    desc-en="VHS tape on an old CRT TV: 4:3 frame, camcorder OSD, filmed glitches, chroma bleed, tube curvature and static."
+    category="stylize"
+    blend="true"
+    tags="vhs,fita,tape,camcorder,camera,osd,rec,glitch,retro,anos 90,90s,ruido,tracking,analogico,vintage,aberracao,aberration,4:3,crt,tv,tubo,chuvisco,static,scanline">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="fita" src="buffer" scale="1.0" />
+        <texture id="tela" src="buffer" scale="1.0" />
+        <texture id="osdImg" src="video" from="osdOverlay"
+                 files="vhs/overlay_1.mp4|vhs/overlay_2.mp4|vhs/overlay_3.mp4|vhs/overlay_4.mp4|vhs/overlay_5.mp4|vhs/overlay_6.mp4|vhs/overlay_7.mp4|vhs/overlay_8.mp4|vhs/overlay_9.mp4|vhs/overlay_10.mp4|vhs/overlay_11.mp4|vhs/overlay_12.mp4" />
+        <texture id="glitchImg" src="video" from="glitchOverlay"
+                 files="vhs/glitch_1.mp4|vhs/glitch_2.mp4|vhs/glitch_3.mp4|vhs/glitch_4.mp4|vhs/glitch_5.mp4|vhs/glitch_6.mp4|vhs/glitch_7.mp4|vhs/glitch_8.mp4|vhs/glitch_9.mp4|vhs/glitch_10.mp4|vhs/glitch_11.mp4|vhs/glitch_12.mp4|vhs/glitch_13.mp4|vhs/glitch_14.mp4|vhs/glitch_15.mp4|vhs/glitch_16.mp4|vhs/glitch_17.mp4|vhs/glitch_18.mp4|vhs/glitch_19.mp4|vhs/glitch_20.mp4|vhs/static.mp4|vhs/rewind.mp4" />
+
+        <!-- ================================ O PAINEL ================================= -->
+        <slider id="vhsAmount" label="Intensidade da fita"
+                default="1.0" min="0.0" max="1.0" step="0.01" />
+        <selector id="screenAspect" label="Barras pretas" default="1"
+                  options="Nenhuma|Automática (4:3 ou 3:4)|4:3|3:4 (vertical)|1:1|16:9" />
+        <selector id="osdOverlay" label="Tela da câmera" default="1"
+                  options="Nenhuma|Play (37min)|Gravando (REC)|Data automática|Nightshot|Foco|TBC|Fim da fita|REC 59min|Pausa|Contraste|Menu|Rebobinando (REW)" />
+        <selector id="glitchOverlay" label="Glitch filmado" default="5"
+                  options="Nenhum|Glitch 1|Glitch 2|Glitch 3|Glitch 4|Glitch 5|Glitch 6|Glitch 7|Glitch 8|Glitch 9|Glitch 10|Glitch 11|Glitch 12|Glitch 13|Glitch 14|Glitch 15|Glitch 16|Glitch 17|Glitch 18|Glitch 19|Glitch 20|Estática|Rebobinar (cores)" />
+        <slider id="glitchAmount" label="Força do glitch"
+                default="0.6" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="tracking" label="Tracking"
+                default="0.12" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="jitter" label="Tremor"
+                default="0.25" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="aberration" label="Aberração cromática"
+                default="4.0" min="0.0" max="12.0" step="0.1" snap="0.0" />
+        <slider id="noiseAmount" label="Ruído"
+                default="0.08" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="softness" group="Fita" label="Perda de nitidez"
+                default="1.2" min="0.0" max="6.0" step="0.1" snap="0.0" />
+        <slider id="bleed" group="Fita" label="Cor borrada e atrasada"
+                default="4.5" min="0.0" max="12.0" step="0.1" snap="0.0" />
+        <slider id="saturation" group="Fita" label="Saturação"
+                default="1.05" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="tubeCurvature" group="TV de tubo" label="Curvatura"
+                default="0.12" min="0.0" max="0.6" step="0.01" snap="0.0" />
+        <slider id="scanlines" group="TV de tubo" label="Linhas"
+                default="0.42" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="vignette" group="TV de tubo" label="Vinheta"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="reception" group="TV de tubo" label="Recepção ruim"
+                default="0.17" min="0.0" max="3.0" step="0.01" snap="0.0,1.0" />
+        <!-- Anime de 0 a 1: a imagem esbranquiça, vira um risco, um ponto e some. -->
+        <slider id="turnOff" group="TV de tubo" label="Desligar a TV"
+                default="0.0" min="0.0" max="1.0" step="0.005" snap="0.0" />
+
+        <!-- ======== ESCONDIDOS (hidden): as predefinições mexem, o painel não ======== -->
+
+        <!-- ================================== A FITA ================================= -->
+        <slider id="halo" hidden="true" group="Fita" label="Contorno do realce"
+                default="0.35" min="0.0" max="1.5" step="0.01" snap="0.0" />
+        <color id="tintColor" hidden="true" group="Fita" label="Tom da fita" default="#FFFFD6E6" />
+        <slider id="tintAmount" hidden="true" group="Fita" label="Quanto do tom"
+                default="0.12" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="blackLift" hidden="true" group="Fita" label="Preto lavado"
+                default="0.05" min="0.0" max="0.3" step="0.005" snap="0.0" />
+        <selector id="aberrationMode" hidden="true" group="Fita" label="Aberração" default="0"
+                  options="Horizontal|Do centro" />
+
+        <!-- ============================== O SINAL DA FITA ============================ -->
+        <slider id="bandSpeed" hidden="true" group="Sinal da fita" label="Velocidade do tracking"
+                default="0.3" min="-3.0" max="3.0" step="0.05" snap="0.0" />
+        <slider id="bounce" hidden="true" group="Sinal da fita" label="Pulo vertical"
+                default="0.1" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="headSwitch" hidden="true" group="Sinal da fita" label="Ruído no pé da imagem"
+                default="0.7" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="glitchDisplace" hidden="true" group="Sinal da fita" label="Glitch rasga a imagem"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="glitchBlend" hidden="true" group="Sinal da fita" label="Mistura do glitch" default="0"
+                  options="Tela|Somar|Sobrepor" />
+
+        <!-- ================================ TV DE TUBO =============================== -->
+        <slider id="tubeLines" hidden="true" group="TV de tubo" label="Quantidade de linhas"
+                default="190" min="20.0" max="900.0" step="10.0" />
+        <slider id="flicker" hidden="true" group="TV de tubo" label="Tremida do brilho"
+                default="0.13" min="0.0" max="0.3" step="0.01" snap="0.0" />
+        <slider id="tubeVignette" hidden="true" group="TV de tubo" label="Vinheta do tubo"
+                default="0.43" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="tvPixels" hidden="true" group="TV de tubo" label="Resolução da TV" type="integer"
+                default="720" min="120" max="3840" step="1" ticks="240,480,720,1080" />
+
+        <!-- ============================== RECEPÇÃO DA TV ============================= -->
+        <!-- Tudo aqui é multiplicado pela "Recepção ruim": em zero, a TV pega perfeito. -->
+        <slider id="staticAmp" hidden="true" group="Recepção da TV" label="Chuvisco"
+                default="0.8" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="interference" hidden="true" group="Recepção da TV" label="Pontos de interferência"
+                default="0.6" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="humBars" hidden="true" group="Recepção da TV" label="Barras de zumbido"
+                default="0.3" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="colorStripes" hidden="true" group="Recepção da TV" label="Listras de cor"
+                default="0.2" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="hHold" hidden="true" group="Recepção da TV" label="Horizontal solto"
+                default="0.5" min="0.0" max="5.0" step="0.01" snap="0.0" />
+        <slider id="vRoll" hidden="true" group="Recepção da TV" label="Imagem rolando"
+                default="0.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+
+        <!-- ============================== TELA DA CÂMERA ============================== -->
+        <slider id="osdOpacity" hidden="true" group="Tela da câmera" label="Opacidade"
+                default="0.95" min="0.0" max="1.0" step="0.01" />
+        <slider id="osdSize" hidden="true" group="Tela da câmera" label="Tamanho"
+                default="1.0" min="0.5" max="1.2" step="0.01" snap="1.0" />
+        <slider id="osdDamage" hidden="true" group="Tela da câmera" label="Gravada na fita"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ================================== BARRAS ================================= -->
+        <color id="barColor" hidden="true" group="Barras" label="Cor das barras" default="#FF000000" />
+        <slider id="seed" hidden="true" group="Barras" label="Semente"
+                default="0.0" min="0.0" max="100.0" step="1.0" />
+    </params>
+
+    <preview amostra="retrato">
+        <set param="osdOverlay" value="0" />
+        <set param="glitchOverlay" value="0" />
+    </preview>
+
+    <passes>
+        <pass target="fita" />  <!-- 0: a fita -->
+        <pass target="tela" />  <!-- 1: a tela (o que a câmera gravou) -->
+        <pass />                <!-- 2: a TV -->
+    </passes>
+
+    <!--
+      As predefinições citam todos os controles principais (uma predefinição só
+      escreve o que cita). Não mexem no tamanho da tela da câmera, na cor das
+      barras, na semente nem no desligar (que é para animar).
+    -->
+    <presets>
+        <preset id="camcorder" name="📼 Câmera (Play)" name-en="📼 Camcorder (Play)">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="1" />
+            <value param="glitchOverlay" value="5" />
+            <value param="glitchAmount" value="0.6" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.17" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.12" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="recording" name="🔴 Gravando" name-en="🔴 Recording">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="2" />
+            <value param="glitchOverlay" value="16" />
+            <value param="glitchAmount" value="0.5" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.17" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.12" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="autoDate" name="📅 Data automática" name-en="📅 Auto Date">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="3" />
+            <value param="glitchOverlay" value="12" />
+            <value param="glitchAmount" value="0.6" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.17" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.12" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="nightshot" name="🌙 Nightshot" name-en="🌙 Nightshot">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="4" />
+            <value param="glitchOverlay" value="21" />
+            <value param="glitchAmount" value="0.45" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.2" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.17" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="0.25" />
+            <value param="tintColor" value="#FF7DFF8A" />
+            <value param="tintAmount" value="0.85" />
+            <value param="blackLift" value="0.08" />
+            <value param="vignette" value="0.55" />
+            <value param="tracking" value="0.12" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="wornTape" name="🎞️ Fita gasta" name-en="🎞️ Worn Tape">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="0" />
+            <value param="glitchOverlay" value="9" />
+            <value param="glitchAmount" value="0.8" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.16" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.35" />
+            <value param="softness" value="1.8" />
+            <value param="bleed" value="5.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="0.8" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.45" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.45" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="1.0" />
+            <value param="glitchDisplace" value="0.8" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="560" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.8" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="rewinding" name="⏪ Rebobinando" name-en="⏪ Rewinding">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="12" />
+            <value param="glitchOverlay" value="22" />
+            <value param="glitchAmount" value="0.55" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.3" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.6" />
+            <value param="bandSpeed" value="-2.0" />
+            <value param="jitter" value="0.7" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="1.0" />
+            <value param="glitchBlend" value="2" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="1.2" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="tapeEnd" name="⏏️ Fim da fita" name-en="⏏️ Tape End">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="7" />
+            <value param="glitchOverlay" value="21" />
+            <value param="glitchAmount" value="0.9" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.25" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.7" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="0.6" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.3" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="1.3" />
+            <value param="interference" value="0.3" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.5" />
+        </preset>
+        <preset id="paused" name="⏸️ Pausado" name-en="⏸️ Paused">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="9" />
+            <value param="glitchOverlay" value="2" />
+            <value param="glitchAmount" value="0.7" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.22" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.35" />
+            <value param="bandSpeed" value="0.0" />
+            <value param="jitter" value="0.8" />
+            <value param="bounce" value="0.6" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="lostSignal" name="💙 Sinal perdido" name-en="💙 Lost Signal">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="0" />
+            <value param="glitchOverlay" value="18" />
+            <value param="glitchAmount" value="0.8" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.18" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.9" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.5" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.9" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="1.2" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="1.0" />
+            <value param="vRoll" value="1.0" />
+        </preset>
+        <preset id="clean43" name="✨ Só a fita (4:3)" name-en="✨ Just the Tape (4:3)">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="0" />
+            <value param="glitchOverlay" value="0" />
+            <value param="glitchAmount" value="0.6" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0" />
+            <value param="reception" value="0" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.05" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.15" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.5" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.1" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0" />
+            <value param="tubeVignette" value="0" />
+            <value param="tvPixels" value="3840" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="flat" name="📹 Sem a TV (tela plana)" name-en="📹 No TV (flat screen)">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="1" />
+            <value param="glitchOverlay" value="5" />
+            <value param="glitchAmount" value="0.6" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0" />
+            <value param="reception" value="0" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFD6E6" />
+            <value param="tintAmount" value="0.12" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.12" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.1" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0" />
+            <value param="tubeVignette" value="0" />
+            <value param="tvPixels" value="3840" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+        <preset id="nineties" name="📺 Anos 90" name-en="📺 90s Home Video">
+            <value param="vhsAmount" value="1.0" />
+            <value param="screenAspect" value="1" />
+            <value param="osdOverlay" value="6" />
+            <value param="glitchOverlay" value="4" />
+            <value param="glitchAmount" value="0.5" />
+            <value param="aberration" value="4.0" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="tubeCurvature" value="0.12" />
+            <value param="reception" value="0.17" />
+            <value param="softness" value="1.2" />
+            <value param="bleed" value="4.5" />
+            <value param="halo" value="0.35" />
+            <value param="saturation" value="1.05" />
+            <value param="tintColor" value="#FFFFE2C8" />
+            <value param="tintAmount" value="0.18" />
+            <value param="blackLift" value="0.05" />
+            <value param="vignette" value="0.3" />
+            <value param="tracking" value="0.12" />
+            <value param="bandSpeed" value="0.3" />
+            <value param="jitter" value="0.25" />
+            <value param="bounce" value="0.1" />
+            <value param="headSwitch" value="0.7" />
+            <value param="glitchDisplace" value="0.5" />
+            <value param="glitchBlend" value="0" />
+            <value param="osdOpacity" value="0.95" />
+            <value param="osdDamage" value="0.5" />
+            <value param="scanlines" value="0.42" />
+            <value param="tubeLines" value="190" />
+            <value param="flicker" value="0.13" />
+            <value param="tubeVignette" value="0.43" />
+            <value param="tvPixels" value="720" />
+            <value param="staticAmp" value="0.8" />
+            <value param="interference" value="0.6" />
+            <value param="humBars" value="0.3" />
+            <value param="colorStripes" value="0.2" />
+            <value param="hHold" value="0.5" />
+            <value param="vRoll" value="0.0" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+const float TAU = 6.28318530718;
+
+// ============================================================================
+//  ACASO
+// ============================================================================
+
+float semente() {
+    return seed * 13.71 + 1.37;
+}
+
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+/** Ruído de valor 1D, -1..1, liso. */
+float ruido1(float x) {
+    float i = floor(x);
+    float f = fract(x);
+    float u = f * f * (3.0 - 2.0 * f);
+    return mix(hash11(i + semente()), hash11(i + 1.0 + semente()), u) * 2.0 - 1.0;
+}
+
+float indiceDoQuadro() {
+    float fd = acFrameDuration > 0.0 ? acFrameDuration : 1.0 / 30.0;
+    return floor(acTime / fd + 0.5);
+}
+
+// ============================================================================
+//  COR (YIQ: o NTSC separa luz e cor, e a fita trata as duas de jeitos diferentes)
+// ============================================================================
+
+float luma(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+vec3 paraYiq(vec3 c) {
+    return vec3(
+        dot(c, vec3(0.299, 0.587, 0.114)),
+        dot(c, vec3(0.596, -0.274, -0.322)),
+        dot(c, vec3(0.211, -0.523, 0.312)));
+}
+
+vec3 deYiq(vec3 q) {
+    return vec3(
+        q.x + 0.956 * q.y + 0.621 * q.z,
+        q.x - 0.272 * q.y - 0.647 * q.z,
+        q.x - 1.106 * q.y + 1.703 * q.z);
+}
+
+// ============================================================================
+//  O QUADRO DA TELA (as barras pretas)
+// ============================================================================
+
+/**
+ * A proporção da tela. "Automática" é 4:3 numa camada deitada e 3:4 numa em pé:
+ * um quadro 4:3 deitado num vídeo vertical ficaria minúsculo.
+ */
+float proporcaoDaTela() {
+    if (screenAspect == 1) return acAspect >= 1.0 ? 4.0 / 3.0 : 3.0 / 4.0;
+    if (screenAspect == 2) return 4.0 / 3.0;
+    if (screenAspect == 3) return 3.0 / 4.0;
+    if (screenAspect == 4) return 1.0;
+    if (screenAspect == 5) return 16.0 / 9.0;
+    return acAspect;
+}
+
+/** O tamanho da tela dentro da camada (0..1), centrada. */
+vec2 tamanhoDaTela() {
+    float a = proporcaoDaTela();
+    return a < acAspect ? vec2(a / acAspect, 1.0) : vec2(1.0, acAspect / max(a, 0.0001));
+}
+
+/** A imagem PREENCHE a tela (corta o que sobra), como uma TV 4:3 passando algo mais largo. */
+vec2 escalaDoConteudo() {
+    float a = proporcaoDaTela();
+    return a < acAspect ? vec2(a / acAspect, 1.0) : vec2(1.0, acAspect / max(a, 0.0001));
+}
+
+vec2 paraTela(vec2 uv) {
+    return (uv - 0.5) / tamanhoDaTela() + 0.5;
+}
+
+bool foraDe(vec2 p) {
+    return p.x < 0.0 || p.y < 0.0 || p.x > 1.0 || p.y > 1.0;
+}
+
+/**
+ * Onde, na tela da câmera gravada (OSD, filmado em 4:3), cai o ponto p da tela.
+ *
+ * Deitada: o OSD cobre a tela, como sempre. EM PÉ (relato do snow, 27/09/2026:
+ * "numa composição em pé os elementos ficam meio fora da cena — o REC e tal"):
+ * espremer o 4:3 numa tela 3:4 achatava o texto e tirava os cantos do lugar.
+ * Agora o OSD mantém a proporção, ocupa a largura toda, e os TRÊS TERÇOS dele
+ * ficam presos onde fazem sentido numa tela alta: o de cima (REC, bateria) no
+ * alto, o do meio (foco, pausa) no meio, o de baixo (data, contador) embaixo.
+ * Entre eles, nada. Devolve (-1, -1) para "sem OSD aqui".
+ */
+vec2 uvDoOsd(vec2 p) {
+    vec2 tela = tamanhoDaTela();
+    float aspectoDaTela = acAspect * tela.x / max(tela.y, 0.0001);
+    if (aspectoDaTela >= 1.0) return p;
+    float altura = 1.0 / aspectoDaTela;      // altura da tela, em larguras
+    float yW = p.y * altura;
+    float terco = 0.75 / 3.0;                // um terço do OSD (4:3 = 0,75 de altura por largura)
+    if (yW < terco) return vec2(p.x, yW / 0.75);
+    if (yW > altura - terco) return vec2(p.x, 1.0 - (altura - yW) / 0.75);
+    float meio = altura * 0.5;
+    if (abs(yW - meio) < terco * 0.5) return vec2(p.x, 0.5 + (yW - meio) / 0.75);
+    return vec2(-1.0);
+}
+
+// ============================================================================
+//  O SINAL: TUDO QUE DESLOCA A IMAGEM (em larguras da tela)
+// ============================================================================
+
+/** A energia das linhas claras do glitch filmado nesta altura. */
+float energiaDoGlitch(float y) {
+    if (glitchOverlay == 0) return 0.0;
+    float soma = 0.0;
+    float maior = 0.0;
+    for (int i = 0; i < 5; i++) {
+        float l = luma(texture(glitchImg, vec2(0.1 + 0.2 * float(i), y)).rgb);
+        soma += l;
+        maior = max(maior, l);
+    }
+    return clamp(maior * 0.6 + soma * 0.08, 0.0, 1.0);
+}
+
+/** A faixa de tracking: onde ela está nesta altura (0..1). */
+float faixaDeTracking(float y) {
+    if (tracking <= 0.0) return 0.0;
+    float centro = fract(acTime * bandSpeed * 0.08 + hash11(semente() + 3.0));
+    float d = abs(fract(y - centro + 0.5) - 0.5);
+    return 1.0 - smoothstep(0.0, 0.05 + tracking * 0.05, d);
+}
+
+vec2 deslocamento(vec2 p) {
+    float k = vhsAmount;
+    float q = indiceDoQuadro();
+    float s = semente();
+    float linha = floor(p.y * 480.0);
+    vec2 d = vec2(0.0);
+
+    // Tremor de base de tempo: as linhas oscilam um pouco, cada uma, e o conjunto
+    // ondula devagar. É o "vivo" de uma fita parada.
+    d.x += jitter * k * ruido1(p.y * 60.0 + q * 0.7 + s) * 0.0022;
+    d.x += jitter * k * (hash21(vec2(linha, q + s)) - 0.5) * 0.0008;
+
+    // Pulo vertical, de vez em quando.
+    if (bounce > 0.0) {
+        float trecho = floor(q / 3.0);
+        float pula = step(0.8, hash11(trecho * 1.7 + s));
+        d.y += bounce * k * pula * (hash11(q + s + 5.0) - 0.5) * 0.012;
+    }
+
+    // Tracking: uma dobra LISA, que anda devagar — e não linhas soltas ao acaso.
+    float w = faixaDeTracking(p.y);
+    if (w > 0.0) {
+        d.x += tracking * k * w * (ruido1(p.y * 22.0 + acTime * 5.0 + s) * 0.03 + 0.012);
+    }
+
+    // Head switching: o pé da imagem torto para a direita, com ruído.
+    if (headSwitch > 0.0) {
+        float pe = smoothstep(0.972, 1.0, p.y);
+        d.x += headSwitch * k * pe * (0.018 + 0.03 * hash21(vec2(linha, q + s)));
+    }
+
+    // O glitch filmado rasga a imagem onde tem linha clara.
+    if (glitchDisplace > 0.0 && glitchAmount > 0.0) {
+        float e = energiaDoGlitch(p.y);
+        d.x += glitchDisplace * glitchAmount * e * ((hash21(vec2(linha * 0.5, q + s)) - 0.5) * 0.08 + 0.02);
+    }
+    return d;
+}
+
+// ============================================================================
+//  PASSE 0 — A FITA
+// ============================================================================
+
+vec4 amostra(vec2 c) {
+    return texture(inputImg, clamp(c, 0.0, 1.0));
+}
+
+vec4 passeFita() {
+    vec2 p = paraTela(acScreenNorm);
+    if (foraDe(p)) return vec4(0.0);
+    float k = vhsAmount;
+    vec2 pd = p + deslocamento(p);
+    vec2 escala = escalaDoConteudo();
+    vec2 c = 0.5 + (pd - 0.5) * escala;
+    // Um pixel da saída, em coordenada do conteúdo.
+    float passo = acTexelSize.x / tamanhoDaTela().x * escala.x;
+
+    // Luz: pouca nitidez na horizontal (a fita perdia resolução sobretudo aí).
+    float passoLuz = softness * k * 0.5 * passo;
+    float Y = luma(amostra(c).rgb) * 0.36
+            + (luma(amostra(c + vec2(passoLuz, 0.0)).rgb) + luma(amostra(c - vec2(passoLuz, 0.0)).rgb)) * 0.24
+            + (luma(amostra(c + vec2(passoLuz * 2.0, 0.0)).rgb) + luma(amostra(c - vec2(passoLuz * 2.0, 0.0)).rgb)) * 0.08;
+
+    // Cor: bem mais borrada, e ATRASADA para a direita — a croma da fita
+    // chega depois da luz. Sete amostras, cinco delas à esquerda (a cor que
+    // aparece aqui é a que estava à esquerda).
+    float passoCor = bleed * k * 0.5 * passo;
+    vec2 iq = vec2(0.0);
+    float Ylargo = 0.0;
+    for (int i = 0; i < 7; i++) {
+        vec3 q = paraYiq(amostra(c - vec2(float(i - 1) * passoCor, 0.0)).rgb);
+        iq += q.yz / 7.0;
+        Ylargo += q.x / 7.0;
+    }
+
+    // O contorno claro do realce: o videocassete "afiava" a imagem e deixava
+    // um halo em volta das bordas.
+    Y += halo * k * (Y - Ylargo);
+    iq *= saturation;
+    float lava = blackLift * k;
+    Y = lava + Y * (1.0 - lava);
+
+    vec3 cor = deYiq(vec3(Y, iq));
+    vec3 tom = tintColor.rgb / max(luma(tintColor.rgb), 0.05);
+    cor *= mix(vec3(1.0), tom, tintAmount);
+
+    // No pé da imagem, o head switching também embaralha a cor.
+    if (headSwitch > 0.0) {
+        float pe = smoothstep(0.972, 1.0, p.y) * headSwitch * k;
+        float r = hash21(vec2(floor(acScreenNorm.x * acResolution.x / 3.0), floor(p.y * 480.0) + indiceDoQuadro()));
+        cor = mix(cor, vec3(r) * 0.8 + cor * 0.3, pe * 0.45);
+    }
+    return vec4(clamp(cor, 0.0, 1.0), amostra(c).a);
+}
+
+// ============================================================================
+//  PASSE 1 — A TELA (o que a câmera gravou, com as barras)
+// ============================================================================
+
+vec4 passeTela() {
+    vec2 uv = acScreenNorm;
+    vec2 p = paraTela(uv);
+    if (foraDe(p)) return vec4(barColor.rgb, 1.0);
+
+    float k = vhsAmount;
+    float q = indiceDoQuadro();
+    float s = semente();
+
+    // Aberração: o vermelho e o azul separados do verde.
+    vec2 dir = vec2(1.0, 0.0);
+    if (aberrationMode == 1) {
+        vec2 v = (p - 0.5) * vec2(acAspect * tamanhoDaTela().x / max(tamanhoDaTela().y, 0.0001), 1.0);
+        dir = length(v) > 0.0001 ? v / length(v) * min(length(v) * 2.0, 1.0) : vec2(0.0);
+    }
+    vec2 ab = dir * aberration * acTexelSize;
+    vec4 c = texture(fita, uv);
+    c.r = texture(fita, uv + ab).r;
+    c.b = texture(fita, uv - ab).b;
+
+    // A tela da câmera: o azul do fundo sai por croma, o texto fica.
+    if (osdOverlay > 0 && osdOpacity > 0.0) {
+        vec2 d = deslocamento(p) * osdDamage;
+        vec2 base = uvDoOsd(p);
+        vec2 o = (base + d - 0.5) / max(osdSize, 0.01) + 0.5;
+        if (base.x >= 0.0 && !foraDe(o)) {
+            vec4 t = texture(osdImg, o);
+            // Gravada na fita: a cor do OSD também escorre um pouco.
+            vec4 t2 = texture(osdImg, o - vec2(bleed * k * acTexelSize.x * 0.5, 0.0));
+            t = mix(t, (t + t2) * 0.5, osdDamage * 0.6);
+            float azul = t.b - max(t.r, t.g);
+            float a = 1.0 - smoothstep(0.22, 0.5, azul);
+            vec3 corOsd = t.rgb;
+            corOsd.b = min(corOsd.b, max(corOsd.r, corOsd.g) + 0.08);
+            c.rgb = mix(c.rgb, corOsd, a * osdOpacity);
+            c.a = max(c.a, a * osdOpacity);
+        }
+    }
+
+    // O glitch filmado por cima.
+    if (glitchOverlay > 0 && glitchAmount > 0.0) {
+        vec3 g = texture(glitchImg, p).rgb;
+        if (glitchBlend == 0) {
+            c.rgb = 1.0 - (1.0 - c.rgb) * (1.0 - g * glitchAmount);
+        } else if (glitchBlend == 1) {
+            c.rgb += g * glitchAmount;
+        } else {
+            vec3 sob = mix(2.0 * c.rgb * g, 1.0 - 2.0 * (1.0 - c.rgb) * (1.0 - g), step(0.5, c.rgb));
+            c.rgb = mix(c.rgb, sob, glitchAmount);
+        }
+    }
+
+    // Riscos de dropout dentro da faixa de tracking.
+    float w = faixaDeTracking(p.y);
+    if (w > 0.0) {
+        float celula = floor(uv.x * acResolution.x / 14.0);
+        float risco = step(0.975 - tracking * 0.03, hash21(vec2(celula, floor(p.y * 480.0) + q + s)));
+        c.rgb += risco * w * tracking * k * 0.8;
+    }
+
+    // Ruído: grão de luz fino e ruído de cor em riscos horizontais (a cor da
+    // fita tinha menos resolução, então o ruído dela também é mais largo).
+    float nk = noiseAmount * k;
+    if (nk > 0.0) {
+        vec2 px = uv * acResolution;
+        float grao = hash21(floor(px) + vec2(q * 13.1, q * 7.7) + s) - 0.5;
+        vec2 celulaCor = floor(px / vec2(6.0, 1.0));
+        vec2 ruidoCor = vec2(hash21(celulaCor + vec2(q * 3.1, s)), hash21(celulaCor + vec2(q * 5.3, s + 9.0))) - 0.5;
+        vec3 y = paraYiq(c.rgb);
+        y.x += grao * nk * 0.5;
+        y.yz += ruidoCor * nk * 0.3;
+        c.rgb = deYiq(y);
+    }
+
+    // Vinheta dentro da tela. (As linhas agora são as do tubo, no passe 2.)
+    if (vignette > 0.0) {
+        vec2 v = (p - 0.5) * 2.0;
+        c.rgb *= 1.0 - vignette * smoothstep(0.55, 1.6, length(v * vec2(1.0, 0.9)));
+    }
+    return vec4(clamp(c.rgb, 0.0, 1.0), c.a);
+}
+
+// ============================================================================
+//  PASSE 2 — A TV
+// ============================================================================
+//
+//  A fita passando numa TV de tubo, na ordem em que o snow empilhou: a TV
+//  recebe o sinal (horizontal e vertical soltos), olha a imagem na resolução
+//  dela, e o que ela olha é o TUBO (curvatura, linhas, tremida, vinheta). Por
+//  cima, o que a recepção ruim soma: listras de cor, barras de zumbido,
+//  chuvisco e pontos de interferência. Os detalhes que ele deixou nos
+//  padrões (pontos a 0,63, barras com nitidez 1,95, três oitavas no
+//  horizontal a 1,9...) viraram constantes.
+
+const float PI = 3.14159265359;
+
+float sementeTv() {
+    return seed * 37.0 + 140.0;
+}
+
+float hash31(vec3 p) {
+    vec3 p3 = fract(p * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 hash33(vec3 p) {
+    vec3 p3 = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+
+float ruidoTv(float x) {
+    float i = floor(x);
+    float f = fract(x);
+    float u = f * f * (3.0 - 2.0 * f);
+    float s = sementeTv();
+    return mix(hash11(i + s), hash11(i + 1.0 + s), u) * 2.0 - 1.0;
+}
+
+/** Gira a fase da croma: é o que um sinal de cor fora de fase faz. */
+vec3 girarCroma(vec3 c, float angulo) {
+    vec3 q = paraYiq(c);
+    float cs = cos(angulo);
+    float sn = sin(angulo);
+    q.yz = vec2(cs * q.y - sn * q.z, sn * q.y + cs * q.z);
+    return deYiq(q);
+}
+
+/**
+ * O tubo num ponto da camada (pré-multiplicado): a tela envergada, as linhas,
+ * a tremida e a vinheta do vidro. Fora do vidro é a moldura: a cor das barras,
+ * opaca.
+ */
+vec4 noTubo(vec2 a) {
+    vec4 moldura = vec4(barColor.rgb, 1.0);
+    if (foraDe(a)) return moldura;
+    vec2 c = a * 2.0 - 1.0;
+    vec2 b = (c + c.yx * c.yx * c * tubeCurvature) * 0.5 + 0.5;
+    if (foraDe(b)) return moldura;
+    vec4 t = texture(tela, b);
+    vec3 rgb = t.rgb * t.a;
+
+    // As linhas, só onde cabem (abaixo de ~2 px por par vira moiré).
+    if (scanlines > 0.0) {
+        float periodo = 2.0 / max(tubeLines, 1.0) * acResolution.y;
+        float some = smoothstep(1.5, 2.5, periodo);
+        rgb *= 1.0 - scanlines * some * (0.5 + 0.5 * sin(b.y * tubeLines * PI)) * 0.5;
+    }
+    // A tremida do sincronismo vertical.
+    rgb *= 1.0 - flicker * (0.5 + 0.5 * sin(acTime * 47.0));
+    // A vinheta do vidro. No painel há uma "Vinheta" só, a da fita: abaixo do
+    // padrão dela (0,3) ela apaga a do vidro junto; acima, só a da fita cresce.
+    float d = length((b - 0.5) * 2.0 * vec2(acAspect, 1.0));
+    rgb *= 1.0 - tubeVignette * clamp(vignette / 0.3, 0.0, 1.0) * smoothstep(0.6, 1.6, d);
+    return vec4(rgb, t.a);
+}
+
+/**
+ * A imagem como a TV a vê: `tvRes` amostras, reconstruídas com interpolação
+ * (sem degrau torto quando a conta não dá inteira).
+ */
+vec4 lerNaTv(vec2 uv, vec2 tvRes) {
+    vec2 p = uv * tvRes - 0.5;
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec4 a = noTubo((i + vec2(0.5, 0.5)) / tvRes);
+    vec4 b = noTubo((i + vec2(1.5, 0.5)) / tvRes);
+    vec4 c = noTubo((i + vec2(0.5, 1.5)) / tvRes);
+    vec4 d = noTubo((i + vec2(1.5, 1.5)) / tvRes);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/**
+ * A faixa entre um quadro e outro, que aparece quando a imagem rola: o código
+ * de tempo em blocos e a legenda oculta (a fileira de tracinhos piscando).
+ */
+vec3 faixaDeServico(float y, float x, vec2 tv, float quadro, vec2 tvRes) {
+    float s = sementeTv();
+    float total = max(floor(0.1 * tvRes.y), 1.0);
+    float linha = floor(y * total);
+    vec3 v = vec3(hash31(vec3(floor(tv), quadro + s)) * 0.1);
+    float quadroDoSinal = floor(acTime * 30.0);
+    if (abs(linha - floor(total * 0.4)) < 0.5 && x > 0.08 && x < 0.9) {
+        float bloco = floor(x * 90.0);
+        float muda = bloco > 60.0 ? quadroDoSinal : floor(quadroDoSinal / 30.0);
+        v = vec3(step(0.5, hash21(vec2(bloco, muda + s))) * 0.75);
+    }
+    if (abs(linha - floor(total * 0.72)) < 0.5 && x > 0.03 && x < 0.92) {
+        if (x < 0.13) {
+            v = vec3(0.5 + 0.5 * sin(x * TAU * 55.0)) * 0.8;
+        } else {
+            float bit = floor(x * 48.0);
+            v = vec3(step(0.45, hash21(vec2(bit, floor(quadroDoSinal / 2.0) + s))) * 0.85);
+        }
+    }
+    return v;
+}
+
+vec4 passeTv() {
+    vec2 uvTela = acScreenNorm;
+    float s = sementeTv();
+    float quadro = floor(acTime * 60.0);
+    float rec = max(reception, 0.0);
+    float pixelsDaTv = max(tvPixels, 8.0);
+    vec2 tvRes = vec2(pixelsDaTv, pixelsDaTv / max(acAspect, 0.0001));
+    vec2 tv = uvTela * tvRes;                  // a grade do aparelho (fica na tela)
+
+    // ------------------------------------------------ desligar: a imagem encolhe
+    vec2 uv = uvTela;
+    float escalaX = 1.0;
+    bool apagada = false;
+    if (turnOff > 0.0) {
+        float escalaY = mix(1.0, 0.004, pow(smoothstep(0.0, 0.55, turnOff), 0.7));
+        escalaX = mix(1.0, 0.003, smoothstep(0.5, 0.9, turnOff));
+        vec2 c = uv - 0.5;
+        apagada = abs(c.y) > escalaY * 0.5 || abs(c.x) > escalaX * 0.5;
+        uv = 0.5 + c / vec2(escalaX, escalaY);
+    }
+    float yDaTela = uv.y;
+
+    // ------------------------------------------------ imagem rolando
+    // O tempo em episódios de 2,5 s; "Imagem rolando" × recepção é a fração
+    // deles em que o vertical solta. No padrão é zero: rolar sozinho, de tempos
+    // em tempos, num efeito que se aplica e esquece, pareceria defeito do app.
+    bool naFaixaV = false;
+    float yNaFaixa = 0.0;
+    float vAmt = clamp(vRoll * rec, 0.0, 1.0);
+    if (vAmt > 0.0) {
+        float duracao = 2.5;
+        float episodio = floor(acTime / duracao);
+        if (hash11(episodio * 3.17 + s) < vAmt) {
+            float t = acTime - episodio * duracao;
+            float passos = t * 2.0;
+            float tranco = smoothstep(0.0, 1.0, fract(passos));
+            float pos = 0.7 * (floor(passos) + tranco) / 2.0;
+            pos += 0.004 * ruidoTv(t * 11.0 + episodio * 5.3);
+            float w = mod(uv.y + pos, 1.1);
+            if (w > 1.0) {
+                naFaixaV = true;
+                yNaFaixa = (w - 1.0) / 0.1;
+            }
+            uv.y = w;
+        }
+    }
+
+    // ------------------------------------------------ horizontal solto
+    bool naFaixaH = false;
+    // No painel há um "Tremor" só, o das linhas: abaixo do padrão dele (0,25) ele
+    // acalma o horizontal solto junto; acima, só o das linhas cresce.
+    float hAmp = hHold * rec * clamp(jitter / 0.25, 0.0, 1.0);
+    if (hAmp > 0.0) {
+        float soma = 0.0;
+        float peso = 0.0;
+        float a = 1.0;
+        float fr = 1.0;
+        for (int o = 0; o < 3; o++) {
+            soma += a * ruidoTv(yDaTela * 1.9 * 3.0 * fr + acTime * 0.9 * fr + float(o) * 19.7);
+            peso += a;
+            a *= 0.55;
+            fr *= 2.1;
+        }
+        soma /= peso;
+        float varia = 1.0 + 0.5 * (hash11(floor(acTime * 12.0) * 1.3 + s) * 2.0 - 1.0);
+        float w = mod(uv.x + soma * hAmp * 0.06 * varia, 1.05);
+        if (w > 1.0) naFaixaH = true;
+        uv.x = w;
+    }
+
+    // ------------------------------------------------ a imagem recebida
+    vec4 img;
+    if (naFaixaV) {
+        img = vec4(faixaDeServico(yNaFaixa, uv.x, tv, quadro, tvRes), 1.0);
+    } else if (naFaixaH) {
+        img = vec4(0.0, 0.0, 0.0, 1.0);
+    } else if (tvRes.x < acResolution.x * 0.95) {
+        img = lerNaTv(uv, tvRes);
+    } else {
+        img = noTubo(uv);
+    }
+    vec3 cor = img.rgb;
+    float alfa = img.a;
+
+    // ------------------------------------------------ listras de cor
+    float listras = colorStripes * rec;
+    if (listras > 0.0) {
+        float ang = radians(160.0);
+        vec2 pp = vec2((uvTela.x - 0.5) * acAspect, uvTela.y - 0.5);
+        float fase = dot(pp, vec2(cos(ang), sin(ang))) * 10.0 + acTime * 3.0;
+        cor = girarCroma(cor, sin(fase * TAU) * listras * PI * 0.35);
+        vec3 arco = 0.5 + 0.5 * cos(TAU * (fase + vec3(0.0, 0.333, 0.667)));
+        cor += (arco - 0.5) * listras * 0.2 * alfa;
+    }
+
+    // ------------------------------------------------ barras de zumbido
+    // A rede elétrica vaza no sinal: faixas largas de brilho que rolam devagar,
+    // e outras seis vezes mais finas por cima. A média fica no lugar.
+    float zumbido = humBars * rec;
+    if (zumbido > 0.0) {
+        float f1 = fract(uvTela.y + acTime * 0.1);
+        float m1 = 0.5 / (1.0 + 1.95 * 8.0);
+        float b1 = smoothstep(0.0, m1, f1) * (1.0 - smoothstep(0.35, 0.35 + m1, f1));
+        float g1 = 1.0 + zumbido * (b1 - 0.35) * 1.2;
+        float f2 = fract(uvTela.y * 6.0 + acTime * 0.13);
+        float b2 = smoothstep(0.0, 0.1, f2) * (1.0 - smoothstep(0.5, 0.6, f2));
+        float g2 = 1.0 + zumbido * (b2 - 0.5) * 0.5;
+        cor *= max(g1 * g2, 0.0);
+    }
+
+    // ------------------------------------------------ chuvisco
+    // Na grade da TV, e na tela inteira: as barras pretas também chuviscam.
+    float chuvisco = staticAmp * rec;
+    if (chuvisco > 0.0) {
+        vec3 celula = vec3(floor(tv), quadro + s);
+        float tem = step(hash31(celula + vec3(0.0, 0.0, 91.3)), 0.7);
+        vec3 neve = mix(vec3(hash31(celula)), hash33(celula), 0.25);
+        cor += (neve - 0.5) * chuvisco * 0.9 * tem * alfa;
+    }
+
+    // ------------------------------------------------ pontos de interferência
+    float interf = interference * rec;
+    if (interf > 0.0) {
+        vec2 tremor = (vec2(hash11(quadro * 1.31 + s), hash11(quadro * 2.77 + s)) - 0.5) * 2.0 * vec2(1.0, 0.1);
+        vec2 p = tv + vec2(100.0, -10.0) * acTime + tremor;
+        float fila = floor(p.y);
+        float x = p.x / 9.0 + fila * 0.63;
+        float celulaX = floor(x);
+        float f = fract(x);
+        float tem = step(hash21(vec2(celulaX, fila) + s), 0.28);
+        float ponto = smoothstep(0.0, 0.06, f) * (1.0 - smoothstep(0.14, 0.26, f));
+        float rajada = smoothstep(-0.2, 0.6, ruidoTv(p.y / tvRes.y * 4.0 + acTime * 0.7));
+        vec3 corDoPonto = 0.35 + 0.9 * hash33(vec3(celulaX, fila, s));
+        cor += corDoPonto * ponto * tem * rajada * interf * 0.8 * alfa;
+    }
+
+    // ------------------------------------------------ desligar
+    // A imagem esbranquiça e desaba num risco (até 0,55), o risco vira um
+    // ponto (até 0,9), e o ponto some com um clarão.
+    if (turnOff > 0.0) {
+        cor = mix(cor, vec3(alfa), smoothstep(0.04, 0.5, turnOff));
+        if (apagada) cor = vec3(0.0);
+        float apagando = smoothstep(0.3, 1.0, turnOff);
+        cor *= 1.0 - apagando * apagando;
+        if (turnOff < 1.0) {
+            vec2 c = (uvTela - 0.5) * vec2(acAspect, 1.0);
+            float quando = smoothstep(0.6, 0.88, turnOff) * (1.0 - smoothstep(0.9, 1.0, turnOff));
+            float redondo = exp(-dot(c, c) / 0.0025);
+            float risco = exp(-abs(c.y) / 0.006) * exp(-abs(c.x) / (0.35 * max(escalaX, 0.05)));
+            cor += vec3(1.0, 0.97, 0.92) * (redondo * 0.6 + risco * 0.4) * quando * alfa;
+        }
+    }
+
+    float a = clamp(alfa, 0.0, 1.0);
+    vec3 rgb = clamp(cor, 0.0, max(a, 0.0001));
+    return vec4(a > 0.0001 ? rgb / a : vec3(0.0), a);
+}
+
+void main() {
+    if (acPass == 0) { fragColor = passeFita(); return; }
+    if (acPass == 1) { fragColor = passeTela(); return; }
+    fragColor = passeTv();
+}
+    ]]></shader>
+</effect>

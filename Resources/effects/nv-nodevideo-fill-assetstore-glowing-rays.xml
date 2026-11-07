@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Fill_AssetStore_glowing_rays
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-fill-assetstore-glowing-rays"
+    name="Fill Assetstore Glowing Rays (NV)"
+    name-en="Fill Assetstore Glowing Rays (NV)"
+    desc="NodeVideo effect 'NodeVideo/Fill_AssetStore_glowing_rays', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Fill_AssetStore_glowing_rays', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <color id="_color" label="Color" default="#FF4C72EB" />
+        <slider id="_speed" label="Speed" default="1" min="0" max="10" step="0.01" />
+        <slider id="_frequency" label="Frequency" default="1" min="0" max="10" step="0.01" />
+        <slider id="_intensity" label="Intensity" default="1" min="0" max="2" step="0.01" />
+        <slider id="_threshold" label="Threshold" default="0.9" min="0" max="1" step="0.01" />
+        <slider id="_pattern" type="integer" label="Pattern" default="1" min="0" max="10" step="1" />
+        <slider id="_iteration" type="integer" label="Iteration" default="60" min="0" max="60" step="1" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="2" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// tempo do Node ligado ao motor (tools/nodevideo/ligar_tempo.py)
+#define _cur_time acTime
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+#define _SourceTex_TexelSize (1.0 / vec2(textureSize(inputImg, 0)))
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat8;
+float u_xlat9;
+bool u_xlatb9;
+vec2 u_xlat13;
+bvec2 u_xlatb13;
+float u_xlat14;
+float u_xlat18;
+float u_xlat20;
+bool u_xlatb20;
+void main()
+{
+    u_xlat0.xyz = _color.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat0.xyz = _color.xyz * u_xlat0.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat0.xyz = u_xlat0.xyz * _color.xyz;
+    u_xlat1.xyw = acScreenNorm.xyy + vec3(-0.5, -0.5, -0.5);
+    u_xlat1.xy = u_xlat1.xy / _SourceTex_TexelSize.xy;
+    u_xlat18 = _resolution.x / _resolution.y;
+    u_xlat2.x = u_xlat18 * 0.5;
+    u_xlat1.z = acScreenNorm.x * u_xlat18 + (-u_xlat2.x);
+    u_xlat18 = dot(u_xlat1.zw, u_xlat1.zw);
+    u_xlat2.x = inversesqrt(u_xlat18);
+    u_xlat13.xy = u_xlat1.zw * u_xlat2.xx;
+    u_xlat2.x = float(int(_iteration));
+    u_xlat18 = _intensity / u_xlat18;
+    u_xlat8 = float(0.0);
+    u_xlat14 = float(1.0);
+    while(true){
+        u_xlatb20 = u_xlat14>=u_xlat2.x;
+        if(u_xlatb20){break;}
+        u_xlat20 = u_xlat14 * _cur_time;
+        u_xlat20 = u_xlat20 * _frequency;
+        u_xlat20 = u_xlat20 * 0.300000012;
+        u_xlat20 = sin(u_xlat20);
+        u_xlat20 = u_xlat20 * 0.5 + 0.5;
+        u_xlat20 = u_xlat18 * u_xlat20;
+        u_xlat3.x = u_xlat14 * 10.0;
+        u_xlat3.x = _cur_time * _speed + (-u_xlat3.x);
+        u_xlat3.x = u_xlat3.x * 0.25;
+        u_xlat4.x = cos(u_xlat3.x);
+        u_xlat3.x = sin(u_xlat3.x);
+        u_xlat4.y = u_xlat3.x;
+        u_xlat3.x = dot(u_xlat4.xy, u_xlat13.xy);
+        u_xlat3.x = abs(u_xlat3.x) * abs(u_xlat3.x);
+        u_xlat3.x = u_xlat3.x * u_xlat3.x;
+        u_xlatb9 = _threshold<u_xlat3.x;
+        u_xlat9 = u_xlatb9 ? 1.0 : float(0.0);
+        u_xlat3.x = u_xlat9 * u_xlat3.x;
+        u_xlat20 = u_xlat20 * u_xlat3.x;
+        u_xlat20 = u_xlat20 * 0.925000012;
+        u_xlat20 = u_xlat20 / u_xlat14;
+        u_xlat8 = u_xlat20 + u_xlat8;
+        u_xlat14 = u_xlat14 + 1.0;
+    }
+    u_xlatb13.xy = equal(ivec4(int(_pattern), int(_blend_mode), int(_pattern), int(_blend_mode)), ivec4(1, 1, 1, 1)).xy;
+    u_xlat18 = u_xlat1.x * u_xlat1.y;
+    u_xlat18 = u_xlat18 * 0.666666687;
+    u_xlatb1.x = u_xlat18>=(-u_xlat18);
+    u_xlat18 = fract(abs(u_xlat18));
+    u_xlat18 = (u_xlatb1.x) ? u_xlat18 : (-u_xlat18);
+    u_xlat18 = u_xlat18 * 15.0;
+    u_xlat18 = sin(u_xlat18);
+    u_xlat18 = abs(u_xlat18) + 1.0;
+    u_xlat18 = (u_xlatb13.x) ? u_xlat18 : 1.0;
+    u_xlat18 = u_xlat8 * u_xlat18;
+    u_xlat2.xyz = u_xlat0.xyz * vec3(u_xlat18);
+    u_xlat2.w = u_xlat18 * _color.w;
+    u_xlat3 = texture(inputImg, acScreenNorm.xy);
+    u_xlat4 = u_xlat2 * u_xlat3;
+    u_xlat0.xyz = vec3(u_xlat18) * u_xlat0.xyz + u_xlat3.xyz;
+    u_xlat0.w = u_xlat3.w;
+    u_xlat0 = (u_xlatb13.y) ? u_xlat4 : u_xlat0;
+    u_xlat4.xyz = u_xlat2.xyz;
+    u_xlat0 = (int(_blend_mode) != 0) ? u_xlat0 : u_xlat4;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb1.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat2 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat3 = u_xlat3 * u_xlat5;
+        u_xlat2 = u_xlat2 * u_xlat4 + u_xlat3;
+        u_xlat1.x = u_xlat4.x * u_xlat2.w;
+        fragColor.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat2.w;
+        fragColor.xyz = u_xlat2.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

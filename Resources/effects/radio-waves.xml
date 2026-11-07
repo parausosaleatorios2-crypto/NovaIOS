@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ONDAS DE RÁDIO
+  ============================================================================
+
+  Anéis concêntricos que nascem num ponto e se espalham para fora, novos
+  surgindo enquanto os velhos desaparecem.
+
+  ============================================================================
+   COMO SE DESENHA UM ANEL QUE CRESCE SEM SIMULAR O TEMPO
+  ============================================================================
+
+  A tentação é guardar uma lista de anéis vivos: cada um com idade, raio e
+  opacidade, atualizando quadro a quadro. Isso precisa de estado — e um shader
+  de fragmento não tem. Ele só sabe responder "o que tem NESTE ponto AGORA".
+
+  A saída é dar a cada anel um lugar fixo no relógio. O anel `k` nasce em
+  `k * atraso` e vive `duracao` segundos; a sua idade neste instante é um
+  `fract` do tempo, e o seu raio é essa idade vezes a velocidade. O pixel
+  pergunta a distância ao centro, compara com o raio de cada anel e pega o
+  mais próximo. Zero memória, zero estado.
+
+  O desvanecer com a idade é o que dá o ar de rádio: o anel nasce brilhante,
+  afina com o raio e some. Dois raios próximos (anéis quase na mesma fase) se
+  somam no mesmo pixel — por isso o acumulador usa o máximo, não a soma, para
+  não estourar quando houver muitos.
+
+  ============================================================================
+   POR QUE O CENTRO É UM PONTO E A FORMA É CIRCULAR DE VERDADE
+  ============================================================================
+
+  A coordenada da tela vai de 0 a 1 em cada eixo, mas a tela não é quadrada: um
+  desenho feito direto em `acScreenNorm` sai ovalado. A conta multiplica o eixo
+  X pela proporção (`acAspect`) antes de medir a distância, e o anel sai redondo
+  na tela, qualquer que seja o tamanho do projeto.
+-->
+<effect
+    id="nova.effect.radio-waves"
+    name="Ondas de rádio"
+    name-en="Radio Waves"
+    desc="Anéis concêntricos que nascem num ponto e se espalham para fora."
+    desc-en="Concentric rings that emerge from a point and spread outward."
+    category="procedural"
+    tags="ondas,rádio,anéis,sonar,radar,pulso,círculos,gerador">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="centerAt" label="Centro" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="count" label="Quantidade"
+                default="5" min="1" max="12" step="1" type="integer" />
+        <slider id="speed" label="Velocidade"
+                default="0.6" min="0.05" max="2.0" step="0.01" snap="0.0" />
+        <slider id="spacing" label="Intervalo"
+                default="0.6" min="0.05" max="3.0" step="0.05" snap="0.0" />
+        <slider id="thickness" label="Espessura"
+                default="0.004" min="0.001" max="0.05" step="0.001" snap="0.0" />
+
+        <!-- ============================== Luz ============================== -->
+        <color id="ringColor" group="Luz" label="Cor" default="#FFB3E6FF" />
+        <slider id="glow" group="Luz" label="Halo"
+                default="1.2" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="fade" group="Luz" label="Desvanecer"
+                default="0.9" min="0.0" max="2.0" step="0.05" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, dois anéis já contam a história: começa com um só e cresce até cinco. -->
+    <preview>
+        <set param="count" value="1" ate="5" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAXIMO_DE_ANEIS = 12;
+
+/**
+ * A cor acumulada no pixel pelos anéis vivos.
+ *
+ * Cada anel k nasce em `k * spacing`, vive `duracao` segundos e caminha com
+ * `speed`. A idade no relógio deste quadro é `fract(.)`, o raio é
+ * `idade * speed`, e o pixel pega o que estiver mais perto do seu raio.
+ */
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = (acScreenNorm - centerAt) * vec2(acAspect, 1.0);
+    float d = length(p);
+
+    float duracao = spacing * float(count);
+
+    int quantos = clamp(int(count + 0.5), 1, MAXIMO_DE_ANEIS);
+    float melhorMiolo = 0.0;
+    float melhorHalo = 0.0;
+
+    for (int k = 0; k < MAXIMO_DE_ANEIS; k++) {
+        if (k >= quantos) break;
+
+        float fase = acTime / max(duracao, 1e-4) + float(k) / float(quantos);
+        float idade = fract(fase) * duracao;
+        float raio = idade * speed;
+
+        // O anel nasce fino, afina um pouco mais com a idade e some: o desvanecer
+        // combina a idade (tempo de vida) com o raio (distância), que é o que dá
+        // o ar de sinal se perdendo.
+        float velhice = idade / max(duracao, 1e-4);
+        float opacidade = pow(1.0 - clamp(velhice, 0.0, 1.0), max(fade, 1e-4));
+
+        float esp = thickness * (1.0 - 0.4 * velhice);
+        float distanciaAoAnel = abs(d - raio);
+
+        float miolo = (1.0 - smoothstep(0.0, esp, distanciaAoAnel)) * opacidade;
+        float halo = exp(-distanciaAoAnel / max(esp * 7.0, 1e-5)) * glow * opacidade;
+
+        melhorMiolo = max(melhorMiolo, miolo);
+        melhorHalo = max(melhorHalo, halo);
+    }
+
+    vec3 cor = ringColor.rgb * (melhorMiolo + melhorHalo);
+    float alfa = clamp(max(melhorMiolo, melhorHalo * 0.7), 0.0, 1.0) * ringColor.a;
+
+    vec4 desenhado = vec4(cor, alfa);
+    float saidaAlfa = desenhado.a + original.a * (1.0 - desenhado.a);
+    vec3 saidaCor = saidaAlfa > 0.0
+        ? (desenhado.rgb * desenhado.a + original.rgb * original.a * (1.0 - desenhado.a)) / saidaAlfa
+        : vec3(0.0);
+
+    fragColor = vec4(saidaCor, saidaAlfa);
+}
+
+    ]]></shader>
+</effect>

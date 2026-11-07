@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.star_glow" name="Star Glow" desc="A four-point cross flare over the highlights. Uses directional taps so it stays cheap." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/star_glow.png"
+        tags="light,star,flare,cross,glow" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Star" />
+<spinner id="intensity" default="0.7" min="0.0" max="2.5" step="0.01" label="Intensity" />
+<spinner id="length" default="0.06" min="0.005" max="0.25" step="0.001" label="Length" />
+<spinner id="threshold" default="0.6" min="0.0" max="1.0" step="0.01" label="Threshold" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 10;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float t = float(i) / float(TAPS - 1);
+    vec2 o = vec2(t * length, 0.0);
+    acc += texture2DCv(inputImg.texture, uv + o).rgb / max(texture2DCv(inputImg.texture, uv + o).a, 1e-4);
+    acc += texture2DCv(inputImg.texture, uv - o).rgb / max(texture2DCv(inputImg.texture, uv - o).a, 1e-4);
+    vec2 ov = vec2(0.0, t * length);
+    acc += texture2DCv(inputImg.texture, uv + ov).rgb / max(texture2DCv(inputImg.texture, uv + ov).a, 1e-4);
+    acc += texture2DCv(inputImg.texture, uv - ov).rgb / max(texture2DCv(inputImg.texture, uv - ov).a, 1e-4);
+  }
+  acc /= float(TAPS) * 4.0;
+  acc *= smoothstep(threshold, 1.0, gmLum(acc));
+  vec3 col = c + acc * intensity * mixAmt;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

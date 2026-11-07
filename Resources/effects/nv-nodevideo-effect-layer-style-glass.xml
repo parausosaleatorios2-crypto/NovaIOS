@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/layer_style_glass — o Vidro do Layer Styles do Node Video (o grupo `_glass` da definição
+  `_LayerStyles2`) como efeito sozinho, portado como o C# o roda (0.916). Gerado por tools/nodepassesc/montar.py a
+  partir de tools/nodepassesc/modelos/ (não editar à mão). O Layer Styles2 tem o mesmo vidro junto dos outros estilos.
+
+  O que o Node faz (lido no il2cpp): com "Vidro" ligado, o `RTNodeBlend::Render` troca a mistura normal da camada
+  pelo `AEStyles::RenderGlass`: a camada → xDistBuff pelo passe 0 (a distância horizontal à borda, em dois bytes);
+  `_comp` = a composição de baixo; o passe 1 desenha o fundo refratado pela borda (a normal tirada das distâncias),
+  o preenchimento, a luz difusa e o brilho especular; e isso é misturado por cima da composição.
+
+  AQUI: o passe 0 guarda a camada como o RT do Node (linear × alfa, sRGB de 8 bits, de pé), o 1 guarda o fundo
+  (`src="backdrop"`) do mesmo jeito, e os dois programas do Node vão conta por conta. As cores chegam ao shader em
+  luz linear (o `SetColor` do Unity num projeto linear; o shader do Node ainda converte de novo, como lá).
+  `_resolution` = o tamanho do buffer. Na tela (`stage="screen"`), como o Node; o Nova compõe a saída por cima do
+  fundo, como a mistura do Node. Diferente do Node: o Nova compõe em gama; a máscara interna do Node fica desligada.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-layer-style-glass"
+    name="Effect Layer Style Glass (NV)"
+    name-en="Effect Layer Style Glass (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect/layer_style_glass': turns the layer into glass that refracts what is behind it, with diffuse light and a specular shine on the edge."
+    desc-en="NodeVideo effect 'NodeVideo/Effect/layer_style_glass': turns the layer into glass that refracts what is behind it, with diffuse light and a specular shine on the edge."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,layer styles,vidro,glass,refração,refraction,backdrop"
+    stage="screen">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <!-- O fundo (a composição de baixo, o `_comp`). -->
+        <texture id="fundo" src="backdrop" precision="highp" />
+        <!-- A camada e o fundo como os RTs do Node (linear × alfa, sRGB de 8 bits, de pé); o xDistBuff. -->
+        <texture id="pre" src="buffer" format="srgb" precision="highp" />
+        <texture id="compNode" src="buffer" format="srgb" precision="highp" />
+        <texture id="distVidro" src="buffer" format="srgb" precision="highp" />
+
+        <!-- O grupo `_glass` da definição `_LayerStyles2`, com as faixas dele. -->
+        <slider id="_glass_radius" label="Radius" default="0.5" min="0" max="2" step="0.01" />
+        <slider id="_glass_angle" label="Angle" default="45" min="0" max="360" step="1" />
+        <slider id="_glass_intensity" label="Intensity" default="1" min="0" max="2" step="0.01" />
+        <slider id="_glass_elevation" label="Elevation" default="2.5" min="0" max="5" step="0.01" />
+        <color id="_glass_diffuse_color" label="Diffuse Color" default="#FFFFFFFF" />
+        <color id="_glass_specular_color" label="Specular Color" default="#FFFFFFFF" />
+        <slider id="_glass_refraction" label="Refraction" default="0.25" min="0" max="2" step="0.01" />
+        <slider id="_glass_shine" label="Shine" default="0.9" min="0" max="1" step="0.01" />
+        <slider id="_glass_specular" label="Specular" default="3" min="0.1" max="5" step="0.01" />
+        <slider id="_glass_fill" label="Fill" default="0" min="0" max="1" step="0.01" />
+    </params>
+
+    <!-- Na vitrine, a figura solta sobre a paisagem: o vidro mostra o fundo refratado na forma dela. -->
+    <preview amostra="figura" fundo="paisagem" />
+
+    <passes>
+        <pass target="pre" />
+        <pass target="compNode" />
+        <pass target="distVidro" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// ---- comum aos portes de classe C# do Node (tools/nodepassesc/comum.glsl, colado pelo montar.py) ----
+// Os RTs do Node: cor PRÉ-multiplicada em luz LINEAR, sRGB de 8 bits, de pé (a linha 0 é a base). O Nova guarda a
+// camada reta, em gama; no buffer de camada (`acEntradaDePe` = 0) a linha 0 é o topo.
+vec3 nvLinear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 nvSrgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+// O UV do Node (Y para cima) do pixel que este passe escreve na saída do Nova.
+vec2 nvUvDePe() {
+    return acEntradaDePe == 1 ? acScreenNorm : vec2(acScreenNorm.x, 1.0 - acScreenNorm.y);
+}
+// O texel da camada em `uv` do Node (de pé), como o RT do Node o guarda: linear × alfa.
+vec4 nvFonte(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 p = ivec2(clamp(floor(uv * vec2(T)), vec2(0.0), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    vec4 c = texelFetch(inputImg, p, 0);
+    return vec4(nvLinear(c.rgb) * c.a, c.a);
+}
+// A camada lida com filtro linear em `uv` do Node, como o `texture(_SourceTex, uv)` dele (o filtro em luz linear, a
+// borda presa).
+vec4 nvFonteFiltrada(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 q = uv * vec2(T) - 0.5;
+    vec2 f = fract(q);
+    ivec2 b = ivec2(floor(q));
+    vec4 a00 = nvFonte((vec2(b) + 0.5) / vec2(T));
+    vec4 a10 = nvFonte((vec2(b + ivec2(1, 0)) + 0.5) / vec2(T));
+    vec4 a01 = nvFonte((vec2(b + ivec2(0, 1)) + 0.5) / vec2(T));
+    vec4 a11 = nvFonte((vec2(b + ivec2(1, 1)) + 0.5) / vec2(T));
+    return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
+}
+// O RT de saída do Node (pré-multiplicado, linear, preso em 0..1 pelo ARGB32) de volta à cor reta em gama do Nova.
+vec4 nvVolta(vec4 o) {
+    o = clamp(o, 0.0, 1.0);
+    if (o.a <= 0.0) return vec4(0.0);
+    return vec4(nvSrgb(o.rgb / o.a), o.a);
+}
+// ---- fim do comum ----
+// O tamanho dos RTs do Node (o do buffer).
+#define _resolution vec2(textureSize(pre, 0))
+
+// A cor de um controle como o Unity a entrega num projeto linear.
+vec4 nvCor(vec4 c) { return vec4(nvLinear(c.rgb), c.a); }
+
+// O fundo como o RT da composição no Node (linear × alfa), no pixel de `uv` do Node.
+vec4 nvFundo(vec2 uv) {
+    ivec2 T = textureSize(fundo, 0);
+    ivec2 p = ivec2(clamp(floor(uv * vec2(T)), vec2(0.0), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    vec4 c = texelFetch(fundo, p, 0);
+    return vec4(nvLinear(c.rgb) * c.a, c.a);
+}
+
+vec4 lerPre(vec2 uv) { return texture(pre, uv); }
+vec4 lerComp(vec2 uv) { return texture(compNode, uv); }
+vec4 lerDistVidro(vec2 uv) { return texture(distVidro, uv); }
+
+// O programa 0 do shader NodeVideo/Effect/layer_style_glass do Node, conta por conta (tools/nodepassesc/montar.py).
+vec4 distanciaVidro(vec2 vs_TEXCOORD0)
+{
+    vec4 SV_Target0 = vec4(0.0);
+    vec3 u_xlat0;
+    int u_xlati0;
+    vec4 u_xlat1;
+    int u_xlati1;
+    bool u_xlatb1;
+    float u_xlat2;
+    float u_xlat3;
+    float u_xlat4;
+    bool u_xlatb4;
+    int u_xlati5;
+    float u_xlat6;
+    int u_xlati6;
+    float u_xlat7;
+    bool u_xlatb7;
+    float u_xlat8;
+    bool u_xlatb8;
+    float u_xlat9;
+
+    u_xlat0.x = _glass_radius * 100.0;
+    u_xlat3 = dot(_resolution.xy, _resolution.xy);
+    u_xlat3 = sqrt(u_xlat3);
+    u_xlat0.x = u_xlat3 * u_xlat0.x;
+    u_xlat0.xy = u_xlat0.xx * vec2(0.000690533954, 0.00138106791);
+    u_xlati0 = int(u_xlat0.x);
+    u_xlati0 = max(u_xlati0, 1);
+    u_xlati6 = 0 - u_xlati0;
+    u_xlat9 = float(1.0) / _resolution.x;
+    u_xlat1.yw = vs_TEXCOORD0.yy;
+    u_xlat2 = 16383.0;
+    for(int u_xlati_loop_1 = u_xlati6 ; u_xlati_loop_1<0 ; u_xlati_loop_1++)
+    {
+        u_xlat8 = float(u_xlati_loop_1);
+        u_xlat1.x = u_xlat8 * u_xlat9 + vs_TEXCOORD0.x;
+        u_xlat1.x = lerPre( u_xlat1.xy).w;
+        u_xlatb1 = u_xlat1.x<0.00300000003;
+        u_xlat1.x = (u_xlatb1) ? abs(u_xlat8) : u_xlat0.y;
+        u_xlat2 = min(u_xlat1.x, u_xlat2);
+    }
+    u_xlat6 = 16383.0;
+    for(int u_xlati_loop_2 = 0 ; u_xlati_loop_2<u_xlati0 ; u_xlati_loop_2++)
+    {
+        u_xlat4 = float(u_xlati_loop_2);
+        u_xlat1.z = u_xlat4 * u_xlat9 + vs_TEXCOORD0.x;
+        u_xlat7 = lerPre( u_xlat1.zw).w;
+        u_xlatb7 = u_xlat7<0.00300000003;
+        u_xlat4 = (u_xlatb7) ? abs(u_xlat4) : u_xlat0.y;
+        u_xlat6 = min(u_xlat6, u_xlat4);
+    }
+    u_xlat0.xy = vec2(u_xlat2) * vec2(6.10388815e-05, 0.0155649148);
+    u_xlat0.xy = fract(u_xlat0.xy);
+    SV_Target0.x = (-u_xlat0.y) * 0.00392156886 + u_xlat0.x;
+    u_xlat0.xz = vec2(u_xlat6) * vec2(6.10388815e-05, 0.0155649148);
+    u_xlat0.xz = fract(u_xlat0.xz);
+    SV_Target0.z = (-u_xlat0.z) * 0.00392156886 + u_xlat0.x;
+    SV_Target0.yw = u_xlat0.yz;
+    return SV_Target0;
+    return SV_Target0;
+}
+
+// O programa 1 do shader NodeVideo/Effect/layer_style_glass do Node, conta por conta (tools/nodepassesc/montar.py).
+vec4 vidro(vec2 vs_TEXCOORD0)
+{
+    vec4 SV_Target0 = vec4(0.0);
+    vec4 u_xlat0;
+    vec4 u_xlat1;
+    bvec2 u_xlatb1;
+    vec4 u_xlat2;
+    int u_xlati2;
+    bool u_xlatb2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    bool u_xlatb4;
+    vec4 u_xlat5;
+    vec4 u_xlat6;
+    vec3 u_xlat7;
+    vec3 u_xlat8;
+    float u_xlat9;
+    float u_xlat10;
+    float u_xlat14;
+    int u_xlati15;
+    vec2 u_xlat16;
+    float u_xlat21;
+    float u_xlat22;
+    int u_xlati22;
+    float u_xlat24;
+
+    u_xlat0.xw = (-vec2(_glass_shine, _glass_elevation));
+    u_xlat0.x = u_xlat0.x + 1.0;
+    u_xlat0.x = u_xlat0.x * _glass_intensity;
+    u_xlat1.x = _glass_shine * _glass_intensity;
+    u_xlat8.xy = vec2(_glass_radius, _glass_angle) * vec2(100.0, 0.0174532998);
+    u_xlat22 = dot(_resolution.xy, _resolution.xy);
+    u_xlat22 = sqrt(u_xlat22);
+    u_xlat8.x = u_xlat22 * u_xlat8.x;
+    u_xlat8.x = u_xlat8.x * 0.000690533954;
+    u_xlati22 = int(u_xlat8.x);
+    u_xlati22 = max(u_xlati22, 1);
+    u_xlati2 = 0 - u_xlati22;
+    u_xlat9 = float(1.0) / _resolution.y;
+    u_xlat0.y = cos(u_xlat8.y);
+    u_xlat0.z = sin((-u_xlat8.y));
+    u_xlat3.xz = vs_TEXCOORD0.xx;
+    u_xlat16.x = float(16383.0);
+    u_xlat16.y = float(16383.0);
+    for(int u_xlati_loop_1 = u_xlati2 ; u_xlati_loop_1<0 ; u_xlati_loop_1++)
+    {
+        u_xlat4.x = float(u_xlati_loop_1);
+        u_xlat3.y = u_xlat4.x * u_xlat9 + vs_TEXCOORD0.y;
+        u_xlat5 = lerDistVidro( u_xlat3.xy);
+        u_xlat10 = dot(u_xlat5.xy, vec2(1.0, 0.00392156886));
+        u_xlat6.y = u_xlat10 * 16383.0;
+        u_xlat10 = dot(u_xlat5.zw, vec2(1.0, 0.00392156886));
+        u_xlat6.x = u_xlat10 * 16383.0;
+        u_xlat6.z = abs(u_xlat4.x);
+        u_xlat10 = dot(u_xlat6.yz, u_xlat6.yz);
+        u_xlat10 = sqrt(u_xlat10);
+        u_xlat4.x = dot(u_xlat6.xz, u_xlat6.xz);
+        u_xlat4.x = sqrt(u_xlat4.x);
+        u_xlat16.x = min(u_xlat16.x, u_xlat10);
+        u_xlat16.y = min(u_xlat16.y, u_xlat4.x);
+    }
+    u_xlat3.x = float(16383.0);
+    u_xlat3.y = float(16383.0);
+    for(int u_xlati_loop_2 = 0 ; u_xlati_loop_2<u_xlati22 ; u_xlati_loop_2++)
+    {
+        u_xlat2.x = float(u_xlati_loop_2);
+        u_xlat3.w = u_xlat2.x * u_xlat9 + vs_TEXCOORD0.y;
+        u_xlat4 = lerDistVidro( u_xlat3.zw);
+        u_xlat24 = dot(u_xlat4.xy, vec2(1.0, 0.00392156886));
+        u_xlat5.y = u_xlat24 * 16383.0;
+        u_xlat24 = dot(u_xlat4.zw, vec2(1.0, 0.00392156886));
+        u_xlat5.x = u_xlat24 * 16383.0;
+        u_xlat5.z = abs(u_xlat2.x);
+        u_xlat2.x = dot(u_xlat5.yz, u_xlat5.yz);
+        u_xlat2.x = sqrt(u_xlat2.x);
+        u_xlat24 = dot(u_xlat5.xz, u_xlat5.xz);
+        u_xlat24 = sqrt(u_xlat24);
+        u_xlat3.x = min(u_xlat2.x, u_xlat3.x);
+        u_xlat3.y = min(u_xlat24, u_xlat3.y);
+    }
+    u_xlat3 = u_xlat3.xxyy;
+    u_xlat4 = lerPre( vs_TEXCOORD0.xy);
+    u_xlat3 = u_xlat3 / u_xlat8.xxxx;
+    u_xlat3 = clamp(u_xlat3, 0.0, 1.0);
+    u_xlat5 = u_xlat3.yyww * vec4(-2.0, -2.0, -2.0, -2.0) + vec4(3.0, 3.0, 3.0, 3.0);
+    u_xlat3 = u_xlat3 * u_xlat3;
+    u_xlat3 = u_xlat3 * u_xlat5;
+    u_xlat8.xy = u_xlat16.xy / u_xlat8.xx;
+    u_xlat8.xy = clamp(u_xlat8.xy, 0.0, 1.0);
+    u_xlat2.xy = u_xlat8.xy * vec2(-2.0, -2.0) + vec2(3.0, 3.0);
+    u_xlat8.xy = u_xlat8.xy * u_xlat8.xy;
+    u_xlat8.xy = u_xlat8.xy * u_xlat2.xy;
+    u_xlat8.xyz = u_xlat8.yyy * vec3(1.0, -1.0, -1.0) + (-u_xlat8.xxx);
+    u_xlat8.xyz = u_xlat3.xyx * vec3(-1.0, 1.0, -1.0) + u_xlat8.xyz;
+    u_xlat8.xyz = u_xlat3.zzw * vec3(1.0, 1.0, -1.0) + u_xlat8.xyz;
+    u_xlat8.xyz = u_xlat8.xyz * vec3(0.25, 0.25, 0.25);
+    u_xlat2.xy = u_xlat8.xy * vec2(_glass_refraction) + vs_TEXCOORD0.xy;
+    u_xlat2 = lerComp( u_xlat2.xy);
+    u_xlat3.x = dot(u_xlat8.xyz, u_xlat8.xyz);
+    u_xlat3.x = inversesqrt(u_xlat3.x);
+    u_xlat8.xyz = u_xlat8.xyz * u_xlat3.xxx;
+    u_xlat3.x = dot(u_xlat0.yzw, u_xlat0.yzw);
+    u_xlat3.x = inversesqrt(u_xlat3.x);
+    u_xlat7.xyz = u_xlat0.yzw * u_xlat3.xxx;
+    u_xlat7.x = dot(u_xlat8.xyz, u_xlat7.xyz);
+    u_xlat14 = _glass_specular * 10.0;
+    u_xlat21 = log2(u_xlat7.x);
+    u_xlat14 = u_xlat21 * u_xlat14;
+    u_xlat14 = exp2(u_xlat14);
+    u_xlat8.xyz = nvCor(_glass_specular_color).xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat8.xyz = nvCor(_glass_specular_color).xyz * u_xlat8.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat8.xyz = u_xlat8.xyz * nvCor(_glass_specular_color).xyz;
+    u_xlat3.xyz = nvCor(_glass_diffuse_color).xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat3.xyz = nvCor(_glass_diffuse_color).xyz * u_xlat3.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat3.xyz = u_xlat3.xyz * nvCor(_glass_diffuse_color).xyz;
+    u_xlat5.xyz = vec3(u_xlat14) * u_xlat8.xyz;
+    u_xlat5.w = u_xlat14 * nvCor(_glass_specular_color).w;
+    u_xlat1 = u_xlat1.xxxx * u_xlat5;
+    u_xlat5 = u_xlat4.wwww * u_xlat1;
+    u_xlat3.xyz = u_xlat7.xxx * u_xlat3.xyz;
+    u_xlat3.w = u_xlat7.x * nvCor(_glass_diffuse_color).w;
+    u_xlat0 = u_xlat0.xxxx * u_xlat3;
+    u_xlat3 = u_xlat4.wwww * u_xlat0;
+    u_xlat6 = u_xlat4 * vec4(vec4(_glass_fill, _glass_fill, _glass_fill, _glass_fill));
+    u_xlat2 = u_xlat4.wwww * u_xlat2;
+    u_xlat0.x = (-u_xlat4.w) * _glass_fill + 1.0;
+    u_xlat2 = u_xlat2 * u_xlat0.xxxx + u_xlat6;
+    u_xlat0.x = (-u_xlat0.w) * u_xlat4.w + 1.0;
+    u_xlat0 = u_xlat2 * u_xlat0.xxxx + u_xlat3;
+    u_xlat1.x = (-u_xlat1.w) * u_xlat4.w + 1.0;
+    u_xlat0 = u_xlat0 * u_xlat1.xxxx + u_xlat5;
+    if(0 != 0) {
+        u_xlatb1.xy = equal(ivec4(0, 0, 0, 0), ivec4(1, 1, 0, 0)).xy;
+        u_xlat2 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat3 = lerPre( vs_TEXCOORD0.xy);
+        u_xlat5 = (-u_xlat3) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat4 = u_xlat4 * u_xlat5;
+        u_xlat2 = u_xlat2 * u_xlat3 + u_xlat4;
+        u_xlat1.x = u_xlat3.x * u_xlat2.w;
+        SV_Target0.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat2.w;
+        SV_Target0.xyz = u_xlat2.xyz;
+    } else {
+        SV_Target0 = u_xlat0;
+    }
+    return SV_Target0;
+    return SV_Target0;
+}
+
+
+void main() {
+    if (acPass == 0) { fragColor = nvFonte(acScreenNorm); return; }
+    if (acPass == 1) { fragColor = nvFundo(acScreenNorm); return; }
+    if (acPass == 2) { fragColor = distanciaVidro(acScreenNorm); return; }
+    fragColor = nvVolta(vidro(nvUvDePe()));
+}
+    ]]></shader>
+</effect>

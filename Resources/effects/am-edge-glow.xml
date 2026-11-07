@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BRILHO DE BORDA — o Edge Glow do Alight Motion, conta por conta (0.676.0)
+  ============================================================================
+
+  Pedido do snow (20/10/2026): "proximo efeito 100% igual do alight motion" — o próximo da fila contada nas cenas do AM
+  (o `edgeglow` aparece em 6). Mesmos parâmetros, ids, faixas, passos, tipos e padrões do
+  `com.alightcreative.effects.edgeglow` do AM 5.0.281 (`assets/effects/edgeglow.xml` do APK descompactado, mais o
+  `findedges-edgeglow.xml` e o `gaussianblur.xml` que ele chama por dentro; os arquivos do AM não entram no
+  repositório). Conferido rodando o efeito do próprio AM na GPU do PC ao lado deste (`tools/amedgeglow`).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  1. Bordas (o `findedges-edgeglow`, efeito interno do AM, com o MESMO mapa de parâmetros do de fora: Suavização,
+     Limite e Inverter são os dele). Na camada pré-multiplicada, o Y BT.709 dos 8 vizinhos a Suavização pixels de
+     distância, um Sobel com pesos 3 e 10, g = clamp(√(h² + v²) − Limite; 0; 1). Saída: (g, g, g, 1) × a cor da camada
+     (pré-multiplicada), ou com Inverter (1 − g, 1 − g, 1 − g, 1) × o alfa dela. Vai para o buffer `edge` (8 bits).
+  2. O Desfoque gaussiano do PRÓPRIO AM sobre o `edge` (o `src="edge"` do passe troca a entrada do efeito de dentro
+     por esse buffer — lido do bytecode, `GGL/Lt` `EffectRenderPass.getSrc`), com a Intensidade = o Borrão daqui:
+     reduzido à metade, gaussiana na horizontal e na vertical com meio-lado = Borrão · 1,14 / 24 da diagonal da imagem,
+     e de volta ao tamanho cheio no `hblur`. O script do Gaussian não roda por dentro: com Borrão 0 sobra a descida à
+     metade e a volta (o mesmo do Unsharp Mask do AM).
+  3. A mistura: o brilho (o `hblur` em cor reta, elevado a máx(0,0001; 3 − Espalhar)) somado à camada (em cor reta,
+     com Gama, Brilho no Y do YUV, cortada em 0..1, e misturada com a camada × Tonalidade pela força da Tonalidade).
+     O Misturar leva o brilho para a Cor pelo quanto ele brilha: fator = máx(clamp(Misturar)·(1 − lum); Misturar − 1).
+
+  NA TELA (`stage="screen"`), como no AM: ele roda os efeitos depois de mover, girar e escalar a camada, na imagem do
+  tamanho da tela; a Suavização é em pixel dessa imagem e o Borrão é fração da diagonal dela, então a prévia parada
+  fica na resolução cheia (`screen-scale="full"`, como o Desfoque gaussiano (AM)).
+
+  O que é do Nova e não do AM:
+  - O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. O passe 0 guarda a camada pré-multiplicada,
+    arredondada pelo mais perto como o premul do Android (`oitoBits`); as bordas, o desfoque e a mistura gravam cada
+    passo em 8 bits como o AM (a mistura no `brilho`); só a saída volta para o alfa reto.
+  - 0 ÷ 0: onde o brilho tem alfa 0 o AM divide 0 por 0, e o NaN é gravado como 0 (o pixel inteiro some, mesmo com a
+    camada ali); onde a camada tem alfa 0 o corte em 0..1 do AM leva o NaN a 0. Aqui os dois casos são escritos à mão.
+  - A LUZ ACIMA DO ALFA: o brilho em cor reta passa de 1 em alfa baixo (os canais e o alfa são arredondados à parte
+    no desfoque), e a soma do AM leva essa luz ao fundo. Só nesses pixels a saída leva junto o fundo atrás dela
+    (`src="backdrop"`), com o menor alfa que reproduz a mesma soma na composição Normal com qualquer opacidade — o
+    `paraReta` do Anel e do Sharpen. Não alcança: soma acima de 1 com opacidade menor que 100 %, outro modo de
+    mesclagem, fundo transparente, outro efeito depois deste na lista.
+  - O buffer do Nova nunca tem menos de 8 px de lado e o do AM nunca tem menos de 16 (só pesa numa imagem minúscula).
+  - Os passes (AM → aqui): o findedges, 1 (`edge`); o downImg, o hblur e o vblur do Gaussian de dentro, 2, 3 e 4
+    (`downImg`, `blurH`, `blurV`); a volta dele ao tamanho cheio no `hblur`, 5; a mistura, 6 (`brilho`); a saída, 7.
+-->
+<effect
+    id="nova.effect.am-edge-glow"
+    name="Brilho de Borda"
+    name-en="Edge Glow"
+    desc="Detecta bordas em uma foto ou vídeo e cria um brilho ao redor delas (o Edge Glow do Alight Motion)."
+    desc-en="Detects edges in a photo or video and creates a glow around them (Alight Motion's Edge Glow)."
+    category="stylize"
+    tags="brilho,borda,bordas,neon,contorno,detectar,sobel,glow,edge,desenho,alight motion"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena atrás da camada: só lida onde a cor passa do alfa (`paraReta`). -->
+        <texture id="comp" src="backdrop" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- As bordas: o `edge` do AM (a saída do findedges de dentro). -->
+        <texture id="edge" src="buffer" />
+        <!-- Os buffers do Gaussian de dentro: a metade, o horizontal e o vertical. -->
+        <texture id="downImg" src="buffer" scale="0.5" />
+        <texture id="blurH" src="buffer" scale="0.5" />
+        <texture id="blurV" src="buffer" scale="0.5" />
+        <!-- As bordas desfocadas de volta ao tamanho cheio: o `hblur` do AM. -->
+        <texture id="hblur" src="buffer" />
+        <!-- A saída do AM, em 8 bits como o alvo dele (pré-multiplicada, cor podendo passar do alfa). -->
+        <texture id="brilho" src="buffer" />
+
+        <spinner id="smoothing" label="Suavização" default="5.0" min="1.0" max="10.0" step="0.01" />
+        <spinner id="threshold" label="Limite" default="0.7" min="0.0" max="1.0" step="0.01" />
+        <switch id="invert" label="Inverter" default="false" />
+        <spinner id="strength" label="Borrão" default="0.1" min="0.0" max="2.0" step="0.01" />
+        <spinner id="spread" label="Espalhar" default="1.5" min="0.0" max="3.0" step="0.01" />
+        <color id="fillColor" label="Cor" default="#FF0088FF" alpha="false" />
+        <!-- Slider do AM sem `step`: anda (máx − mín) ÷ 100 (`readSliderParam`). -->
+        <slider id="blend" label="Misturar" default="0.0" min="0.0" max="2.0" step="0.02" type="percent" ticks="1.0"
+            snap="1.0" />
+        <spinner id="gamma" label="Gama" default="1.0" min="0.01" max="9.99" step="0.005" ticks="0.5,1.0,2.0" />
+        <spinner id="brightness" label="Brilho" default="0.0" min="-1.0" max="1.0" step="0.01" ticks="0.0"
+            type="relative-percent" />
+        <color id="tintColor" label="Tonalidade" default="#FF000000" alpha="false" />
+        <spinner id="tint" label="Tonalidade" default="0.0" min="0.0" max="1.0" step="0.01" type="percent" />
+    </params>
+
+    <passes>
+        <pass target="pre" />
+        <pass target="edge" />
+        <pass target="downImg" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass target="hblur" />
+        <pass target="brilho" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+// O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
+// num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// O Y BT.709 de um ponto da camada pré-multiplicada, escrito como o findedges do AM.
+float luz(vec2 st) {
+    return dot(vec3(1.), texture(pre, st).rgb*luminanceWeighting);
+}
+
+// A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
+// do `am-gaussian-blur.xml`): os pesos tirados um do outro por multiplicação e duas amostras juntas numa leitura.
+vec4 desfocar(sampler2D img, vec2 passo, vec2 st, float lado) {
+    if (strength <= 0.0) return vec4(0.0);
+    float sigma = lado / 2.14596602;
+    highp vec3 g;
+    g.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    g.y = exp(-0.5 / (sigma * sigma));
+    g.z = g.y * g.y;
+    vec4 soma = vec4(0.0);
+    highp float total = 0.0;
+    soma += texture(img, st) * g.x;
+    total += g.x;
+    for (float i = 1.0; i <= lado; i += 2.0) {
+        float d0 = i;
+        float d1 = i + 1.0;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p0 = g.x;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p1 = g.x;
+        float par = p0 + p1;
+        float d = (d0 * p0 + d1 * p1) / par;
+        vec2 stL = st - d * passo;
+        vec2 stR = st + d * passo;
+        soma += texture(img, stL) * par;
+        soma += texture(img, stR) * par;
+    }
+    return soma / total;
+}
+
+// O meio-lado: Borrão ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `acPreviewSize` do AM).
+float ladoDoDesfoque() {
+    return strength / 2.0 * 1.14 / 4.0 / 3.0 * length(vec2(textureSize(pre, 0)));
+}
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta; onde a cor passa do alfa, com o fundo (o `paraReta`
+// do Anel e do Sharpen: o menor alfa que dá a mesma soma na composição Normal com qualquer opacidade).
+vec4 paraReta(vec4 q) {
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return q.a > 0.0 ? vec4(q.rgb / q.a, q.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+void main() {
+    // Na tela a entrada chega de pé (t = 0 embaixo, como no AM): "para cima" é +t. Deitada, vira para baixo.
+    float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+
+    if (acPass == 0) {
+        // A camada do AM chega pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android); no opaco a cor já é o
+        // float da textura, bit a bit.
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 p = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        fragColor = vec4(p, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O findedges-edgeglow do AM, na mesma ordem de contas (n é o vizinho de CIMA, como no t do AM).
+        vec2 st = acScreenNorm;
+        vec2 fragSize = vec2(1.)/vec2(textureSize(pre, 0)) * smoothing;
+        float w  = luz(vec2(st.x - fragSize.x, st.y));
+        float e  = luz(vec2(st.x + fragSize.x, st.y));
+        float n  = luz(vec2(st.x, st.y + cima * fragSize.y));
+        float s  = luz(vec2(st.x, st.y - cima * fragSize.y));
+        float nw = luz(vec2(st.x - fragSize.x, st.y + cima * fragSize.y));
+        float ne = luz(vec2(st.x + fragSize.x, st.y + cima * fragSize.y));
+        float sw = luz(vec2(st.x - fragSize.x, st.y - cima * fragSize.y));
+        float se = luz(vec2(st.x + fragSize.x, st.y - cima * fragSize.y));
+
+        float v = nw * 3. + n * 10. + ne * 3. + sw * -3. + s * -10. + se * -3.;
+        float h = nw * -3. + w * -10. + sw * -3. + ne * 3. + e * 10. + se * 3.;
+        float g = clamp(sqrt(h*h + v*v)-threshold, 0., 1.);
+
+        vec4 texColor = texture(pre, st);
+        fragColor = invert ? vec4(1.-g,1.-g,1.-g,1.) * texColor.a : vec4(g,g,g,1.) * texColor;
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = texture(edge, acScreenNorm);
+        return;
+    }
+    if (acPass == 3) {
+        vec2 passo = vec2(1.0 / vec2(textureSize(downImg, 0)).x, 0.0);
+        fragColor = desfocar(downImg, passo, acScreenNorm, ladoDoDesfoque());
+        return;
+    }
+    if (acPass == 4) {
+        // O passo aponta para CIMA e a soma do par fica na mesma ordem da do AM (o de baixo primeiro).
+        vec2 passo = vec2(0.0, cima / vec2(textureSize(blurH, 0)).y);
+        vec4 r = desfocar(blurH, passo, acScreenNorm, ladoDoDesfoque());
+        // Borrão 0: o Gaussian do AM lê a entrada dele (o `edge`) aqui (na meia resolução: a média de 2 × 2).
+        fragColor = strength <= 0.0 ? texture(edge, acScreenNorm) : r;
+        return;
+    }
+    if (acPass == 5) {
+        fragColor = texture(blurV, acScreenNorm);
+        return;
+    }
+    if (acPass == 6) {
+        // A mistura do Edge Glow do AM, na mesma ordem. O corte em 0..1 é o do alvo de 8 bits; escrito para o projeto
+        // de 32 bits sair igual.
+        highp mat3 rgb2yuv = mat3(
+             0.299,     0.587,    0.114,
+            -0.14713,  -0.28886,  0.436,
+             0.615,    -0.51499, -0.10001
+        );
+        highp mat3 yuv2rgb = mat3(
+            1.0,  0.0,      1.13983,
+            1.0, -0.39465, -0.58060,
+            1.0,  2.03211,  0.0
+        );
+
+        vec4 glow = texture(hblur, acScreenNorm);
+        vec4 base = texture(pre, acScreenNorm);
+        // Brilho de alfa 0: no AM, 0 ÷ 0 leva o pixel inteiro a NaN, gravado como 0.
+        if (glow.a == 0.0) {
+            fragColor = vec4(0.0);
+            return;
+        }
+        glow.rgb /= glow.a;
+        glow.rgb = pow(glow.rgb, vec3(max(0.0001,3.-spread)));
+        if (base.a > 0.0) {
+            base.rgb /= base.a;
+            base.rgb = pow(base.rgb,vec3(1.0/gamma));
+            base.rgb = ((base.rgb * rgb2yuv) + vec3(brightness,0.,0.)) * yuv2rgb;
+            base.rgb = clamp(base.rgb, 0.0, 1.0);
+        } else {
+            // Camada de alfa 0: no AM o NaN de 0 ÷ 0 sai do corte em 0..1 como 0.
+            base.rgb = vec3(0.0);
+        }
+        float lum = dot(luminanceWeighting, glow.rgb);
+        float fill = 1.0;
+        glow.rgb *= glow.a;
+        base.rgb *= base.a;
+        vec4 r = (mix(base,base*tintColor,tint)*fill)
+            + mix(glow * mix(lum,1.,fill), fillColor*lum, max(clamp(blend, 0.0, 1.0)*(1.-lum),blend-1.0));
+        fragColor = clamp(r, 0.0, 1.0);
+        return;
+    }
+
+    fragColor = paraReta(texture(brilho, acScreenNorm));
+}
+    ]]></shader>
+</effect>

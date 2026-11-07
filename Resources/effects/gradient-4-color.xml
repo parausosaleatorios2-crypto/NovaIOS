@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Gradiente de 4 cores — um gerador com quatro pontos coloridos, cada um
+  puxando a cor pra perto de si. Longe de todos, a cor vira a média dos
+  quatro — é assim que o After Effects faz o efeito de mesmo nome, sem
+  precisar de malha nem de várias passadas.
+
+  A mistura usa peso por distância inversa (interpolação de Shepard): cada
+  ponto pesa 1/distância^potência na cor final, então perto de um ponto ele
+  domina, e longe dos quatro eles se equilibram. `sharpness` controla essa
+  potência — baixo funde tudo numa transição suave, alto quase vira um
+  mosaico (cada região fica só com a cor do ponto mais perto).
+-->
+<effect
+    id="nova.effect.gradient4color"
+    name="Gradiente de 4 cores"
+    name-en="4-Color Gradient"
+    desc="Gera um gradiente entre quatro pontos coloridos, arrastáveis pela tela."
+    desc-en="Blends four colour points across the frame."
+    category="procedural"
+    blend="mode"
+    tags="gradiente,4 cores,quatro cores,cores,fundo,degrade,gerador"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="point1" label="Ponto 1" defaultX="0.0" defaultY="0.0" />
+        <color id="color1" label="Cor 1" default="#FF6B6B" />
+
+        <point id="point2" label="Ponto 2" defaultX="1.0" defaultY="0.0" />
+        <color id="color2" label="Cor 2" default="#4ECDC4" />
+
+        <point id="point3" label="Ponto 3" defaultX="0.0" defaultY="1.0" />
+        <color id="color3" label="Cor 3" default="#FFD93D" />
+
+        <point id="point4" label="Ponto 4" defaultX="1.0" defaultY="1.0" />
+        <color id="color4" label="Cor 4" default="#6C5CE7" />
+
+        <slider id="sharpness" label="Nitidez da mistura"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.3" />
+
+        <slider id="scatter" label="Espalhamento"
+                default="0.02" min="0.0" max="0.3" step="0.005" snap="0.0" />
+
+    </params>
+
+    <shader><![CDATA[
+
+float hash21(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    vec2 uv = acScreenNorm * vec2(acAspect, 1.0);
+
+    vec2 p1 = point1 * vec2(acAspect, 1.0);
+    vec2 p2 = point2 * vec2(acAspect, 1.0);
+    vec2 p3 = point3 * vec2(acAspect, 1.0);
+    vec2 p4 = point4 * vec2(acAspect, 1.0);
+
+    // A faixa 1..8 é onde a transição continua macia (não vira um recorte
+    // duro cedo demais), mas ainda dá pra sentir cada ponto dominando perto
+    // de si quando `sharpness` sobe.
+    float power = mix(1.0, 8.0, sharpness);
+
+    float w1 = 1.0 / pow(max(distance(uv, p1), 0.0001), power);
+    float w2 = 1.0 / pow(max(distance(uv, p2), 0.0001), power);
+    float w3 = 1.0 / pow(max(distance(uv, p3), 0.0001), power);
+    float w4 = 1.0 / pow(max(distance(uv, p4), 0.0001), power);
+    float total = w1 + w2 + w3 + w4;
+
+    vec3 mixed = (color1.rgb * w1 + color2.rgb * w2 + color3.rgb * w3 + color4.rgb * w4) / total;
+
+    // Mesmo espalhamento de `gradient-ramp.xml`: um ruído minúsculo antes de
+    // arredondar quebra o banding de 8 bits num degradê suave.
+    if (scatter > 0.0) {
+        mixed += (hash21(acScreenNorm * acResolution) - 0.5) * scatter;
+    }
+    mixed = clamp(mixed, 0.0, 1.0);
+
+    fragColor = vec4(mixed, original.a);
+}
+
+    ]]></shader>
+</effect>

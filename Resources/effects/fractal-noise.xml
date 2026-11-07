@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ruído fractal — um GERADOR: ele ignora o que a camada tinha e desenha por cima.
+
+  É o efeito mais reaproveitado de toda a motion graphics, e não por ser bonito:
+  é por ser **matéria-prima**. Fumaça, água, nuvem, fogo, textura de papel,
+  desgaste, e principalmente MAPA para o "Deslocar por mapa". Aplique isto num
+  sólido, esconda a camada e use-a como mapa: é assim que se faz distorção
+  orgânica.
+
+  ## Como funciona
+
+  Ruído fractal é a soma de várias camadas de ruído, cada uma com o dobro da
+  frequência e metade da força da anterior. Isso é `fbm` — "fractional Brownian
+  motion". Uma camada só de ruído parece TV fora do ar; somar oitavas é o que
+  produz aquela aparência de nuvem, com formas grandes e detalhe fino juntos.
+-->
+<effect
+    id="nova.effect.fractalnoise"
+    name="Ruído fractal"
+    name-en="Fractal Noise"
+    desc="Gera nuvem/fumaça procedural. Ótimo como mapa de deslocamento."
+    desc-en="Layered noise — smoke, clouds, texture, displacement source."
+    category="procedural"
+    blend="mode"
+    tags="ruido,fractal,nuvem,fumaca,textura,mapa,gerador,perlin,fbm">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="size" label="Tamanho"
+                default="1.0" min="0.05" max="8.0" step="0.01" snap="1.0" />
+
+        <slider id="octaves" label="Complexidade"
+                default="5.0" min="1.0" max="8.0" step="1.0" type="integer" />
+
+        <slider id="roughness" label="Aspereza"
+                default="0.5" min="0.1" max="0.9" step="0.01" snap="0.5" />
+
+        <slider id="evolution" label="Evolução"
+                default="0.0" min="-20.0" max="20.0" step="0.01" snap="0.0" />
+
+        <slider id="speed" label="Velocidade"
+                default="0.0" min="-4.0" max="4.0" step="0.05" snap="0.0" />
+
+        <slider id="contrast" label="Contraste"
+                default="1.0" min="0.0" max="6.0" step="0.05" snap="1.0" />
+
+        <slider id="brightness" label="Brilho"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+
+        <switch id="invertNoise" label="Inverter" default="false" />
+        <switch id="ridged" label="Nervurado (fumaça)" default="false" />
+
+        <color id="lowColor" label="Cor do escuro" default="#000000" />
+        <color id="highColor" label="Cor do claro" default="#FFFFFF" />
+
+    </params>
+
+    <!-- Na vitrine, a miniatura ANDA (fase 5, 0.669.0): o padrão é parado; com isto o laço de 1,3 s mostra o movimento. -->
+    <preview>
+        <set param="speed" value="0.75" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAX_OCTAVES = 8;
+
+// Hash sem textura: barato e igual em qualquer GPU. Uma tabela de permutação
+// daria ruído de qualidade melhor, mas custaria uma textura extra por efeito.
+float hash21(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+float valueNoise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    // Suavização com curva S: sem ela as células do ruído aparecem como
+    // losangos, porque a interpolação linear tem quina na fronteira.
+    vec2 w = f * f * (3.0 - 2.0 * f);
+
+    float a = hash21(cell);
+    float b = hash21(cell + vec2(1.0, 0.0));
+    float c = hash21(cell + vec2(0.0, 1.0));
+    float d = hash21(cell + vec2(1.0, 1.0));
+
+    return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+}
+
+float fbm(vec2 p, int levels, float gain) {
+    float sum = 0.0;
+    float amplitude = 1.0;
+    float norm = 0.0;
+
+    for (int i = 0; i < MAX_OCTAVES; i++) {
+        if (i >= levels) break;
+        float n = valueNoise(p);
+        if (ridged) {
+            // Dobrar o ruído em torno do meio cria cristas afiadas em vez de
+            // manchas macias. É o que dá cara de fumaça e de fogo.
+            n = 1.0 - abs(n * 2.0 - 1.0);
+        }
+        sum += n * amplitude;
+        norm += amplitude;
+        p *= 2.0;
+        amplitude *= gain;
+    }
+
+    return sum / max(norm, 0.0001);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = acScreenNorm * vec2(acAspect, 1.0) / max(size, 0.01) * 4.0;
+    p += vec2(evolution + acTime * speed, evolution * 0.7);
+
+    float n = fbm(p, clamp(int(octaves + 0.5), 1, MAX_OCTAVES), roughness);
+
+    if (invertNoise) n = 1.0 - n;
+    n = clamp((n - 0.5) * contrast + 0.5 + brightness, 0.0, 1.0);
+
+    vec3 tinted = mix(lowColor.rgb, highColor.rgb, n);
+    float alpha = mix(lowColor.a, highColor.a, n);
+
+    // O gerador respeita o alfa da camada: aplicado num sólido ele preenche
+    // tudo, aplicado num texto ele preenche só as letras.
+    fragColor = vec4(tinted, alpha * original.a);
+}
+
+    ]]></shader>
+</effect>

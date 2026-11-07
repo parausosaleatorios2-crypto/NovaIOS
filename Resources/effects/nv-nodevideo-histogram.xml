@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Histogram
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-histogram"
+    name="Histogram (NV)"
+    name-en="Histogram (NV)"
+    desc="NodeVideo effect 'NodeVideo/Histogram', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Histogram', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="_Size" label="Size" defaultX="0.5" defaultY="0.5" />
+        <color id="_ColorR" label="Colorr" default="#FFFFFFFF" />
+        <color id="_ColorG" label="Colorg" default="#FFFFFFFF" />
+        <color id="_ColorB" label="Colorb" default="#FFFFFFFF" />
+        <color id="_ColorL" label="Colorl" default="#FFFFFFFF" />
+    </params>
+
+    <shader><![CDATA[
+#ifdef GL_ARB_shader_storage_buffer_object
+#extension GL_ARB_shader_storage_buffer_object : enable
+#endif
+#ifdef GL_ARB_shader_image_load_store
+#extension GL_ARB_shader_image_load_store : enable
+#endif
+
+vec4 ImmCB_0[4];
+
+
+
+
+
+
+ struct _Histogram_type {
+	uint[4] value;
+};
+
+layout(std430, binding = 0) readonly buffer _Histogram {
+	_Histogram_type _Histogram_buf[];
+};
+
+vec4 u_xlat0;
+uvec2 u_xlatu0;
+bool u_xlatb0;
+mediump vec3 u_xlat16_1;
+vec4 u_xlat2;
+uint u_xlatu3;
+mediump float u_xlat16_4;
+int u_xlati6;
+mediump float u_xlat16_7;
+void main()
+{
+ImmCB_0[0] = vec4(1.0,0.0,0.0,0.0);
+ImmCB_0[1] = vec4(0.0,1.0,0.0,0.0);
+ImmCB_0[2] = vec4(0.0,0.0,1.0,0.0);
+ImmCB_0[3] = vec4(0.0,0.0,0.0,1.0);
+    u_xlat0.x = acScreenNorm.x * 255.0;
+    u_xlat16_1.x = floor(u_xlat0.x);
+    u_xlat16_4 = fract(u_xlat0.x);
+    u_xlatu0.x = uint(u_xlat16_1.x);
+    u_xlatu3 = u_xlatu0.x + 1u;
+    u_xlatu3 = min(u_xlatu3, 255u);
+    u_xlati6 = int(int(_Channel) << (2 & int(0x1F)));
+    u_xlatu0.y = _Histogram_buf[u_xlatu3].value[(u_xlati6 >> 2) + 0];
+    u_xlatu0.x = _Histogram_buf[u_xlatu0.x].value[(u_xlati6 >> 2) + 0];
+    u_xlat16_1.xz = vec2(u_xlatu0.xy);
+    u_xlat16_7 = u_xlat16_4 * u_xlat16_1.z;
+    u_xlat16_4 = (-u_xlat16_4) + 1.0;
+    u_xlat16_1.x = u_xlat16_1.x * u_xlat16_4 + u_xlat16_7;
+    u_xlat0.x = acScreenNorm.y * _Size.y;
+    u_xlat0.x = roundEven(u_xlat0.x);
+    u_xlatu0.x = uint(u_xlat0.x);
+    u_xlat16_4 = float(u_xlatu0.x);
+    u_xlatb0 = u_xlat16_1.x>=u_xlat16_4;
+    u_xlat16_1.x = (u_xlatb0) ? 1.0 : 0.0;
+    u_xlatu0.x = _Channel;
+    u_xlat2 = _ColorR * ImmCB_0[int(u_xlatu0.x)].xxxx;
+    u_xlat2 = ImmCB_0[int(u_xlatu0.x)].yyyy * _ColorG + u_xlat2;
+    u_xlat2 = ImmCB_0[int(u_xlatu0.x)].zzzz * _ColorB + u_xlat2;
+    u_xlat0 = ImmCB_0[int(u_xlatu0.x)].wwww * _ColorL + u_xlat2;
+    fragColor = u_xlat0 * u_xlat16_1.xxxx;
+    return;
+}
+    ]]></shader>
+</effect>

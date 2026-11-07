@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE GAUSSIANO (AM) — o Gaussian Blur do Alight Motion, conta por conta (0.575.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz o Desfoque gaussiano 100% igual o alight motion", da série "100% iguais ao AM".
+  Mesmo parâmetro, id, faixa, passo e padrão do `com.alightcreative.effects.gaussianblur` do AM 5.0.281
+  (`assets/effects/gaussianblur.xml` do APK descompactado; o arquivo do AM não entra no repositório). Conferido
+  rodando o efeito do próprio AM na GPU do PC ao lado deste (`tools/amgauss`). O "Desfoque gaussiano" que já existia
+  (`gaussian-blur.xml`, Raio e Iterações) continua: é o par do Gaussian Blur do After Effects.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  1. A camada, pré-multiplicada (o AM guarda assim, em 8 bits), desce à METADE: o tamanho é o piso de L/2 × A/2 e
+     cada pixel é uma leitura no meio de 2 × 2 (a média que o filtro linear da GPU dá).
+  2. Uma gaussiana na horizontal e outra na vertical, nessa metade. O meio-lado (quantos pixels da metade de cada
+     lado) é Intensidade ÷ 2 × 1,14 ÷ 4 ÷ 3 × a DIAGONAL da imagem cheia em pixels (o `acPreviewSize` do AM é o tamanho
+     da renderização em todos os passes, lido do bytecode: `GGL/Lt.U` → `ssl/W.render`). Sigma = meio-lado ÷ 2,146
+     (a ponta fica em 10 % do centro). Os pesos saem um do outro por multiplicação (g · e^(−1/2σ²), o "incremental"),
+     e dois pixels vizinhos viram uma leitura só, no ponto entre eles pelo peso — a soma dos pesos é a de todos.
+  3. Volta ao tamanho cheio pelo filtro linear. Cada passo é guardado em 8 bits, como no AM.
+  4. Até Intensidade 0,0001 o script do efeito do AM desliga o grupo de shader dele (`shaderGroups` vazio) e o motor
+     tira o efeito da lista: a camada passa como está.
+
+  NA TELA (`stage="screen"`), como no AM: ele roda os efeitos DEPOIS de mover, girar e escalar a camada, na imagem do
+  tamanho da tela. O desfoque de uma camada reduzida à metade tem o mesmo tamanho na tela que o da camada inteira, e
+  borra também o que a transformação trouxe (a borda girada). Os efeitos de antes na lista rodam na camada; ele e os
+  de depois, na tela (`SceneRenderer.efeitosNaTela`). Numa camada de ajuste o efeito roda na cena, que já é a tela.
+  Dentro de grupo (o filho) ainda roda no buffer da camada, como os outros efeitos na tela.
+
+  A PRÉVIA PARADA FICA NA RESOLUÇÃO CHEIA (`screen-scale="full"`), como a da Pena: o tamanho do desfoque é fração da
+  diagonal, mas a descida à metade é um desfoque de 2 px DA RESOLUÇÃO EM QUE O EFEITO RODA (com Intensidade baixa é
+  quase todo o efeito), e a beirada presa pesa mais na imagem menor. Montado na metade contra a cheia reduzida
+  (`tools/escaladatela/gpu.py`, a foto de 1080): Intensidade 0,005 dá p99 de 44 níveis, 0,02 dá 25, o padrão 0,15
+  dá p99 5 (no meio da imagem até 5, nas linhas de cima até 41, a beirada). O AM faz a mesma conta na resolução da prévia dele; aqui a prévia
+  parada é a exportação.
+
+  O que é do Nova e não do AM:
+  - O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. O passe 0 guarda a camada pré-multiplicada (o mesmo
+    buffer de 8 bits que o AM recebe) e todos os passes leem dele, com o filtro da própria GPU, como no AM; só a saída
+    volta para o alfa reto. No alfa parcial sobra até 1,5 nível desse arredondamento.
+  - O buffer do Nova nunca tem menos de 8 px de lado e o do AM nunca tem menos de 16 (só pesa numa imagem minúscula).
+  - O `overdraw`/`max-overdraw` do XML do AM só alarga a área que o EDITOR dele desenha fora da composição; a imagem
+    exportada não muda, e aqui não existe.
+  - Os passes (AM → aqui): o downImg, o hblur e o vblur do AM são os passes 1, 2 e 3; a saída, 4.
+-->
+<effect
+    id="nova.effect.am-gaussian-blur"
+    name="Desfoque gaussiano (AM)"
+    name-en="Gaussian Blur (AM)"
+    desc="Aplica um desfoque rápido e suave, usando uma função gaussiana, reduzindo o ruído e os detalhes na camada (o Gaussian Blur do Alight Motion)."
+    desc-en="Applies a fast, smooth blur to the layer using a gaussian function, reducing noise and details in the layer (Alight Motion's Gaussian Blur)."
+    category="blur"
+    tags="desfoque,gaussiano,suavizar,borrar,blur,gaussian,essenciais,alight motion"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- Os buffers do AM, com os nomes dele: a metade, o horizontal e o vertical. -->
+        <texture id="downImg" src="buffer" scale="0.5" />
+        <texture id="hblur" src="buffer" scale="0.5" />
+        <texture id="vblur" src="buffer" scale="0.5" />
+
+        <spinner id="strength" label="Intensidade" default="0.15" min="0.0" max="2.0" step="0.005" />
+    </params>
+
+    <passes>
+        <pass target="pre" skipIfZero="strength" />
+        <pass target="downImg" skipIfZero="strength" />
+        <pass target="hblur" skipIfZero="strength" />
+        <pass target="vblur" skipIfZero="strength" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+
+// A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do AM: os pesos
+// tirados um do outro por multiplicação e duas amostras juntas numa leitura (a posição entre elas pelo peso).
+vec4 desfocar(sampler2D img, vec2 passo, vec2 st, float lado) {
+    if (strength <= 0.0) return vec4(0.0);
+    float sigma = lado / 2.14596602;
+    highp vec3 g;
+    g.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    g.y = exp(-0.5 / (sigma * sigma));
+    g.z = g.y * g.y;
+    vec4 soma = vec4(0.0);
+    highp float total = 0.0;
+    soma += texture(img, st) * g.x;
+    total += g.x;
+    for (float i = 1.0; i <= lado; i += 2.0) {
+        float d0 = i;
+        float d1 = i + 1.0;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p0 = g.x;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p1 = g.x;
+        float par = p0 + p1;
+        float d = (d0 * p0 + d1 * p1) / par;
+        vec2 stL = st - d * passo;
+        vec2 stR = st + d * passo;
+        soma += texture(img, stL) * par;
+        soma += texture(img, stR) * par;
+    }
+    return soma / total;
+}
+
+// O meio-lado: Intensidade ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `acPreviewSize` do AM).
+float ladoDoDesfoque() {
+    return strength / 2.0 * 1.14 / 4.0 / 3.0 * length(vec2(textureSize(pre, 0)));
+}
+
+void main() {
+    if (acPass == 0) {
+        vec4 c = texture(inputImg, acScreenNorm);
+        fragColor = vec4(c.rgb * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = texture(pre, acScreenNorm);
+        return;
+    }
+    if (acPass == 2) {
+        vec2 passo = vec2(1.0 / vec2(textureSize(downImg, 0)).x, 0.0);
+        fragColor = desfocar(downImg, passo, acScreenNorm, ladoDoDesfoque());
+        return;
+    }
+    if (acPass == 3) {
+        // Na tela a entrada chega de pé (t = 0 embaixo, como no AM): o passo aponta para CIMA e a soma do par fica na
+        // mesma ordem da dele (o de baixo primeiro). Invertida, a soma em float mudaria o último bit.
+        float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+        vec2 passo = vec2(0.0, cima / vec2(textureSize(hblur, 0)).y);
+        vec4 r = desfocar(hblur, passo, acScreenNorm, ladoDoDesfoque());
+        fragColor = strength <= 0.0 ? texture(pre, acScreenNorm) : r;
+        return;
+    }
+
+    // Até 0,0001 o AM tira o efeito da lista (o script dele não liga o grupo de shader): a camada como está.
+    if (!(strength > 0.0001)) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+    vec4 c = texture(vblur, acScreenNorm);
+    fragColor = c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

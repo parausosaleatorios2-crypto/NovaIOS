@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ASSISTÊNCIA DE ESCALA — o Scale Assist do Alight Motion, conta por conta (0.883.0)
+  ============================================================================
+
+  Pedido do snow (01/11/2026): "faça o efeito assistencia de escala 100% igual o do alight motion". Mesmos
+  parâmetros, mesmos ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.scaleassist` do AM 5.0.281
+  (um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM (`assets/effects/scaleassist.xml`
+  do APK descompactado) e escrita de novo em `model/AssistenciaDeEscala.kt`; o arquivo do AM não entra no
+  repositório. A conferência é `node tools/amescala/referencia.js` → `AssistenciaDeEscalaAmTest`: o script do
+  próprio AM e o Kotlin daqui, número a número.
+
+  O QUE O EFEITO DO AM FAZ (e este repete): multiplica a escala da camada (em torno da âncora), por cima da escala
+  de Mover e transformar:
+      X      escala.x · Escala
+      Y      escala.y · Escala
+      X,Y    escala.x · Escala,  escala.y · Escala · Abafamento
+      X,-Y   escala.x · Escala,  escala.y · (1 − (Escala − 1) · Abafamento)     (o padrão: estica e achata)
+  O Abafamento só acende com X,Y e X,-Y (o `enabled="false"` + `enableTargets` do AM → `enabledIf`). Os nomes dos
+  eixos ficam "X", "Y", "X,Y", "X,-Y" nas duas línguas, como no AM. A Escala e o Abafamento são `percent` (o texto
+  `%.1f%%` do spinner do AM), com as marcas 50/100/150/200%.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele ESCALA a camada. Quem executa é
+  `model/AssistenciaDeEscala.kt`, no mesmo laço do Tamanho do pulso (`Pulso.escalaDaCamada`, dentro de
+  `LayerGeometry.matrizLocal`): os dois são os únicos scripts do AM que mexem na escala e rodam na ordem da lista.
+  O shader abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-scale-assist"
+    name="Assistência de escala"
+    name-en="Scale Assist"
+    desc="Aplica uma escala a mais na camada, por cima da escala definida em Mover e transformar (o Scale Assist do Alight Motion)."
+    desc-en="Applies additional layer scale on top of the scale set in Move &amp; Transform (Alight Motion's Scale Assist)."
+    category="distort"
+    stage="transform"
+    tags="assistência de escala,assistencia de escala,escala,esticar,achatar,squash,stretch,tamanho,largura,altura,transformação,scale,scale assist,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="axis" label="Eixo" style="radio" options="X|Y|X,Y|X,-Y" default="3" />
+        <spinner id="scale" label="Escala" default="1.0" min="0.0" max="1000.0" step="0.001" type="percent"
+            ticks="0.5,1.0,1.5,2.0" />
+        <spinner id="damp" label="Abafamento" default="1.0" min="0.0" max="1000.0" step="0.01" type="percent"
+            ticks="0.5,1.0,1.5,2.0" enabledIf="axis=2|3" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

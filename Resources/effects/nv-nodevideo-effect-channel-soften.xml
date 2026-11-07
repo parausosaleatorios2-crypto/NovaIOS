@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Channel_soften
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-channel-soften"
+    name="Effect Channel Soften (NV)"
+    name-en="Effect Channel Soften (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Channel_soften', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Channel_soften', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_radius" label="Radius" default="1" min="0" max="2" step="0.01" />
+        <slider id="_skin_mask" type="integer" label="Skin Mask" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 ImmCB_0[25];
+
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec3 u_xlat2;
+int u_xlati2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+float u_xlat9;
+ivec2 u_xlati9;
+bool u_xlatb9;
+float u_xlat10;
+bool u_xlatb16;
+ivec2 u_xlati17;
+float u_xlat22;
+bool u_xlatb22;
+float u_xlat23;
+float u_xlat24;
+bool u_xlatb25;
+void main()
+{
+ImmCB_0[0] = vec4(0.0194184929,0.0,0.0,0.0);
+ImmCB_0[1] = vec4(0.0217850935,0.0,0.0,0.0);
+ImmCB_0[2] = vec4(0.024196934,0.0,0.0,0.0);
+ImmCB_0[3] = vec4(0.0266083721,0.0,0.0,0.0);
+ImmCB_0[4] = vec4(0.0289689898,0.0,0.0,0.0);
+ImmCB_0[5] = vec4(0.0312252138,0.0,0.0,0.0);
+ImmCB_0[6] = vec4(0.0333222672,0.0,0.0,0.0);
+ImmCB_0[7] = vec4(0.0352063291,0.0,0.0,0.0);
+ImmCB_0[8] = vec4(0.0368268006,0.0,0.0,0.0);
+ImmCB_0[9] = vec4(0.038138561,0.0,0.0,0.0);
+ImmCB_0[10] = vec4(0.0391040444,0.0,0.0,0.0);
+ImmCB_0[11] = vec4(0.0396950282,0.0,0.0,0.0);
+ImmCB_0[12] = vec4(0.0398939997,0.0,0.0,0.0);
+ImmCB_0[13] = vec4(0.0396950282,0.0,0.0,0.0);
+ImmCB_0[14] = vec4(0.0391040444,0.0,0.0,0.0);
+ImmCB_0[15] = vec4(0.038138561,0.0,0.0,0.0);
+ImmCB_0[16] = vec4(0.0368268006,0.0,0.0,0.0);
+ImmCB_0[17] = vec4(0.0352063291,0.0,0.0,0.0);
+ImmCB_0[18] = vec4(0.0333222672,0.0,0.0,0.0);
+ImmCB_0[19] = vec4(0.0312252138,0.0,0.0,0.0);
+ImmCB_0[20] = vec4(0.0289689898,0.0,0.0,0.0);
+ImmCB_0[21] = vec4(0.0266083721,0.0,0.0,0.0);
+ImmCB_0[22] = vec4(0.024196934,0.0,0.0,0.0);
+ImmCB_0[23] = vec4(0.0217850935,0.0,0.0,0.0);
+ImmCB_0[24] = vec4(0.0194184929,0.0,0.0,0.0);
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1.x = float(0.0);
+    u_xlat1.y = float(0.0);
+    u_xlat1.z = float(0.0);
+    u_xlat22 = float(0.0);
+    u_xlati2 = int(0xFFFFFFF4u);
+    while(true){
+        u_xlatb9 = 12<u_xlati2;
+        if(u_xlatb9){break;}
+        u_xlati9.xy = ivec2(u_xlati2) + ivec2(12, 1);
+        u_xlat3.x = float(u_xlati2);
+        u_xlat4.xyz = u_xlat1.xyz;
+        u_xlat23 = u_xlat22;
+        u_xlati17.x = int(0xFFFFFFF4u);
+        while(true){
+            u_xlatb25 = 12<u_xlati17.x;
+            if(u_xlatb25){break;}
+            u_xlat3.y = float(u_xlati17.x);
+            u_xlat5.xy = u_xlat3.xy * vec2(vec2(_radius, _radius));
+            u_xlat5.xy = acScreenNorm.xy * _resolution.xy + u_xlat5.xy;
+            u_xlat5.xy = u_xlat5.xy / _resolution.xy;
+            u_xlat5.xyz = texture(inputImg, u_xlat5.xy).xyz;
+            u_xlat6.xyz = (-u_xlat0.xyz) + u_xlat5.xyz;
+            u_xlat10 = dot(u_xlat6.xyz, u_xlat6.xyz);
+            u_xlat10 = u_xlat10 * -72.1347427;
+            u_xlat10 = exp2(u_xlat10);
+            u_xlat10 = u_xlat10 * 1.0;
+            u_xlati17.xy = u_xlati17.xx + ivec2(1, 12);
+            u_xlat10 = u_xlat10 * ImmCB_0[u_xlati17.y].x;
+            u_xlat24 = u_xlat10 * ImmCB_0[u_xlati9.x].x;
+            u_xlat23 = u_xlat10 * ImmCB_0[u_xlati9.x].x + u_xlat23;
+            u_xlat4.xyz = vec3(u_xlat24) * u_xlat5.xyz + u_xlat4.xyz;
+        }
+        u_xlat1.xyz = u_xlat4.xyz;
+        u_xlat22 = u_xlat23;
+        u_xlati2 = u_xlati9.y;
+    }
+    u_xlat1.xyz = u_xlat1.xyz / vec3(u_xlat22);
+    u_xlatb22 = 0<int(_skin_mask);
+    u_xlat2.x = (-u_xlat1.x) * 37.7400017 + 128.0;
+    u_xlat2.x = (-u_xlat1.y) * 74.2050018 + u_xlat2.x;
+    u_xlat2.x = u_xlat1.z * 111.945 + u_xlat2.x;
+    u_xlat9 = u_xlat1.x * 111.945 + 128.0;
+    u_xlat9 = (-u_xlat1.y) * 93.840004 + u_xlat9;
+    u_xlat9 = (-u_xlat1.z) * 18.1050014 + u_xlat9;
+    u_xlatb16 = 100.0<u_xlat2.x;
+    u_xlatb2.x = u_xlat2.x<118.0;
+    u_xlatb2.x = u_xlatb2.x && u_xlatb16;
+    u_xlatb16 = 121.0<u_xlat9;
+    u_xlatb2.x = u_xlatb16 && u_xlatb2.x;
+    u_xlatb9 = u_xlat9<161.0;
+    u_xlatb2.x = u_xlatb9 && u_xlatb2.x;
+    u_xlat2.xyz = (u_xlatb2.x) ? u_xlat1.xyz : u_xlat0.xyz;
+    u_xlat1.xyz = (bool(u_xlatb22)) ? u_xlat2.xyz : u_xlat1.xyz;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat1.w = u_xlat0.w;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat5 = u_xlat0 * u_xlat5;
+        u_xlat3 = u_xlat3 * u_xlat4 + u_xlat5;
+        u_xlat0.x = u_xlat4.x * u_xlat3.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat0.x : u_xlat3.w;
+        fragColor.xyz = u_xlat3.xyz;
+    } else {
+        fragColor.xyz = u_xlat1.xyz;
+        fragColor.w = u_xlat0.w;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Escrita à mão.
+
+  Diferente de `linear-wipe.xml`/`dust-dissolve.xml`, o progresso não é um
+  slider que a pessoa anima na mão: ele vem de `acTime` (o relógio local da
+  camada) dividido por uma duração em segundos. Aplicou o efeito, a escrita
+  já roda sozinha desde o início do clipe — é a resposta direta ao pedido de
+  algo RÁPIDO de usar, sem abrir o editor de keyframe pra isso.
+
+  ============================================================================
+   SEGUNDA RODADA: "TA MAIS PRA UM LINEAR WIPE"
+  ============================================================================
+
+  Relato direto do snow, testando: a primeira versão ondulava com dois senos
+  — e um seno, por mais que somado a outro, ainda é um padrão PERIÓDICO. O
+  olho reconhece periodicidade quase instantaneamente, mesmo sem conseguir
+  dizer por quê — é o que faz a borda antiga ler como "cortina ondulada",
+  não como traço de mão. Nada que escreve à mão repete a própria forma a
+  cada tantos pixels.
+
+  A troca: ruído fractal (mesma técnica de `dust-dissolve.xml` — `fbm` sobre
+  `valueNoise`/`hash21`, pública, de Inigo Quilez) no lugar dos dois senos.
+  Ruído fractal não repete. E a segunda dimensão do ruído é o PROGRESSO da
+  escrita, não só a posição — então a forma da borda muda sutilmente
+  enquanto ela anda, em vez de ser uma onda congelada que desliza. Por cima
+  disso, um jitter por pixel (grão fino) quebra a borda anti-serrilhada
+  perfeita do `smoothstep` — tinta de verdade não tem uma aresta de vetor.
+
+  O resto continua: progresso vem de `acTime`/duração (não de um slider que
+  a pessoa anima na mão), e a ponta de caneta acompanha a borda.
+-->
+<effect
+    id="nova.effect.handwriting"
+    name="Escrita à mão"
+    name-en="Handwriting Reveal"
+    desc="Revela a camada como se estivesse sendo escrita à mão, com uma ponta de caneta acompanhando o traço."
+    desc-en="Reveals the layer as if handwritten, with a glowing pen tip riding the stroke."
+    category="text"
+    tags="escrita,mao,caneta,manuscrito,assinatura,handwriting,pen,ink,caligrafia,texto,stopmotion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="duration" label="Duração da escrita"
+                default="1.2" min="0.1" max="6.0" step="0.1" snap="1.2" />
+
+        <slider id="startDelay" label="Começar depois de"
+                default="0.0" min="0.0" max="5.0" step="0.1" snap="0.0" />
+
+        <slider id="angle" label="Direção da escrita"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,90.0,-90.0,180.0" />
+
+        <switch id="invert" label="Apagar em vez de escrever" default="false" />
+
+        <slider id="feather" label="Suavidade da borda"
+                default="0.03" min="0.0" max="0.3" step="0.005" snap="0.03" />
+
+        <slider id="wobble" label="Irregularidade do traço"
+                default="0.05" min="0.0" max="0.25" step="0.005" snap="0.05" />
+
+        <slider id="wobbleFreq" label="Frequência da irregularidade"
+                default="8.0" min="1.0" max="30.0" step="0.5" snap="8.0" />
+
+        <switch id="showTip" group="Ponta da caneta" label="Mostrar a ponta" default="true" />
+        <color id="tipColor" group="Ponta da caneta" label="Cor" default="#FFFFFF" />
+        <slider id="tipSize" group="Ponta da caneta" label="Tamanho"
+                default="0.035" min="0.0" max="0.15" step="0.005" snap="0.035" />
+        <slider id="tipIntensity" group="Ponta da caneta" label="Brilho"
+                default="1.5" min="0.0" max="5.0" step="0.05" snap="1.0" />
+    </params>
+
+    <!-- Na vitrine, a escrita padrão já acabou no instante da miniatura: mais lenta, pega no meio. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="duration" value="2.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash21(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+float valueNoise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    vec2 w = f * f * (3.0 - 2.0 * f);
+    float a = hash21(cell);
+    float b = hash21(cell + vec2(1.0, 0.0));
+    float c = hash21(cell + vec2(0.0, 1.0));
+    float d = hash21(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+}
+
+float fbm(vec2 p) {
+    float soma = 0.0;
+    float amplitude = 0.5;
+    for (int i = 0; i < 3; i++) {
+        soma += amplitude * valueNoise(p);
+        p *= 2.07;
+        amplitude *= 0.5;
+    }
+    return soma;
+}
+
+void main() {
+    vec4 source = texture(inputImg, acScreenNorm);
+
+    float rad = radians(angle);
+    vec2 axis = vec2(cos(rad), sin(rad));
+    vec2 perp = vec2(-axis.y, axis.x);
+    vec2 centred = (acScreenNorm - 0.5) * vec2(acAspect, 1.0);
+
+    // Mesma normalização de `linear-wipe.xml`: sem isso, a mesma duração
+    // revelaria mais rápido na diagonal do que na horizontal.
+    float support = max(0.5 * (acAspect * abs(axis.x) + abs(axis.y)), 0.0001);
+
+    float progress = clamp((acTime - startDelay) / max(duration, 0.001), 0.0, 1.0);
+    if (invert) progress = 1.0 - progress;
+
+    // A borda ondula por RUÍDO FRACTAL, não por seno — ruído não repete a
+    // própria forma, que é o que denunciava "cortina" na primeira versão. A
+    // segunda dimensão do ruído é o PROGRESSO: a forma muda enquanto a
+    // escrita anda, em vez de ser uma onda parada que só desliza de lugar.
+    float perpCoord = dot(centred, perp);
+    float ruido = fbm(vec2(perpCoord * wobbleFreq, progress * 2.2)) * 2.0 - 1.0;
+
+    float along = dot(centred, axis) + ruido * wobble;
+    float position = (along + support) / (2.0 * support);
+
+    // Grão fino por pixel: quebra a aresta perfeitamente anti-serrilhada do
+    // `smoothstep` — tinta de verdade não tem borda de vetor.
+    float grao = (hash21(acScreenNorm * acResolution / acEscalaDePixel * 0.5) - 0.5) * feather * 0.8;
+
+    // Ao contrário de `linear-wipe`, aqui não é a pessoa que anima "quanto
+    // esconder": é "quanto já foi escrito". Pixel revelado quando a escrita
+    // (progress) já passou da posição dele.
+    float soft = max(feather, 0.0005);
+    float mask = smoothstep(position - soft, position + soft, progress + grao);
+
+    vec3 rgb = source.rgb;
+    float alpha = source.a * mask;
+
+    if (showTip) {
+        // Onde a borda de revelação cruza o CENTRO da camada (perpCoord=0,
+        // sem a ondulação) — o lugar mais estável para a ponta seguir, sem
+        // ela mesma ondular feito a borda.
+        float tipAlong = support * (2.0 * progress - 1.0);
+        vec2 tip = axis * tipAlong;
+        vec2 delta = centred - tip;
+        float dist = length(delta);
+        float glow = exp(-dist * dist / max(tipSize * tipSize, 0.0001));
+
+        // Nasce com a escrita, some quando ela termina — sem isso, a ponta
+        // ficaria brilhando parada antes de começar e depois de acabar.
+        float fadeIn = smoothstep(0.0, 0.04, progress);
+        float fadeOut = 1.0 - smoothstep(0.94, 1.0, progress);
+        float tipVisible = fadeIn * fadeOut * tipColor.a;
+
+        rgb += tipColor.rgb * glow * tipVisible * tipIntensity;
+        alpha = max(alpha, glow * tipVisible);
+    }
+
+    fragColor = vec4(rgb, alpha);
+}
+
+    ]]></shader>
+</effect>

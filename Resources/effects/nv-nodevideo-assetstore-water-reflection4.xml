@@ -1,0 +1,1967 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_water_reflection4
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-water-reflection4"
+    name="Water Reflection4 (NV)"
+    name-en="Water Reflection4 (NV)"
+    desc="NodeVideo Asset Store effect 'water_reflection4', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'water_reflection4', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="texture0" src="content" empty="transparent" />
+        <texture id="texture1" src="content" empty="transparent" />
+        <texture id="texture2" src="content" empty="transparent" />
+        <texture id="texture3" src="content" empty="transparent" />
+        <texture id="texture4" src="content" empty="transparent" />
+        <texture id="displacement_source" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_horizontal_line" label="Horizontal Line" default="0.4" min="0" max="1" step="0.01" />
+        <slider id="_perspective" label="Perspective" default="0.2" min="0" max="2" step="0.01" />
+        <slider id="_distortion" label="Distortion" default="1" min="0" max="2" step="0.01" />
+        <slider id="_feather" label="Feather" default="0.05" min="0" max="2" step="0.01" />
+        <slider id="_edge_blur" label="Edge Blur" default="0" min="0" max="2" step="0.01" />
+        <slider id="_direction" label="Direction" default="0" min="0" max="360" step="1" />
+        <slider id="_speed" label="Speed" default="1.5" min="0" max="10" step="0.01" />
+        <slider id="_spread" label="Spread" default="0.2" min="0" max="1" step="0.01" />
+        <color id="_color" label="Color" default="#FFFFFFFF" />
+        <color id="_light_color" label="Light Color" default="#FFFFFFFF" />
+        <xyz id="_light_pos" label="Light Pos" defaultX="0" defaultY="0.06" defaultZ="1" />
+        <slider id="_light_intensity" label="Light Intensity" default="1" min="0" max="2" step="0.01" />
+        <slider id="_enable_light" type="integer" label="Enable Light" default="0" min="0" max="1" step="1" />
+        <slider id="_complexity" label="Complexity" default="8" min="1" max="16" step="0.01" />
+        <slider id="_octaves" label="Octaves" default="4" min="1" max="16" step="0.01" />
+        <slider id="_turbulence" label="Turbulence" default="4" min="0" max="10" step="0.01" />
+        <slider id="_offset" label="Offset" default="0" min="0" max="1" step="0.01" />
+        <slider id="_intensity" label="Intensity" default="0.5" min="0" max="2" step="0.01" />
+        <slider id="_enable_ripples" type="integer" label="Enable Ripples" default="0" min="0" max="1" step="1" />
+        <slider id="_intensity2" label="Intensity2" default="2" min="0" max="2" step="0.01" />
+        <slider id="_duration" label="Duration" default="1" min="0" max="2" step="0.01" />
+        <slider id="_speed2" label="Speed2" default="1" min="0" max="4" step="0.01" />
+        <slider id="_width" label="Width" default="0.3" min="0" max="1" step="0.01" />
+        <slider id="_height" label="Height" default="2" min="0" max="2" step="0.01" />
+        <slider id="_scale2" label="Scale2" default="0.3" min="0" max="2" step="0.01" />
+        <point id="_offset2" label="Offset2" defaultX="0" defaultY="0" vetor="true" min="0" max="2" />
+        <slider id="_complexity2" label="Complexity2" default="4" min="0" max="4" step="0.01" />
+        <slider id="_amount" label="Amount" default="1" min="0" max="2" step="0.01" />
+        <slider id="_seed" label="Seed" default="10" min="0" max="100" step="1" />
+        <point id="_scale" label="Scale" defaultX="1" defaultY="1" vetor="true" min="0" max="360" />
+        <slider id="_type" type="integer" label="Type" default="1" min="0" max="6" step="1" />
+        <slider id="_width1" label="Width1" default="0.3" min="0" max="1" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// tempo do Node ligado ao motor (tools/nodevideo/ligar_tempo.py)
+#define _cur_time acTime
+vec4 u_xlat0;
+bvec2 u_xlatb0;
+vec4 u_xlat1;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+bool u_xlatb2;
+vec4 u_xlat3;
+ivec2 u_xlati3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+bvec4 u_xlatb5;
+vec4 u_xlat6;
+int u_xlati6;
+vec4 u_xlat7;
+bool u_xlatb7;
+vec4 u_xlat8;
+vec4 u_xlat9;
+vec4 u_xlat10;
+bool u_xlatb10;
+vec4 u_xlat11;
+vec3 u_xlat12;
+vec3 u_xlat13;
+vec3 u_xlat14;
+bool u_xlatb15;
+vec3 u_xlat16;
+vec3 u_xlat17;
+vec3 u_xlat19;
+int u_xlati19;
+vec3 u_xlat21;
+vec3 u_xlat22;
+float u_xlat23;
+float u_xlat24;
+vec3 u_xlat25;
+vec2 u_xlat30;
+vec2 u_xlat31;
+bvec2 u_xlatb31;
+float u_xlat32;
+vec2 u_xlat33;
+vec2 u_xlat34;
+int u_xlati34;
+bool u_xlatb34;
+vec2 u_xlat35;
+int u_xlati35;
+bool u_xlatb35;
+vec2 u_xlat36;
+bool u_xlatb36;
+vec2 u_xlat37;
+bool u_xlatb37;
+vec2 u_xlat38;
+vec2 u_xlat39;
+vec2 u_xlat40;
+vec2 u_xlat42;
+float u_xlat45;
+bool u_xlatb45;
+float u_xlat46;
+int u_xlati46;
+bool u_xlatb46;
+float u_xlat47;
+int u_xlati47;
+float u_xlat48;
+int u_xlati48;
+bool u_xlatb48;
+float u_xlat49;
+int u_xlati49;
+bool u_xlatb49;
+float u_xlat50;
+int u_xlati50;
+bool u_xlatb50;
+float u_xlat51;
+bool u_xlatb51;
+float u_xlat52;
+bool u_xlatb52;
+float u_xlat53;
+bool u_xlatb53;
+float u_xlat54;
+bool u_xlatb54;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy * vec2(2.0, 2.0) + vec2(-1.0, -1.0);
+    u_xlat30.x = _perspective * 10.0;
+    u_xlat45 = (-_horizontal_line) + 1.0;
+    u_xlat16.y = (-_horizontal_line) + 0.5;
+    u_xlat16.x = float(0.0);
+    u_xlat16.z = float(1.0);
+    u_xlat1.x = dot(u_xlat16.yz, u_xlat16.yz);
+    u_xlat2.x = inversesqrt(u_xlat1.x);
+    u_xlat2.yzw = u_xlat16.xyz * u_xlat2.xxx;
+    u_xlat1.xy = u_xlat2.xx * vec2(1.0, 0.0);
+    u_xlat1.z = 0.0;
+    u_xlat46 = u_xlat1.x * u_xlat1.x;
+    u_xlat46 = inversesqrt(u_xlat46);
+    u_xlat1.xyz = vec3(u_xlat46) * u_xlat1.xyz;
+    u_xlat3.xy = u_xlat1.zx * u_xlat2.zw;
+    u_xlat3.z = 0.0;
+    u_xlat3.xyz = (-u_xlat2.wyz) * u_xlat1.yzx + u_xlat3.xyz;
+    u_xlat46 = dot(u_xlat3.yz, u_xlat3.yz);
+    u_xlat46 = inversesqrt(u_xlat46);
+    u_xlat3.xyz = vec3(u_xlat46) * u_xlat3.xyz;
+    u_xlat3.xyz = u_xlat0.yyy * u_xlat3.xyz;
+    u_xlat1.xyz = u_xlat0.xxx * u_xlat1.xyz + u_xlat3.xyz;
+    u_xlat1.xyz = u_xlat2.xzx * vec3(0.0, 2.5, 2.5) + u_xlat1.xyz;
+    u_xlat0.x = dot(u_xlat1.xyz, u_xlat1.xyz);
+    u_xlat0.x = inversesqrt(u_xlat0.x);
+    u_xlat1.xyz = u_xlat0.xxx * u_xlat1.xyz;
+    u_xlat0.x = (-u_xlat30.x) / u_xlat1.y;
+    u_xlatb15 = 0.0<u_xlat0.x;
+    if(u_xlatb15){
+        u_xlat2.xyz = u_xlat1.xyz * u_xlat0.xxx;
+        if(int(_type) == 0) {
+            u_xlati3.xy = ivec2(vec2(_complexity, _octaves));
+            u_xlat30.x = trunc(_complexity);
+            u_xlat30.x = (-u_xlat30.x) + 1.0;
+            u_xlat33.xy = u_xlat30.xx * vec2(-0.378511608, 0.757023215);
+            u_xlat33.xy = exp2(u_xlat33.xy);
+            u_xlat30.x = u_xlat33.y * 0.25;
+            u_xlat4.xy = u_xlat2.xz * vec2(0.5, 0.5);
+            u_xlat46 = _direction * 0.0174532942;
+            u_xlat48 = sin((-u_xlat46));
+            u_xlat46 = cos(u_xlat46);
+            u_xlat34.x = _intensity * 0.100000001;
+            u_xlat5.x = float(0.0);
+            u_xlat5.y = float(0.0);
+            u_xlat5.z = float(0.0);
+            u_xlat6.x = u_xlat33.x;
+            u_xlat6.y = u_xlat30.x;
+            u_xlat7.x = u_xlat48;
+            u_xlat7.z = u_xlat46;
+            u_xlat49 = 0.0;
+            u_xlati50 = u_xlati3.y;
+            while(true){
+                u_xlatb36 = u_xlati50>=u_xlati3.x;
+                if(u_xlatb36){break;}
+                u_xlat36.x = dot((-u_xlat7.xz), u_xlat4.xy);
+                u_xlat51 = float(u_xlati50);
+                u_xlat36.x = u_xlat51 + u_xlat36.x;
+                u_xlat8.xy = u_xlat6.xx * u_xlat6.xy;
+                u_xlat51 = u_xlat34.x * u_xlat8.x;
+                u_xlat51 = u_xlat6.x * u_xlat51;
+                u_xlat51 = _turbulence * u_xlat6.x + u_xlat51;
+                u_xlat8.xzw = u_xlat6.xxy * vec3(25.0, 0.769230783, 1.68999994);
+                u_xlat52 = u_xlat8.x * u_xlat8.x;
+                u_xlat9.x = u_xlat8.x * u_xlat8.x + 27.0;
+                u_xlat8.x = u_xlat8.x * u_xlat9.x;
+                u_xlat52 = u_xlat52 * 9.0 + 27.0;
+                u_xlat52 = u_xlat8.x / u_xlat52;
+                u_xlat52 = max(u_xlat52, -1.0);
+                u_xlat52 = min(u_xlat52, 1.0);
+                u_xlat51 = u_xlat51 * u_xlat52;
+                u_xlat51 = sqrt(u_xlat51);
+                u_xlat51 = u_xlat51 * _cur_time;
+                u_xlat51 = u_xlat51 * _speed;
+                u_xlat52 = u_xlat36.x * u_xlat6.x + u_xlat51;
+                u_xlat52 = sin(u_xlat52);
+                u_xlat49 = u_xlat6.y * u_xlat52 + u_xlat49;
+                u_xlat36.x = (-u_xlat36.x) * u_xlat6.x + u_xlat51;
+                u_xlat36.x = cos(u_xlat36.x);
+                u_xlat7.y = u_xlat36.x * u_xlat8.y;
+                u_xlat5.xyz = u_xlat5.xyz + u_xlat7.xyz;
+                u_xlat8.x = dot(u_xlat7.xz, vec2(0.49999997, 0.866025448));
+                u_xlat8.y = dot(u_xlat7.xz, vec2(-0.866025448, 0.49999997));
+                u_xlati50 = u_xlati50 + 1;
+                u_xlat6.xy = u_xlat8.zw;
+                u_xlat7.xz = u_xlat8.xy;
+            }
+            u_xlat7.xyz = u_xlat5.xyz;
+            u_xlat3.xz = u_xlat6.xy;
+            u_xlat8.x = u_xlat48;
+            u_xlat8.z = u_xlat46;
+            u_xlat30.x = u_xlat49;
+            u_xlati34 = 0;
+            while(true){
+                u_xlatb50 = u_xlati34>=u_xlati3.y;
+                if(u_xlatb50){break;}
+                u_xlat50 = dot(u_xlat8.xz, u_xlat4.xy);
+                u_xlat36.x = float(u_xlati34);
+                u_xlat50 = u_xlat50 + u_xlat36.x;
+                u_xlat51 = u_xlat3.x * _turbulence;
+                u_xlat9.xyz = u_xlat3.xxz * vec3(25.0, 0.769230783, 1.68999994);
+                u_xlat52 = u_xlat9.x * u_xlat9.x;
+                u_xlat53 = u_xlat9.x * u_xlat9.x + 27.0;
+                u_xlat53 = u_xlat53 * u_xlat9.x;
+                u_xlat52 = u_xlat52 * 9.0 + 27.0;
+                u_xlat52 = u_xlat53 / u_xlat52;
+                u_xlat52 = max(u_xlat52, -1.0);
+                u_xlat52 = min(u_xlat52, 1.0);
+                u_xlat51 = u_xlat51 * u_xlat52;
+                u_xlat51 = sqrt(u_xlat51);
+                u_xlat51 = u_xlat51 * _cur_time;
+                u_xlat51 = u_xlat51 * _speed;
+                u_xlat50 = u_xlat50 * u_xlat3.x + u_xlat51;
+                u_xlat9.x = sin(u_xlat50);
+                u_xlat10.x = cos(u_xlat50);
+                u_xlat30.x = u_xlat3.z * u_xlat9.x + u_xlat30.x;
+                u_xlat50 = u_xlat3.x * u_xlat3.z;
+                u_xlat8.y = u_xlat10.x * u_xlat50;
+                u_xlat7.xyz = u_xlat7.xyz + u_xlat8.xyz;
+                u_xlatb50 = u_xlat36.x>=2.0;
+                u_xlat10.xyz = (bool(u_xlatb50)) ? vec3(0.540302277, -0.841470957, 0.540302277) : vec3(1.0, -0.0, 1.0);
+                u_xlat10.xyz = u_xlat8.xzz * u_xlat10.xyz;
+                u_xlat10.x = u_xlat10.y + u_xlat10.x;
+                u_xlat50 = u_xlatb50 ? 0.841470957 : float(0.0);
+                u_xlat10.y = u_xlat50 * u_xlat8.x + u_xlat10.z;
+                u_xlati34 = u_xlati34 + 1;
+                u_xlat3.xz = u_xlat9.yz;
+                u_xlat8.xz = u_xlat10.xy;
+            }
+            u_xlat46 = dot(u_xlat7.xyz, u_xlat7.xyz);
+            u_xlat46 = inversesqrt(u_xlat46);
+            u_xlat3.xyz = vec3(u_xlat46) * u_xlat7.xyz;
+            u_xlat3.w = (-u_xlat3.x);
+            u_xlat46 = dot(u_xlat3.zw, u_xlat3.zw);
+            u_xlat46 = inversesqrt(u_xlat46);
+            u_xlat4.z = u_xlat46 * u_xlat3.z;
+            u_xlat4.x = 0.0;
+            u_xlat4.y = u_xlat46 * (-u_xlat3.x);
+            u_xlat5.xyz = u_xlat3.zxy * u_xlat4.xyz;
+            u_xlat3.xyz = u_xlat3.yzx * u_xlat4.yzx + (-u_xlat5.xyz);
+        } else {
+            u_xlat4.w = _perspective * 10.0 + u_xlat2.y;
+            u_xlat46 = (-_spread) + 1.0;
+            u_xlat17.x = log2(u_xlat2.z);
+            u_xlat17.x = u_xlat46 * u_xlat17.x;
+            u_xlat2.w = exp2(u_xlat17.x);
+            u_xlat17.x = _cur_time * _speed;
+            u_xlatb5 = equal(ivec4(int(_type)), ivec4(3, 2, 4, 1));
+            u_xlat6.xy = vec2(_scale.x, _scale.y) + vec2(_scale.x, _scale.y);
+            u_xlat6.xy = (u_xlatb5.x) ? u_xlat6.xy : vec2(_scale.x, _scale.y);
+            u_xlatb48 = u_xlatb5.z || u_xlatb5.y;
+            u_xlat36.xy = u_xlat6.xy * vec2(0.5, 0.5);
+            u_xlat6.xy = (bool(u_xlatb48)) ? u_xlat36.xy : u_xlat6.xy;
+            u_xlat48 = _direction + 25.0;
+            u_xlat48 = u_xlat48 * 0.0174532942;
+            u_xlat7.x = sin(u_xlat48);
+            u_xlat8.x = cos(u_xlat48);
+            u_xlat9.x = sin((-u_xlat48));
+            u_xlat22.xyz = u_xlat17.xxx * vec3(0.462000012, 0.582120001, 1.15499997);
+            u_xlat9.y = u_xlat8.x;
+            u_xlat8.x = dot(u_xlat9.yx, u_xlat22.xx);
+            u_xlat9.z = u_xlat7.x;
+            u_xlat8.y = dot(u_xlat9.zy, u_xlat22.xx);
+            u_xlat36.xy = u_xlat2.xw + u_xlat8.xy;
+            u_xlat36.xy = u_xlat6.xy * u_xlat36.xy;
+            u_xlat36.xy = u_xlat36.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat10.xyz = texture(texture0, u_xlat36.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat10.xyz = texture(texture1, u_xlat36.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat10.xyz = texture(texture2, u_xlat36.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat10.xyz = texture(texture3, u_xlat36.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb7 = int(_type)==5;
+                            if(u_xlatb7){
+                                u_xlat10.xyz = texture(texture4, u_xlat36.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat7.xy = fract(u_xlat36.xy);
+                                    u_xlat10.xyz = texture(displacement_source, u_xlat7.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat10.xyz = texture(texture0, u_xlat36.xy).xyz;
+            }
+            u_xlat7.x = dot(u_xlat9.yx, u_xlat22.yz);
+            u_xlat7.y = dot(u_xlat9.zy, u_xlat22.yz);
+            u_xlat36.xy = u_xlat2.xw + u_xlat7.xy;
+            u_xlat36.xy = u_xlat6.xy * u_xlat36.xy;
+            u_xlat36.xy = u_xlat36.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat11.xyz = texture(texture0, u_xlat36.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat11.xyz = texture(texture1, u_xlat36.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat11.xyz = texture(texture2, u_xlat36.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat11.xyz = texture(texture3, u_xlat36.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb37 = int(_type)==5;
+                            if(u_xlatb37){
+                                u_xlat11.xyz = texture(texture4, u_xlat36.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat37.xy = fract(u_xlat36.xy);
+                                    u_xlat11.xyz = texture(displacement_source, u_xlat37.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat11.xyz = texture(texture0, u_xlat36.xy).xyz;
+            }
+            u_xlat36.xy = u_xlat17.xx * vec2(0.76692003, 2.079);
+            u_xlat12.x = dot(u_xlat9.yx, u_xlat36.xy);
+            u_xlat12.y = dot(u_xlat9.zy, u_xlat36.xy);
+            u_xlat17.xz = u_xlat2.xw + u_xlat12.xy;
+            u_xlat17.xz = u_xlat6.xy * u_xlat17.xz;
+            u_xlat17.xz = u_xlat17.xz * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat9.xyz = texture(texture0, u_xlat17.xz).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat9.xyz = texture(texture1, u_xlat17.xz).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat9.xyz = texture(texture2, u_xlat17.xz).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat9.xyz = texture(texture3, u_xlat17.xz).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb36 = int(_type)==5;
+                            if(u_xlatb36){
+                                u_xlat9.xyz = texture(texture4, u_xlat17.xz).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat36.xy = fract(u_xlat17.xz);
+                                    u_xlat9.xyz = texture(displacement_source, u_xlat36.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat9.xyz = texture(texture0, u_xlat17.xz).xyz;
+            }
+            u_xlat9.xyz = (-u_xlat9.xyz) + u_xlat11.xyz;
+            u_xlat9.xyz = u_xlat9.xyz + u_xlat10.xyz;
+            u_xlat17.x = u_xlat9.y + u_xlat9.x;
+            u_xlat17.x = u_xlat9.z + u_xlat17.x;
+            u_xlat17.x = u_xlat17.x * 0.0833333358 + u_xlat4.w;
+            u_xlat17.x = u_xlat17.x + u_xlat17.x;
+            u_xlat4.xy = u_xlat17.xx * u_xlat1.xz + u_xlat2.xz;
+            u_xlat2.x = log2(u_xlat4.y);
+            u_xlat2.x = u_xlat46 * u_xlat2.x;
+            u_xlat4.z = exp2(u_xlat2.x);
+            u_xlat2.xy = u_xlat8.xy + u_xlat4.xz;
+            u_xlat2.xy = u_xlat6.xy * u_xlat2.xy;
+            u_xlat2.xy = u_xlat2.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat9.xyz = texture(texture0, u_xlat2.xy).xyz;
+                u_xlati47 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat9.xyz = texture(texture1, u_xlat2.xy).xyz;
+                    u_xlati47 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat9.xyz = texture(texture2, u_xlat2.xy).xyz;
+                        u_xlati47 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat9.xyz = texture(texture3, u_xlat2.xy).xyz;
+                            u_xlati47 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat9.xyz = texture(texture4, u_xlat2.xy).xyz;
+                                u_xlati47 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati47 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati47 != 0) {
+                                    u_xlat36.xy = fract(u_xlat2.xy);
+                                    u_xlat9.xyz = texture(displacement_source, u_xlat36.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati47 == 0) {
+                u_xlat9.xyz = texture(texture0, u_xlat2.xy).xyz;
+            }
+            u_xlat36.xy = u_xlat7.xy + u_xlat4.xz;
+            u_xlat36.xy = u_xlat6.xy * u_xlat36.xy;
+            u_xlat6.zw = u_xlat36.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat10.xyz = texture(texture0, u_xlat6.zw).xyz;
+                u_xlati47 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat10.xyz = texture(texture1, u_xlat6.zw).xyz;
+                    u_xlati47 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat10.xyz = texture(texture2, u_xlat6.zw).xyz;
+                        u_xlati47 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat10.xyz = texture(texture3, u_xlat6.zw).xyz;
+                            u_xlati47 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat10.xyz = texture(texture4, u_xlat6.zw).xyz;
+                                u_xlati47 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati47 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati47 != 0) {
+                                    u_xlat37.xy = fract(u_xlat6.zw);
+                                    u_xlat10.xyz = texture(displacement_source, u_xlat37.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati47 == 0) {
+                u_xlat10.xyz = texture(texture0, u_xlat6.zw).xyz;
+            }
+            u_xlat37.xy = u_xlat12.xy + u_xlat4.xz;
+            u_xlat37.xy = u_xlat6.xy * u_xlat37.xy;
+            u_xlat7.zw = u_xlat37.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat11.xyz = texture(texture0, u_xlat7.zw).xyz;
+                u_xlati47 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat11.xyz = texture(texture1, u_xlat7.zw).xyz;
+                    u_xlati47 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat11.xyz = texture(texture2, u_xlat7.zw).xyz;
+                        u_xlati47 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat11.xyz = texture(texture3, u_xlat7.zw).xyz;
+                            u_xlati47 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat11.xyz = texture(texture4, u_xlat7.zw).xyz;
+                                u_xlati47 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati47 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati47 != 0) {
+                                    u_xlat38.xy = fract(u_xlat7.zw);
+                                    u_xlat11.xyz = texture(displacement_source, u_xlat38.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati47 == 0) {
+                u_xlat11.xyz = texture(texture0, u_xlat7.zw).xyz;
+            }
+            u_xlat10.xyz = u_xlat10.xyz + (-u_xlat11.xyz);
+            u_xlat9.xyz = u_xlat9.xyz + u_xlat10.xyz;
+            u_xlat47 = u_xlat9.y + u_xlat9.x;
+            u_xlat47 = u_xlat9.z + u_xlat47;
+            u_xlat47 = u_xlat47 * 0.0833333358 + u_xlat4.w;
+            u_xlat48 = max(_width1, 0.00999999978);
+            u_xlat9.z = min(u_xlat48, 100.0);
+            u_xlat9.x = float(0.0);
+            u_xlat9.y = float(0.0);
+            u_xlat10.xyz = u_xlat4.xwy + u_xlat9.zyy;
+            u_xlat48 = log2(u_xlat10.z);
+            u_xlat48 = u_xlat46 * u_xlat48;
+            u_xlat10.w = exp2(u_xlat48);
+            u_xlat38.xy = u_xlat8.xy + u_xlat10.xw;
+            u_xlat38.xy = u_xlat6.xy * u_xlat38.xy;
+            u_xlat38.xy = u_xlat38.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat11.xyz = texture(texture0, u_xlat38.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat11.xyz = texture(texture1, u_xlat38.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat11.xyz = texture(texture2, u_xlat38.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat11.xyz = texture(texture3, u_xlat38.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb34 = int(_type)==5;
+                            if(u_xlatb34){
+                                u_xlat11.xyz = texture(texture4, u_xlat38.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat42.xy = fract(u_xlat38.xy);
+                                    u_xlat11.xyz = texture(displacement_source, u_xlat42.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat11.xyz = texture(texture0, u_xlat38.xy).xyz;
+            }
+            u_xlat38.xy = u_xlat7.xy + u_xlat10.xw;
+            u_xlat38.xy = u_xlat6.xy * u_xlat38.xy;
+            u_xlat38.xy = u_xlat38.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat13.xyz = texture(texture0, u_xlat38.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat13.xyz = texture(texture1, u_xlat38.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat13.xyz = texture(texture2, u_xlat38.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat13.xyz = texture(texture3, u_xlat38.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb34 = int(_type)==5;
+                            if(u_xlatb34){
+                                u_xlat13.xyz = texture(texture4, u_xlat38.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat42.xy = fract(u_xlat38.xy);
+                                    u_xlat13.xyz = texture(displacement_source, u_xlat42.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat13.xyz = texture(texture0, u_xlat38.xy).xyz;
+            }
+            u_xlat38.xy = u_xlat12.xy + u_xlat10.xw;
+            u_xlat38.xy = u_xlat6.xy * u_xlat38.xy;
+            u_xlat38.xy = u_xlat38.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat10.xzw = texture(texture0, u_xlat38.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat10.xzw = texture(texture1, u_xlat38.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat10.xzw = texture(texture2, u_xlat38.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat10.xzw = texture(texture3, u_xlat38.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb34 = int(_type)==5;
+                            if(u_xlatb34){
+                                u_xlat10.xzw = texture(texture4, u_xlat38.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat42.xy = fract(u_xlat38.xy);
+                                    u_xlat10.xzw = texture(displacement_source, u_xlat42.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat10.xzw = texture(texture0, u_xlat38.xy).xyz;
+            }
+            u_xlat10.xzw = (-u_xlat10.xzw) + u_xlat13.xyz;
+            u_xlat10.xzw = u_xlat10.xzw + u_xlat11.xyz;
+            u_xlat48 = u_xlat10.z + u_xlat10.x;
+            u_xlat48 = u_xlat10.w + u_xlat48;
+            u_xlat10.x = u_xlat48 * 0.0833333358 + u_xlat10.y;
+            u_xlat11.xyz = u_xlat4.xwy + u_xlat9.yzy;
+            u_xlat48 = log2(u_xlat11.z);
+            u_xlat48 = u_xlat46 * u_xlat48;
+            u_xlat11.w = exp2(u_xlat48);
+            u_xlat38.xy = u_xlat8.xy + u_xlat11.xw;
+            u_xlat38.xy = u_xlat6.xy * u_xlat38.xy;
+            u_xlat38.xy = u_xlat38.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat13.xyz = texture(texture0, u_xlat38.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat13.xyz = texture(texture1, u_xlat38.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat13.xyz = texture(texture2, u_xlat38.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat13.xyz = texture(texture3, u_xlat38.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb34 = int(_type)==5;
+                            if(u_xlatb34){
+                                u_xlat13.xyz = texture(texture4, u_xlat38.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat42.xy = fract(u_xlat38.xy);
+                                    u_xlat13.xyz = texture(displacement_source, u_xlat42.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat13.xyz = texture(texture0, u_xlat38.xy).xyz;
+            }
+            u_xlat38.xy = u_xlat7.xy + u_xlat11.xw;
+            u_xlat38.xy = u_xlat6.xy * u_xlat38.xy;
+            u_xlat38.xy = u_xlat38.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat14.xyz = texture(texture0, u_xlat38.xy).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat14.xyz = texture(texture1, u_xlat38.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat14.xyz = texture(texture2, u_xlat38.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat14.xyz = texture(texture3, u_xlat38.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb34 = int(_type)==5;
+                            if(u_xlatb34){
+                                u_xlat14.xyz = texture(texture4, u_xlat38.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat42.xy = fract(u_xlat38.xy);
+                                    u_xlat14.xyz = texture(displacement_source, u_xlat42.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat14.xyz = texture(texture0, u_xlat38.xy).xyz;
+            }
+            u_xlat38.xy = u_xlat12.xy + u_xlat11.xw;
+            u_xlat38.xy = u_xlat6.xy * u_xlat38.xy;
+            u_xlat8.zw = u_xlat38.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat11.xzw = texture(texture0, u_xlat8.zw).xyz;
+                u_xlati48 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat11.xzw = texture(texture1, u_xlat8.zw).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat11.xzw = texture(texture2, u_xlat8.zw).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat11.xzw = texture(texture3, u_xlat8.zw).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb34 = int(_type)==5;
+                            if(u_xlatb34){
+                                u_xlat11.xzw = texture(texture4, u_xlat8.zw).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati48 != 0) {
+                                    u_xlat42.xy = fract(u_xlat8.zw);
+                                    u_xlat11.xzw = texture(displacement_source, u_xlat42.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati48 == 0) {
+                u_xlat11.xzw = texture(texture0, u_xlat8.zw).xyz;
+            }
+            u_xlat11.xzw = (-u_xlat11.xzw) + u_xlat14.xyz;
+            u_xlat11.xzw = u_xlat11.xzw + u_xlat13.xyz;
+            u_xlat48 = u_xlat11.z + u_xlat11.x;
+            u_xlat48 = u_xlat11.w + u_xlat48;
+            u_xlat10.y = u_xlat48 * 0.0833333358 + u_xlat11.y;
+            u_xlat9.xyz = u_xlat4.xwy + u_xlat9.xyz;
+            u_xlat48 = log2(u_xlat9.z);
+            u_xlat46 = u_xlat46 * u_xlat48;
+            u_xlat9.w = exp2(u_xlat46);
+            u_xlat4.xy = u_xlat8.xy + u_xlat9.xw;
+            u_xlat4.xy = u_xlat6.xy * u_xlat4.xy;
+            u_xlat4.xy = u_xlat4.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat8.xyz = texture(texture0, u_xlat4.xy).xyz;
+                u_xlati46 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat8.xyz = texture(texture1, u_xlat4.xy).xyz;
+                    u_xlati46 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat8.xyz = texture(texture2, u_xlat4.xy).xyz;
+                        u_xlati46 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat8.xyz = texture(texture3, u_xlat4.xy).xyz;
+                            u_xlati46 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat8.xyz = texture(texture4, u_xlat4.xy).xyz;
+                                u_xlati46 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati46 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati46 != 0) {
+                                    u_xlat11.xy = fract(u_xlat4.xy);
+                                    u_xlat8.xyz = texture(displacement_source, u_xlat11.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati46 == 0) {
+                u_xlat8.xyz = texture(texture0, u_xlat4.xy).xyz;
+            }
+            u_xlat4.xy = u_xlat7.xy + u_xlat9.xw;
+            u_xlat4.xy = u_xlat6.xy * u_xlat4.xy;
+            u_xlat4.xy = u_xlat4.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat11.xyz = texture(texture0, u_xlat4.xy).xyz;
+                u_xlati46 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat11.xyz = texture(texture1, u_xlat4.xy).xyz;
+                    u_xlati46 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat11.xyz = texture(texture2, u_xlat4.xy).xyz;
+                        u_xlati46 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat11.xyz = texture(texture3, u_xlat4.xy).xyz;
+                            u_xlati46 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat11.xyz = texture(texture4, u_xlat4.xy).xyz;
+                                u_xlati46 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati46 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati46 != 0) {
+                                    u_xlat7.xy = fract(u_xlat4.xy);
+                                    u_xlat11.xyz = texture(displacement_source, u_xlat7.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati46 == 0) {
+                u_xlat11.xyz = texture(texture0, u_xlat4.xy).xyz;
+            }
+            u_xlat4.xy = u_xlat12.xy + u_xlat9.xw;
+            u_xlat4.xy = u_xlat6.xy * u_xlat4.xy;
+            u_xlat4.xy = u_xlat4.xy * vec2(0.0333333351, 0.0333333351);
+            if(u_xlatb5.w){
+                u_xlat9.xzw = texture(texture0, u_xlat4.xy).xyz;
+                u_xlati46 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat9.xzw = texture(texture1, u_xlat4.xy).xyz;
+                    u_xlati46 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat9.xzw = texture(texture2, u_xlat4.xy).xyz;
+                        u_xlati46 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat9.xzw = texture(texture3, u_xlat4.xy).xyz;
+                            u_xlati46 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat9.xzw = texture(texture4, u_xlat4.xy).xyz;
+                                u_xlati46 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati46 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati46 != 0) {
+                                    u_xlat6.xy = fract(u_xlat4.xy);
+                                    u_xlat9.xzw = texture(displacement_source, u_xlat6.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati46 == 0) {
+                u_xlat9.xzw = texture(texture0, u_xlat4.xy).xyz;
+            }
+            u_xlat4.xyz = (-u_xlat9.xzw) + u_xlat11.xyz;
+            u_xlat4.xyz = u_xlat4.xyz + u_xlat8.xyz;
+            u_xlat46 = u_xlat4.y + u_xlat4.x;
+            u_xlat46 = u_xlat4.z + u_xlat46;
+            u_xlat10.z = u_xlat46 * 0.0833333358 + u_xlat9.y;
+            if(u_xlatb5.w){
+                u_xlat4.xyz = texture(texture0, u_xlat2.xy).xyz;
+                u_xlati46 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat4.xyz = texture(texture1, u_xlat2.xy).xyz;
+                    u_xlati46 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat4.xyz = texture(texture2, u_xlat2.xy).xyz;
+                        u_xlati46 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat4.xyz = texture(texture3, u_xlat2.xy).xyz;
+                            u_xlati46 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb48 = int(_type)==5;
+                            if(u_xlatb48){
+                                u_xlat4.xyz = texture(texture4, u_xlat2.xy).xyz;
+                                u_xlati46 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati46 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati46 != 0) {
+                                    u_xlat6.xy = fract(u_xlat2.xy);
+                                    u_xlat4.xyz = texture(displacement_source, u_xlat6.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati46 == 0) {
+                u_xlat4.xyz = texture(texture0, u_xlat2.xy).xyz;
+            }
+            if(u_xlatb5.w){
+                u_xlat8.xyz = texture(texture0, u_xlat6.zw).xyz;
+                u_xlati46 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat8.xyz = texture(texture1, u_xlat6.zw).xyz;
+                    u_xlati46 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat8.xyz = texture(texture2, u_xlat6.zw).xyz;
+                        u_xlati46 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat8.xyz = texture(texture3, u_xlat6.zw).xyz;
+                            u_xlati46 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb2 = int(_type)==5;
+                            if(u_xlatb2){
+                                u_xlat8.xyz = texture(texture4, u_xlat6.zw).xyz;
+                                u_xlati46 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati46 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati46 != 0) {
+                                    u_xlat2.xy = fract(u_xlat6.zw);
+                                    u_xlat8.xyz = texture(displacement_source, u_xlat2.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati46 == 0) {
+                u_xlat8.xyz = texture(texture0, u_xlat6.zw).xyz;
+            }
+            if(u_xlatb5.w){
+                u_xlat6.xyz = texture(texture0, u_xlat7.zw).xyz;
+                u_xlati46 = int(0xFFFFFFFFu);
+            } else {
+                if(u_xlatb5.y){
+                    u_xlat6.xyz = texture(texture1, u_xlat7.zw).xyz;
+                    u_xlati46 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.x){
+                        u_xlat6.xyz = texture(texture2, u_xlat7.zw).xyz;
+                        u_xlati46 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.z){
+                            u_xlat6.xyz = texture(texture3, u_xlat7.zw).xyz;
+                            u_xlati46 = int(0xFFFFFFFFu);
+                        } else {
+                            u_xlatb2 = int(_type)==5;
+                            if(u_xlatb2){
+                                u_xlat6.xyz = texture(texture4, u_xlat7.zw).xyz;
+                                u_xlati46 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlati46 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                if(u_xlati46 != 0) {
+                                    u_xlat2.xy = fract(u_xlat7.zw);
+                                    u_xlat6.xyz = texture(displacement_source, u_xlat2.xy).xyz;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(u_xlati46 == 0) {
+                u_xlat6.xyz = texture(texture0, u_xlat7.zw).xyz;
+            }
+            u_xlat5.xyz = (-u_xlat6.xyz) + u_xlat8.xyz;
+            u_xlat4.xyz = u_xlat4.xyz + u_xlat5.xyz;
+            u_xlat46 = u_xlat4.y + u_xlat4.x;
+            u_xlat46 = u_xlat4.z + u_xlat46;
+            u_xlat46 = u_xlat46 * 0.0833333358 + u_xlat4.w;
+            u_xlat4.xyz = (-vec3(u_xlat46)) + u_xlat10.xyz;
+            u_xlat46 = dot(u_xlat4.xyz, u_xlat4.xyz);
+            u_xlat46 = inversesqrt(u_xlat46);
+            u_xlat3.xyz = vec3(u_xlat46) * u_xlat4.xyz;
+            u_xlat46 = u_xlat47 * _intensity;
+            u_xlat30.x = u_xlat46 * 8.0;
+        }
+        u_xlat2.xy = u_xlat0.xx * vec2(0.00999999978, -0.0288539007);
+        u_xlat2.x = u_xlat2.x;
+        u_xlat2.x = clamp(u_xlat2.x, 0.0, 1.0);
+        u_xlat46 = u_xlat2.x * -2.0 + 3.0;
+        u_xlat2.x = u_xlat2.x * u_xlat2.x;
+        u_xlat46 = u_xlat46 * u_xlat2.x;
+        u_xlat4.xyz = (-u_xlat3.xyz) + vec3(0.0, 1.0, 0.0);
+        u_xlat3.xyz = vec3(u_xlat46) * u_xlat4.xyz + u_xlat3.xyz;
+        u_xlat46 = dot(u_xlat1.xyz, u_xlat3.xyz);
+        u_xlat46 = u_xlat46 + u_xlat46;
+        u_xlat3.xyz = u_xlat3.xyz * (-vec3(u_xlat46)) + u_xlat1.xyz;
+        u_xlat46 = dot(_light_pos.xyz, _light_pos.xyz);
+        u_xlat46 = inversesqrt(u_xlat46);
+        u_xlat4.xyz = vec3(u_xlat46) * _light_pos.xyz;
+        u_xlat46 = dot(u_xlat3.xyz, u_xlat4.xyz);
+        u_xlat46 = max(u_xlat46, 0.0);
+        u_xlat4.xyz = _light_color.xyz * vec3(4.0, 4.0, 4.0);
+        u_xlat46 = log2(u_xlat46);
+        u_xlat46 = u_xlat46 * 900.0;
+        u_xlat46 = exp2(u_xlat46);
+        u_xlat4.xyz = vec3(u_xlat46) * u_xlat4.xyz;
+        u_xlat46 = u_xlat0.x * (-_feather);
+        u_xlat46 = u_xlat46 * 0.144269511;
+        u_xlat46 = exp2(u_xlat46);
+        u_xlat46 = (-u_xlat46) + 1.0;
+        u_xlat2.xw = vec2(u_xlat46) * (-u_xlat3.xy) + u_xlat3.xy;
+        u_xlat46 = exp2(u_xlat2.y);
+        u_xlat46 = (-u_xlat46) + 1.0;
+        u_xlat3.xyz = vec3(u_xlat46) * (-u_xlat4.xyz) + u_xlat4.xyz;
+        u_xlat30.x = u_xlat30.x * 10.0;
+        u_xlat30.x = u_xlat30.x / u_xlat2.z;
+    } else {
+        u_xlat3.x = float(0.0);
+        u_xlat3.y = float(0.0);
+        u_xlat3.z = float(0.0);
+        u_xlat2.x = float(0.0);
+        u_xlat2.w = float(0.0);
+        u_xlat30.x = 0.0;
+    }
+    u_xlat17.xy = (-vec2(u_xlat45)) + vec2(1.0, 0.5);
+    u_xlat45 = u_xlat17.x + (-acScreenNorm.y);
+    u_xlat45 = u_xlat17.y * 0.600000024 + u_xlat45;
+    u_xlat45 = u_xlat45 + u_xlat17.x;
+    u_xlat45 = u_xlat45 + (-_offset);
+    u_xlat4.y = (u_xlatb15) ? u_xlat45 : acScreenNorm.y;
+    u_xlat30.xy = u_xlat30.xx * u_xlat2.xw;
+    u_xlat4.x = acScreenNorm.x;
+    u_xlat30.xy = u_xlat30.xy * vec2(vec2(_distortion, _distortion)) + u_xlat4.xy;
+    u_xlatb46 = 0<int(_enable_ripples);
+    if(u_xlatb46){
+        if(u_xlatb15){
+            u_xlat2.xyz = u_xlat1.xyz * u_xlat0.xxx;
+            if(int(_type) == 0) {
+                u_xlat4.xy = intBitsToFloat(ivec2(vec2(_complexity, _octaves)));
+                u_xlat46 = trunc(_complexity);
+                u_xlat46 = (-u_xlat46) + 1.0;
+                u_xlat34.xy = vec2(u_xlat46) * vec2(-0.378511608, 0.757023215);
+                u_xlat4.zw = exp2(u_xlat34.xy);
+                u_xlat46 = u_xlat4.w * 0.25;
+                u_xlat5.xy = u_xlat2.xz * vec2(0.5, 0.5);
+                u_xlat48 = _direction * 0.0174532942;
+                u_xlat49 = sin((-u_xlat48));
+                u_xlat48 = cos(u_xlat48);
+                u_xlat35.x = _intensity * 0.100000001;
+                u_xlat6.y = u_xlat46;
+                u_xlat7.x = u_xlat49;
+                u_xlat7.y = u_xlat48;
+                u_xlat50 = 0.0;
+                u_xlat6.xz = u_xlat4.zy;
+                while(true){
+                    u_xlatb51 = floatBitsToInt(u_xlat6.z)>=floatBitsToInt(u_xlat4.x);
+                    if(u_xlatb51){break;}
+                    u_xlat51 = dot((-u_xlat7.xy), u_xlat5.xy);
+                    u_xlat37.x = float(floatBitsToInt(u_xlat6.z));
+                    u_xlat51 = u_xlat51 + u_xlat37.x;
+                    u_xlat37.x = u_xlat6.x * u_xlat6.x;
+                    u_xlat37.x = u_xlat35.x * u_xlat37.x;
+                    u_xlat37.x = u_xlat6.x * u_xlat37.x;
+                    u_xlat37.x = _turbulence * u_xlat6.x + u_xlat37.x;
+                    u_xlat8.xyz = u_xlat6.xxy * vec3(25.0, 0.769230783, 1.68999994);
+                    u_xlat52 = u_xlat8.x * u_xlat8.x;
+                    u_xlat53 = u_xlat8.x * u_xlat8.x + 27.0;
+                    u_xlat8.x = u_xlat53 * u_xlat8.x;
+                    u_xlat52 = u_xlat52 * 9.0 + 27.0;
+                    u_xlat52 = u_xlat8.x / u_xlat52;
+                    u_xlat52 = max(u_xlat52, -1.0);
+                    u_xlat52 = min(u_xlat52, 1.0);
+                    u_xlat37.x = u_xlat52 * u_xlat37.x;
+                    u_xlat37.x = sqrt(u_xlat37.x);
+                    u_xlat37.x = u_xlat37.x * _cur_time;
+                    u_xlat37.x = u_xlat37.x * _speed;
+                    u_xlat51 = u_xlat51 * u_xlat6.x + u_xlat37.x;
+                    u_xlat51 = sin(u_xlat51);
+                    u_xlat50 = u_xlat6.y * u_xlat51 + u_xlat50;
+                    u_xlat9.x = dot(u_xlat7.xy, vec2(0.49999997, 0.866025448));
+                    u_xlat9.y = dot(u_xlat7.xy, vec2(-0.866025448, 0.49999997));
+                    u_xlat6.z = intBitsToFloat(floatBitsToInt(u_xlat6.z) + 1);
+                    u_xlat6.xy = u_xlat8.yz;
+                    u_xlat7.xy = u_xlat9.xy;
+                }
+                u_xlat4.xz = u_xlat6.xy;
+                u_xlat7.x = u_xlat49;
+                u_xlat7.y = u_xlat48;
+                u_xlat46 = u_xlat50;
+                u_xlati35 = 0;
+                while(true){
+                    u_xlatb36 = u_xlati35>=floatBitsToInt(u_xlat4.y);
+                    if(u_xlatb36){break;}
+                    u_xlat36.x = dot(u_xlat7.xy, u_xlat5.xy);
+                    u_xlat51 = float(u_xlati35);
+                    u_xlat36.x = u_xlat51 + u_xlat36.x;
+                    u_xlat37.x = u_xlat4.x * _turbulence;
+                    u_xlat8.xyz = u_xlat4.xxz * vec3(25.0, 0.769230783, 1.68999994);
+                    u_xlat52 = u_xlat8.x * u_xlat8.x;
+                    u_xlat53 = u_xlat8.x * u_xlat8.x + 27.0;
+                    u_xlat8.x = u_xlat53 * u_xlat8.x;
+                    u_xlat52 = u_xlat52 * 9.0 + 27.0;
+                    u_xlat52 = u_xlat8.x / u_xlat52;
+                    u_xlat52 = max(u_xlat52, -1.0);
+                    u_xlat52 = min(u_xlat52, 1.0);
+                    u_xlat37.x = u_xlat52 * u_xlat37.x;
+                    u_xlat37.x = sqrt(u_xlat37.x);
+                    u_xlat37.x = u_xlat37.x * _cur_time;
+                    u_xlat37.x = u_xlat37.x * _speed;
+                    u_xlat36.x = u_xlat36.x * u_xlat4.x + u_xlat37.x;
+                    u_xlat36.x = sin(u_xlat36.x);
+                    u_xlat46 = u_xlat4.z * u_xlat36.x + u_xlat46;
+                    u_xlatb36 = u_xlat51>=2.0;
+                    u_xlat9.xyz = (bool(u_xlatb36)) ? vec3(0.540302277, -0.841470957, 0.540302277) : vec3(1.0, -0.0, 1.0);
+                    u_xlat9.xyz = u_xlat7.xyy * u_xlat9.xyz;
+                    u_xlat9.x = u_xlat9.y + u_xlat9.x;
+                    u_xlat36.x = u_xlatb36 ? 0.841470957 : float(0.0);
+                    u_xlat9.y = u_xlat36.x * u_xlat7.x + u_xlat9.z;
+                    u_xlati35 = u_xlati35 + 1;
+                    u_xlat4.xz = u_xlat8.yz;
+                    u_xlat7.xy = u_xlat9.xy;
+                }
+            } else {
+                u_xlat17.x = _perspective * 10.0 + u_xlat2.y;
+                u_xlat48 = (-_spread) + 1.0;
+                u_xlat4.x = log2(u_xlat2.z);
+                u_xlat4.x = u_xlat48 * u_xlat4.x;
+                u_xlat2.w = exp2(u_xlat4.x);
+                u_xlat4.x = _cur_time * _speed;
+                u_xlatb5 = equal(ivec4(int(_type)), ivec4(3, 2, 4, 1));
+                u_xlat19.xy = vec2(_scale.x, _scale.y) + vec2(_scale.x, _scale.y);
+                u_xlat19.xy = (u_xlatb5.x) ? u_xlat19.xy : vec2(_scale.x, _scale.y);
+                u_xlatb49 = u_xlatb5.z || u_xlatb5.y;
+                u_xlat6.xy = u_xlat19.xy * vec2(0.5, 0.5);
+                u_xlat19.xy = (bool(u_xlatb49)) ? u_xlat6.xy : u_xlat19.xy;
+                u_xlat49 = _direction + 25.0;
+                u_xlat49 = u_xlat49 * 0.0174532942;
+                u_xlat6.x = sin(u_xlat49);
+                u_xlat7.x = cos(u_xlat49);
+                u_xlat8.x = sin((-u_xlat49));
+                u_xlat21.xyz = u_xlat4.xxx * vec3(0.462000012, 0.582120001, 1.15499997);
+                u_xlat8.y = u_xlat7.x;
+                u_xlat7.x = dot(u_xlat8.yx, u_xlat21.xx);
+                u_xlat8.z = u_xlat6.x;
+                u_xlat7.y = dot(u_xlat8.zy, u_xlat21.xx);
+                u_xlat6.xy = u_xlat2.xw + u_xlat7.xy;
+                u_xlat6.xy = u_xlat19.xy * u_xlat6.xy;
+                u_xlat6.xy = u_xlat6.xy * vec2(0.0333333351, 0.0333333351);
+                if(u_xlatb5.w){
+                    u_xlat9.xyz = texture(texture0, u_xlat6.xy).xyz;
+                    u_xlati49 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.y){
+                        u_xlat9.xyz = texture(texture1, u_xlat6.xy).xyz;
+                        u_xlati49 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.x){
+                            u_xlat9.xyz = texture(texture2, u_xlat6.xy).xyz;
+                            u_xlati49 = int(0xFFFFFFFFu);
+                        } else {
+                            if(u_xlatb5.z){
+                                u_xlat9.xyz = texture(texture3, u_xlat6.xy).xyz;
+                                u_xlati49 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlat7.z = uintBitsToFloat((int(_type)==5) ? 0xFFFFFFFFu : uint(0));
+                                if(uint(floatBitsToUint(u_xlat7.z)) != uint(0)) {
+                                    u_xlat9.xyz = texture(texture4, u_xlat6.xy).xyz;
+                                    u_xlati49 = int(0xFFFFFFFFu);
+                                } else {
+                                    u_xlati49 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                    if(u_xlati49 != 0) {
+                                        u_xlat7.zw = fract(u_xlat6.xy);
+                                        u_xlat9.xyz = texture(displacement_source, u_xlat7.zw).xyz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(u_xlati49 == 0) {
+                    u_xlat9.xyz = texture(texture0, u_xlat6.xy).xyz;
+                }
+                u_xlat6.x = dot(u_xlat8.yx, u_xlat21.yz);
+                u_xlat6.y = dot(u_xlat8.zy, u_xlat21.yz);
+                u_xlat36.xy = u_xlat2.xw + u_xlat6.xy;
+                u_xlat36.xy = u_xlat19.xy * u_xlat36.xy;
+                u_xlat36.xy = u_xlat36.xy * vec2(0.0333333351, 0.0333333351);
+                if(u_xlatb5.w){
+                    u_xlat10.xyz = texture(texture0, u_xlat36.xy).xyz;
+                    u_xlati49 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.y){
+                        u_xlat10.xyz = texture(texture1, u_xlat36.xy).xyz;
+                        u_xlati49 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.x){
+                            u_xlat10.xyz = texture(texture2, u_xlat36.xy).xyz;
+                            u_xlati49 = int(0xFFFFFFFFu);
+                        } else {
+                            if(u_xlatb5.z){
+                                u_xlat10.xyz = texture(texture3, u_xlat36.xy).xyz;
+                                u_xlati49 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlat7.z = uintBitsToFloat((int(_type)==5) ? 0xFFFFFFFFu : uint(0));
+                                if(uint(floatBitsToUint(u_xlat7.z)) != uint(0)) {
+                                    u_xlat10.xyz = texture(texture4, u_xlat36.xy).xyz;
+                                    u_xlati49 = int(0xFFFFFFFFu);
+                                } else {
+                                    u_xlati49 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                    if(u_xlati49 != 0) {
+                                        u_xlat7.zw = fract(u_xlat36.xy);
+                                        u_xlat10.xyz = texture(displacement_source, u_xlat7.zw).xyz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(u_xlati49 == 0) {
+                    u_xlat10.xyz = texture(texture0, u_xlat36.xy).xyz;
+                }
+                u_xlat4.xw = u_xlat4.xx * vec2(0.76692003, 2.079);
+                u_xlat11.x = dot(u_xlat8.yx, u_xlat4.xw);
+                u_xlat11.y = dot(u_xlat8.zy, u_xlat4.xw);
+                u_xlat4.xw = u_xlat2.xw + u_xlat11.xy;
+                u_xlat4.xw = u_xlat19.xy * u_xlat4.xw;
+                u_xlat4.xw = u_xlat4.xw * vec2(0.0333333351, 0.0333333351);
+                if(u_xlatb5.w){
+                    u_xlat8.xyz = texture(texture0, u_xlat4.xw).xyz;
+                    u_xlat6.z = intBitsToFloat(int(0xFFFFFFFFu));
+                } else {
+                    if(u_xlatb5.y){
+                        u_xlat8.xyz = texture(texture1, u_xlat4.xw).xyz;
+                        u_xlat6.z = intBitsToFloat(int(0xFFFFFFFFu));
+                    } else {
+                        if(u_xlatb5.x){
+                            u_xlat8.xyz = texture(texture2, u_xlat4.xw).xyz;
+                            u_xlat6.z = intBitsToFloat(int(0xFFFFFFFFu));
+                        } else {
+                            if(u_xlatb5.z){
+                                u_xlat8.xyz = texture(texture3, u_xlat4.xw).xyz;
+                                u_xlat6.z = intBitsToFloat(int(0xFFFFFFFFu));
+                            } else {
+                                u_xlatb51 = int(_type)==5;
+                                if(u_xlatb51){
+                                    u_xlat8.xyz = texture(texture4, u_xlat4.xw).xyz;
+                                    u_xlat6.z = intBitsToFloat(int(0xFFFFFFFFu));
+                                } else {
+                                    u_xlat6.z = uintBitsToFloat((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                    if(uint(floatBitsToUint(u_xlat6.z)) != uint(0)) {
+                                        u_xlat7.zw = fract(u_xlat4.xw);
+                                        u_xlat8.xyz = texture(displacement_source, u_xlat7.zw).xyz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(uint(floatBitsToUint(u_xlat6.z)) == uint(0)) {
+                    u_xlat8.xyz = texture(texture0, u_xlat4.xw).xyz;
+                }
+                u_xlat8.xyz = (-u_xlat8.xyz) + u_xlat10.xyz;
+                u_xlat8.xyz = u_xlat8.xyz + u_xlat9.xyz;
+                u_xlat4.x = u_xlat8.y + u_xlat8.x;
+                u_xlat4.x = u_xlat8.z + u_xlat4.x;
+                u_xlat4.x = u_xlat4.x * 0.0833333358 + u_xlat17.x;
+                u_xlat4.x = u_xlat4.x + u_xlat4.x;
+                u_xlat8.xy = u_xlat4.xx * u_xlat1.xz + u_xlat2.xz;
+                u_xlat4.x = log2(u_xlat8.y);
+                u_xlat48 = u_xlat48 * u_xlat4.x;
+                u_xlat8.z = exp2(u_xlat48);
+                u_xlat4.xw = u_xlat7.xy + u_xlat8.xz;
+                u_xlat4.xw = u_xlat19.xy * u_xlat4.xw;
+                u_xlat4.xw = u_xlat4.xw * vec2(0.0333333351, 0.0333333351);
+                if(u_xlatb5.w){
+                    u_xlat7.xyz = texture(texture0, u_xlat4.xw).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.y){
+                        u_xlat7.xyz = texture(texture1, u_xlat4.xw).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.x){
+                            u_xlat7.xyz = texture(texture2, u_xlat4.xw).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            if(u_xlatb5.z){
+                                u_xlat7.xyz = texture(texture3, u_xlat4.xw).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlat6.z = uintBitsToFloat((int(_type)==5) ? 0xFFFFFFFFu : uint(0));
+                                if(uint(floatBitsToUint(u_xlat6.z)) != uint(0)) {
+                                    u_xlat7.xyz = texture(texture4, u_xlat4.xw).xyz;
+                                    u_xlati48 = int(0xFFFFFFFFu);
+                                } else {
+                                    u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                    if(u_xlati48 != 0) {
+                                        u_xlat6.zw = fract(u_xlat4.xw);
+                                        u_xlat7.xyz = texture(displacement_source, u_xlat6.zw).xyz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(u_xlati48 == 0) {
+                    u_xlat7.xyz = texture(texture0, u_xlat4.xw).xyz;
+                }
+                u_xlat4.xw = u_xlat6.xy + u_xlat8.xz;
+                u_xlat4.xw = u_xlat19.xy * u_xlat4.xw;
+                u_xlat4.xw = u_xlat4.xw * vec2(0.0333333351, 0.0333333351);
+                if(u_xlatb5.w){
+                    u_xlat6.xyz = texture(texture0, u_xlat4.xw).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.y){
+                        u_xlat6.xyz = texture(texture1, u_xlat4.xw).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.x){
+                            u_xlat6.xyz = texture(texture2, u_xlat4.xw).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            if(u_xlatb5.z){
+                                u_xlat6.xyz = texture(texture3, u_xlat4.xw).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlatb51 = int(_type)==5;
+                                if(u_xlatb51){
+                                    u_xlat6.xyz = texture(texture4, u_xlat4.xw).xyz;
+                                    u_xlati48 = int(0xFFFFFFFFu);
+                                } else {
+                                    u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                    if(u_xlati48 != 0) {
+                                        u_xlat8.yw = fract(u_xlat4.xw);
+                                        u_xlat6.xyz = texture(displacement_source, u_xlat8.yw).xyz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(u_xlati48 == 0) {
+                    u_xlat6.xyz = texture(texture0, u_xlat4.xw).xyz;
+                }
+                u_xlat4.xw = u_xlat11.xy + u_xlat8.xz;
+                u_xlat4.xy = u_xlat19.xy * u_xlat4.xw;
+                u_xlat4.xy = u_xlat4.xy * vec2(0.0333333351, 0.0333333351);
+                if(u_xlatb5.w){
+                    u_xlat8.xyz = texture(texture0, u_xlat4.xy).xyz;
+                    u_xlati48 = int(0xFFFFFFFFu);
+                } else {
+                    if(u_xlatb5.y){
+                        u_xlat8.xyz = texture(texture1, u_xlat4.xy).xyz;
+                        u_xlati48 = int(0xFFFFFFFFu);
+                    } else {
+                        if(u_xlatb5.x){
+                            u_xlat8.xyz = texture(texture2, u_xlat4.xy).xyz;
+                            u_xlati48 = int(0xFFFFFFFFu);
+                        } else {
+                            if(u_xlatb5.z){
+                                u_xlat8.xyz = texture(texture3, u_xlat4.xy).xyz;
+                                u_xlati48 = int(0xFFFFFFFFu);
+                            } else {
+                                u_xlatb34 = int(_type)==5;
+                                if(u_xlatb34){
+                                    u_xlat8.xyz = texture(texture4, u_xlat4.xy).xyz;
+                                    u_xlati48 = int(0xFFFFFFFFu);
+                                } else {
+                                    u_xlati48 = int((int(_type)==6) ? 0xFFFFFFFFu : uint(0));
+                                    if(u_xlati48 != 0) {
+                                        u_xlat34.xy = fract(u_xlat4.xy);
+                                        u_xlat8.xyz = texture(displacement_source, u_xlat34.xy).xyz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(u_xlati48 == 0) {
+                    u_xlat8.xyz = texture(texture0, u_xlat4.xy).xyz;
+                }
+                u_xlat4.xyz = u_xlat6.xyz + (-u_xlat8.xyz);
+                u_xlat4.xyz = u_xlat4.xyz + u_xlat7.xyz;
+                u_xlat48 = u_xlat4.y + u_xlat4.x;
+                u_xlat48 = u_xlat4.z + u_xlat48;
+                u_xlat17.x = u_xlat48 * 0.0833333358 + u_xlat17.x;
+                u_xlat46 = u_xlat17.x + u_xlat17.x;
+            }
+            u_xlat17.x = u_xlat0.x * u_xlat0.x;
+            u_xlat17.x = (-u_xlat17.x) * 0.00100000005 + 1.0;
+            u_xlat17.x = max(u_xlat17.x, 0.699999988);
+            u_xlat46 = u_xlat46 * 10.0;
+            u_xlat46 = u_xlat46 / u_xlat2.z;
+            u_xlat46 = u_xlat17.x * u_xlat46;
+            u_xlat4.xyz = u_xlat0.xxx * vec3(0.00100000005, 0.00999999978, 0.0199999996);
+            u_xlat4.x = u_xlat4.x;
+            u_xlat4.x = clamp(u_xlat4.x, 0.0, 1.0);
+            u_xlat17.x = u_xlat4.x * -2.0 + 3.0;
+            u_xlat48 = u_xlat4.x * u_xlat4.x;
+            u_xlat17.x = (-u_xlat17.x) * u_xlat48 + 1.0;
+            u_xlat5.xy = u_xlat0.xx * vec2(0.00999999978, 0.00999999978) + u_xlat2.xz;
+            u_xlat5.z = u_xlat2.z;
+            u_xlat5.xz = u_xlat5.xz + vec2(-0.5, -0.5);
+            u_xlat5.xz = u_xlat5.xz * vec2(_scale2);
+            u_xlat5.xz = u_xlat5.xz * vec2(0.5, 0.5) + vec2(0.5, 0.5);
+            u_xlat5.xz = u_xlat5.xz + (-vec2(_offset2.x, _offset2.y));
+            u_xlat48 = _width * -0.5;
+            u_xlat4.x = 12.566371 / _width;
+            u_xlat4.x = u_xlat4.x * 0.5;
+            u_xlat50 = 0.0;
+            u_xlati6 = 0;
+            while(true){
+                u_xlat21.x = float(u_xlati6);
+                u_xlatb36 = u_xlat21.x>=_complexity2;
+                if(u_xlatb36){break;}
+                u_xlat36.x = u_xlat21.x / _complexity2;
+                u_xlat36.x = u_xlat36.x + 1.0;
+                u_xlat36.xy = u_xlat5.xz * u_xlat36.xx;
+                u_xlat7.xy = u_xlat36.xy * vec2(_amount);
+                u_xlat8.z = u_xlat21.x * 100.0 + _seed;
+                u_xlat7.xy = floor(u_xlat7.xy);
+                u_xlat21.x = 0.0;
+                u_xlat9.y = -1.0;
+                while(true){
+                    u_xlatb37 = 1.0<u_xlat9.y;
+                    if(u_xlatb37){break;}
+                    u_xlat10.x = u_xlat21.x;
+                    u_xlat25.x = -1.0;
+                    while(true){
+                        u_xlatb37 = 1.0<u_xlat25.x;
+                        if(u_xlatb37){break;}
+                        u_xlat9.x = u_xlat25.x;
+                        u_xlat8.xy = u_xlat7.xy + u_xlat9.xy;
+                        u_xlat9.xzw = u_xlat8.xyz * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat9.xzw = fract(u_xlat9.xzw);
+                        u_xlat11.xyz = u_xlat9.zxw + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat37.x = dot(u_xlat9.xzw, u_xlat11.xyz);
+                        u_xlat37.xy = u_xlat37.xx + u_xlat9.zx;
+                        u_xlat9.xz = u_xlat37.yy + u_xlat37.yx;
+                        u_xlat37.xy = u_xlat37.xy * u_xlat9.xz;
+                        u_xlat37.xy = fract(u_xlat37.xy);
+                        u_xlat9.xzw = u_xlat8.xyz * vec3(0.103100002, 0.103100002, 0.103100002);
+                        u_xlat9.xzw = fract(u_xlat9.xzw);
+                        u_xlat11.xyz = u_xlat9.zwx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat53 = dot(u_xlat9.xzw, u_xlat11.xyz);
+                        u_xlat9.xzw = vec3(u_xlat53) + u_xlat9.xzw;
+                        u_xlat53 = u_xlat9.z + u_xlat9.x;
+                        u_xlat53 = u_xlat9.w * u_xlat53;
+                        u_xlat53 = fract(u_xlat53);
+                        u_xlat9.x = u_xlat53 + 1.0;
+                        u_xlat9.x = u_xlat9.x * _duration;
+                        u_xlat39.x = u_xlat9.x * u_xlat37.x + _cur_time;
+                        u_xlat39.x = u_xlat39.x + 100.0;
+                        u_xlat39.x = u_xlat39.x / u_xlat9.x;
+                        u_xlatb54 = u_xlat39.x>=(-u_xlat39.x);
+                        u_xlat40.x = fract(abs(u_xlat39.x));
+                        u_xlat54 = (u_xlatb54) ? u_xlat40.x : (-u_xlat40.x);
+                        u_xlat54 = u_xlat9.x * u_xlat54;
+                        u_xlat37.x = (-u_xlat37.x) + 1.0;
+                        u_xlat37.x = u_xlat37.x * 0.200000003 + 0.800000012;
+                        u_xlat37.x = u_xlat37.x * _speed2;
+                        u_xlat52 = u_xlat37.y * 0.400000006 + 0.600000024;
+                        u_xlat9.x = u_xlat9.x * 0.600000024;
+                        u_xlat40.x = u_xlat52 / u_xlat37.x;
+                        u_xlat9.x = min(u_xlat9.x, u_xlat40.x);
+                        u_xlat9.x = u_xlat54 / u_xlat9.x;
+                        u_xlat9.x = (-u_xlat9.x) + 1.0;
+                        u_xlat9.x = clamp(u_xlat9.x, 0.0, 1.0);
+                        u_xlat39.x = floor(u_xlat39.x);
+                        u_xlat53 = u_xlat53 + u_xlat39.x;
+                        u_xlat11.xyz = vec3(u_xlat53) * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat11.xyz = fract(u_xlat11.xyz);
+                        u_xlat12.xyz = u_xlat11.yzx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat53 = dot(u_xlat11.xyz, u_xlat12.xyz);
+                        u_xlat11.xyz = vec3(u_xlat53) + u_xlat11.xyz;
+                        u_xlat40.xy = u_xlat11.yz + u_xlat11.xx;
+                        u_xlat40.xy = u_xlat11.zy * u_xlat40.xy;
+                        u_xlat40.xy = fract(u_xlat40.xy);
+                        u_xlat8.xy = u_xlat40.xy * vec2(0.400000006, 0.400000006) + u_xlat8.xy;
+                        u_xlat8.xy = (-u_xlat36.xy) * vec2(_amount) + u_xlat8.xy;
+                        u_xlat8.x = dot(u_xlat8.xy, u_xlat8.xy);
+                        u_xlat8.x = sqrt(u_xlat8.x);
+                        u_xlat37.x = (-u_xlat37.x) * u_xlat54 + u_xlat8.x;
+                        u_xlat8.x = u_xlat37.x * 0.5;
+                        u_xlat23 = u_xlat4.x * u_xlat8.x;
+                        u_xlat23 = sin(u_xlat23);
+                        u_xlat8.y = u_xlat23 * u_xlat9.x;
+                        u_xlat53 = u_xlat52 * (-_width);
+                        u_xlat9.x = u_xlat48 * u_xlat52;
+                        u_xlat52 = u_xlat48 * u_xlat52 + (-u_xlat53);
+                        u_xlat37.x = u_xlat37.x * 0.5 + (-u_xlat53);
+                        u_xlat52 = float(1.0) / u_xlat52;
+                        u_xlat37.x = u_xlat52 * u_xlat37.x;
+                        u_xlat37.x = clamp(u_xlat37.x, 0.0, 1.0);
+                        u_xlat52 = u_xlat37.x * -2.0 + 3.0;
+                        u_xlat37.x = u_xlat37.x * u_xlat37.x;
+                        u_xlat37.x = u_xlat37.x * u_xlat52;
+                        u_xlat52 = float(1.0) / u_xlat9.x;
+                        u_xlat52 = u_xlat52 * u_xlat8.x;
+                        u_xlat52 = clamp(u_xlat52, 0.0, 1.0);
+                        u_xlat8.x = u_xlat52 * -2.0 + 3.0;
+                        u_xlat37.y = u_xlat52 * u_xlat52;
+                        u_xlat37.xy = u_xlat37.xy * u_xlat8.yx;
+                        u_xlat10.x = (-u_xlat37.x) * u_xlat37.y + u_xlat10.x;
+                        u_xlat25.x = u_xlat25.x + 1.0;
+                    }
+                    u_xlat21.x = u_xlat10.x;
+                    u_xlat9.y = u_xlat9.y + 1.0;
+                }
+                u_xlat50 = u_xlat21.x * 0.111111112 + u_xlat50;
+                u_xlati6 = u_xlati6 + 1;
+            }
+            u_xlat5.x = u_xlat50 * _height;
+            u_xlat5.x = u_xlat46 * u_xlat5.x;
+            u_xlat4.w = 0.0;
+            u_xlat6 = u_xlat2.xzxz + (-u_xlat4.ywwy);
+            u_xlat6 = u_xlat6 + vec4(-0.5, -0.5, -0.5, -0.5);
+            u_xlat6 = u_xlat6 * vec4(_scale2);
+            u_xlat6 = u_xlat6 * vec4(0.5, 0.5, 0.5, 0.5) + (-vec4(_offset2.x, _offset2.y, _offset2.x, _offset2.y));
+            u_xlat6 = u_xlat6 + vec4(0.5, 0.5, 0.5, 0.5);
+            u_xlat32 = 0.0;
+            u_xlati19 = 0;
+            while(true){
+                u_xlat49 = float(u_xlati19);
+                u_xlatb35 = u_xlat49>=_complexity2;
+                if(u_xlatb35){break;}
+                u_xlat35.x = u_xlat49 / _complexity2;
+                u_xlat35.x = u_xlat35.x + 1.0;
+                u_xlat35.xy = u_xlat35.xx * u_xlat6.xy;
+                u_xlat7.xy = u_xlat35.xy * vec2(_amount);
+                u_xlat8.z = u_xlat49 * 100.0 + _seed;
+                u_xlat7.xy = floor(u_xlat7.xy);
+                u_xlat49 = 0.0;
+                u_xlat9.y = -1.0;
+                while(true){
+                    u_xlatb37 = 1.0<u_xlat9.y;
+                    if(u_xlatb37){break;}
+                    u_xlat10.x = u_xlat49;
+                    u_xlat25.x = -1.0;
+                    while(true){
+                        u_xlatb37 = 1.0<u_xlat25.x;
+                        if(u_xlatb37){break;}
+                        u_xlat9.x = u_xlat25.x;
+                        u_xlat8.xy = u_xlat7.xy + u_xlat9.xy;
+                        u_xlat9.xzw = u_xlat8.xyz * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat9.xzw = fract(u_xlat9.xzw);
+                        u_xlat11.xyz = u_xlat9.zxw + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat37.x = dot(u_xlat9.xzw, u_xlat11.xyz);
+                        u_xlat37.xy = u_xlat37.xx + u_xlat9.zx;
+                        u_xlat9.xz = u_xlat37.yy + u_xlat37.yx;
+                        u_xlat37.xy = u_xlat37.xy * u_xlat9.xz;
+                        u_xlat37.xy = fract(u_xlat37.xy);
+                        u_xlat9.xzw = u_xlat8.xyz * vec3(0.103100002, 0.103100002, 0.103100002);
+                        u_xlat9.xzw = fract(u_xlat9.xzw);
+                        u_xlat11.xyz = u_xlat9.zwx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat53 = dot(u_xlat9.xzw, u_xlat11.xyz);
+                        u_xlat9.xzw = vec3(u_xlat53) + u_xlat9.xzw;
+                        u_xlat53 = u_xlat9.z + u_xlat9.x;
+                        u_xlat53 = u_xlat9.w * u_xlat53;
+                        u_xlat53 = fract(u_xlat53);
+                        u_xlat9.x = u_xlat53 + 1.0;
+                        u_xlat9.x = u_xlat9.x * _duration;
+                        u_xlat39.x = u_xlat9.x * u_xlat37.x + _cur_time;
+                        u_xlat39.x = u_xlat39.x + 100.0;
+                        u_xlat39.x = u_xlat39.x / u_xlat9.x;
+                        u_xlatb54 = u_xlat39.x>=(-u_xlat39.x);
+                        u_xlat40.x = fract(abs(u_xlat39.x));
+                        u_xlat54 = (u_xlatb54) ? u_xlat40.x : (-u_xlat40.x);
+                        u_xlat54 = u_xlat9.x * u_xlat54;
+                        u_xlat37.x = (-u_xlat37.x) + 1.0;
+                        u_xlat37.x = u_xlat37.x * 0.200000003 + 0.800000012;
+                        u_xlat37.x = u_xlat37.x * _speed2;
+                        u_xlat52 = u_xlat37.y * 0.400000006 + 0.600000024;
+                        u_xlat9.x = u_xlat9.x * 0.600000024;
+                        u_xlat40.x = u_xlat52 / u_xlat37.x;
+                        u_xlat9.x = min(u_xlat9.x, u_xlat40.x);
+                        u_xlat9.x = u_xlat54 / u_xlat9.x;
+                        u_xlat9.x = (-u_xlat9.x) + 1.0;
+                        u_xlat9.x = clamp(u_xlat9.x, 0.0, 1.0);
+                        u_xlat39.x = floor(u_xlat39.x);
+                        u_xlat53 = u_xlat53 + u_xlat39.x;
+                        u_xlat11.xyz = vec3(u_xlat53) * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat11.xyz = fract(u_xlat11.xyz);
+                        u_xlat12.xyz = u_xlat11.yzx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat53 = dot(u_xlat11.xyz, u_xlat12.xyz);
+                        u_xlat11.xyz = vec3(u_xlat53) + u_xlat11.xyz;
+                        u_xlat40.xy = u_xlat11.yz + u_xlat11.xx;
+                        u_xlat40.xy = u_xlat11.zy * u_xlat40.xy;
+                        u_xlat40.xy = fract(u_xlat40.xy);
+                        u_xlat8.xy = u_xlat40.xy * vec2(0.400000006, 0.400000006) + u_xlat8.xy;
+                        u_xlat8.xy = (-u_xlat35.xy) * vec2(_amount) + u_xlat8.xy;
+                        u_xlat8.x = dot(u_xlat8.xy, u_xlat8.xy);
+                        u_xlat8.x = sqrt(u_xlat8.x);
+                        u_xlat37.x = (-u_xlat37.x) * u_xlat54 + u_xlat8.x;
+                        u_xlat8.x = u_xlat37.x * 0.5;
+                        u_xlat23 = u_xlat4.x * u_xlat8.x;
+                        u_xlat23 = sin(u_xlat23);
+                        u_xlat8.y = u_xlat23 * u_xlat9.x;
+                        u_xlat53 = u_xlat52 * (-_width);
+                        u_xlat9.x = u_xlat48 * u_xlat52;
+                        u_xlat52 = u_xlat48 * u_xlat52 + (-u_xlat53);
+                        u_xlat37.x = u_xlat37.x * 0.5 + (-u_xlat53);
+                        u_xlat52 = float(1.0) / u_xlat52;
+                        u_xlat37.x = u_xlat52 * u_xlat37.x;
+                        u_xlat37.x = clamp(u_xlat37.x, 0.0, 1.0);
+                        u_xlat52 = u_xlat37.x * -2.0 + 3.0;
+                        u_xlat37.x = u_xlat37.x * u_xlat37.x;
+                        u_xlat37.x = u_xlat37.x * u_xlat52;
+                        u_xlat52 = float(1.0) / u_xlat9.x;
+                        u_xlat52 = u_xlat52 * u_xlat8.x;
+                        u_xlat52 = clamp(u_xlat52, 0.0, 1.0);
+                        u_xlat8.x = u_xlat52 * -2.0 + 3.0;
+                        u_xlat37.y = u_xlat52 * u_xlat52;
+                        u_xlat37.xy = u_xlat37.xy * u_xlat8.yx;
+                        u_xlat10.x = (-u_xlat37.x) * u_xlat37.y + u_xlat10.x;
+                        u_xlat25.x = u_xlat25.x + 1.0;
+                    }
+                    u_xlat49 = u_xlat10.x;
+                    u_xlat9.y = u_xlat9.y + 1.0;
+                }
+                u_xlat32 = u_xlat49 * 0.111111112 + u_xlat32;
+                u_xlati19 = u_xlati19 + 1;
+            }
+            u_xlat32 = u_xlat32 * _height;
+            u_xlat17.y = u_xlat46 * u_xlat32;
+            u_xlat17.xy = u_xlat17.xy * vec2(0.200000003, 10.0);
+            u_xlat32 = u_xlat5.x * 10.0 + (-u_xlat17.y);
+            u_xlat32 = u_xlat32 * (-u_xlat17.x);
+            u_xlat7.x = u_xlat32 / u_xlat4.z;
+            u_xlat2.w = u_xlat5.y;
+            u_xlat2.xz = u_xlat2.xw + vec2(-0.5, -0.5);
+            u_xlat2.xz = u_xlat2.xz * vec2(_scale2);
+            u_xlat2.xz = u_xlat2.xz * vec2(0.5, 0.5) + (-vec2(_offset2.x, _offset2.y));
+            u_xlat2.xz = u_xlat2.xz + vec2(0.5, 0.5);
+            u_xlat47 = 0.0;
+            u_xlati19 = 0;
+            while(true){
+                u_xlat49 = float(u_xlati19);
+                u_xlatb5.x = u_xlat49>=_complexity2;
+                if(u_xlatb5.x){break;}
+                u_xlat5.x = u_xlat49 / _complexity2;
+                u_xlat5.x = u_xlat5.x + 1.0;
+                u_xlat5.xy = u_xlat2.xz * u_xlat5.xx;
+                u_xlat35.xy = u_xlat5.xy * vec2(_amount);
+                u_xlat8.z = u_xlat49 * 100.0 + _seed;
+                u_xlat35.xy = floor(u_xlat35.xy);
+                u_xlat49 = 0.0;
+                u_xlat6.y = -1.0;
+                while(true){
+                    u_xlatb52 = 1.0<u_xlat6.y;
+                    if(u_xlatb52){break;}
+                    u_xlat9.x = u_xlat49;
+                    u_xlat24 = -1.0;
+                    while(true){
+                        u_xlatb52 = 1.0<u_xlat24;
+                        if(u_xlatb52){break;}
+                        u_xlat6.x = u_xlat24;
+                        u_xlat8.xy = u_xlat35.xy + u_xlat6.xy;
+                        u_xlat10.xyz = u_xlat8.xyz * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat10.xyz = fract(u_xlat10.xyz);
+                        u_xlat11.xyz = u_xlat10.yxz + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat6.x = dot(u_xlat10.xyz, u_xlat11.xyz);
+                        u_xlat39.xy = u_xlat6.xx + u_xlat10.yx;
+                        u_xlat10.xy = u_xlat39.yy + u_xlat39.yx;
+                        u_xlat39.xy = u_xlat39.xy * u_xlat10.xy;
+                        u_xlat39.xy = fract(u_xlat39.xy);
+                        u_xlat10.xyz = u_xlat8.xyz * vec3(0.103100002, 0.103100002, 0.103100002);
+                        u_xlat10.xyz = fract(u_xlat10.xyz);
+                        u_xlat11.xyz = u_xlat10.yzx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat6.x = dot(u_xlat10.xyz, u_xlat11.xyz);
+                        u_xlat10.xyz = u_xlat6.xxx + u_xlat10.xyz;
+                        u_xlat6.x = u_xlat10.y + u_xlat10.x;
+                        u_xlat6.x = u_xlat10.z * u_xlat6.x;
+                        u_xlat6.x = fract(u_xlat6.x);
+                        u_xlat52 = u_xlat6.x + 1.0;
+                        u_xlat52 = u_xlat52 * _duration;
+                        u_xlat53 = u_xlat52 * u_xlat39.x + _cur_time;
+                        u_xlat53 = u_xlat53 + 100.0;
+                        u_xlat53 = u_xlat53 / u_xlat52;
+                        u_xlatb10 = u_xlat53>=(-u_xlat53);
+                        u_xlat25.x = fract(abs(u_xlat53));
+                        u_xlat10.x = (u_xlatb10) ? u_xlat25.x : (-u_xlat25.x);
+                        u_xlat10.x = u_xlat52 * u_xlat10.x;
+                        u_xlat39.x = (-u_xlat39.x) + 1.0;
+                        u_xlat39.x = u_xlat39.x * 0.200000003 + 0.800000012;
+                        u_xlat39.x = u_xlat39.x * _speed2;
+                        u_xlat54 = u_xlat39.y * 0.400000006 + 0.600000024;
+                        u_xlat52 = u_xlat52 * 0.600000024;
+                        u_xlat25.x = u_xlat54 / u_xlat39.x;
+                        u_xlat52 = min(u_xlat52, u_xlat25.x);
+                        u_xlat52 = u_xlat10.x / u_xlat52;
+                        u_xlat52 = (-u_xlat52) + 1.0;
+                        u_xlat52 = clamp(u_xlat52, 0.0, 1.0);
+                        u_xlat53 = floor(u_xlat53);
+                        u_xlat6.x = u_xlat6.x + u_xlat53;
+                        u_xlat25.xyz = u_xlat6.xxx * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat25.xyz = fract(u_xlat25.xyz);
+                        u_xlat11.xyz = u_xlat25.yzx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat6.x = dot(u_xlat25.xyz, u_xlat11.xyz);
+                        u_xlat25.xyz = u_xlat6.xxx + u_xlat25.xyz;
+                        u_xlat11.xy = u_xlat25.yz + u_xlat25.xx;
+                        u_xlat25.xy = u_xlat25.zy * u_xlat11.xy;
+                        u_xlat25.xy = fract(u_xlat25.xy);
+                        u_xlat8.xy = u_xlat25.xy * vec2(0.400000006, 0.400000006) + u_xlat8.xy;
+                        u_xlat8.xy = (-u_xlat5.xy) * vec2(_amount) + u_xlat8.xy;
+                        u_xlat6.x = dot(u_xlat8.xy, u_xlat8.xy);
+                        u_xlat6.x = sqrt(u_xlat6.x);
+                        u_xlat6.x = (-u_xlat39.x) * u_xlat10.x + u_xlat6.x;
+                        u_xlat8.x = u_xlat6.x * 0.5;
+                        u_xlat23 = u_xlat4.x * u_xlat8.x;
+                        u_xlat23 = sin(u_xlat23);
+                        u_xlat52 = u_xlat52 * u_xlat23;
+                        u_xlat23 = u_xlat54 * (-_width);
+                        u_xlat53 = u_xlat48 * u_xlat54;
+                        u_xlat39.x = u_xlat48 * u_xlat54 + (-u_xlat23);
+                        u_xlat6.x = u_xlat6.x * 0.5 + (-u_xlat23);
+                        u_xlat23 = float(1.0) / u_xlat39.x;
+                        u_xlat6.x = u_xlat6.x * u_xlat23;
+                        u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+                        u_xlat23 = u_xlat6.x * -2.0 + 3.0;
+                        u_xlat6.x = u_xlat6.x * u_xlat6.x;
+                        u_xlat6.x = u_xlat6.x * u_xlat23;
+                        u_xlat6.x = u_xlat6.x * u_xlat52;
+                        u_xlat52 = float(1.0) / u_xlat53;
+                        u_xlat52 = u_xlat52 * u_xlat8.x;
+                        u_xlat52 = clamp(u_xlat52, 0.0, 1.0);
+                        u_xlat8.x = u_xlat52 * -2.0 + 3.0;
+                        u_xlat52 = u_xlat52 * u_xlat52;
+                        u_xlat52 = u_xlat52 * u_xlat8.x;
+                        u_xlat9.x = (-u_xlat6.x) * u_xlat52 + u_xlat9.x;
+                        u_xlat24 = u_xlat24 + 1.0;
+                    }
+                    u_xlat49 = u_xlat9.x;
+                    u_xlat6.y = u_xlat6.y + 1.0;
+                }
+                u_xlat47 = u_xlat49 * 0.111111112 + u_xlat47;
+                u_xlati19 = u_xlati19 + 1;
+            }
+            u_xlat2.x = u_xlat47 * _height;
+            u_xlat2.x = u_xlat46 * u_xlat2.x;
+            u_xlat32 = float(0.0);
+            u_xlati47 = int(0);
+            while(true){
+                u_xlat19.x = float(u_xlati47);
+                u_xlatb49 = u_xlat19.x>=_complexity2;
+                if(u_xlatb49){break;}
+                u_xlat49 = u_xlat19.x / _complexity2;
+                u_xlat49 = u_xlat49 + 1.0;
+                u_xlat5.xy = vec2(u_xlat49) * u_xlat6.zw;
+                u_xlat35.xy = u_xlat5.xy * vec2(_amount);
+                u_xlat8.z = u_xlat19.x * 100.0 + _seed;
+                u_xlat19.xz = floor(u_xlat35.xy);
+                u_xlat35.x = 0.0;
+                u_xlat6.y = -1.0;
+                while(true){
+                    u_xlatb50 = 1.0<u_xlat6.y;
+                    if(u_xlatb50){break;}
+                    u_xlat9.x = u_xlat35.x;
+                    u_xlat24 = -1.0;
+                    while(true){
+                        u_xlatb50 = 1.0<u_xlat24;
+                        if(u_xlatb50){break;}
+                        u_xlat6.x = u_xlat24;
+                        u_xlat8.xy = u_xlat19.xz + u_xlat6.xy;
+                        u_xlat10.xyz = u_xlat8.xyz * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat10.xyz = fract(u_xlat10.xyz);
+                        u_xlat11.xyz = u_xlat10.yxz + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat50 = dot(u_xlat10.xyz, u_xlat11.xyz);
+                        u_xlat39.xy = vec2(u_xlat50) + u_xlat10.yx;
+                        u_xlat10.xy = u_xlat39.yy + u_xlat39.yx;
+                        u_xlat39.xy = u_xlat39.xy * u_xlat10.xy;
+                        u_xlat39.xy = fract(u_xlat39.xy);
+                        u_xlat10.xyz = u_xlat8.xyz * vec3(0.103100002, 0.103100002, 0.103100002);
+                        u_xlat10.xyz = fract(u_xlat10.xyz);
+                        u_xlat11.xyz = u_xlat10.yzx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat50 = dot(u_xlat10.xyz, u_xlat11.xyz);
+                        u_xlat10.xyz = vec3(u_xlat50) + u_xlat10.xyz;
+                        u_xlat50 = u_xlat10.y + u_xlat10.x;
+                        u_xlat50 = u_xlat10.z * u_xlat50;
+                        u_xlat50 = fract(u_xlat50);
+                        u_xlat6.x = u_xlat50 + 1.0;
+                        u_xlat6.x = u_xlat6.x * _duration;
+                        u_xlat52 = u_xlat6.x * u_xlat39.x + _cur_time;
+                        u_xlat52 = u_xlat52 + 100.0;
+                        u_xlat52 = u_xlat52 / u_xlat6.x;
+                        u_xlatb53 = u_xlat52>=(-u_xlat52);
+                        u_xlat10.x = fract(abs(u_xlat52));
+                        u_xlat53 = (u_xlatb53) ? u_xlat10.x : (-u_xlat10.x);
+                        u_xlat53 = u_xlat6.x * u_xlat53;
+                        u_xlat39.x = (-u_xlat39.x) + 1.0;
+                        u_xlat39.x = u_xlat39.x * 0.200000003 + 0.800000012;
+                        u_xlat39.x = u_xlat39.x * _speed2;
+                        u_xlat54 = u_xlat39.y * 0.400000006 + 0.600000024;
+                        u_xlat6.x = u_xlat6.x * 0.600000024;
+                        u_xlat10.x = u_xlat54 / u_xlat39.x;
+                        u_xlat6.x = min(u_xlat6.x, u_xlat10.x);
+                        u_xlat6.x = u_xlat53 / u_xlat6.x;
+                        u_xlat6.x = (-u_xlat6.x) + 1.0;
+                        u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+                        u_xlat52 = floor(u_xlat52);
+                        u_xlat50 = u_xlat50 + u_xlat52;
+                        u_xlat10.xyz = vec3(u_xlat50) * vec3(0.103100002, 0.103, 0.0973000005);
+                        u_xlat10.xyz = fract(u_xlat10.xyz);
+                        u_xlat11.xyz = u_xlat10.yzx + vec3(19.1900005, 19.1900005, 19.1900005);
+                        u_xlat50 = dot(u_xlat10.xyz, u_xlat11.xyz);
+                        u_xlat10.xyz = vec3(u_xlat50) + u_xlat10.xyz;
+                        u_xlat10.xw = u_xlat10.yz + u_xlat10.xx;
+                        u_xlat10.xy = u_xlat10.zy * u_xlat10.xw;
+                        u_xlat10.xy = fract(u_xlat10.xy);
+                        u_xlat8.xy = u_xlat10.xy * vec2(0.400000006, 0.400000006) + u_xlat8.xy;
+                        u_xlat8.xy = (-u_xlat5.xy) * vec2(_amount) + u_xlat8.xy;
+                        u_xlat50 = dot(u_xlat8.xy, u_xlat8.xy);
+                        u_xlat50 = sqrt(u_xlat50);
+                        u_xlat50 = (-u_xlat39.x) * u_xlat53 + u_xlat50;
+                        u_xlat52 = u_xlat50 * 0.5;
+                        u_xlat8.x = u_xlat4.x * u_xlat52;
+                        u_xlat8.x = sin(u_xlat8.x);
+                        u_xlat6.x = u_xlat6.x * u_xlat8.x;
+                        u_xlat8.x = u_xlat54 * (-_width);
+                        u_xlat23 = u_xlat48 * u_xlat54;
+                        u_xlat53 = u_xlat48 * u_xlat54 + (-u_xlat8.x);
+                        u_xlat50 = u_xlat50 * 0.5 + (-u_xlat8.x);
+                        u_xlat8.x = float(1.0) / u_xlat53;
+                        u_xlat50 = u_xlat50 * u_xlat8.x;
+                        u_xlat50 = clamp(u_xlat50, 0.0, 1.0);
+                        u_xlat8.x = u_xlat50 * -2.0 + 3.0;
+                        u_xlat50 = u_xlat50 * u_xlat50;
+                        u_xlat50 = u_xlat50 * u_xlat8.x;
+                        u_xlat50 = u_xlat50 * u_xlat6.x;
+                        u_xlat6.x = float(1.0) / u_xlat23;
+                        u_xlat6.x = u_xlat6.x * u_xlat52;
+                        u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+                        u_xlat52 = u_xlat6.x * -2.0 + 3.0;
+                        u_xlat6.x = u_xlat6.x * u_xlat6.x;
+                        u_xlat6.x = u_xlat6.x * u_xlat52;
+                        u_xlat9.x = (-u_xlat50) * u_xlat6.x + u_xlat9.x;
+                        u_xlat24 = u_xlat24 + 1.0;
+                    }
+                    u_xlat35.x = u_xlat9.x;
+                    u_xlat6.y = u_xlat6.y + 1.0;
+                }
+                u_xlat32 = u_xlat35.x * 0.111111112 + u_xlat32;
+                u_xlati47 = u_xlati47 + 1;
+            }
+            u_xlat32 = u_xlat32 * _height;
+            u_xlat46 = u_xlat46 * u_xlat32;
+            u_xlat46 = u_xlat46 * 10.0;
+            u_xlat46 = u_xlat2.x * 10.0 + (-u_xlat46);
+            u_xlat46 = u_xlat46 * (-u_xlat17.x);
+            u_xlat7.z = u_xlat46 / u_xlat4.z;
+            u_xlat7.y = 1.0;
+            u_xlat46 = dot(u_xlat7.xyz, u_xlat7.xyz);
+            u_xlat46 = inversesqrt(u_xlat46);
+            u_xlat2.xyz = vec3(u_xlat46) * u_xlat7.xzy;
+            u_xlat1.x = dot(u_xlat1.xzy, u_xlat2.xyz);
+            u_xlat1.x = u_xlat1.x + u_xlat1.x;
+            u_xlat1.x = u_xlat2.y * (-u_xlat1.x) + u_xlat1.z;
+            u_xlat0.x = u_xlat0.x * (-_feather);
+            u_xlat0.x = u_xlat0.x * 0.288539022;
+            u_xlat0.x = exp2(u_xlat0.x);
+            u_xlat0.x = (-u_xlat0.x) + 1.0;
+            u_xlat0.x = u_xlat0.x * (-u_xlat1.x) + u_xlat1.x;
+        } else {
+            u_xlat2.x = float(0.0);
+            u_xlat2.y = float(0.0);
+            u_xlat0.x = 0.0;
+        }
+        u_xlat1.xy = u_xlat2.xy * vec2(vec2(_intensity2, _intensity2));
+        u_xlat0.x = u_xlat0.x * u_xlat0.x;
+        u_xlat30.xy = u_xlat0.xx * u_xlat1.xy + u_xlat30.xy;
+    }
+    u_xlat0.xz = u_xlat30.xy + vec2(-0.5, -0.5);
+    u_xlat0.xz = u_xlat0.xz * vec2(1.00999999, 1.00999999) + vec2(0.5, 0.5);
+    u_xlatb1.xy = lessThan(u_xlat0.xzxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb31.xy = lessThan(vec4(1.0, 1.0, 1.0, 1.0), u_xlat0.xzxz).xy;
+    u_xlat2.xy = fract(u_xlat0.xz);
+    u_xlat2.xy = (-u_xlat2.xy) + vec2(1.0, 1.0);
+    u_xlat31.x = (u_xlatb31.x) ? u_xlat2.x : u_xlat0.x;
+    u_xlat31.y = (u_xlatb31.y) ? u_xlat2.y : u_xlat0.z;
+    {
+        vec4 hlslcc_movcTemp = u_xlat0;
+        hlslcc_movcTemp.x = (u_xlatb1.x) ? (-u_xlat0.x) : u_xlat31.x;
+        hlslcc_movcTemp.z = (u_xlatb1.y) ? (-u_xlat0.z) : u_xlat31.y;
+        u_xlat0 = hlslcc_movcTemp;
+    }
+    u_xlat0.xz = u_xlat0.xz + vec2(-0.5, -0.5);
+    u_xlat0.xz = u_xlat0.xz * vec2(0.990099013, 0.990099013) + vec2(0.5, 0.5);
+    u_xlatb45 = 0<int(_enable_light);
+    u_xlat45 = u_xlatb45 ? _light_intensity : float(0.0);
+    u_xlat1 = texture(inputImg, u_xlat0.xz);
+    u_xlat2.xyz = vec3(u_xlat45) * u_xlat3.xyz;
+    u_xlat2.w = 0.0;
+    u_xlat1 = u_xlat1 + u_xlat2;
+    u_xlat2 = texture(inputImg, acScreenNorm.xy);
+    u_xlat0.x = (-acScreenNorm.y) + _horizontal_line;
+    u_xlat30.x = _edge_blur * 0.100000001;
+    u_xlat0.x = abs(u_xlat0.x) * abs(u_xlat0.x);
+    u_xlat30.x = float(1.0) / u_xlat30.x;
+    u_xlat0.x = u_xlat30.x * u_xlat0.x;
+    u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+    u_xlat30.x = u_xlat0.x * -2.0 + 3.0;
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat0.x = u_xlat0.x * u_xlat30.x;
+    u_xlat3.xyz = _color.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat3.xyz = _color.xyz * u_xlat3.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat3.xyz = u_xlat3.xyz * _color.xyz;
+    u_xlat3.xyz = u_xlat1.xyz * u_xlat3.xyz + (-u_xlat2.xyz);
+    u_xlat0.xzw = u_xlat0.xxx * u_xlat3.xyz + u_xlat2.xyz;
+    u_xlat1.xyz = (bool(u_xlatb15)) ? u_xlat0.xzw : u_xlat1.xyz;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb0.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb0.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat2 = u_xlat2 * u_xlat5;
+        u_xlat2 = u_xlat3 * u_xlat4 + u_xlat2;
+        u_xlat0.x = u_xlat4.x * u_xlat2.w;
+        fragColor.w = (u_xlatb0.y) ? u_xlat0.x : u_xlat2.w;
+        fragColor.xyz = u_xlat2.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

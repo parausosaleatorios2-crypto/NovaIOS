@@ -1,0 +1,129 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="com.alightcreative.effects.moblurplus_swirlsharp"  
+name="T_sharpen"  
+desc="Sharper Motion Blur with Swirl Motion when Rotated"  
+category="blur"  
+tags="blur, swirl, motion"  
+thumb="thumb/t_sharpen.webp">
+
+<params>  
+    <texture id="inputImg" srcType="content" />  
+    <slider id="tune" default="1.0" min="0.0" max="4.0" label="Tune" step="0.1" />  
+    <slider id="samples" default="128" min="8" max="512" label="Samples" step="1" />  
+    <slider id="shutter" default="180.0" min="0.0" max="720.0" label="Shutter Angle" step="1.0" />  
+    <slider id="phase" default="0.0" min="-0.5" max="0.5" label="Shutter Phase" step="0.01" />  
+    <point id="PANGLE" default="0.5,0.5" min="0.0,0.0" max="1.0,1.0" label="Pivot" />  
+    <slider id="swirlStrength" default="0.35" min="0.0" max="2.0" label="Swirl Strength" step="0.01" />  
+    <switch id="useAngle" default="true" label="Use Angle Blur" />  
+    <switch id="usePos" default="true" label="Use Position Blur" />  
+    <switch id="useScale" default="true" label="Use Scale Blur" />  
+</params>  
+
+<script lang="js"><![CDATA[  
+    // Effect is always active and doesnt require keyframes
+    function animate(env, el, p) {  
+        // Always apply all enabled effects
+        el.shaderGroups = p.useAngle ? [0] : [];
+        if (p.usePos) el.shaderGroups.push(1);
+        if (p.useScale) el.shaderGroups.push(2);
+        
+        // If no shader groups are enabled, default to angle blur
+        if (el.shaderGroups.length === 0) {
+            el.shaderGroups = [0];
+        }
+        
+        return el;  
+    }  
+]]></script>  
+
+<!-- Swirled Angular Blur -->  
+<shader type="fragment" group="0" precision="high"><![CDATA[  
+    void main() {  
+        // Static angle based on tune and shutter settings
+        float angle = 0.3 * tune * (shutter / 360.0);
+        float rad = radians(angle);  
+        vec2 imageSize = getTexSize(inputImg.size);  
+        float maxF = max(acScreenSize.x, acScreenSize.y);  
+        vec2 texelSize = 1.0 / vec2(maxF, maxF);  
+        vec2 center = (vec4(PANGLE.x, PANGLE.y, 0.0, 1.0) * acLayerToScreen).xy;  
+
+        vec2 uv = acScreenNorm.st;  
+        vec2 diff = uv - center;  
+        diff.y *= imageSize.y / imageSize.x;  
+
+        int nSamples = int(clamp(float(samples), 4.0, 512.0));  
+        vec4 accum = vec4(0.0);  
+        float wsum = 0.0;  
+
+        for (int i = 0; i < nSamples; i++) {  
+            float t = (float(i) + 0.5) / float(nSamples);  
+            float bias = pow(t, 0.85);  
+            float theta = bias * rad * (1.0 + swirlStrength * length(diff));  
+            float s = sin(theta);  
+            float c = cos(theta);  
+            mat2 rot = mat2(c, -s, s, c);  
+            vec2 offset = rot * diff * (1.0 + swirlStrength * 0.15 * bias);  
+            offset.y *= imageSize.x / imageSize.y;  
+
+            vec4 col = texture2DCv(inputImg.texture, center + offset);  
+            float w = 1.0 - pow(abs(t - 0.5) * 2.0, 1.5);  
+            accum += col * w;  
+            wsum += w;  
+        }  
+
+        vec4 base = texture2DCv(inputImg.texture, uv);  
+        vec4 result = mix(base, accum / wsum, clamp(angle * 0.03, 0.0, 1.0));  
+        gl_FragColor = result;  
+    }  
+]]></shader>  
+
+<!-- Position Motion Blur -->  
+<shader type="fragment" group="1" precision="high"><![CDATA[  
+    void main() {  
+        vec2 imageSize = getTexSize(inputImg.size);  
+        vec2 velocity = acVelocity * tune / acScreenSize;  
+        // Static speed based on tune and shutter settings
+        float speed = 0.01 * tune * (shutter / 360.0);  
+        int nSamples = int(clamp(speed * float(samples), 4.0, 512.0));  
+
+        vec4 accum = vec4(0.0);  
+        float wsum = 0.0;  
+        for (int i = 0; i < nSamples; i++) {  
+            float t = (float(i) / float(nSamples) - 0.5) + phase;  
+            vec2 offset = velocity * t * 20.0; // small artificial motion offset  
+            offset.y *= imageSize.x / imageSize.y;  
+            float w = 1.0 - abs(t * 2.0);  
+            accum += texture2DCv(inputImg.texture, acScreenNorm.st - offset) * w;  
+            wsum += w;  
+        }  
+        gl_FragColor = accum / wsum;  
+    }  
+]]></shader>  
+
+<!-- Scale Motion Blur -->  
+<shader type="fragment" group="2" precision="high"><![CDATA[  
+    void main() {  
+        vec2 imageSize = getTexSize(inputImg.size);  
+        // Static scale velocity based on tune
+        float svel = 0.01 * tune;
+        float speed = abs(svel) * (shutter / 360.0);  
+        int nSamples = int(clamp(speed * float(samples), 4.0, 512.0));  
+
+        vec2 uv = acScreenNorm.st;  
+        vec2 center = vec2(0.5);  
+        vec2 dir = uv - center;  
+        vec4 accum = vec4(0.0);  
+        float wsum = 0.0;  
+
+        for (int i = 0; i < nSamples; i++) {  
+            float t = (float(i) / float(nSamples) - 0.5) + phase;  
+            vec2 sampleUV = center + dir * (1.0 + svel * t * 0.5);  
+            float w = 1.0 - abs(t * 2.0);  
+            accum += texture2DCv(inputImg.texture, sampleUV) * w;  
+            wsum += w;  
+        }  
+        gl_FragColor = accum / wsum;  
+    }  
+]]></shader>
+
+</effect>

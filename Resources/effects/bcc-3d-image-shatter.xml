@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BCC 3D Image Shatter (Boris Continuum, `BCC33D Image Shatter`) — a conta do plugin.
+
+  O efeito é código de CPU (`ContinuumAE/17/lib/Continuum_AE_8Bit.dll`): a conta foi LIDA no binário e
+  conferida contra o After Effects (`tools/bccimageshatter/benchmark`, LEIAME.md) em 148 casos de 8 e
+  16 bpc (1053 quadros) — todos os cortes, as sete velocidades, as quatro gravidades, os três wipes, Frame Size,
+  Size/Opacity Variance, Suppression, Mix e o preset Frame Explosion inteiro (31 quadros).
+
+  `stage="bccshatter"`: o efeito roda NA cadeia (o que vem depois age na imagem estilhaçada), mas não
+  por este `<shader>` (que é só a cópia da entrada): o `EffectPipeline` chama o `PasseDoBccShatter`,
+  que pede os pedaços à conta (`model/BccImageShatter.kt`) e os desenha.
+
+  A conta, em uma frase por etapa (o detalhe e os endereços estão no `BccImageShatter.kt`):
+    1. a grade (Grid Spacing × Particle X, a razão XY, Density, Position Variance) e o corte
+       (Rectangles, Triangles = 4 por célula, Shredded, Random Cut com semente Shatter Extra,
+       Spiral Cut);
+    2. por pedaço, na ordem, o `rand()` do C com a Random Seed: escala, opacidade, velocidade pelo
+       tipo, z, as três rotações e a gravidade;
+    3. o tempo de cada pedaço (Scatter × 10 em Manual; Forward/Reverse andam com a camada; o Scatter
+       Wipe atrasa uns em relação aos outros), a curva da Explosion, o Frame Size (o arranjo inteiro
+       escalado em volta do Center of Velocity) e a gravidade;
+    4. a ordem pelo z (o `qsort` da Microsoft), a projeção com a câmera a 2 × a largura, os cantos
+       arredondados a 1/256 px e a luz: sen(2·rotação X)·Lx + sen(2·rotação Y)·Ly somada à cor.
+  O desenho: cada pedaço é um quadrilátero; a cor vem da fonte como o rasterizador do plugin faz —
+  na altura do pixel, os pontos das bordas esquerda e direita (a fonte interpolada ao longo de cada
+  borda) e, entre eles, em linha reta. Borda suave pela cobertura do pixel.
+
+  O que NÃO é igual:
+    - a borda dos pedaços: o plugin cobre o pixel por área exata, o app por distância à borda —
+      até alguns níveis num anel de 1 px;
+    - pedaço em escala (afastado em z ou com Frame Size abaixo de 100%): o plugin reamostra com
+      ponto fixo (um moiré de até ~1 px na posição da textura) e filtra melhor ao reduzir;
+    - o Wipe Pass Through: até ~1 nível no miolo dos pedaços que andam ao contrário;
+    - o Motion Tile ANTES dele numa camada comum: o app ladrilha na tela, depois da cadeia (repete os
+      pedaços); o AE estilhaça a imagem já ladrilhada;
+    - Custom Shape, Custom Gradient (do wipe), Process, Expand Clipping Boundary e Beat Reactor:
+      fora. O conversor avisa quando o projeto mexe neles.
+  Numa camada de ajuste (e no grupo solto e no modelo 3D) a cena chega de pé ao passe, e ele espelha
+  o desenho (`EffectPipeline.applyChain` `entradaDePe`). Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.bcc3dimageshatter"
+    name="BCC 3D Image Shatter"
+    name-en="BCC 3D Image Shatter"
+    desc="O 3D Image Shatter do Boris Continuum: a camada estilhaça em pedaços que voam, giram e caem, igual ao After Effects."
+    desc-en="Boris Continuum's 3D Image Shatter: the layer breaks into pieces that fly, spin and fall, as in After Effects."
+    category="stylize"
+    stage="bccshatter"
+    tags="bcc,boris,continuum,3d image shatter,shatter,estilhacar,explodir,explode,pedacos,pieces,quebrar,break,transicao,transition,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="scatter" label="Scatter (initial)" default="0.0" min="-30000.0" max="30000.0" step="0.1" snap="0.0" />
+        <selector id="automate" label="Automate" default="2"
+                  options="Manual|Fast Forward|Forward|Slow Forward|Fast Reverse|Reverse|Slow Reverse" />
+        <selector id="particleX" label="Particle X" default="0" options="1|10|100|1000|10000" />
+        <selector id="shatter" label="Shatter" default="4" options="Rectangles|Triangles|Shredded|Random Cut|Spiral Cut" />
+        <slider id="shatterExtra" label="Shatter Extra" default="4.0" min="0.0" max="100.0" step="1.0" snap="4.0" />
+        <selector id="explosion" label="Explosion" default="1"
+                  options="Burst|Soft Burst|Constant|Soft Acceleration|Acceleration" />
+        <slider id="speed" label="Movement Speed" default="800.0" min="-30000.0" max="30000.0" step="1.0" snap="800.0" />
+        <slider id="light" label="Light" default="30.0" min="0.0" max="100.0" step="1.0" snap="30.0" />
+        <slider id="lightAngle" label="Light Angle" type="angle" default="45.0" min="-3600.0" max="3600.0" step="1.0" snap="45.0" />
+        <color id="lightColor" label="Light Color" default="#FFFFFFFF" />
+
+        <selector id="velocity" group="Move" label="Velocity" default="3"
+                  options="Random|Straight|Centripetal|Centrifugal|Spiral CW|Spiral CCW|No Movement" />
+        <slider id="speedZ" group="Move" label="Speed Z Factor" default="15.0" min="0.0" max="500.0" step="1.0" snap="15.0" />
+        <slider id="variance" group="Move" label="Variance" default="5.0" min="0.0" max="1000.0" step="1.0" snap="5.0" />
+        <slider id="adjustment" group="Move" label="Adjustment" default="0.0" min="-75.0" max="75.0" step="0.5" snap="0.0" />
+        <slider id="velocityAngle" group="Move" label="Velocity Angle" type="angle" default="90.0" min="-3600.0" max="3600.0" step="1.0" snap="90.0" />
+        <point id="centerOfVelocity" group="Move" label="Center of Velocity" defaultX="0.6" defaultY="0.4" min="-1.0" max="2.0" unit="px" />
+        <slider id="radius" group="Move" label="Radius" default="100.0" min="0.0" max="2000.0" step="1.0" snap="100.0" />
+
+        <selector id="rotateMode" group="Rotate" label="Rotate Mode" default="2" options="Forward|Backward|Both" />
+        <slider id="rotX" group="Rotate" label="X Rotate Speed" default="60.0" min="0.0" max="500.0" step="1.0" snap="60.0" />
+        <slider id="rotY" group="Rotate" label="Y Rotate Speed" default="30.0" min="0.0" max="500.0" step="1.0" snap="30.0" />
+        <slider id="rotZ" group="Rotate" label="Z Rotate Speed" default="30.0" min="0.0" max="500.0" step="1.0" snap="30.0" />
+        <slider id="rotateVariance" group="Rotate" label="Rotate Variance" default="50.0" min="0.0" max="200.0" step="1.0" snap="50.0" />
+        <slider id="chaosWind" group="Rotate" label="Chaos Wind" default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <selector id="wipe" group="Scatter Wipe" label="Wipe" default="0" options="Off|On|Pass Through|Random Wipe" />
+        <switch id="invertGradient" group="Scatter Wipe" label="Invert Gradient" default="false" />
+        <slider id="wipeAngle" group="Scatter Wipe" label="Wipe Angle" type="angle" default="90.0" min="-3600.0" max="3600.0" step="1.0" snap="90.0" />
+        <slider id="wipeSpeed" group="Scatter Wipe" label="Wipe Speed" default="1000.0" min="0.0" max="3200.0" step="1.0" snap="1000.0" />
+
+        <slider id="gravity" group="Gravity" label="Gravity" default="400.0" min="-10000.0" max="10000.0" step="1.0" snap="0.0,400.0" />
+        <selector id="gravityType" group="Gravity" label="Gravity Type" default="1" options="Random|Straight|Centripetal|Centrifugal" />
+        <slider id="gravityAngle" group="Gravity" label="Gravity Angle" type="angle" default="180.0" min="-3600.0" max="3600.0" step="1.0" snap="180.0" />
+        <point id="centerOfGravity" group="Gravity" label="Center of Gravity" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+
+        <selector id="velocity3d" group="Options" label="3D Velocity" default="2" options="Forward|Backward|Both" />
+        <slider id="grid" group="Options" label="Grid Spacing" default="75.0" min="1.0" max="300.0" step="0.1" snap="75.0" />
+        <slider id="density" group="Options" label="Density" default="100.0" min="0.0" max="300.0" step="1.0" snap="100.0" />
+        <slider id="positionVariance" group="Options" label="Position Variance" default="0.0" min="0.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="size" group="Options" label="Size" default="100.0" min="0.0" max="1000.0" step="1.0" snap="100.0" />
+        <slider id="sizeVariance" group="Options" label="Size Variance" default="0.0" min="-99.9" max="500.0" step="1.0" snap="0.0" />
+        <slider id="xyRatio" group="Options" label="XY Ratio" default="5.0" min="-99.9" max="100.0" step="0.5" snap="5.0" />
+        <slider id="opacity" group="Options" label="Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <slider id="opacityVariance" group="Options" label="Opacity Variance" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="seed" group="Options" label="Random Seed" type="integer" default="0" min="-32000" max="32000" step="1" />
+        <slider id="frameSize" group="Options" label="Frame Size" default="100.0" min="0.0" max="600.0" step="1.0" snap="100.0" />
+        <slider id="suppression" group="Options" label="Parameter Suppression" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="mixWithOriginal" group="Options" label="Mix With Original" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoBccShatter` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

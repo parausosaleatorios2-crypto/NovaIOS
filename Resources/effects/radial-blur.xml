@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.radialblur"
+    name="Desfoque radial"
+    name-en="Radial Blur"
+    desc="Desfoque em zoom ou em giro, saindo de um ponto. Dá sensação de velocidade."
+    desc-en="Zoom or spin blur around a centre."
+    category="blur"
+    tags="zoom,giro,velocidade,desfoque">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="strength" label="Intensidade" default="0.15" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="mode" label="Modo" default="0" options="Zoom|Giro" />
+        <slider id="falloff" label="Poupar o centro" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+
+const int SAMPLES = 16;
+
+void main() {
+    vec2 toCenter = acScreenNorm - center;
+
+    // O quanto este pixel borra depende de quão longe do centro ele está: é o
+    // que faz o efeito parecer movimento e não um desfoque uniforme.
+    float radiusNorm = length(toCenter * vec2(acAspect, 1.0));
+    float weight = strength * mix(1.0, radiusNorm, falloff);
+
+    vec4 sum = vec4(0.0);
+    for (int i = 0; i < SAMPLES; i++) {
+        float t = float(i) / float(SAMPLES - 1);
+
+        vec2 uv;
+        if (mode == 0) {
+            // Zoom: cada amostra é um degrau na direção do centro.
+            uv = center + toCenter * (1.0 - weight * t);
+        } else {
+            // Giro: cada amostra gira um pouco em torno do centro.
+            float angle = weight * t;
+            float c = cos(angle);
+            float s = sin(angle);
+            uv = center + mat2(c, -s, s, c) * toCenter;
+        }
+
+        sum += texture(inputImg, uv);
+    }
+
+    fragColor = sum / float(SAMPLES);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PLASMA
+  ============================================================================
+
+  A tela de plasma animada que todo mundo via em demo 320×240 de VGA: cores
+  líquidas que se dobram umas sobre as outras, infinitamente, sem repetir.
+
+  ============================================================================
+   DE ONDE SAI O PLASMA
+  ============================================================================
+
+  A fórmula canônica é a soma de senos em direções diferentes:
+
+    campo(x, y, t) = sin(x + t)
+                   + sin(y + t)
+                   + sin((x + y) + t)
+                   + sin(√(x² + y²) + t)
+
+  Cada seno é uma onda; as duas primeiras são planas (uma horizontal, uma
+  vertical), a terceira diagonal, a quarta radial. A soma delas é um campo
+  escalar que varia entre -4 e 4 e NUNCA REPETE num tempo que o olho pegue —
+  porque as frequências são irracionalmente relacionadas quando o pixel anda
+  um passo.
+
+  A cor é esse campo passado por três cossenos defasados de 120° — o mesmo
+  truque do IRIDESCÊNCIA. Arco-íris suave, sem HSV.
+-->
+<effect
+    id="nova.effect.plasma"
+    name="Plasma"
+    name-en="Plasma"
+    desc="Cores líquidas somadas de senos em várias direções, animadas."
+    desc-en="Liquid colors from summed sines across directions, animated."
+    category="procedural"
+    tags="plasma,demoscene,sinal,ondas,arco-íris,gerador,vga">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="scale" label="Escala"
+                default="6.0" min="1.0" max="40.0" step="0.5" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="1.0" min="0.0" max="5.0" step="0.05" snap="0.0" />
+        <slider id="colorShift" label="Deslocamento de cor"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="blend" label="Sobre a imagem"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, laço no tempo pela escala, pro padrão se mexer sozinho. -->
+    <preview>
+        <set param="scale" value="4.0" ate="10.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const vec3 DEFASAGEM = vec3(0.0, 2.094395, 4.188790); // 0°, 120°, 240°
+
+/** Arco-íris suave de três cossenos defasados. */
+vec3 arcoIris(float fase) {
+    return 0.5 + 0.5 * cos(6.2831853 * fase + DEFASAGEM);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y) * scale;
+    float t = acTime * speed;
+
+    // Quatro senos: horizontal, vertical, diagonal, radial.
+    float campo = sin(p.x + t)
+                + sin(p.y + t * 1.3)
+                + sin((p.x + p.y) * 0.7 + t * 0.9)
+                + sin(length(p - scale * 0.5) + t * 1.5);
+
+    // Normaliza o campo de [-4, 4] pra [0, 1] e envia pra rampa.
+    float fase = campo * 0.125 + 0.5 + colorShift;
+    vec3 plasma = arcoIris(fase);
+
+    vec3 cor = mix(original.rgb, plasma, blend);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

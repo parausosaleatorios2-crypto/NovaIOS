@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Separação de canais RGB — a "aberração cromática" que virou marca registrada
+  de edição de vídeo na internet.
+
+  A ideia é simples: amostrar o canal vermelho um pouco deslocado para um lado
+  e o azul para o outro, deixando o verde no lugar. O olho lê isso como uma
+  lente barata ou um glitch.
+-->
+<effect
+    id="nova.effect.rgbsplit"
+    name="Separação RGB"
+    name-en="RGB Split"
+    desc="Desloca os canais de cor em direções opostas. Aberração cromática e glitch."
+    desc-en="Separates the channels — chromatic aberration."
+    category="distort"
+    tags="glitch,cor,aberração,distorção">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="amount" label="Distância"
+                default="6.0" min="0.0" max="80.0" step="0.5" snap="0.0" />
+
+        <slider id="angle" label="Ângulo"
+                default="0.0" min="-180.0" max="180.0" step="1.0"
+                ticks="-90.0,0.0,90.0" snap="0.0,90.0,-90.0" />
+
+        <switch id="radial" label="Radial" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec2 direction;
+
+    if (radial) {
+        // No modo radial o deslocamento aponta para fora do centro, o que imita
+        // de verdade como uma lente real erra — o erro cresce nas bordas.
+        vec2 fromCenter = acScreenNorm - vec2(0.5);
+        direction = fromCenter * 2.0;
+    } else {
+        // Não chame a variável de `radians`: o nome sombrearia a função nativa
+        // `radians()` já dentro do próprio inicializador, e não compila.
+        float rad = radians(angle);
+        direction = vec2(cos(rad), sin(rad));
+    }
+
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 offset = direction * (amount * acEscalaDePixel) * acTexelSize;
+
+    // Só o alpha do canal central importa: os outros dois já estão deslocados e
+    // usar o alpha deles produziria franjas transparentes na borda da camada.
+    vec4 center = texture(inputImg, acScreenNorm);
+    float r = texture(inputImg, acScreenNorm + offset).r;
+    float b = texture(inputImg, acScreenNorm - offset).b;
+
+    fragColor = vec4(r, center.g, b, center.a);
+}
+
+    ]]></shader>
+</effect>

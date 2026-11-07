@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EXTRAIR
+  ============================================================================
+
+  Recorta por uma FAIXA de luminância, com dois limiares independentes — o
+  ponto de preto e o ponto de branco de baixo — e uma maciez PRÓPRIA para
+  cada um. É o efeito clássico "Extract" do After Effects.
+
+  ============================================================================
+   EM QUE ISTO É DIFERENTE DE "CHAVE POR LUMINÂNCIA"
+  ============================================================================
+
+  `luma-key.xml` já tem um modo de faixa ("o parecido"/"o diferente"), mas a
+  faixa dali é CENTRO + LARGURA, com uma suavidade só pros dois lados — ou
+  seja, sempre simétrica em volta de um tom central. Aqui os dois limiares
+  são livres e cada lado tem a própria suavidade: dá pra pedir "guarda de
+  0,2 a 0,9, mas suaviza pouco na sombra e bastante na luz", uma faixa
+  torta que centro+largura não representa.
+
+  Na prática os dois efeitos resolvem o mesmo problema por ângulos
+  diferentes — este aqui é o corte "ajusta os dois pontos e pronto" de quem
+  já sabe exatamente que faixa de tom quer manter.
+-->
+<effect
+    id="nova.effect.extract"
+    name="Extrair"
+    name-en="Extract"
+    desc="Recorta por uma faixa de brilho, com ponto de preto e de branco independentes."
+    desc-en="Keys on a luminance range with independent black and white points."
+    category="matte"
+    tags="extrair,extract,chave,luma,faixa,limiar,recorte">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="blackPoint" label="Ponto de preto"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="whitePoint" label="Ponto de branco"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+
+        <slider id="blackSoftness" label="Suavidade (sombra)"
+                default="0.1" min="0.0" max="0.5" step="0.01" snap="0.1" />
+        <slider id="whiteSoftness" label="Suavidade (luz)"
+                default="0.1" min="0.0" max="0.5" step="0.01" snap="0.1" />
+
+        <switch id="invert" label="Inverter (tirar a faixa em vez de guardar)" default="false" />
+        <switch id="showMask" label="Ver a máscara" default="false" />
+    </params>
+
+    <!-- Na vitrine, o padrão guarda a faixa inteira: o ponto de preto tira o verde da amostra. (vitrine, 0.668.0) -->
+    <preview amostra="personagem">
+        <set param="blackPoint" value="0.5" ate="0.05" />
+    </preview>
+
+    <shader><![CDATA[
+
+// Rec.709 — os mesmos pesos de `luma-key.xml`.
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    float luz = dot(cor.rgb, LUMA);
+
+    // A rampa nunca é zero: suavidade 0 viraria um degrau de um tom só, e
+    // degrau em máscara é serrilhado na borda.
+    float rampaPreto = max(blackSoftness, 0.004);
+    float rampaBranco = max(whiteSoftness, 0.004);
+
+    // Sobe de 0 pra 1 cruzando o ponto de preto, desce de 1 pra 0 cruzando o
+    // ponto de branco — o produto dos dois é 1 só DENTRO da faixa.
+    float acimaDoPreto = smoothstep(blackPoint - rampaPreto, blackPoint + rampaPreto, luz);
+    float abaixoDoBranco = 1.0 - smoothstep(whitePoint - rampaBranco, whitePoint + rampaBranco, luz);
+    float alfa = clamp(acimaDoPreto * abaixoDoBranco, 0.0, 1.0);
+
+    if (invert) alfa = 1.0 - alfa;
+
+    if (showMask) {
+        fragColor = vec4(vec3(alfa), 1.0);
+        return;
+    }
+
+    fragColor = vec4(cor.rgb, cor.a * alfa);
+}
+
+    ]]></shader>
+</effect>

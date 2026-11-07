@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BLOOM CROMÁTICO
+  ============================================================================
+
+  As luzes "sangrando" para fora com uma franja de cor: o pixel claro espalha
+  pros vizinhos e o espalhamento separa R, G e B em deslocamentos diferentes.
+  Resultado: a luz vira halo com borda arco-íris — o glow dos clipes modernos
+  com assinatura de câmera (a aberração cromática da lente).
+
+  ============================================================================
+   DUAS CONTAS NO MESMO PASSE
+  ============================================================================
+
+  Bloom clássico é: extrair as áreas acima de um limiar, borrar, somar de volta.
+  Cromático é o mesmo com um GIRO: cada canal pega amostras com um raio
+  diferente — R mais longe, B mais perto (ou o contrário). O espectro se abre
+  na borda do halo. É o que uma lente cheap faz com o foco fora, e o olho
+  reconhece como "câmera real".
+
+  ============================================================================
+   16 AMOSTRAS, UM SÓ PASSE
+  ============================================================================
+
+  Bloom de verdade é um passe de extrair + N passes de borrão separável. Isto
+  aqui faz tudo em 1 passe com 16 amostras num círculo — perde qualidade em
+  halos muito grandes, mas em raios até ~20 px é visualmente indistinguível
+  do bloom "correto".
+-->
+<effect
+    id="nova.effect.chromatic-bloom"
+    name="Bloom cromático"
+    name-en="Chromatic Bloom"
+    desc="Luzes sangrando com franja de cor nas bordas do halo."
+    desc-en="Highlights bleeding with a chromatic fringe at the halo edge."
+    category="stylize"
+    tags="bloom,glow,cromático,aberração,luz,sangrar,fringe,arco-íris">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="threshold" label="Limiar da luz"
+                default="0.7" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="radius" label="Raio do bloom (px)"
+                default="15.0" min="1.0" max="60.0" step="0.5" snap="0.0" />
+        <slider id="intensity" label="Intensidade"
+                default="1.2" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="chromaticSpread" label="Separação de cor"
+                default="0.4" min="0.0" max="2.0" step="0.02" snap="0.0" />
+    </params>
+
+    <preview>
+        <set param="intensity" value="2.0" />
+        <set param="chromaticSpread" value="0.8" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int AMOSTRAS = 16;
+const float TAU = 6.2831853;
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Só o que está acima do limiar, suavizado. */
+vec3 apenasAsLuzes(vec3 c) {
+    float L = luma(c);
+    float f = smoothstep(threshold, threshold + 0.15, L);
+    return c * f;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 px = 1.0 / vec2(textureSize(inputImg, 0));
+
+    // 16 amostras num círculo com raios diferentes por canal — as luzes de
+    // cada canal ficam em círculos diferentes, as bordas do halo se separam.
+    vec3 bloom = vec3(0.0);
+    for (int i = 0; i < AMOSTRAS; i++) {
+        float ang = TAU * (float(i) + 0.5) / float(AMOSTRAS);
+        vec2 direcao = vec2(cos(ang), sin(ang));
+
+        float raioR = radius * (1.0 + chromaticSpread * 0.5);
+        float raioG = radius;
+        float raioB = radius * (1.0 - chromaticSpread * 0.5);
+
+        bloom.r += apenasAsLuzes(texture(inputImg, acScreenNorm + direcao * raioR * px).rgb).r;
+        bloom.g += apenasAsLuzes(texture(inputImg, acScreenNorm + direcao * raioG * px).rgb).g;
+        bloom.b += apenasAsLuzes(texture(inputImg, acScreenNorm + direcao * raioB * px).rgb).b;
+    }
+    bloom /= float(AMOSTRAS);
+
+    // Mistura por adição com peso de intensidade; clampa pra não saturar branco liso.
+    vec3 cor = original.rgb + bloom * intensity;
+    cor = clamp(cor, 0.0, 1.0);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/echo — o Eco do Node Video (classe NodeVideo.AE.AEEcho), portado do il2cpp (05/11/2026).
+
+  O que o AEEcho::Render faz a cada quadro (lido em tools/nodedeslocamento/il2cpp/desmontar.py):
+  - o tempo do eco T = max(_echo_time, 1/FPS);
+  - CheckReleaseExpiredSchedules: solta o retrato com idade < 0 ou > T x (_num_echos + 1);
+  - ContainsSchedule: se nenhum retrato tem idade <= T, AddSchedule guarda um RETRATO da camada agora (um RT do
+    tamanho da composição, Blit da fonte) com intensidade _start_intensity; a lista fica em ordem de tempo
+    (o comparador <>c::<AddSchedule>b__10_0 é Single.CompareTo do tempo);
+  - compõe os retratos em dois RTs (EchoTemp1/2) que se alternam, com o passe 0 do shader (Blend SrcAlpha
+    OneMinusSrcAlpha) e _opacity1/_opacity2 tirados da intensidade de cada retrato; o Composite In Back (1) tem
+    caminho próprio (do mais velho ao mais novo, e a camada por cima com 1 - intensidade do mais novo); os outros
+    (_echo_operator 0, 2..5) vão do mais novo ao mais velho, a partir da camada;
+  - o passe 1 (Blend SrcAlpha Zero) leva o resultado à saída;
+  - depois do desenho, cada retrato perde _decay x 0,1 x 30 / FPS de intensidade (constante 0xe5a994 = 0,1), sem
+    passar de zero.
+
+  No Nova: os retratos são 11 estados (o máximo é _num_echos + 1 = 11), em meia resolução; a agenda (o quadro em
+  que cada retrato foi tirado) é um estado pequeno. A intensidade sai da idade do retrato (o mesmo que o Node
+  desconta quadro a quadro). As contas da composição são as do Node, em luz linear e cor pré-multiplicada (os RTs do
+  Node), e a saída volta à cor reta.
+
+  O QUE NÃO ENTROU: os retratos do Node têm o tamanho da composição; aqui, meia resolução (11 cheios pesariam demais).
+  A diferença fica nas bordas: média 0,31 nível do Node, pior 76 (com retratos cheios, pior 1,2; tools/nodetempo/bancada.py).
+-->
+<effect
+    id="nv.effect.nodevideo-effect-echo"
+    name="Effect Echo (NV)"
+    name-en="Effect Echo (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_echo', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_echo', decompiled do bundle .unity3d."
+    category="nodevideo"
+    stage="screen"
+    tags="nodevideo,nv,unity,asset-store,eco,echo,rastro,trail">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A agenda: texel (i % 4, i / 4) = o retrato i (0 = o mais novo): RGB = o quadro em que foi tirado,
+             A = 1 se existe; o texel (3, 2) diz se este quadro tirou retrato. -->
+        <texture id="agenda" src="state" scale="0.03125" filter="nearest" />
+        <texture id="eco0" src="state" scale="0.5" />
+        <texture id="eco1" src="state" scale="0.5" />
+        <texture id="eco2" src="state" scale="0.5" />
+        <texture id="eco3" src="state" scale="0.5" />
+        <texture id="eco4" src="state" scale="0.5" />
+        <texture id="eco5" src="state" scale="0.5" />
+        <texture id="eco6" src="state" scale="0.5" />
+        <texture id="eco7" src="state" scale="0.5" />
+        <texture id="eco8" src="state" scale="0.5" />
+        <texture id="eco9" src="state" scale="0.5" />
+        <texture id="eco10" src="state" scale="0.5" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_echo_time" label="Echo Time" default="0.05" min="0.0" max="1.0" step="0.01" />
+        <slider id="_num_echos" type="integer" label="Number of Echoes" default="5" min="1" max="10" step="1" />
+        <slider id="_start_intensity" label="Starting Intensity" default="0.8" min="0.0" max="1.0" step="0.01" />
+        <slider id="_decay" label="Decay" default="0.2" min="0.0" max="2.0" step="0.01" />
+        <selector id="_echo_operator" label="Echo Operator" default="1"
+                  options="Composite In Front|Composite In Back|Add|Screen|Maximum|Minimum" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <!-- O rastro aparece onde a camada não está: a figura solta, como no Eco do Nova. -->
+    <preview amostra="figura" />
+
+    <passes>
+        <pass target="agenda" />   <!-- 0: expira, decide se tira retrato, empurra a fila -->
+        <pass target="eco10" />    <!-- 1..10: cada retrato anda uma casa (do mais velho para o mais novo) -->
+        <pass target="eco9" />
+        <pass target="eco8" />
+        <pass target="eco7" />
+        <pass target="eco6" />
+        <pass target="eco5" />
+        <pass target="eco4" />
+        <pass target="eco3" />
+        <pass target="eco2" />
+        <pass target="eco1" />
+        <pass target="eco0" />     <!-- 11: o retrato novo (a camada agora) -->
+        <pass />                   <!-- 12: a composição do AEEcho + o passe 1 do shader -->
+    </passes>
+
+    <shader><![CDATA[
+const int NV_MAX = 11;
+
+// Os RTs do Node: luz linear, cor pré-multiplicada.
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 nvGama(vec3 l) { return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
+vec4 nvNode(vec4 c) { return vec4(nvLinear(c.rgb) * c.a, c.a); }
+vec4 nvNova(vec4 p) {
+    if (p.a <= 0.0) return vec4(0.0);
+    return vec4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
+}
+
+float nvDt() { return acFrameDuration > 0.0 ? acFrameDuration : 1.0 / 30.0; }
+int nvQuadro() { return int(floor(acTime / nvDt() + 0.5)); }
+float nvTempoDoEco() { return max(_echo_time, nvDt()); }   // if (T < 1/FPS) T = 1/FPS
+
+// 24 bits num texel (com folga de 2^23 para tempo negativo).
+vec3 nvGuardar(int n) {
+    int u = clamp(n + 8388608, 0, 16777215);
+    return vec3(float((u >> 16) & 255), float((u >> 8) & 255), float(u & 255)) / 255.0;
+}
+int nvLer(vec3 c) {
+    ivec3 b = ivec3(floor(c * 255.0 + 0.5));
+    return ((b.r << 16) | (b.g << 8) | b.b) - 8388608;
+}
+ivec2 nvCasa(int i) { return ivec2(i % 4, i / 4); }
+
+vec4 nvRetrato(int i, vec2 uv) {
+    if (i == 0) return texture(eco0, uv);
+    if (i == 1) return texture(eco1, uv);
+    if (i == 2) return texture(eco2, uv);
+    if (i == 3) return texture(eco3, uv);
+    if (i == 4) return texture(eco4, uv);
+    if (i == 5) return texture(eco5, uv);
+    if (i == 6) return texture(eco6, uv);
+    if (i == 7) return texture(eco7, uv);
+    if (i == 8) return texture(eco8, uv);
+    if (i == 9) return texture(eco9, uv);
+    return texture(eco10, uv);
+}
+
+bool nvTirouRetrato() { return texelFetch(agenda, nvCasa(NV_MAX), 0).r > 0.5; }
+
+// O passe 0 do shader do Node (Effect/echo), conta por conta.
+vec4 nvPasse0(vec4 e1, vec4 e2, float op1, float op2, int operador) {
+    vec4 u_xlat0 = e2;
+    vec4 u_xlat2 = e1;
+    vec4 u_xlat1 = u_xlat0 * op2;
+    u_xlat1 = u_xlat2 * op1 + u_xlat1;
+    bvec4 b = equal(ivec4(operador), ivec4(2, 3, 4, 5));
+    vec4 u_xlat4 = min(u_xlat0, u_xlat2);
+    u_xlat1 = b.w ? u_xlat4 : u_xlat1;
+    u_xlat4 = max(u_xlat0, u_xlat2);
+    u_xlat1 = b.z ? u_xlat4 : u_xlat1;
+    u_xlat4 = -u_xlat0 + 1.0;
+    u_xlat0 = u_xlat0 * op2 + u_xlat2;
+    u_xlat2 = -u_xlat2 + 1.0;
+    u_xlat2 = -u_xlat4 * u_xlat2 + 1.0;
+    u_xlat1 = b.y ? u_xlat2 : u_xlat1;
+    return b.x ? u_xlat0 : u_xlat1;
+}
+
+// Blend SrcAlpha OneMinusSrcAlpha num RT de 8 bits (a saída do shader e a mistura presas em 0..1).
+vec4 nvMisturar(vec4 o, vec4 d) {
+    o = clamp(o, 0.0, 1.0);
+    return clamp(o * o.a + d * (1.0 - o.a), 0.0, 1.0);
+}
+
+void main()
+{
+    int f = nvQuadro();
+    float dt = nvDt();
+    float T = nvTempoDoEco();
+    float limite = T * (float(int(_num_echos)) + 1.0);
+
+    // ---------------------------------------------------------------- 0: a agenda
+    if (acPass == 0) {
+        int fc[NV_MAX];
+        bool vale[NV_MAX];
+        bool existe = false;
+        for (int i = 0; i < NV_MAX; i++) {
+            vec4 a = texelFetch(agenda, nvCasa(i), 0);
+            fc[i] = nvLer(a.rgb);
+            float idade = float(f - fc[i]) * dt;
+            // CheckReleaseExpiredSchedules: solta idade < 0 ou > T x (N + 1).
+            vale[i] = acStateFresh == 0 && a.a > 0.5 && idade >= 0.0 && idade <= limite + 1e-6;
+            // ContainsSchedule: há retrato com idade <= T (o próprio quadro conta).
+            if (vale[i] && idade <= T + 1e-6) existe = true;
+        }
+        ivec2 p = ivec2(gl_FragCoord.xy);
+        int i = p.x + p.y * 4;
+        if (p.x >= 4 || i > NV_MAX) { fragColor = vec4(0.0); return; }
+        if (i == NV_MAX) { fragColor = vec4(existe ? 0.0 : 1.0, 0.0, 0.0, 1.0); return; }
+        if (!existe) {
+            // AddSchedule: o retrato novo entra na frente; o resto anda uma casa.
+            if (i == 0) { fragColor = vec4(nvGuardar(f), 1.0); return; }
+            fragColor = vale[i - 1] ? vec4(nvGuardar(fc[i - 1]), 1.0) : vec4(0.0);
+            return;
+        }
+        fragColor = vale[i] ? vec4(nvGuardar(fc[i]), 1.0) : vec4(0.0);
+        return;
+    }
+
+    // ------------------------------------------------------- 1..11: os retratos
+    if (acPass <= NV_MAX) {
+        int k = NV_MAX - acPass;   // o passe 1 escreve o eco10, o 11 o eco0
+        bool tirou = nvTirouRetrato();
+        if (k == 0) { fragColor = tirou ? texture(inputImg, acScreenNorm) : texture(eco0, acScreenNorm); return; }
+        fragColor = nvRetrato(tirou ? k - 1 : k, acScreenNorm);
+        return;
+    }
+
+    // ------------------------------------------------------- 12: a composição
+    vec2 uv = acScreenNorm;
+    vec4 S = nvNode(texture(inputImg, uv));
+    int n = 0;
+    float I[NV_MAX];
+    for (int i = 0; i < NV_MAX; i++) {
+        vec4 a = texelFetch(agenda, nvCasa(i), 0);
+        if (a.a < 0.5) { I[i] = 0.0; continue; }
+        // a intensidade perde _decay x 0,1 / FPS x 30 a cada quadro desenhado depois do retrato
+        int idade = f - nvLer(a.rgb);
+        I[i] = max(_start_intensity - float(idade) * (_decay * 0.1 / (1.0 / dt)) * 30.0, 0.0);
+        n = i + 1;
+    }
+    int operador = int(_echo_operator);
+    vec4 T1 = vec4(0.0);
+    vec4 T2 = vec4(0.0);
+    vec4 X;
+    if (n == 0) {
+        X = S;   // não acontece: o quadro sempre tem o retrato de agora
+    } else if (operador != 1) {
+        // Blit(fonte -> EchoTemp1); do mais novo (k = 0) ao mais velho, alternando os dois RTs.
+        T1 = S;
+        for (int k = 0; k < NV_MAX; k++) {
+            if (k >= n) break;
+            vec4 r = nvNode(nvRetrato(k, uv));
+            if ((k & 1) == 0) T2 = nvMisturar(nvPasse0(T1, r, 1.0 - I[k], I[k], operador), T2);
+            else T1 = nvMisturar(nvPasse0(T2, r, 1.0 - I[k], I[k], operador), T1);
+        }
+        X = ((n - 1) & 1) == 0 ? T2 : T1;
+    } else {
+        // Composite In Back. Na lista do Node o índice j é o j-ésimo mais VELHO: o retrato n - 1 - j daqui.
+        if (n == 1) {
+            T2 = nvNode(nvRetrato(0, uv));
+            X = T2;
+        } else {
+            T1 = nvNode(nvRetrato(n - 1, uv));
+            for (int j = 0; j < NV_MAX - 1; j++) {
+                if (j >= n - 1) break;
+                vec4 r = nvNode(nvRetrato(n - 2 - j, uv));   // o j + 1 do Node
+                float w = I[n - 1 - j];                      // a intensidade do j do Node
+                if ((j & 1) == 0) T2 = nvMisturar(nvPasse0(T1, r, w, 1.0 - w, 1), T2);
+                else T1 = nvMisturar(nvPasse0(T2, r, w, 1.0 - w, 1), T1);
+            }
+            X = ((n - 2) & 1) == 0 ? T2 : T1;
+        }
+        // Blit(fonte -> X) com _echo1 = fonte e _echo2 = X: a camada por cima, com 1 - a intensidade do mais novo.
+        X = nvMisturar(nvPasse0(S, X, 1.0 - I[0], I[0], 1), X);
+    }
+
+    // O passe 1 do shader (_echo2 = X, máscara interna) com Blend SrcAlpha Zero.
+    vec4 u_xlat0 = X;
+    vec4 saida;
+    if (_use_inner_mask != 0.0) {
+        vec4 u_xlat1 = S;
+        bvec2 b = equal(ivec2(int(_show_inner_mask), int(_b_clip_mask)), ivec2(1, 1));
+        vec4 u_xlat3 = b.x ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        vec4 u_xlat4 = nvNode(texture(Mask, uv));
+        u_xlat1 = u_xlat1 * (1.0 - u_xlat4);
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        saida = vec4(u_xlat1.xyz, b.y ? u_xlat4.x * u_xlat1.w : u_xlat1.w);
+    } else {
+        saida = u_xlat0;
+    }
+    saida = clamp(saida, 0.0, 1.0);
+    fragColor = nvNova(saida * saida.a);
+}
+    ]]></shader>
+</effect>

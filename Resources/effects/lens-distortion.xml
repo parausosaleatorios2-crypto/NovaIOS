@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Distorção de lente: barril (positivo) ou almofada (negativo).
+
+  Os dois termos existem porque uma lente real não distorce de forma linear. O
+  primeiro cuida do grosso da curvatura; o segundo corrige as quinas, que é onde
+  uma aproximação só de segunda ordem começa a errar de forma visível.
+-->
+<effect
+    id="nova.effect.lens-distortion"
+    name="Distorção de lente"
+    name-en="Lens Distortion"
+    desc="Curva a imagem como uma lente grande-angular."
+    desc-en="Barrel and pincushion, for correcting or faking a lens."
+    category="distort"
+    tags="lente,olho de peixe,barril,gopro,camera">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="strength" label="Curvatura"
+                default="0.35" min="-1.0" max="1.5" step="0.01" snap="0.0" />
+
+        <slider id="fine" label="Curvatura das quinas"
+                default="0.0" min="-0.8" max="0.8" step="0.01" snap="0.0" />
+
+        <slider id="zoom" label="Aproximação"
+                default="1.0" min="0.5" max="2.0" step="0.01" snap="1.0" />
+
+        <color id="edgeColor" label="Fora da imagem" default="#00000000" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec2 offset = (acScreenNorm - 0.5) * vec2(acAspect, 1.0) / max(zoom, 0.01);
+    float radius2 = dot(offset, offset);
+
+    vec2 warped = offset * (1.0 + strength * radius2 + fine * radius2 * radius2);
+    warped /= vec2(acAspect, 1.0);
+    vec2 sampleUv = warped + 0.5;
+
+    // Sem esta verificação, o `clamp` esticaria o pixel da borda por toda a área
+    // que sobrou — o que parece um borrão sujo em vez de uma imagem que acabou.
+    if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) {
+        fragColor = edgeColor;
+        return;
+    }
+
+    fragColor = texture(inputImg, sampleUv);
+}
+
+    ]]></shader>
+</effect>

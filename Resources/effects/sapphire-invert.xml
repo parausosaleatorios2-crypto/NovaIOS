@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_INVERT — o Invert do Sapphire (Boris FX), lido do plugin e conferido (0.452.0)
+
+  Pedido do snow (08/10/2026): "lote simples de cor".
+
+  DE ONDE VEIO (tools/lotecor/benchmark, 32 casos): a conta está em texto na sapphire_ae.dll (a
+  definição do efeito). Na cor reta:
+      x = Invert Luma ? 1 − cor : cor
+      x = croma de x em volta da luma, vezes (Invert Chroma = Invert Luma ? 1 : −1)
+      Invert Red / Green / Blue: 1 − o canal
+      x = croma de x vezes Saturation
+      saída = escuros + x · max(claros − escuros, 0),
+              claros = Tint Lights · Scale Lights,  escuros = Tint Darks + Offset Darks
+  Medido: a luma é (5 R + 8 G + 3 B) / 16; as cores dos tons valem em 8 bits; Invert Alpha dá
+  1 − alfa; com Remult By Alpha, "1 −" vira "alfa −" (sem Invert Alpha) ou a cor sai vezes o alfa
+  novo (com ele). Modelo × AE: 0,003 nível de 255.
+
+  FORA: Mask e Mocha.
+-->
+<effect
+    id="nova.effect.sinvert"
+    name="S_Invert"
+    name-en="S_Invert"
+    desc="O Invert do Sapphire: inverte brilho e cor em separado, por canal, com saturação e tons de luz e sombra."
+    desc-en="Sapphire's Invert: inverts luma and chroma separately, per channel, with saturation and light/dark tints."
+    category="color"
+    tags="s_invert,sapphire,invert,inverter,negativo,luma,chroma,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <switch id="invertLuma" label="Invert Luma" default="true" />
+        <switch id="invertChroma" label="Invert Chroma" default="true" />
+        <switch id="invertRed" label="Invert Red" default="false" />
+        <switch id="invertGreen" label="Invert Green" default="false" />
+        <switch id="invertBlue" label="Invert Blue" default="false" />
+        <switch id="invertAlpha" label="Invert Alpha" default="false" />
+        <switch id="remultByAlpha" label="Remult By Alpha" default="false" />
+        <slider id="scaleLights" label="Scale Lights" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <color id="tintLights" label="Tint Lights" default="#FFFFFF" />
+        <color id="tintDarks" label="Tint Darks" default="#000000" />
+        <slider id="offsetDarks" label="Offset Darks" default="0.0" min="-8.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="saturation" label="Saturation" default="1.0" min="-2.0" max="8.0" step="0.01" snap="1.0,0.0" />
+    </params>
+
+    <shader><![CDATA[
+/** O croma de `x` em volta da luma do Sapphire, vezes `k` (medido: luma = (5 R + 8 G + 3 B) / 16). */
+vec3 croma(vec3 x, float k) {
+    float y = dot(x, vec3(0.3125, 0.5, 0.1875));
+    return y + (x - y) * k;
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 c = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+    float a = invertAlpha ? 1.0 - c.a : c.a;
+    // Remult sem inverter o alfa: o "branco" de onde se subtrai é o alfa da fonte.
+    float um = (remultByAlpha && !invertAlpha) ? c.a : 1.0;
+
+    vec3 x = croma(invertLuma ? um - c.rgb : c.rgb, invertChroma == invertLuma ? 1.0 : -1.0);
+    if (invertRed) x.r = um - x.r;
+    if (invertGreen) x.g = um - x.g;
+    if (invertBlue) x.b = um - x.b;
+
+    vec3 claros = floor(tintLights.rgb * 255.0 + 0.5) / 255.0 * scaleLights;
+    vec3 escuros = floor(tintDarks.rgb * 255.0 + 0.5) / 255.0 + offsetDarks;
+    vec3 d = escuros + croma(x, saturation) * max(claros - escuros, vec3(0.0));
+    if (remultByAlpha && invertAlpha) d *= a;
+    fragColor = vec4(clamp(d, 0.0, 1.0), a);
+}
+]]></shader>
+</effect>

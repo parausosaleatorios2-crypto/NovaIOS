@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.retro_fade" name="Retro Fade" desc="A faded 70s film look: lifted blacks, reduced saturation, warm tint and a soft vignette." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/retro_fade.png"
+        tags="retro,fade,vintage,film,vignette" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Retro" />
+<spinner id="fade" default="0.25" min="0.0" max="0.6" step="0.01" label="Fade" />
+<spinner id="desat" default="0.3" min="0.0" max="1.0" step="0.01" label="Desaturation" />
+<spinner id="vignette" default="0.35" min="0.0" max="1.0" step="0.01" label="Vignette" />
+<color id="tint" default="#FFFFD9A0" label="Tint" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 g = mix(c, vec3(gmLum(c)), desat);
+  g = mix(g, tint.rgb, fade);
+  g *= mix(1.0, 0.65, fade);
+  float d = length((uv - 0.5) * vec2(1.4, 1.0));
+  g *= 1.0 - vignette * smoothstep(0.3, 0.85, d);
+  vec3 col = mix(c, g, mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

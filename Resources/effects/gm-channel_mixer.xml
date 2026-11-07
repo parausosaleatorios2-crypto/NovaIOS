@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.channel_mixer" name="Channel Mixer" desc="Rebuild each output channel from a weighted mix of the input channels. Great for fixing white balance and making false-colour looks." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/channel_mixer.png"
+        tags="color,rgb,mixer,channel" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Red From" />
+<spinner id="rR" default="1.0" min="-1.0" max="2.0" step="0.01" label="R" />
+<spinner id="rG" default="0.0" min="-1.0" max="2.0" step="0.01" label="G" />
+<spinner id="rB" default="0.0" min="-1.0" max="2.0" step="0.01" label="B" />
+<section text="Green From" />
+<spinner id="gR" default="0.0" min="-1.0" max="2.0" step="0.01" label="R" />
+<spinner id="gG" default="1.0" min="-1.0" max="2.0" step="0.01" label="G" />
+<spinner id="gB" default="0.0" min="-1.0" max="2.0" step="0.01" label="B" />
+<section text="Blue From" />
+<spinner id="bR" default="0.0" min="-1.0" max="2.0" step="0.01" label="R" />
+<spinner id="bG" default="0.0" min="-1.0" max="2.0" step="0.01" label="G" />
+<spinner id="bB" default="1.0" min="-1.0" max="2.0" step="0.01" label="B" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<!-- Com os padroes o mixer e a identidade: na vitrine, vermelho e azul trocados. (05/11/2026) -->
+<preview>
+<set param="rR" value="0.0" />
+<set param="rB" value="1.0" />
+<set param="bR" value="1.0" />
+<set param="bB" value="0.0" />
+</preview>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 g;
+  g.r = c.r * rR + c.g * rG + c.b * rB;
+  g.g = c.r * gR + c.g * gG + c.b * gB;
+  g.b = c.r * bR + c.g * bG + c.b * bB;
+  vec3 col = mix(c, clamp(g, 0.0, 1.0), mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MESCLAR COM O ORIGINAL
+  ============================================================================
+
+  Compõe o resultado dos efeitos ANTERIORES desta lista sobre a camada como ela
+  era antes do primeiro deles, com um modo de mesclagem. É o "Blend With
+  Original" que vários plugins do After Effects trazem embutido — aqui solto,
+  para valer em cima de qualquer pilha de efeitos.
+
+  Para que serve: um desfoque virar brilho (desfoca e mescla em Tela), um
+  realce virar glow, uma correção de cor entrar só pela metade num modo que o
+  controle de mistura de um efeito só não alcança.
+
+  ============================================================================
+   POR QUE ELE EXISTE (05/11/2026)
+  ============================================================================
+
+  É assim que o Alight Motion faz CC e glow: a pessoa põe uma forma em cima do
+  vídeo, liga o "Copiar fundo" (`lift`) — a forma passa a mostrar o fundo —,
+  empilha os efeitos nessa cópia e escolhe o modo de mesclagem da CAMADA. O
+  resultado é `mescla(fundo, efeitos(fundo))`.
+
+  Como preset de UMA camada isso não cabia: a cadeia ia junto e o modo ficava
+  para trás, então um glow do AM chegava aqui como um desfoque gaussiano chapado
+  em cima da imagem ("vários CC estão com um gaussian blur em cima, q n faz
+  sentido", snow, 05/11/2026). Os presets dos pacotes do AM
+  (`PresetsDoAmTest`) agora terminam neste efeito, com o modo e a opacidade da
+  camada do AM.
+
+  As contas são as MESMAS da mesclagem de camada (`EngineShaders.
+  FUNCOES_DE_MESCLAGEM`, injetadas pelo `ShaderPrelude` em quem chama
+  `mesclarComoACamada`): "Tela" aqui é o "Tela" de lá, com os números do AM nos
+  sete modos que vieram dele. A composição é a do W3C, igual à da mesclagem de
+  efeito — onde o resultado criou pixel fora da camada (o brilho que vaza da
+  borda), ele entra sem nada embaixo para mesclar.
+-->
+<effect
+    id="nova.effect.mesclarcomoriginal"
+    name="Mesclar com o original"
+    name-en="Blend with Original"
+    desc="Compõe o resultado dos efeitos de cima sobre a camada crua, com um modo de mesclagem."
+    desc-en="Composites the result of the effects above over the untouched layer, with a blend mode."
+    category="stylize"
+    tags="mesclar,mesclagem,modo,original,composicao,compor,glow,brilho,blend,original,composite">
+
+    <params>
+        <!-- O que a cadeia fez até aqui (o "de cima" da mesclagem). -->
+        <texture id="inputImg" src="content" />
+        <!-- A camada como era antes do PRIMEIRO efeito da lista (o "de baixo"). Ver `TextureSource.ORIGINAL`. -->
+        <texture id="originalImg" src="original" />
+
+        <selector id="modo" label="Modo de mesclagem" default="6"
+                  options="Normal|Escurecer|Multiplicar|Queima de cor|Queima linear|Clarear|Tela|Subexposição de cores|Subexposição linear|Sobreposição|Luz suave|Luz intensa|Luz forte|Luz linear|Ponto de Luz|Diferença|Exclusão|Subtrair|Dividir|Cor mais clara|Cor mais escura|Sobreposição suave|Matiz|Saturação|Cor|Luminância" />
+
+        <!-- Quanto do resultado entra. 0 = só a camada crua; 1 = a mescla inteira. -->
+        <slider id="opacidade" label="Opacidade"
+                default="1.0" min="0.0" max="1.0" step="0.01"
+                snap="0.0,1.0" ticks="0.0,0.5,1.0" type="number" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 topo = texture(inputImg, acScreenNorm);
+    vec4 base = texture(originalImg, acScreenNorm);
+
+    // A opacidade entra no alfa do que vem de cima: a 0 sobra a camada crua, e
+    // no caminho é a mesma conta de uma camada com opacidade no AM e no Nova.
+    float as_ = topo.a * clamp(opacidade, 0.0, 1.0);
+    float ab = base.a;
+
+    // A composição do W3C, a mesma da mesclagem de camada e da de efeito.
+    vec3 mesclado = mesclarComoACamada(modo, base.rgb, topo.rgb);
+    float a = as_ + ab * (1.0 - as_);
+    vec3 cor = as_ * (1.0 - ab) * topo.rgb
+             + as_ * ab * mesclado
+             + (1.0 - as_) * ab * base.rgb;
+
+    fragColor = a > 0.0 ? vec4(clamp(cor / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+    ]]></shader>
+</effect>

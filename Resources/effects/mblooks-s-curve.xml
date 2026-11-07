@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — S Curve (`logc`, vídeo): `ColorKernel_LogCurve`, constantes em `0x18041a6f0`. Com Log,
+  a curva lê o pixel em log (tipo Cineon). Idêntica ao AE.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.scurve"
+    name="Looks: S Curve"
+    name-en="Looks: S Curve"
+    desc="A ferramenta S Curve do Magic Bullet Looks: contraste em S em volta do ponto médio, com brilho e pontos de preto e branco."
+    desc-en="Magic Bullet Looks' S Curve tool: an S-shaped contrast around the midpoint, with brightness and black/white points."
+    category="looks"
+    stage="mblooks"
+    looks="logc"
+    tags="magic bullet,looks,red giant,s curve,curva,contraste,contrast,log">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="contrast" label="Contrast" default="0.0" min="-5.0" max="5.0" step="0.01" />
+        <slider id="midpoint" label="Midpoint" default="0.0" min="0.0" max="1.0" step="0.001" />
+        <slider id="brightness" label="Brightness" default="0.0" min="0.0" max="1.0" step="0.001" />
+        <slider id="blackPoint" label="Black Point" default="0.0" min="0.0" max="1.0" step="0.001" />
+        <slider id="whitePoint" label="White Point" default="1.0" min="0.0" max="1.0" step="0.001" />
+        <switch id="logMode" label="Log" default="false" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0) não mexe no contraste: um S forte. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="contrast" value="3.5" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

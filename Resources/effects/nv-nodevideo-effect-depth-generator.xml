@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_depth_generator
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-depth-generator"
+    name="Effect Depth Generator (NV)"
+    name-en="Effect Depth Generator (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_depth_generator', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_depth_generator', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_black_point" label="Black Point" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_white_point" label="White Point" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_curve_offset" label="Curve Offset" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_curve_calculation" type="integer" label="Curve Calculation" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+float u_xlat0;
+float u_xlat1;
+float u_xlat2;
+void main()
+{
+    u_xlat0 = _white_point + -9.99999975e-05;
+    u_xlat0 = min(u_xlat0, _black_point);
+    u_xlat1 = u_xlat0 + 9.99999975e-05;
+    u_xlat1 = max(u_xlat1, _white_point);
+    u_xlat1 = (-u_xlat0) + u_xlat1;
+    u_xlat2 = texture(inputImg, acScreenNorm.xy).x;
+    u_xlat0 = (-u_xlat0) + u_xlat2;
+    u_xlat0 = u_xlat0 / u_xlat1;
+    u_xlat0 = u_xlat0 + _curve_offset;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat1 = u_xlat0 * u_xlat2;
+    u_xlat1 = clamp(u_xlat1, 0.0, 1.0);
+    fragColor.xyz = (int(_curve_calculation) != 0) ? vec3(u_xlat0) : vec3(u_xlat1);
+    fragColor.w = 1.0;
+    return;
+}
+    ]]></shader>
+</effect>

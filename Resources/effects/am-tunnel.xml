@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TÚNEL (AM) — o Tunnel do Alight Motion, conta por conta (0.558.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz agora 100% igual o efeito tunel igual o alight motion", da série "100% iguais
+  ao AM". Mesmos parâmetros, ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.tunnel` (um
+  projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/tunnel.xml`
+  do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é
+  `python tools/amtunel/comparar.py`: o efeito do AM rodado na GPU do PC ao lado deste. O "Túnel" que já existia
+  no Nova (`tunnel.xml`) é outro efeito e fica como está.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A camada vira a parede de dentro de um túnel redondo visto de frente. A conta é na coordenada da CAMADA do AM
+    (`acLayerNorm`: o retângulo do conteúdo, de −0,5 a 0,5 a partir do meio, nos eixos da própria camada). Em cada
+    pixel, com r = a distância ao meio e a = atan(x, y) + Giro × 0,0174533 × r (o número do AM, não π/180):
+      u = Profundidade ÷ r + Fase   e   v = a ÷ (2π ÷ Embrulho),
+    espelhados (`abs(mod(·, 2) − 1)`, com Espelhar) ou repetidos (`mod(·, 1)`), recortados em volta do meio
+    (× Recortar) e buscados na camada. A Fase anda pelo túnel adentro; o Embrulho é quantas vezes a camada dá a
+    volta.
+  - Fora do círculo de raio 0,5 (a ELIPSE dentro da caixa da camada: a correção de aspecto está comentada no
+    shader do AM) não sobra nada. A névoa vem do fundo: a Cor do Nevoeiro entra com peso (1 − 2r) × Névoa, preso
+    entre 0 e 1 — no meio, só a névoa; na borda, só a camada.
+  - O AM roda o efeito NA TELA, depois de mover, girar e escalar a camada, e busca a camada JÁ na tela (filtro
+    linear sobre a cor PRÉ-multiplicada, a textura dele). Aqui é igual ao Apertar: `stage="screen"`, a ida à camada
+    pela volta da `acCamadaParaTela`, a volta pela própria matriz sem a divisão da perspectiva quando ela é afim, e
+    o filtro linear feito à mão nos 4 pixels sobre a cor pré-multiplicada (na cor reta a borda escureceria). Com
+    Recortar acima de 1 a busca sai da caixa e lê o que a camada tem em volta (o brilho de um efeito de antes, ou
+    nada).
+  - O Y da coordenada da camada do AM cresce para CIMA (a matriz dele inverte o Y da tela) e o do buffer de camada
+    do Nova para baixo (a linha 0 é o topo). O Túnel não é simétrico em Y (o ângulo começa embaixo e o Giro tem
+    sentido), então a conta inverte o Y na ida e na volta; sem isso, o túnel sai de ponta-cabeça e o Giro gira ao
+    contrário. (O Apertar não precisou: a conta dele é a mesma com o Y trocado.)
+  - A mistura com a névoa é em cor pré-multiplicada, como a do AM: onde a camada é transparente, a névoa ainda
+    aparece, com o alfa do peso.
+  - A Cor do Nevoeiro do AM não tem alfa (`alpha="false"`); aqui, se tiver, ela entra pré-multiplicada (com alfa 1,
+    a mesma conta).
+  - `<spinner>` como no AM: o leitor dele (`readSpinnerParam`) lê `ticks` e não lê `snap` (a Névoa tem
+    `snap="1.0"` lá, sem efeito); o passo da Névoa, que o AM não escreve, é o que ele dá a um spinner sem `step` (a
+    potência de 10 logo abaixo de (máx − mín) ÷ 100): 0,01. O Giro é ângulo (`type="angle"`): º e voltas na caixa.
+  - Bem no meio (r → 0) a Profundidade ÷ r vai ao infinito e a busca vira ruído; a névoa pesa cada vez mais perto
+    do meio (peso 1 no centro com Névoa ≥ 1; até r = 0,25 com Névoa 2). Sem névoa, os dois mostram o ruído da GPU.
+  - Dentro de grupo (o filho), o corte na tela não existe: o efeito roda no buffer do filho, na coordenada dele.
+-->
+<effect
+    id="nova.effect.am-tunnel"
+    name="Túnel (AM)"
+    name-en="Tunnel (AM)"
+    desc="Renderiza um túnel de faux-3D redondo, usando a camada como a textura da superfície interna (o Tunnel do Alight Motion)."
+    desc-en="Renders a round faux-3D tunnel using the layer as the interior surface texture (Alight Motion's Tunnel)."
+    category="3d"
+    tags="túnel,tunel,3d,faux 3d,profundidade,névoa,tunnel,depth,fog,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="phase" label="Fase" default="0.0" min="0.0" max="1000.0" step="0.01"
+            ticks="1.0,2.0,3.0,4.0,5.0" />
+        <color id="fogColor" label="Cor do Nevoeiro" default="#FF000000" />
+        <spinner id="fog" label="Névoa" default="1.0" min="0.0" max="2.0" step="0.01" ticks="1.0" />
+        <spinner id="depth" label="Profundidade" default="0.3" min="0.01" max="10.0" step="0.001"
+            ticks="0.3,0.5,1.0,2.0,3.0,4.0,5.0" />
+        <spinner id="twirl" label="Giro" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0"
+            type="angle" />
+        <spinner id="wrap" label="Embrulho" default="2.0" min="1.0" max="8.0" step="0.01"
+            ticks="0.5,1.0,1.5,2.0" />
+        <spinner id="crop" label="Recortar" default="0.995" min="0.01" max="2.0" step="0.001" ticks="1.0" />
+        <switch id="mirror" label="Espelhar" default="true" />
+    </params>
+
+    <preview>
+        <set param="phase" value="0.0" ate="2.0" volta="true" />
+    </preview>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    // O pixel na tela (na tela, a identidade; no filho de grupo, o buffer dele levado à tela do grupo) e, de lá, a
+    // coordenada da camada do AM: o retângulo do conteúdo de 0 a 1, com o meio no meio do buffer (o buffer cobre a
+    // composição, `acTamanhoDaTela`).
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 st = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+    // O Y do AM cresce para CIMA (a matriz dele inverte o Y da tela) e o do buffer de camada do Nova para baixo
+    // (a linha 0 é o topo): sem isto, o túnel sai espelhado de cima para baixo (o Giro gira ao contrário).
+    st.y = 1.0 - st.y;
+
+    // A conta do AM, linha por linha.
+    st -= vec2(0.5, 0.5);
+    float tr = twirl * 0.0174533;
+    float angle = atan(st.x, st.y);
+    float radius = length(st);
+    angle += tr * radius;
+    vec2 uv = vec2(depth / radius + phase, angle / (3.1415927 * 2. / wrap));
+    if (mirror) {
+        uv = abs(mod(uv, 2.0) - 1.0);
+    } else {
+        uv = mod(uv, 1.0);
+    }
+    uv -= 0.5;
+    uv *= crop;
+    uv += 0.5;
+
+    // De volta ao buffer da camada e à imagem de entrada: na tela (a entrada é a camada já na tela), pela
+    // `acCamadaParaTela` sem a divisão da perspectiva quando ela é afim (como o `acLayerToScreen` do AM); no filho
+    // de grupo, a própria UV do buffer. O Y volta para baixo.
+    vec2 b = 0.5 + (vec2(uv.x, 1.0 - uv.y) - 0.5) * conteudo / acTamanhoDaTela;
+    vec2 p = b;
+    if (acParaTela == mat3(1.0)) {
+        vec3 c = acCamadaParaTela * vec3(b, 1.0);
+        bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+        p = afim ? c.xy : c.xy / c.z;
+    }
+
+    // Ponto infinito ou NaN (bem no meio, r = 0): a GPU decide, como no AM.
+    bool foraDaConta = any(isinf(p)) || any(isnan(p));
+    vec4 texColor = foraDaConta ? preMultiplicada(texture(inputImg, p)) : camadaNoPonto(p);
+    vec4 nevoa = preMultiplicada(fogColor);
+    vec4 c = radius > 0.5 ? vec4(0.) : mix(texColor, nevoa, clamp((1. - radius * 2.) * fog, 0., 1.));
+    fragColor = c.a > 0.0 ? vec4(min(c.rgb / c.a, vec3(1.0)), c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

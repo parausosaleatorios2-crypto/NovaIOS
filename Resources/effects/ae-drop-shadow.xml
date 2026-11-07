@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DROP SHADOW (AE) — o Drop Shadow nativo do After Effects (ADBE Drop Shadow)
+  ============================================================================
+
+  Pedido do snow (21/10/2026): "agora faço o efeito drop shadow do after effects 100% igual" — o 38º da
+  fila de docs/PRESETS-DA-PASTA-DO-SNOW.md (25 presets da pasta usam).
+
+  Não foi ajustado por medida: a conta foi LIDA nos binários do AE 2023 e conferida pixel a pixel
+  (tools/dropshadow/benchmark, LEIAME.md). O AE do snow roda o caminho de GPU do plugin (OpenCL na
+  Radeon): o host (Drop_Shadow.aex 180007040 — aqui `model/DropShadowDoAe.kt`, que calcula em double os
+  números que chegam como `ds…`), a caixa do AE (`GF::FastBoxBlur`, FastBoxBlur*.clz) e o kernel
+  `CompositeShadowMask` (PTX/OpenCL/DropShadow.clz). O modelo em Python deles bate com o AE em 45 casos:
+  só 20 pixels de 10,6 milhões diferem, a 1 nível, todos empates de meio nível no float32.
+
+  O QUE O AE FAZ (e este shader repete):
+
+  1. O deslocamento é (cos θ · d, −sin θ · d), θ = 90° − Direction, TRUNCADO para inteiro: a sombra anda
+     de pixel em pixel (Distance 7,3 a 135° anda 5 e 5).
+  2. A sombra é o ALFA da camada, deslocado e desfocado por uma caixa de raio Softness · 0,5 / 2,71,
+     passada 3 vezes na horizontal e 3 na vertical: cada passada dá (Σ − frac·(pontas)) / ((2n+1) − 2·frac),
+     com n = ceil(raio) e frac = n − raio (a mesma caixa do Directional Blur do AE).
+  3. Opacity multiplica esse alfa; a cor é a Shadow Color; a camada vai por cima (normal, cor reta em
+     float). Shadow Only devolve só a sombra, inteira (inclusive embaixo da camada).
+
+  COMO ISSO CABE NOS BUFFERS: as passadas guardam só o alfa, em 24 bits fixos (RGB de um RGBA8: a
+  precisão do float32 do AE perto de 1). Os buffers têm moldura de 256 px, para a caixa espalhar para
+  fora do quadro e voltar.
+
+  O QUE NÃO ENTROU: o modo Draft do AE (in_data->quality LOW: raio · 1,4 e uma passada só) — o render
+  do AE é sempre Best. Com Softness acima de ~460 (3·n passa da moldura de 256 px) a cauda que sai do
+  quadro e voltaria fica de fora. 16/32 bpc e pixel não quadrado. Não rodou em aparelho.
+
+  CUSTO: 6 passadas de (2n + 1) leituras (n ≈ 0,18 · Softness) e a composição.
+-->
+<effect
+    id="nova.effect.aedropshadow"
+    name="Drop Shadow (AE)"
+    name-en="Drop Shadow (AE)"
+    desc="O Drop Shadow do After Effects, igual pixel a pixel: a sombra da camada, com direção, distância e suavidade."
+    desc-en="After Effects' Drop Shadow, pixel for pixel: the layer's shadow, with direction, distance and softness."
+    category="stylize"
+    tags="drop shadow,sombra,sombra projetada,shadow,profundidade,after effects,adbe"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="dsA" src="buffer" margin="256" />
+        <texture id="dsB" src="buffer" margin="256" />
+
+        <color id="shadowColor" label="Cor da sombra" default="#000000" />
+        <slider id="opacity" label="Opacidade" default="0.5" min="0.0" max="1.0" step="0.001" type="percent" snap="0.5,1.0" />
+        <slider id="direction" label="Direção" default="135.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="135.0" />
+        <slider id="shadowDistance" label="Distância" default="5.0" min="0.0" max="4000.0" step="0.1" snap="5.0" />
+        <slider id="softness" label="Suavidade da sombra" default="0.0" min="0.0" max="30000.0" step="0.1" snap="0.0" />
+        <switch id="shadowOnly" label="Só a sombra" default="false" />
+    </params>
+
+    <!-- Na vitrine: a sombra padrão do AE (5 px, dura) quase some na miniatura. (0.712.0) -->
+    <preview amostra="figura">
+        <set param="shadowDistance" value="30.0" />
+        <set param="softness" value="20.0" />
+        <set param="opacity" value="0.8" />
+    </preview>
+
+    <passes>
+        <pass target="dsA" skipIfZero="softness" />   <!-- 0: a máscara deslocada + a 1ª passada horizontal -->
+        <pass target="dsB" skipIfZero="softness" />   <!-- 1: a 2ª horizontal -->
+        <pass target="dsA" skipIfZero="softness" />   <!-- 2: a 3ª horizontal -->
+        <pass target="dsB" skipIfZero="softness" />   <!-- 3: a 1ª vertical -->
+        <pass target="dsA" skipIfZero="softness" />   <!-- 4: a 2ª vertical -->
+        <pass target="dsB" skipIfZero="softness" />   <!-- 5: a 3ª vertical -->
+        <pass />                                      <!-- 6: a sombra por baixo da camada -->
+    </passes>
+
+    <shader><![CDATA[
+// Calculados no Kotlin (model/DropShadowDoAe.kt), em double, como o host do plugin.
+uniform int dsDx;           // o deslocamento inteiro, px do buffer, y para baixo (como no AE)
+uniform int dsDy;
+uniform float dsRaio;       // o raio da caixa: Softness · 0,5 / 2,71
+uniform int dsN;            // ceil(dsRaio); 0 = sem desfoque
+uniform float dsOpacidade;  // 0..1
+
+const int MARGEM = 256;     // = margin dos buffers
+
+// O deslocamento no buffer: com a cena de pé (a linha 0 é a base), o "para baixo" do AE é para cima aqui.
+ivec2 deslocamento() { return ivec2(dsDx, acEntradaDePe == 1 ? -dsDy : dsDy); }
+
+// O alfa da camada (k / 255 exato); fora do quadro, transparente.
+float alfaDaCamada(ivec2 c) {
+    ivec2 t = textureSize(inputImg, 0);
+    if (any(lessThan(c, ivec2(0))) || any(greaterThanEqual(c, t))) return 0.0;
+    return floor(texelFetch(inputImg, c, 0).a * 255.0 + 0.5) / 255.0;
+}
+
+// 24 bits fixos no RGB de um RGBA8 (o alfa da passada fica em [0, 1]).
+vec4 guardar(float v) {
+    uint q = min(uint(clamp(v, 0.0, 1.0) * 16777216.0), 16777215u);
+    return vec4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
+}
+float abrir(sampler2D b, ivec2 c) {
+    ivec2 p = c + MARGEM;
+    ivec2 n = textureSize(b, 0);
+    if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, n))) return 0.0;
+    uvec3 k = uvec3(floor(texelFetch(b, p, 0).rgb * 255.0 + 0.5));
+    return float((k.x << 16u) | (k.y << 8u) | k.z) / 16777216.0;
+}
+
+// O valor que a passada lê: na 1ª, a máscara (o alfa da camada deslocado); nas outras, a passada anterior.
+float anterior(ivec2 c) {
+    if (acPass == 0) return alfaDaCamada(c - deslocamento());
+    return (acPass % 2 == 1) ? abrir(dsA, c) : abrir(dsB, c);
+}
+
+void main() {
+    if (acPass < 6) {
+        // uma passada da caixa: as três primeiras na horizontal, as outras na vertical
+        ivec2 c = ivec2(gl_FragCoord.xy) - MARGEM;
+        ivec2 eixo = acPass < 3 ? ivec2(1, 0) : ivec2(0, 1);
+        int n = dsN;
+        float inv = float(n) - dsRaio;
+        float peso = float(2 * n + 1) - 2.0 * inv;
+        float inteira = 0.0;
+        for (int k = -n; k <= n; k++) inteira += anterior(c + eixo * k);
+        float pontas = anterior(c - eixo * n) + anterior(c + eixo * n);
+        fragColor = guardar((inteira - pontas * inv) / peso);
+        return;
+    }
+
+    ivec2 c = ivec2(gl_FragCoord.xy);
+    float a = dsN == 0 ? alfaDaCamada(c - deslocamento()) : abrir(dsB, c);
+    float sa = clamp(a * dsOpacidade, 0.0, 1.0);
+    vec3 cor = shadowColor.rgb;   // float, como o PF ColorParamSuite dá ao plugin
+    vec4 saida;
+    if (shadowOnly) {
+        saida = vec4(cor, sa);
+    } else {
+        // NormalComposite do kernel: a camada (reta) por cima da sombra
+        vec4 l = floor(texelFetch(inputImg, c, 0) * 255.0 + 0.5) / 255.0;
+        float da = sa * (1.0 - l.a);
+        float al = da + l.a;
+        saida = al > 0.0 ? vec4((l.rgb * l.a + cor * da) / al, al) : vec4(0.0);
+        // onde a camada é transparente o AE dá (c·a)·(1/a) = c: a própria cor (a divisão daqui erra o último bit
+        // e, com 0,9 · 255 = 229,5, o empate caía para o outro lado)
+        if (l.a == 0.0 && al > 0.0) saida.rgb = cor;
+    }
+    // 8 bits como o AE: v·255 arredondado em float, + 0,5, para baixo. O `um` impede o compilador de fundir o
+    // produto e a soma num fma (que não arredonda o produto: 0,9 · 255 dava 229,49999 e não 229,5). E não deixar a
+    // conversão para a GPU: a da AMD arredonda o x,5 para baixo.
+    float um = float(min(acIterationCount, 1));
+    fragColor = floor((clamp(saida, 0.0, 1.0) * 255.0) * um + 0.5) / 255.0;
+}
+    ]]></shader>
+</effect>

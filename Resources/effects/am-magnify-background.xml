@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AMPLIAR O FUNDO — o Magnify Background do Alight Motion, conta por conta (0.543.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "pode fazer o efeito ampliar fundo 100% igual o do alight motion?", o oitavo
+  da série "100% iguais ao AM". Mesmos parâmetros e mesmos padrões do `com.alightcreative.effects.magnifybg`.
+  A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/magnify-background.xml` do APK descompactado) e
+  das matrizes que o motor dele monta (`ssl/BI.Sr`, `ssl/W.render`, `Transform.matrix`), e escrita de novo
+  aqui; o arquivo do AM não entra no repositório. A conferência é `tools/amampliar`: o efeito do AM rodado na
+  GPU do PC ao lado deste.
+
+  UM ID MUDA: o seletor de amostragem do AM se chama `sample`, palavra reservada no GLSL ES 3.00 (o
+  glslang recusa `uniform int sample`). Aqui ele é `sampling`; o importador do projeto do AM (que ainda não
+  existe, ver `docs/ROADMAP-IMPORTAR-PROJETO-AM.md`) precisa trocar o nome.
+  `scale` e `scaleMask` são os do AM.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A camada vira uma LUPA: some a cor dela, e no formato dela aparece o fundo (o que está montado atrás,
+    a textura `comp` do AM) ampliado Escala vezes. Escala 1 = o próprio fundo (a camada fica invisível
+    sobre ele); abaixo de 1, o fundo encolhe, e o que passa da borda da tela repete a última linha (a
+    textura dele é CLAMP_TO_EDGE, como a do Nova).
+  - O centro da ampliação é o MEIO DO CONTEÚDO da camada na tela: o AM leva o pixel para a coordenada da
+    camada (`acLayerNorm`, 0..1 sobre a forma, a caixa do texto, a mídia), aproxima do 0,5 dividindo por
+    Escala e devolve à tela (`acLayerToScreen`). Como a transformação é afim, isso é o mesmo que aproximar
+    o pixel do meio do conteúdo NA TELA — girar ou esticar a camada não gira nem estica o que ela amplia
+    (a correção de aspecto do AM se anula na conta). Aqui: o meio do buffer da camada (o conteúdo é desenhado
+    centrado nele) levado à tela, `acCamadaNaTela(0,5)`; no grupo solto e no modelo 3D, a origem deles.
+  - Amostragem Linear (padrão): o fundo filtrado entre os pixels. Mais próximo: o ponto vai para o MEIO do
+    pixel da composição (`floor(p × acScreenSize) + 0,5`) — a lupa vira o "inspetor de pixel" dos presets
+    dele (Escala 20, blocos de 20 px).
+  - Camada ampliada desligada (padrão): o formato é o da camada no lugar dela. Ligada: o formato também é
+    lido no ponto ampliado — a camada cresce junto com o fundo, em volta do mesmo meio.
+  - A saída é o fundo × o alfa da camada, em cor PRÉ-MULTIPLICADA (a textura do AM é pré-multiplicada e o
+    filtro linear mistura assim): o filtro aqui é feito à mão, nos 4 pixels, depois de pré-multiplicar o
+    fundo reto do Nova — onde o fundo é meio transparente, misturar a cor reta daria franja.
+  - Com Camada ampliada, o AM lê a camada JÁ NA TELA (rasterizada no pixel da tela) e a filtra de novo no
+    ponto ampliado. Aqui a camada mora no buffer dela: cada um dos 4 pixels da tela é levado ao buffer
+    pela volta do `acTela` e lido como o compositor o pintaria, e os 4 são misturados como a GPU do AM.
+
+  Prévia reduzida (`screen-scale="safe"`): o `textureSize`/`texelFetch` só refazem o filtro da GPU na
+  textura do fundo como ela vier — a mesma conta que o AM faz na prévia dele, na resolução dela; e a grade
+  do "Mais próximo" é a da composição (`acTamanhoDaTela`), não a do buffer.
+
+  NA TELA (`stage="screen"`, `EffectManifest.naTela`): o AM roda o efeito DEPOIS da transformação, pixel a
+  pixel na tela. Rodado no buffer da camada e só depois girado e escalado, o fundo saía amostrado duas vezes
+  (até ~60 níveis num detalhe de foto), a camada escalada esticava o resultado (os presets do AM usam
+  círculos com escala 2,5) e a lupa que cresce com Camada ampliada era cortada na borda do buffer. Então a
+  cadeia é cortada aqui: os efeitos de antes rodam na camada; ela vai para a tela e este (e os de depois)
+  rodam lá, com `acTela` = a identidade e `acCamadaParaTela` = a camada → a tela.
+
+  O QUE AINDA NÃO É IGUAL (ver `tools/amampliar/LEIAME.md`): dentro de grupo (o filho) o corte não existe — o
+  efeito roda no buffer do filho, com o fundo do grupo sem a transformação do filho (o limite do Copiar fundo).
+  No grupo solto, o meio é a origem do grupo; no AM, o meio da caixa dos filhos.
+-->
+<effect
+    id="nova.effect.am-magnify-background"
+    name="Ampliar o fundo"
+    name-en="Magnify Background"
+    desc="A camada vira uma lupa: some e amplia o que está atrás dela (o Magnify Background do Alight Motion)."
+    desc-en="Makes the layer transparent and magnifies the area behind it, as if the layer were a magnifying glass (Alight Motion's Magnify Background)."
+    category="distort"
+    tags="ampliar,fundo,lupa,zoom,lente,magnify,background,pixel,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+
+        <spinner id="scale" label="Escala" default="1.0" min="0.01" max="50.0" step="0.01" ticks="1.0" />
+        <switch id="scaleMask" label="Camada ampliada" default="false" />
+        <selector id="sampling" label="Amostragem" default="1" options="Mais próximo|Linear" />
+    </params>
+
+    <!-- Na vitrine, com a Escala do padrão (1) a lupa some sobre o próprio fundo: a amostra mostra 2×. -->
+    <preview>
+        <set param="scale" value="2.0" />
+    </preview>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre o fundo PRÉ-multiplicado (a textura do AM é assim): os 4 pixels em
+// volta, presos à borda como o CLAMP_TO_EDGE.
+vec4 fundoNoPonto(vec2 uv) {
+    ivec2 T = textureSize(comp, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(comp, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(comp, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(comp, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(comp, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta do `acTela`: UV da tela → UV do buffer da camada (a homografia inversa).
+vec2 daTela(vec2 t) {
+    vec3 c = inverse(acParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// O alfa da camada num pixel da TELA, como o compositor o pinta: o buffer lido no meio do pixel; fora do
+// buffer, nada. O pixel fora da tela vira o da borda (o CLAMP_TO_EDGE da textura do AM).
+float alfaDoPixel(ivec2 px, ivec2 T) {
+    px = clamp(px, ivec2(0), T - 1);
+    vec2 uv = daTela((vec2(px) + 0.5) / vec2(T));
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+    return texture(inputImg, uv).a;
+}
+
+// A camada já na tela, filtrada de novo no ponto ampliado: a leitura do `inputImg` do AM com Camada ampliada.
+float alfaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(comp, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    return mix(
+        mix(alfaDoPixel(a, T), alfaDoPixel(a + ivec2(1, 0), T), f.x),
+        mix(alfaDoPixel(a + ivec2(0, 1), T), alfaDoPixel(a + ivec2(1, 1), T), f.x),
+        f.y
+    );
+}
+
+void main() {
+    // Tudo no espaço da tela do `acTela` (o mesmo do fundo): o centro e o ponto andam juntos, em qualquer
+    // orientação. O meio do conteúdo é o meio do buffer da camada, levado à tela pela `acCamadaParaTela` — que
+    // vale também quando a cadeia já roda na tela (`stage="screen"`: aí o `acTela` é a identidade).
+    vec2 tela = acTela(acScreenNorm);
+    vec2 centro = acCamadaNaTela(vec2(0.5));
+
+    // O ponto da camada aproximado do meio dela ÷ Escala, de volta na tela (a conta do AM, sem a ida e volta
+    // pela coordenada da camada, que é afim).
+    vec2 ponto = centro + (tela - centro) / scale;
+    if (sampling == 0) {
+        // Mais próximo: o meio do pixel da composição.
+        ponto *= acTamanhoDaTela;
+        ponto = floor(ponto) + 0.5;
+        ponto /= acTamanhoDaTela;
+    }
+
+    vec4 fundo = fundoNoPonto(ponto);
+    float alfa = scaleMask ? alfaNoPonto(ponto) : texture(inputImg, acScreenNorm).a;
+
+    vec4 saida = fundo * alfa;   // pré-multiplicada, como o AM
+    fragColor = saida.a > 0.0 ? vec4(saida.rgb / saida.a, saida.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

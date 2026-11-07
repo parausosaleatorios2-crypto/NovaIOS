@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Blur_spin_blur
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blur-spin-blur"
+    name="Effect Blur Spin Blur (NV)"
+    name-en="Effect Blur Spin Blur (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Blur_spin_blur', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Blur_spin_blur', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <point id="_center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="_angle" label="Angle" default="40" min="0" max="360" step="1" />
+        <slider id="_samples" type="integer" label="Samples" default="100" min="1" max="128" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+int u_xlati3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+float u_xlat7;
+vec2 u_xlat10;
+bool u_xlatb10;
+float u_xlat21;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + (-_center.xy);
+    u_xlat21 = _resolution.y / _resolution.x;
+    u_xlat0.z = u_xlat21 * u_xlat0.y;
+    u_xlat7 = _angle * 0.0174532998;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat21 = float(int(_samples));
+    u_xlat2 = u_xlat1;
+    for(int u_xlati_loop_1 = 1 ; u_xlati_loop_1<int(_samples) ; u_xlati_loop_1++)
+    {
+        u_xlat10.x = float(u_xlati_loop_1);
+        u_xlat10.x = u_xlat7 * u_xlat10.x;
+        u_xlat10.x = u_xlat10.x / u_xlat21;
+        u_xlat10.x = (-_angle) * 0.00872664992 + u_xlat10.x;
+        u_xlat4.x = sin(u_xlat10.x);
+        u_xlat5.x = cos(u_xlat10.x);
+        u_xlat6.x = (-u_xlat4.x);
+        u_xlat6.y = u_xlat5.x;
+        u_xlat5.x = dot(u_xlat6.yx, u_xlat0.xz);
+        u_xlat6.z = u_xlat4.x;
+        u_xlat10.x = dot(u_xlat6.zy, u_xlat0.xz);
+        u_xlat10.x = u_xlat10.x * _resolution.x;
+        u_xlat5.y = u_xlat10.x / _resolution.y;
+        u_xlat10.xy = u_xlat5.xy + _center.xy;
+        u_xlat4 = texture(inputImg, u_xlat10.xy);
+        u_xlat2 = u_xlat2 + u_xlat4;
+    }
+    u_xlat0 = u_xlat2 / vec4(u_xlat21);
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

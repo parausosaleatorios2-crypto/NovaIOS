@@ -1,0 +1,218 @@
+{
+    "id": "maquina-de-escrever",
+    "nome": "Máquina de escrever",
+    "nomeEn": "Typewriter",
+    "descricao": "Texto que aparece letra por letra, como digitado; para frases, legendas e diálogos.",
+    "descricaoEn": "Text typed letter by letter; for quotes, captions and dialogue.",
+    "categoria": "legenda",
+    "tags": [
+        "texto",
+        "digitando",
+        "maquina",
+        "escrever",
+        "legenda",
+        "frase",
+        "typewriter"
+    ],
+    "estilos": [
+        "minimalista",
+        "documentario"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 3500000,
+    "duracaoMinUs": 2000000,
+    "duracaoMaxUs": 12000000,
+    "entradaUs": 1500000,
+    "saidaUs": 300000,
+    "campos": [
+        {
+            "id": "texto",
+            "tipo": "texto",
+            "rotulo": "Texto",
+            "rotuloEn": "Text",
+            "padrao": "escrevendo isto\nletra por letra",
+            "alvos": [
+                {
+                    "camada": "texto",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "cor",
+            "tipo": "cor",
+            "rotulo": "Cor do texto",
+            "rotuloEn": "Text color",
+            "padrao": "#FFFFFFFF",
+            "alvos": [
+                {
+                    "camada": "texto",
+                    "propriedade": "texto:cor"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "texto",
+            "name": "escrevendo isto\nletra por letra",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "escrevendo isto\nletra por letra",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        80.0
+                    ]
+                },
+                "fontFamily": "galeria:Inter-Bold.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                },
+                "textAnimation": {
+                    "animator": "TYPEWRITER",
+                    "unit": "CHARACTER",
+                    "durationUs": 60000,
+                    "staggerUs": 45000,
+                    "delayUs": 0,
+                    "easing": {
+                        "kind": "bezier",
+                        "x2": 0.58,
+                        "y2": 1.0,
+                        "label": "Ease Out"
+                    },
+                    "reversed": false
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 3200000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "7ef08d27-1672-4f86-9073-9014a7d042db"
+                        },
+                        {
+                            "timeUs": 3500000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "0907bd92-1277-423c-a8f9-97142d22e8bc"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [],
+            "startUs": 0,
+            "endUs": 3500000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

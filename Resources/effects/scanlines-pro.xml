@@ -1,0 +1,1736 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SCANLINES PRO — um pequeno "display renderer", e não um filtro de listras
+  ============================================================================
+
+  Feito a partir da especificação "Scanlines Pro — Especificação Ultra
+  Completa" que o snow mandou (22/09). A referência é o COMPORTAMENTO que os
+  plugins documentam (S_ScanLines, BCC+ Scanline, Universe Analog, shaders CRT
+  abertos); nenhum código deles foi lido ou copiado. As contas daqui são as
+  técnicas públicas que a própria spec descreve: padrão procedural, antisserrilhado
+  por `fwidth`, perfil de feixe, máscara de fósforo com compensação de brilho,
+  brilho em várias escalas, vidro curvo.
+
+  O teste da spec é uma pergunta só: a imagem "tem listras" ou "está numa tela"?
+  O que faz a diferença, e está tudo aqui:
+
+   - **a linha é luz, não tinta.** No modelo "Beam CRT" a linha é o perfil de
+     um feixe, e nas altas o feixe engorda (Beam Expansion): o preto entre as
+     linhas some onde a imagem é clara, como num tubo;
+   - **cada canal tem a sua fase** (Shift R/G/B, Roll): o desalinhamento que
+     dá o "TV desregulada", quase invisível no padrão;
+   - **ruído da imagem e ruído da linha são coisas diferentes** (a separação
+     que o BCC+ faz): a imagem pode estar limpa e a linha falhando, ou o
+     contrário;
+   - **o brilho vaza** em três escalas (pequena, média, grande), feito em
+     resolução reduzida — é o que dá luz em vez de listra;
+   - **o brilho médio não cai.** Linha escura e máscara de fósforo apagam
+     luz; o "Keep Brightness" e a compensação da máscara devolvem essa luz,
+     senão todo preset sai "lavado e escuro" (itens 28 e 73 da spec).
+
+  ============================================================================
+   OS PASSES
+  ============================================================================
+
+  ```
+    passe 0 → tela    (1/1)   vidro curvo, sinal, fonte, linhas, RGB, fósforo, ruído
+    passe 1 → brilhoA (1/4)   corte de brilho + redução
+    passe 2 → brilhoB (1/8)   desfoque
+    passe 3 → brilhoC (1/16)  desfoque
+    passe 4 → saída   (1/1)   brilho, vinheta, moldura, tinta, máscara, mistura
+  ```
+
+  O padrão das linhas fica SEMPRE em resolução cheia (item 58: "scanlines de
+  baixa resolução ficam imediatamente feias"); só o brilho desce.
+
+  ============================================================================
+   ALFA
+  ============================================================================
+
+  O motor trabalha com alfa DIRETO. Por dentro, este efeito trabalha
+  pré-multiplicado (é o que impede o desfoque da fonte, o sangramento de cor e o
+  brilho de puxarem a cor-lixo dos pixels transparentes) e devolve direto no fim.
+  Onde a camada é transparente não nasce linha (item 70); o brilho só vaza para
+  fora da forma se "Glow Outside Shape" estiver ligado.
+
+  ============================================================================
+   A SEGUNDA VERSÃO (0.170.0) — o "V3 / Ultra CRT" da spec
+  ============================================================================
+
+   - **persistência do fósforo e suavização temporal** (itens 37, 38): o que
+     era claro no quadro anterior demora a apagar. Usa o anel de quadros, e só
+     quando `Phosphor Persistence` sai do zero (`activeWhen`, novo no motor) —
+     sem isso o anel ocuparia memória em toda camada com o efeito;
+   - **feixe gaussiano com mancha** (Beam Model "Gaussian Spot"): a largura
+     E a maciez do feixe crescem com o brilho, e o ponto também se espalha na
+     horizontal, como o do tubo;
+   - **convergência**: os três feixes erram mais nas bordas que no meio;
+   - **filtragem por subpixel**: com máscara de tiras, cada tira de fósforo
+     acende inteira, com a imagem redesenhada na resolução do tubo — o tubo
+     visto de perto, melhor com Mask Size grande (desligada em todo preset:
+     com a máscara fina ela come detalhe);
+   - **máscara própria** (Phosphor Mask "Custom Layer"): qualquer imagem da
+     composição vira o padrão de fósforo;
+   - **geometria da tela** (grupo Screen): proporção do tubo (4:3, 16:9…),
+     overscan, inclinação e curvatura 3D de verdade — um raio saindo do olho
+     bate numa esfera ou num cilindro inclinado, em vez da conta de barril;
+   - **o vidro** (grupo Glass): reflexo de uma camada e o lustro do vidro.
+
+  Continua fora: HDR (os buffers de efeito são de 8 bits).
+
+  ============================================================================
+   ENXUGADO (0.185.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 102 controles no painel. Agora são 15: Pattern, Intensity, Line Count,
+  Thickness, Softness, Angle, Speed, Glow, Noise, RGB Shift, Vignette e Mix
+  soltos, e Phosphor Mask, Curvature e Flicker no grupo CRT. O resto continua
+  aqui, com `hidden="true"`: as predefinições mexem neles (é o que faz a
+  "Arcade Cabinet" ter moldura e reflexo no vidro), e um projeto salvo que os
+  usava continua igual — só não aparecem mais no painel. Curvature X e Y
+  viraram um controle só (Curvature): no modelo cilíndrico só o X valia, e nos
+  outros as predefinições sempre usavam os dois iguais.
+
+-->
+<effect
+    id="nova.effect.scanlinespro"
+    name="Scanlines Pro"
+    name-en="Scanlines Pro Display"
+    desc="Linhas de tela de verdade: feixe, fase por canal, ruído de linha, fósforo, brilho, vidro curvo e sinal."
+    desc-en="Premium scanlines: beam profile, per-channel phase, line noise, phosphor mask, multi-scale glow, CRT glass and signal defects."
+    category="stylize"
+    tags="scanlines,scanline,linhas,crt,tv,monitor,retro,vhs,analog,holograma,hologram,cyberpunk,glitch,fosforo,phosphor,interlace,anime,mmv,amv">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <texture id="tela"    src="buffer" scale="1.0" />
+        <texture id="brilhoA" src="buffer" scale="0.25" />
+        <texture id="brilhoB" src="buffer" scale="0.125" />
+        <texture id="brilhoC" src="buffer" scale="0.0625" />
+
+        <!--
+          O quadro anterior e o de antes dele, para a persistência do fósforo.
+          `activeWhen`: o motor só grava o anel com a persistência acima de zero.
+        -->
+        <texture id="anterior1" src="history" offset="1" activeWhen="persistence" />
+        <texture id="anterior2" src="history" offset="2" activeWhen="persistence" />
+
+        <!-- ======================= SIMPLE (sempre à vista) ======================= -->
+        <selector id="patternMode" label="Pattern" default="0"
+                  options="Lines|Cross|Squares|TV CRT|PC CRT" />
+        <slider id="intensity" label="Intensity"
+                default="0.55" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <!--
+          "Line Count" é a quantidade de linhas na ALTURA da camada (item 7), e não
+          uma frequência que depende do aparelho: 300 são 300 linhas no vídeo
+          vertical, no deitado e no 4K.
+        -->
+        <slider id="lineCount" label="Line Count" type="integer"
+                default="300.0" min="20.0" max="1600.0" step="1.0" ticks="240.0,300.0,480.0,720.0" />
+        <slider id="thickness" label="Thickness"
+                default="0.55" min="0.05" max="0.95" step="0.01" />
+        <slider id="spacing" hidden="true" label="Spacing"
+                default="0.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="softness" label="Softness"
+                default="0.4" min="0.0" max="1.0" step="0.01" />
+        <slider id="angle" label="Angle" type="angle"
+                default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0,90.0,-90.0,45.0,-45.0" />
+        <!-- Em linhas por segundo. Negativo sobe. -->
+        <slider id="speed" label="Speed"
+                default="0.0" min="-60.0" max="60.0" step="0.1" snap="0.0" ticks="-10.0,0.0,10.0" />
+        <slider id="glow" label="Glow"
+                default="0.35" min="0.0" max="3.0" step="0.01" snap="0.0,1.0" />
+        <slider id="noiseAmt" label="Noise"
+                default="0.05" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="rgbShift" label="RGB Shift"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="vignette" label="Vignette"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="mixAmt" label="Mix"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+        <!-- ============================== PATTERN ============================== -->
+        <selector id="beamModel" hidden="true" group="Pattern" label="Beam Model" default="2"
+                  options="Hard Digital|Soft|Beam CRT|Gaussian Spot" />
+        <selector id="lineStyle" hidden="true" group="Pattern" label="Line Style" default="2"
+                  options="Dark Gaps|Bright Lines|Hybrid" />
+        <slider id="phase" hidden="true" group="Pattern" label="Phase"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="beamSharpness" hidden="true" group="Pattern" label="Beam Sharpness"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <!-- Nas altas o feixe engorda e o vão fecha — o "orgânico" do item 14. -->
+        <slider id="beamExpansion" hidden="true" group="Pattern" label="Beam Expansion"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <!-- Só no "Gaussian Spot": o quanto o ponto claro se espalha na horizontal. -->
+        <slider id="beamSpot" hidden="true" group="Pattern" label="Beam Spot Width"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="gapBrightness" hidden="true" group="Pattern" label="Gap Brightness"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="lineColor" hidden="true" group="Pattern" label="Line Color" default="#FFFFFFFF" />
+        <slider id="lineBrightness" hidden="true" group="Pattern" label="Line Brightness"
+                default="0.35" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="keepBrightness" hidden="true" group="Pattern" label="Keep Brightness"
+                default="0.6" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+        <!-- ================================ RGB ================================ -->
+        <!-- Em frações de linha: 0,33 põe o canal um terço de linha para baixo. -->
+        <slider id="shiftR" hidden="true" group="RGB" label="Shift R"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="shiftG" hidden="true" group="RGB" label="Shift G"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="shiftB" hidden="true" group="RGB" label="Shift B"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="rollAmount" hidden="true" group="RGB" label="Roll Amount"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="rollSpeed" hidden="true" group="RGB" label="Roll Speed"
+                default="1.0" min="-10.0" max="10.0" step="0.01" snap="0.0,1.0" />
+        <!-- A IMAGEM desalinhada, em pixels — diferente de mexer na fase das linhas. -->
+        <slider id="imageOffset" hidden="true" group="RGB" label="Image Offset"
+                default="0.0" min="0.0" max="20.0" step="0.1" snap="0.0" />
+
+        <!-- =============================== NOISE =============================== -->
+        <slider id="lineNoise" hidden="true" group="Noise" label="Line Noise"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="noiseScale" hidden="true" group="Noise" label="Noise Scale"
+                default="1.0" min="0.1" max="8.0" step="0.01" snap="1.0" />
+        <slider id="noiseSpeed" hidden="true" group="Noise" label="Noise Speed"
+                default="1.0" min="0.0" max="8.0" step="0.01" snap="0.0,1.0" />
+        <selector id="noiseType" hidden="true" group="Noise" label="Noise Type" default="0"
+                  options="Smooth|Block" />
+        <switch id="noiseMono" hidden="true" group="Noise" label="Monochrome" default="true" />
+        <slider id="blockSize" hidden="true" group="Noise" label="Block Size"
+                default="8.0" min="1.0" max="64.0" step="1.0" type="integer" />
+
+        <!-- ============================== TEMPORAL ============================= -->
+        <slider id="flicker" group="CRT" label="Flicker"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="bandAmount" hidden="true" group="Temporal" label="Rolling Band"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="bandWidth" hidden="true" group="Temporal" label="Band Width"
+                default="0.15" min="0.01" max="1.0" step="0.01" />
+        <slider id="bandSpeed" hidden="true" group="Temporal" label="Band Speed"
+                default="0.3" min="-3.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="bandSoftness" hidden="true" group="Temporal" label="Band Softness"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <selector id="interlace" hidden="true" group="Temporal" label="Interlace" default="0"
+                  options="Off|30 fields/s|60 fields/s|Custom" />
+        <slider id="interlaceRate" hidden="true" group="Temporal" label="Custom Rate"
+                default="24.0" min="1.0" max="120.0" step="1.0" type="integer" />
+        <slider id="interlaceAmount" hidden="true" group="Temporal" label="Interlace Strength"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="persistence" hidden="true" group="Temporal" label="Phosphor Persistence"
+                default="0.0" min="0.0" max="0.95" step="0.01" snap="0.0" />
+        <selector id="persistenceMode" hidden="true" group="Temporal" label="Persistence Mode" default="0"
+                  options="Phosphor Trail|Temporal Smooth" />
+
+        <!-- ============================= DISTORTION ============================ -->
+        <slider id="waveAmount" hidden="true" group="Distortion" label="Wave"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="waveScale" hidden="true" group="Distortion" label="Wave Scale"
+                default="3.0" min="0.2" max="40.0" step="0.1" />
+        <slider id="waveSpeed" hidden="true" group="Distortion" label="Wave Speed"
+                default="1.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="lineDistort" hidden="true" group="Distortion" label="Line Distortion"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="jitter" hidden="true" group="Distortion" label="Jitter"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="tearAmount" hidden="true" group="Distortion" label="Tear"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="tearFrequency" hidden="true" group="Distortion" label="Tear Frequency"
+                default="6.0" min="1.0" max="40.0" step="1.0" type="integer" />
+        <slider id="tearSpeed" hidden="true" group="Distortion" label="Tear Speed"
+                default="2.0" min="0.0" max="20.0" step="0.1" />
+
+        <!-- ================================ CRT ================================ -->
+        <selector id="maskType" group="CRT" label="Phosphor Mask" default="0"
+                  options="Off|RGB Stripe|Triad|Aperture Grille|Dot|Shadow Mask|Custom Layer" />
+        <slider id="maskStrength" hidden="true" group="CRT" label="Mask Strength"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <!-- O lado de UM fósforo, em pixels: o trio tem três deles. -->
+        <slider id="maskSize" hidden="true" group="CRT" label="Mask Size"
+                default="3.0" min="1.0" max="12.0" step="0.5" ticks="2.0,3.0,6.0" />
+        <!--
+          A máscara própria: a camada escolhida é lida como ladrilho de
+          "Custom Mask Size" pixels. Uma imagem pequena de padrão (grade,
+          favo, pontos) funciona melhor — ela é esticada no quadrado.
+        -->
+        <texture id="mascaraPropria" hidden="true" src="layer" group="CRT" label="Custom Mask Layer" empty="transparent" />
+        <slider id="customMaskSize" hidden="true" group="CRT" label="Custom Mask Size"
+                default="6.0" min="2.0" max="64.0" step="1.0" type="integer" />
+        <slider id="convergence" hidden="true" group="CRT" label="Convergence"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <switch id="subpixelFilter" hidden="true" group="CRT" label="Subpixel Filtering" default="false" />
+        <slider id="curvatureX" group="CRT" label="Curvature"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="colorBleed" hidden="true" group="CRT" label="Color Bleed"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="sourceBlur" hidden="true" group="CRT" label="Source Blur"
+                default="0.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="frameAmount" hidden="true" group="CRT" label="Screen Frame"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="frameRoundness" hidden="true" group="CRT" label="Frame Roundness"
+                default="0.35" min="0.0" max="1.0" step="0.01" />
+
+        <!-- =============================== SCREEN ============================== -->
+        <selector id="curvatureModel" hidden="true" group="Screen" label="Curvature Model" default="0"
+                  options="Barrel|Spherical 3D|Cylindrical 3D" />
+        <selector id="screenAspect" hidden="true" group="Screen" label="Screen Aspect" default="0"
+                  options="Layer|4:3|16:9|1:1|21:9" />
+        <slider id="overscan" hidden="true" group="Screen" label="Overscan"
+                default="0.0" min="-0.2" max="0.3" step="0.005" snap="0.0" />
+        <slider id="tiltX" hidden="true" group="Screen" label="Tilt X" type="angle"
+                default="0.0" min="-35.0" max="35.0" step="0.5" snap="0.0" />
+        <slider id="tiltY" hidden="true" group="Screen" label="Tilt Y" type="angle"
+                default="0.0" min="-35.0" max="35.0" step="0.5" snap="0.0" />
+
+        <!-- ================================ GLASS ============================== -->
+        <texture id="reflexo" hidden="true" src="layer" group="Glass" label="Reflection Layer" empty="transparent" />
+        <slider id="reflectionAmount" hidden="true" group="Glass" label="Reflection"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="reflectionScale" hidden="true" group="Glass" label="Reflection Distance"
+                default="1.2" min="0.4" max="3.0" step="0.01" snap="1.0" />
+        <switch id="reflectionMirror" hidden="true" group="Glass" label="Mirror Reflection" default="true" />
+        <slider id="glassSheen" hidden="true" group="Glass" label="Glass Sheen"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ================================ GLOW =============================== -->
+        <selector id="glowMode" hidden="true" group="Glow" label="Glow Mode" default="1"
+                  options="Glow Lines|Glow All" />
+        <slider id="glowRadius" hidden="true" group="Glow" label="Radius"
+                default="1.0" min="0.25" max="3.0" step="0.01" snap="1.0" />
+        <slider id="glowThreshold" hidden="true" group="Glow" label="Threshold"
+                default="0.55" min="0.0" max="1.0" step="0.01" />
+        <!-- Branco = o brilho segue a cor da imagem (o padrão do item 31). -->
+        <color id="glowColor" hidden="true" group="Glow" label="Color" default="#FFFFFFFF" />
+        <switch id="glowSpill" hidden="true" group="Glow" label="Glow Outside Shape" default="false" />
+
+        <!-- ============================== VIGNETTE ============================= -->
+        <slider id="vignetteRoundness" hidden="true" group="Vignette" label="Roundness"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="vignetteSize" hidden="true" group="Vignette" label="Size"
+                default="0.6" min="0.0" max="1.5" step="0.01" />
+        <slider id="vignetteSoftness" hidden="true" group="Vignette" label="Softness"
+                default="0.5" min="0.01" max="1.0" step="0.01" />
+        <color id="vignetteColor" hidden="true" group="Vignette" label="Color" default="#FF000000" />
+
+        <!-- ================================ COLOR ============================== -->
+        <slider id="brightness" hidden="true" group="Color" label="Brightness"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+        <slider id="contrast" hidden="true" group="Color" label="Contrast"
+                default="1.0" min="0.0" max="2.5" step="0.01" snap="1.0" />
+        <slider id="gammaValue" hidden="true" group="Color" label="Gamma"
+                default="1.0" min="0.3" max="3.0" step="0.01" snap="1.0" />
+        <slider id="saturationAmt" hidden="true" group="Color" label="Saturation"
+                default="1.0" min="0.0" max="2.5" step="0.01" snap="1.0" />
+        <color id="tintColor" hidden="true" group="Color" label="Tint" default="#FF6FB8FF" />
+        <slider id="tintAmount" hidden="true" group="Color" label="Tint Amount"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ================================ MASK =============================== -->
+        <selector id="maskSource" hidden="true" group="Mask" label="Apply To" default="0"
+                  options="Whole Layer|Luma|Alpha|Layer|Linear Gradient|Radial Gradient" />
+        <texture id="maskLayerImg" hidden="true" src="layer" group="Mask" label="Mask Layer" />
+        <switch id="maskInvert" hidden="true" group="Mask" label="Invert" default="false" />
+        <slider id="maskFeather" hidden="true" group="Mask" label="Feather"
+                default="0.2" min="0.0" max="1.0" step="0.01" />
+        <slider id="gradientAngle" hidden="true" group="Mask" label="Gradient Angle" type="angle"
+                default="90.0" min="-180.0" max="180.0" step="1.0" snap="0.0,90.0,-90.0" />
+        <slider id="gradientPosition" hidden="true" group="Mask" label="Gradient Position"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+
+        <!-- ============================= AUDIO REACT =========================== -->
+        <texture id="somImg" src="audio" />
+        <slider id="audioAmount" hidden="true" group="Audio React" label="Audio React"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="audioTarget" hidden="true" group="Audio React" label="Drives" default="0"
+                  options="Intensity|Glow|Noise|RGB Shift|Distortion|Everything" />
+        <slider id="audioSensitivity" hidden="true" group="Audio React" label="Sensitivity"
+                default="1.0" min="0.1" max="4.0" step="0.01" snap="1.0" />
+
+        <!-- ============================== ADVANCED ============================= -->
+        <selector id="quality" hidden="true" group="Advanced" label="Quality" default="1"
+                  options="Performance|Balanced|Quality|Ultra" />
+        <selector id="view" hidden="true" group="Advanced" label="View" default="0"
+                  options="Result|Scanlines Only|Noise|RGB|Glow|Mask|Curvature|Luma" />
+    </params>
+
+    <!-- Na vitrine, as 300 linhas padrão viram cinza a 64 dp: poucas e fortes. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="intensity" value="1.0" />
+        <set param="lineCount" value="90.0" />
+        <set param="thickness" value="0.5" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="tela" />     <!-- 0: a tela: sinal, fonte, linhas, fósforo, ruído -->
+        <pass target="brilhoA" />  <!-- 1: corte de brilho, 1/4 -->
+        <pass target="brilhoB" />  <!-- 2: desfoque, 1/8 -->
+        <pass target="brilhoC" />  <!-- 3: desfoque, 1/16 -->
+        <pass />                   <!-- 4: junta tudo -->
+    </passes>
+
+    <!--
+      Os presets seguem o item 74: cada um muda dois a quatro controles que
+      definem o visual e deixa o resto sutil. E cada um CITA os controles fortes
+      (ruído, tremor, rasgo, curvatura…) mesmo quando os zera: uma predefinição só
+      escreve o que cita, e sem isso trocar de "Broken Monitor" para "Clean Scan"
+      carregaria o tremor junto.
+    -->
+    <presets>
+        <preset id="crtClean" name="📺 CRT limpo" name-en="📺 CRT Clean">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="2" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="300" />
+            <value param="thickness" value="0.5" />
+            <value param="intensity" value="0.55" />
+            <value param="glow" value="0.45" />
+            <value param="noiseAmt" value="0.04" />
+            <value param="rgbShift" value="0.05" />
+            <value param="curvatureX" value="0.12" />
+            <value param="maskType" value="0" />
+            <value param="vignette" value="0.3" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="crtPvm" name="🎥 Monitor PVM" name-en="🎥 CRT PVM">
+            <value param="patternMode" value="3" />
+            <value param="beamModel" value="2" />
+            <value param="beamSharpness" value="0.8" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="480" />
+            <value param="thickness" value="0.45" />
+            <value param="intensity" value="0.75" />
+            <value param="maskType" value="3" />
+            <value param="maskStrength" value="0.3" />
+            <value param="curvatureX" value="0.06" />
+            <value param="glow" value="0.4" />
+            <value param="noiseAmt" value="0.02" />
+            <value param="rgbShift" value="0.0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="vhsAnalog" name="📼 VHS analógico" name-en="📼 VHS Analog">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="1" />
+            <value param="lineStyle" value="0" />
+            <value param="lineCount" value="240" />
+            <value param="softness" value="0.7" />
+            <value param="intensity" value="0.35" />
+            <value param="rollAmount" value="0.35" />
+            <value param="rollSpeed" value="0.8" />
+            <value param="imageOffset" value="3.0" />
+            <value param="noiseAmt" value="0.25" />
+            <value param="noiseType" value="0" />
+            <value param="jitter" value="0.25" />
+            <value param="colorBleed" value="0.6" />
+            <value param="sourceBlur" value="0.8" />
+            <value param="waveAmount" value="0.12" />
+            <value param="lineDistort" value="0.15" />
+            <value param="tearAmount" value="0.0" />
+            <value param="vignette" value="0.4" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="glow" value="0.3" />
+            <value param="saturationAmt" value="0.85" />
+            <value param="flicker" value="0.1" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="retroGame" name="👾 Jogo retrô" name-en="👾 Retro Game">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="0" />
+            <value param="lineStyle" value="0" />
+            <value param="lineCount" value="240" />
+            <value param="thickness" value="0.6" />
+            <value param="intensity" value="0.8" />
+            <value param="maskType" value="1" />
+            <value param="maskStrength" value="0.35" />
+            <value param="contrast" value="1.15" />
+            <value param="glow" value="0.1" />
+            <value param="noiseAmt" value="0.0" />
+            <value param="rgbShift" value="0.0" />
+            <value param="curvatureX" value="0.0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="cyberpunk" name="🌃 Cyberpunk" name-en="🌃 Cyberpunk">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="2" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="420" />
+            <value param="thickness" value="0.35" />
+            <value param="intensity" value="0.6" />
+            <value param="tintColor" value="#7A5CFF" />
+            <value param="tintAmount" value="0.35" />
+            <value param="glow" value="0.9" />
+            <value param="glowThreshold" value="0.55" />
+            <value param="rgbShift" value="0.25" />
+            <value param="imageOffset" value="1.5" />
+            <value param="noiseAmt" value="0.06" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="hologram" name="🛸 Holograma" name-en="🛸 Hologram">
+            <value param="patternMode" value="1" />
+            <value param="beamModel" value="1" />
+            <value param="lineStyle" value="1" />
+            <value param="lineCount" value="700" />
+            <value param="thickness" value="0.3" />
+            <value param="intensity" value="0.35" />
+            <value param="lineColor" value="#8FF4FF" />
+            <value param="lineBrightness" value="0.6" />
+            <value param="glow" value="0.9" />
+            <value param="flicker" value="0.35" />
+            <value param="rgbShift" value="0.35" />
+            <value param="imageOffset" value="2.0" />
+            <value param="bandAmount" value="0.5" />
+            <value param="bandSpeed" value="0.6" />
+            <value param="tintColor" value="#5CE1FF" />
+            <value param="tintAmount" value="0.45" />
+            <value param="glowSpill" value="true" />
+            <value param="noiseAmt" value="0.05" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="jitter" value="0.05" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.15" />
+            <value param="angle" value="0" />
+            <value param="speed" value="-12" />
+            <value param="persistence" value="0.45" />
+            <value param="persistenceMode" value="0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="animeScan" name="🌸 Anime scan" name-en="🌸 Anime Scan">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="1" />
+            <value param="lineStyle" value="0" />
+            <value param="lineCount" value="420" />
+            <value param="thickness" value="0.6" />
+            <value param="intensity" value="0.22" />
+            <value param="glow" value="0.6" />
+            <value param="glowThreshold" value="0.6" />
+            <value param="noiseAmt" value="0.02" />
+            <value param="rgbShift" value="0.05" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="vignette" value="0.1" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="brokenMonitor" name="💥 Monitor quebrado" name-en="💥 Broken Monitor">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="2" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="300" />
+            <value param="intensity" value="0.6" />
+            <value param="rollAmount" value="0.7" />
+            <value param="rollSpeed" value="2.5" />
+            <value param="imageOffset" value="5.0" />
+            <value param="jitter" value="0.55" />
+            <value param="tearAmount" value="0.55" />
+            <value param="tearSpeed" value="3.0" />
+            <value param="noiseAmt" value="0.2" />
+            <value param="noiseType" value="1" />
+            <value param="lineNoise" value="0.45" />
+            <value param="waveAmount" value="0.2" />
+            <value param="glow" value="0.7" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="flicker" value="0.3" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="cleanScan" name="✨ Linhas discretas" name-en="✨ Clean Scan">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="1" />
+            <value param="lineStyle" value="0" />
+            <value param="lineCount" value="540" />
+            <value param="thickness" value="0.65" />
+            <value param="intensity" value="0.25" />
+            <value param="noiseAmt" value="0.0" />
+            <value param="rgbShift" value="0.0" />
+            <value param="glow" value="0.12" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="vignette" value="0.0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="neonMonitor" name="💡 Monitor neon" name-en="💡 Neon Monitor">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="2" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="480" />
+            <value param="thickness" value="0.4" />
+            <value param="intensity" value="0.55" />
+            <value param="brightness" value="1.1" />
+            <value param="glow" value="1.2" />
+            <value param="glowThreshold" value="0.5" />
+            <value param="rgbShift" value="0.1" />
+            <value param="tintColor" value="#3FA9FF" />
+            <value param="tintAmount" value="0.3" />
+            <value param="noiseAmt" value="0.03" />
+            <value param="curvatureX" value="0.0" />
+            <value param="maskType" value="0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+            <value param="persistence" value="0.0" />
+            <value param="convergence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="curvatureModel" value="0" />
+            <value param="screenAspect" value="0" />
+            <value param="overscan" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="frameAmount" value="0.0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="glassSheen" value="0.0" />
+        </preset>
+        <preset id="arcadeCabinet" name="🕹️ Fliperama" name-en="🕹️ Arcade Cabinet">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="3" />
+            <value param="beamSpot" value="0.45" />
+            <value param="beamExpansion" value="0.5" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="240" />
+            <value param="thickness" value="0.6" />
+            <value param="intensity" value="0.8" />
+            <value param="maskType" value="2" />
+            <value param="maskStrength" value="0.35" />
+            <value param="convergence" value="0.3" />
+            <value param="curvatureModel" value="1" />
+            <value param="curvatureX" value="0.4" />
+            <value param="screenAspect" value="1" />
+            <value param="overscan" value="0.03" />
+            <value param="frameAmount" value="0.6" />
+            <value param="frameRoundness" value="0.5" />
+            <value param="glassSheen" value="0.35" />
+            <value param="glow" value="0.6" />
+            <value param="vignette" value="0.35" />
+            <value param="noiseAmt" value="0.03" />
+            <value param="rgbShift" value="0.0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="persistence" value="0.0" />
+            <value param="subpixelFilter" value="false" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+        </preset>
+        <preset id="trinitron" name="📺 Trinitron" name-en="📺 Trinitron">
+            <value param="patternMode" value="0" />
+            <value param="beamModel" value="3" />
+            <value param="beamSpot" value="0.3" />
+            <value param="lineStyle" value="2" />
+            <value param="lineCount" value="480" />
+            <value param="thickness" value="0.5" />
+            <value param="intensity" value="0.7" />
+            <value param="maskType" value="3" />
+            <value param="maskStrength" value="0.4" />
+            <value param="subpixelFilter" value="false" />
+            <value param="convergence" value="0.1" />
+            <value param="curvatureModel" value="2" />
+            <value param="curvatureX" value="0.3" />
+            <value param="screenAspect" value="1" />
+            <value param="overscan" value="0.0" />
+            <value param="frameAmount" value="0.4" />
+            <value param="frameRoundness" value="0.3" />
+            <value param="glassSheen" value="0.2" />
+            <value param="glow" value="0.45" />
+            <value param="vignette" value="0.2" />
+            <value param="noiseAmt" value="0.02" />
+            <value param="rgbShift" value="0.0" />
+            <value param="jitter" value="0.0" />
+            <value param="tearAmount" value="0.0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="rollAmount" value="0.0" />
+            <value param="lineNoise" value="0.0" />
+            <value param="flicker" value="0.0" />
+            <value param="tintAmount" value="0.0" />
+            <value param="persistence" value="0.0" />
+            <value param="tiltX" value="0" />
+            <value param="tiltY" value="0" />
+            <value param="reflectionAmount" value="0.0" />
+            <value param="angle" value="0" />
+            <value param="speed" value="0" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+
+// ============================================================================
+//  FERRAMENTAS
+// ============================================================================
+
+const float PI = 3.14159265359;
+const float TAU = 6.28318530718;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// Hash sem seno: estável nas GPUs de celular, onde `sin` de número grande
+// perde precisão e o ruído vira faixas. Técnica pública conhecida.
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+/** Ruído de valor, contínuo, de 0 a 1. */
+float ruidoSuave(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float luma(vec3 c) { return dot(c, LUMA); }
+
+/** A imagem, pré-multiplicada: a cor dos transparentes nunca vaza. */
+vec4 amostraP(vec2 uv) {
+    vec4 c = texture(inputImg, clamp(uv, 0.0, 1.0));
+    return vec4(c.rgb * c.a, c.a);
+}
+
+vec3 semPreMultiplicar(vec4 c) {
+    return c.a > 0.0001 ? clamp(c.rgb / c.a, 0.0, 4.0) : vec3(0.0);
+}
+
+// ============================================================================
+//  A MÚSICA (item 51)
+// ============================================================================
+
+/**
+ * O grave do instante, de 0 a 1.
+ *
+ * As três primeiras faixas do espectro (por oitava, a partir de 40 Hz) são o
+ * bumbo e o baixo — é o que marca a batida num edit. O motor já dá ataque
+ * imediato e queda suave; aqui é só média e sensibilidade.
+ */
+float nivelDoSom() {
+    float s = texture(somImg, vec2(0.04, 0.5)).r
+            + texture(somImg, vec2(0.10, 0.5)).r
+            + texture(somImg, vec2(0.17, 0.5)).r;
+    return clamp(s / 3.0 * audioSensitivity, 0.0, 1.0);
+}
+
+/** Quanto a música empurra o alvo `alvo` agora. 5 = "Everything". */
+float reage(int alvo) {
+    if (audioAmount <= 0.0) return 0.0;
+    if (audioTarget != alvo && audioTarget != 5) return 0.0;
+    return nivelDoSom() * audioAmount;
+}
+
+// ============================================================================
+//  A GEOMETRIA DA TELA
+// ============================================================================
+
+bool foraDaTela(vec2 uv) {
+    return uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0;
+}
+
+/** A proporção do tubo: a da camada, ou uma das clássicas. */
+float proporcaoDaTela() {
+    if (screenAspect == 1) return 4.0 / 3.0;
+    if (screenAspect == 2) return 16.0 / 9.0;
+    if (screenAspect == 3) return 1.0;
+    if (screenAspect == 4) return 21.0 / 9.0;
+    return acAspect;
+}
+
+/** O tamanho da tela dentro da camada (0..1 em cada eixo), centrada. */
+vec2 tamanhoDaTela() {
+    float a = proporcaoDaTela();
+    return a < acAspect ? vec2(a / max(acAspect, 0.0001), 1.0) : vec2(1.0, acAspect / max(a, 0.0001));
+}
+
+mat3 girar(float ax, float ay) {
+    float cx = cos(ax);
+    float sx = sin(ax);
+    float cy = cos(ay);
+    float sy = sin(ay);
+    mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, cx, sx, 0.0, -sx, cx);
+    mat3 ry = mat3(cy, 0.0, -sy, 0.0, 1.0, 0.0, sy, 0.0, cy);
+    return ry * rx;
+}
+
+/**
+ * ============================================================================
+ *  A GEOMETRIA DA TELA (itens 33, 34 e o "3D screen curvature" do item 89)
+ * ============================================================================
+ *
+ * Recebe a UV da camada e devolve, em `xy`, de onde ler a IMAGEM, e em `zw`,
+ * o ponto na superfície da TELA (0..1; fora disso é a caixa da TV).
+ *
+ * Três modelos:
+ *
+ *  - **Barrel**: a conta barata de sempre — a coordenada é empurrada para fora
+ *    quanto mais longe do centro no outro eixo;
+ *  - **Spherical 3D / Cylindrical 3D**: um raio sai do olho, atravessa o pixel
+ *    e bate na superfície do tubo (uma esfera ou um cilindro vertical, com a
+ *    inclinação aplicada), e a posição na tela é o comprimento de ARCO até o
+ *    centro. É a curvatura de um vidro de verdade, que também é o que deixa
+ *    inclinar o tubo sem a imagem "descolar" dele.
+ *
+ * A inclinação vale nos três: no Barrel, o raio bate primeiro num plano
+ * inclinado e o estufamento vem depois.
+ */
+vec4 geometria(vec2 uvDaCamada) {
+    vec2 tamanho = tamanhoDaTela();
+    float a = proporcaoDaTela();
+    vec2 q = ((uvDaCamada - 0.5) / tamanho) * 2.0;   // -1..1 dentro da tela
+
+    bool temInclinacao = abs(tiltX) + abs(tiltY) > 0.001;
+    bool modelo3D = curvatureModel > 0 && max(curvatureX, curvatureX) > 0.0;
+
+    vec2 s = q;
+    if (temInclinacao || modelo3D) {
+        float distancia = 2.4;
+        vec3 origem = vec3(0.0);
+        vec3 direcao = normalize(vec3(q.x * a, q.y, distancia));
+        mat3 inversa = girar(-radians(tiltY), -radians(tiltX));
+        vec3 pivo = vec3(0.0, 0.0, distancia);
+        vec3 o = inversa * (origem - pivo);
+        vec3 d = inversa * direcao;
+
+        if (modelo3D) {
+            float c = (curvatureModel == 2 ? curvatureX : max(curvatureX, curvatureX)) * 0.9;
+            float raio = max(a, 1.0) * 1.2 / max(c, 0.001);
+            vec3 centro = vec3(0.0, 0.0, raio);
+            vec3 oc = o - centro;
+            if (curvatureModel == 2) {
+                // Cilindro de eixo vertical: só X e Z contam.
+                vec2 oc2 = oc.xz;
+                vec2 d2 = d.xz;
+                float qa = dot(d2, d2);
+                float qb = dot(oc2, d2);
+                float qc = dot(oc2, oc2) - raio * raio;
+                float disc = qb * qb - qa * qc;
+                if (disc < 0.0) return vec4(-1.0);
+                float t = (-qb - sqrt(disc)) / max(qa, 1e-6);
+                vec3 h = o + t * d;
+                s = vec2(raio * asin(clamp(h.x / raio, -1.0, 1.0)) / a, h.y);
+            } else {
+                float qb = dot(oc, d);
+                float qc = dot(oc, oc) - raio * raio;
+                float disc = qb * qb - qc;
+                if (disc < 0.0) return vec4(-1.0);
+                float t = -qb - sqrt(disc);
+                vec3 h = o + t * d;
+                s = vec2(raio * asin(clamp(h.x / raio, -1.0, 1.0)) / a,
+                         raio * asin(clamp(h.y / raio, -1.0, 1.0)));
+            }
+        } else {
+            // Plano inclinado.
+            if (abs(d.z) < 1e-5) return vec4(-1.0);
+            float t = -o.z / d.z;
+            if (t <= 0.0) return vec4(-1.0);
+            vec3 h = o + t * d;
+            s = vec2(h.x / a, h.y);
+        }
+    }
+
+    if (!modelo3D && (curvatureX > 0.0 || curvatureX > 0.0)) {
+        vec2 b = s;
+        s.x = b.x * (1.0 + curvatureX * 0.3 * b.y * b.y);
+        s.y = b.y * (1.0 + curvatureX * 0.3 * b.x * b.x);
+    }
+
+    vec2 local = s * 0.5 + 0.5;                                   // na superfície da tela
+    vec2 naCamada = (local - 0.5) * tamanho + 0.5;                // de volta na camada
+    vec2 conteudo = (naCamada - 0.5) / (1.0 + overscan) + 0.5;    // a imagem, com overscan
+    return vec4(conteudo, local);
+}
+
+/** Da superfície da tela para a imagem — o mesmo caminho do fim de [geometria]. */
+vec2 conteudoDoLocal(vec2 local) {
+    vec2 naCamada = (local - 0.5) * tamanhoDaTela() + 0.5;
+    return (naCamada - 0.5) / (1.0 + overscan) + 0.5;
+}
+
+/**
+ * A coordenada do padrão: a altura da camada vale 1, o X é corrigido pela
+ * proporção (item 6) e o conjunto é girado. É nela que as linhas nascem — e,
+ * como ela vem da UV JÁ curvada, as linhas acompanham o vidro (item 34).
+ */
+vec2 coordDoPadrao(vec2 uv) {
+    vec2 p = uv - 0.5;
+    p.x *= proporcaoDaTela();
+    float a = radians(angle);
+    float s = sin(a);
+    float c = cos(a);
+    return vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
+}
+
+/** O caminho de volta, para amostrar o centro de uma célula no modo Squares. */
+vec2 uvDoPadrao(vec2 p) {
+    float a = radians(angle);
+    float s = sin(a);
+    float c = cos(a);
+    vec2 q = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+    q.x /= max(proporcaoDaTela(), 0.0001);
+    return q + 0.5;
+}
+
+// ============================================================================
+//  A LINHA
+// ============================================================================
+
+/**
+ * O perfil de UMA linha (itens 9, 12 e 35).
+ *
+ * `y` é a coordenada em "linhas"; `meia` é meia espessura, em fração do período;
+ * `fw` é quanto `y` anda por pixel — a frequência real do padrão na tela.
+ *
+ * Os três modelos: Hard Digital (degrau, só com o antisserrilhado), Soft
+ * (transição suave) e Beam CRT (a linha é o perfil de um feixe de luz).
+ *
+ * Quando a linha fica menor que uns dois pixels, nenhum perfil sobrevive — vira
+ * moiré e cintila em movimento. Nesse ponto o padrão é trocado pela MÉDIA dele
+ * (a fração acesa do período), que é o que o olho veria de longe.
+ */
+float perfil(float y, float meia, float fw) {
+    float d = abs(fract(y) - 0.5);
+    float m;
+    if (beamModel == 0) {
+        m = 1.0 - smoothstep(meia - fw * 0.5, meia + fw * 0.5, d);
+    } else if (beamModel == 1) {
+        m = 1.0 - smoothstep(meia, meia + softness * 0.5 + fw, d);
+    } else if (beamModel == 2) {
+        float potencia = mix(1.6, 9.0, beamSharpness);
+        m = exp(-pow(d / max(meia, 0.001), potencia));
+        // O feixe também precisa do antisserrilhado na borda.
+        m = mix(m, 1.0 - smoothstep(meia - fw, meia + fw, d), clamp(fw * 2.0, 0.0, 1.0) * 0.5);
+    } else {
+        // Gaussian Spot: gaussiana de verdade, com o desvio crescendo junto com a
+        // meia espessura (que já cresce com o brilho — ver Beam Expansion). O
+        // `beamSharpness` estreita o miolo sem mudar o alcance.
+        float sigma = max(meia, 0.001) * mix(0.9, 0.55, beamSharpness);
+        m = exp(-0.5 * (d * d) / (sigma * sigma));
+        m = mix(m, 1.0 - smoothstep(meia - fw, meia + fw, d), clamp(fw * 2.0, 0.0, 1.0) * 0.5);
+    }
+    float cobertura = clamp(meia * 2.0, 0.0, 1.0);
+    return mix(m, cobertura, smoothstep(0.3, 0.7, fw));
+}
+
+/** O perfil, supersampleado nos modos de qualidade alta (item 60). */
+float perfilAA(float y, float meia, float dx, float dy, float fw) {
+    if (quality < 2) return perfil(y, meia, fw);
+    float soma = perfil(y + dx * 0.25 + dy * 0.25, meia, fw)
+               + perfil(y - dx * 0.25 + dy * 0.25, meia, fw)
+               + perfil(y + dx * 0.25 - dy * 0.25, meia, fw)
+               + perfil(y - dx * 0.25 - dy * 0.25, meia, fw);
+    if (quality == 3) {
+        soma += perfil(y, meia, fw) * 2.0;
+        return soma / 6.0;
+    }
+    return soma * 0.25;
+}
+
+/**
+ * O ruído DA LINHA (itens 18 e 19): a linha falha em trechos, e não a imagem.
+ * Ao longo de X, por fileira, trocando com o tempo.
+ */
+float ruidoDaLinha(float x, float fileira, float quadro) {
+    if (noiseType == 1) {
+        float bloco = floor(x * 40.0 / max(noiseScale, 0.1));
+        return hash21(vec2(bloco, fileira * 1.7 + quadro));
+    }
+    return ruidoSuave(vec2(x * 12.0 * noiseScale, fileira * 1.7 + quadro * 0.37));
+}
+
+// ============================================================================
+//  A MÁSCARA DE FÓSFORO (itens 26 a 28)
+// ============================================================================
+
+/**
+ * A estrutura dos subpixels, em pixels da tela, com o brilho médio devolvido.
+ *
+ * Sem a compensação, uma máscara que acende um canal por vez tira dois terços
+ * da luz, e a imagem inteira escurece — o "coloquei uma grade por cima". A
+ * divisão pela média faz a máscara REDISTRIBUIR a luz, e não apagá-la.
+ */
+vec3 fosforo(vec2 px, int tipo, float forca) {
+    if (tipo == 0 || forca <= 0.0) return vec3(1.0);
+    float lado = max(maskSize, 1.0);
+    float apagado = 1.0 - forca;
+    vec3 m = vec3(1.0);
+
+    if (tipo == 1) {
+        // Tiras RGB verticais, degrau.
+        float f = fract(px.x / (lado * 3.0));
+        m = f < 0.3333 ? vec3(1.0, apagado, apagado)
+          : f < 0.6667 ? vec3(apagado, 1.0, apagado)
+          : vec3(apagado, apagado, 1.0);
+    } else if (tipo == 2) {
+        // Tríade: as fileiras andam meia tríade, como favo.
+        float fileira = floor(px.y / (lado * 2.0));
+        float f = fract((px.x + mod(fileira, 2.0) * lado * 1.5) / (lado * 3.0));
+        m = f < 0.3333 ? vec3(1.0, apagado, apagado)
+          : f < 0.6667 ? vec3(apagado, 1.0, apagado)
+          : vec3(apagado, apagado, 1.0);
+    } else if (tipo == 3) {
+        // Grade de abertura: as mesmas tiras, com cada uma acesa no meio e
+        // apagando para as bordas (o fio da grade).
+        vec3 fase = vec3(0.0, 1.0, 2.0);
+        vec3 onda = 0.5 + 0.5 * cos(TAU * (px.x / lado - fase) / 3.0);
+        m = apagado + (1.0 - apagado) * onda * onda;
+    } else if (tipo == 4) {
+        // Pontos redondos, cada célula de um canal.
+        vec2 celula = floor(px / lado);
+        vec2 dentro = fract(px / lado) - 0.5;
+        float ponto = 1.0 - smoothstep(0.3, 0.5, length(dentro));
+        int canal = int(mod(celula.x + mod(celula.y, 2.0) * 1.0, 3.0));
+        vec3 cor = canal == 0 ? vec3(1.0, 0.0, 0.0) : canal == 1 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
+        m = mix(vec3(apagado), vec3(1.0), cor * ponto);
+    } else if (tipo == 6) {
+        // A máscara própria: a camada escolhida, em ladrilho de Custom Mask
+        // Size pixels. O padrão é qualquer um, então a média (a compensação de
+        // brilho) vem de nove pontos do ladrilho. Sem camada escolhida
+        // (empty="transparent": chega 1×1 e transparente), sem máscara — em
+        // vez de uma tela preta ou da própria camada em miniatura.
+        vec4 media9 = vec4(0.0);
+        for (int j = 0; j < 3; j++) {
+            for (int i = 0; i < 3; i++) {
+                vec4 t9 = texture(mascaraPropria, (vec2(float(i), float(j)) + 0.5) / 3.0);
+                media9 += vec4(t9.rgb * t9.a, t9.a);
+            }
+        }
+        media9 /= 9.0;
+        if (media9.a < 0.004) return vec3(1.0);
+        vec4 t = texture(mascaraPropria, fract(px / max(customMaskSize, 1.0)));
+        m = mix(vec3(1.0), t.rgb * t.a, forca);
+        float mediaPropria = mix(1.0, dot(media9.rgb, vec3(1.0 / 3.0)), forca);
+        return m * mix(1.0, 1.0 / max(mediaPropria, 0.05), 0.85);
+    } else {
+        // Máscara de sombra em tijolo: tiras curtas, fileiras deslocadas e um
+        // vão escuro entre elas.
+        float fileira = floor(px.y / (lado * 3.0));
+        float x = px.x + mod(fileira, 2.0) * lado * 1.5;
+        float f = fract(x / (lado * 3.0));
+        m = f < 0.3333 ? vec3(1.0, apagado, apagado)
+          : f < 0.6667 ? vec3(apagado, 1.0, apagado)
+          : vec3(apagado, apagado, 1.0);
+        float vao = fract(px.y / (lado * 3.0));
+        m *= mix(1.0, apagado, smoothstep(0.8, 0.95, vao));
+    }
+
+    float media = (m.r + m.g + m.b) / 3.0;
+    return m * mix(1.0, 1.0 / max(media, 0.001), 0.85);
+}
+
+// ============================================================================
+//  PASSE 0 — A TELA
+// ============================================================================
+
+/**
+ * Cinco amostras em tenda, na horizontal, cobrindo uma tríade inteira
+ * (`lado` é a largura de UMA tira, em px). Pesos 1-2-3-2-1.
+ */
+vec4 tenda(vec2 uv, float lado) {
+    vec2 h = vec2(lado * 0.6 * acTexelSize.x, 0.0);
+    return (amostraP(uv) * 3.0
+          + (amostraP(uv - h) + amostraP(uv + h)) * 2.0
+          + (amostraP(uv - h * 2.0) + amostraP(uv + h * 2.0))) / 9.0;
+}
+
+vec4 passeDaTela() {
+    vec2 uvOriginal = acScreenNorm;
+    vec4 geo = geometria(uvOriginal);
+    vec2 uv = geo.xy;
+    vec2 local = geo.zw;
+    bool fora = foraDaTela(local);
+
+    float tempo = acTime;
+    float quadroDoRuido = floor(tempo * 24.0 * noiseSpeed);
+
+    // ------------------------------------------------ o SINAL (itens 39 a 42)
+    float distorcao = reage(4);
+    float onda = waveAmount + distorcao * 0.5;
+    if (onda > 0.0) {
+        uv.x += sin(uv.y * waveScale * TAU + tempo * waveSpeed * TAU) * onda * 0.012;
+    }
+    float fileiraDoSinal = floor(local.y * lineCount);
+    if (jitter > 0.0 || distorcao > 0.0) {
+        uv.x += (hash21(vec2(fileiraDoSinal, floor(tempo * 30.0))) - 0.5) * (jitter + distorcao * 0.5) * 0.012;
+    }
+    if (tearAmount > 0.0) {
+        float faixa = floor(uv.y * tearFrequency);
+        float momento = floor(tempo * tearSpeed);
+        if (hash21(vec2(faixa, momento)) > 1.0 - tearAmount * 0.45) {
+            uv.x += (hash11(faixa * 7.13 + momento) - 0.5) * tearAmount * 0.18;
+        }
+    }
+
+    // ------------------------------------------------ o padrão, antes da fonte
+    float espaco = 1.0 + spacing;
+    float linhasPorAltura = lineCount / espaco;
+    // As linhas moram na SUPERFÍCIE da tela, e não na imagem: com overscan a
+    // imagem cresce e as linhas ficam; com o vidro curvo, elas curvam junto.
+    // O sinal (onda, tremor, rasgo) desloca a imagem, não a tela.
+    vec2 p = coordDoPadrao(local);
+
+    // No modo Squares a tela vira pixels visíveis: a cor vem do centro da célula.
+    vec2 uvDaFonte = uv;
+    if (patternMode == 2) {
+        float celula = 1.0 / linhasPorAltura;
+        vec2 centro = (floor(p / celula) + 0.5) * celula;
+        uvDaFonte = conteudoDoLocal(uvDoPadrao(centro)) + (uv - geo.xy);
+    }
+
+    // ------------------------------------------------ a FONTE (itens 43 e 44)
+    float rgbTotal = rgbShift + reage(3);
+    vec4 c;
+    if (sourceBlur > 0.0) {
+        vec2 d = acTexelSize * sourceBlur;
+        c = amostraP(uvDaFonte) * 0.4
+          + (amostraP(uvDaFonte + vec2(d.x, 0.0)) + amostraP(uvDaFonte - vec2(d.x, 0.0))
+           + amostraP(uvDaFonte + vec2(0.0, d.y)) + amostraP(uvDaFonte - vec2(0.0, d.y))) * 0.15;
+    } else {
+        c = amostraP(uvDaFonte);
+    }
+
+    /*
+     * O VERMELHO E O AZUL LIDOS FORA DO LUGAR, por dois motivos que se somam:
+     *
+     *  - Image Offset / RGB Shift: o desalinhamento de sinal, na horizontal;
+     *  - Convergence: os três feixes do tubo erram mais nas bordas que no meio,
+     *    então o erro cresce com a distância ao centro da tela.
+     */
+    vec2 deslocamentoRB = vec2((imageOffset + rgbTotal * 2.0) * acTexelSize.x, 0.0);
+    if (convergence > 0.0) {
+        deslocamentoRB += (local - 0.5) * convergence * 0.012;
+    }
+
+    /*
+     * SUBPIXEL FILTERING, com máscara de tiras (RGB Stripe, Aperture Grille, e
+     * a do TV CRT). Sem ele, a imagem inteira aparece por baixo da máscara, com
+     * todo o detalhe dela correndo dentro de cada tira. Com ele, cada tira de
+     * fósforo acende INTEIRA, com a cor que a imagem tem em volta do centro da
+     * própria tira: é a imagem redesenhada na resolução do tubo, três amostras
+     * por tríade, e não uma grade posta por cima. Com Mask Size grande é o
+     * visual do tubo visto de perto; o preço é o detalhe mais fino que uma
+     * tríade, que o tubo de verdade também não mostra.
+     *
+     * "Em volta" é um filtro da largura da tríade, e não um ponto só: com um
+     * ponto, um risco mais fino que a tríade acende o vermelho e o verde, erra
+     * o azul, e vira uma fileira de pontinhos amarelos.
+     */
+    int tipoParaSubpixel = maskType != 0 ? maskType : (patternMode == 3 ? 3 : 0);
+    bool porSubpixel = subpixelFilter && (tipoParaSubpixel == 1 || tipoParaSubpixel == 3)
+        && maskStrength > 0.0 && maskSize >= 1.5;
+    if (porSubpixel) {
+        float lado = max(maskSize, 1.0);
+        float centroDaTira = tipoParaSubpixel == 1 ? 0.5 : 0.0;
+        vec3 canal = vec3(0.0, 1.0, 2.0) + centroDaTira;
+        vec3 n = floor((gl_FragCoord.x / lado - canal) / 3.0 + 0.5);
+        vec3 dx = (lado * (3.0 * n + canal) - gl_FragCoord.x) * acTexelSize.x;
+        vec4 r = tenda(uvDaFonte + deslocamentoRB + vec2(dx.r, 0.0), lado);
+        vec4 g = tenda(uvDaFonte + vec2(dx.g, 0.0), lado);
+        vec4 b = tenda(uvDaFonte - deslocamentoRB + vec2(dx.b, 0.0), lado);
+        c = vec4(r.r, g.g, b.b, max(g.a, max(r.a, b.a)));
+    } else if (abs(deslocamentoRB.x) + abs(deslocamentoRB.y) > 0.0) {
+        vec4 vermelho = amostraP(uvDaFonte + deslocamentoRB);
+        vec4 azul = amostraP(uvDaFonte - deslocamentoRB);
+        c = vec4(vermelho.r, c.g, azul.b, max(c.a, max(vermelho.a, azul.a)));
+    }
+
+    // Gaussian Spot: o ponto claro se espalha na horizontal (o feixe é um ponto,
+    // não uma linha fina), e só nas altas.
+    if (beamModel == 3 && beamSpot > 0.0) {
+        vec2 h = vec2(acTexelSize.x * (1.0 + beamSpot * 3.0), 0.0);
+        vec4 espalhado = (amostraP(uvDaFonte - h) + amostraP(uvDaFonte + h)) * 0.5;
+        float claro = smoothstep(0.25, 0.9, luma(semPreMultiplicar(c)));
+        c = mix(c, espalhado, beamSpot * claro * 0.6);
+    }
+
+    /*
+     * A PERSISTÊNCIA DO FÓSFORO (itens 37 e 38).
+     *
+     * Phosphor Trail: o fósforo que estava aceso demora a apagar. Cada canal
+     * fica com o MAIOR entre o agora e os quadros anteriores já esmaecidos — e
+     * por isso uma imagem parada não muda nada (o anterior é igual ao atual), e
+     * só o que se mexe deixa rastro.
+     *
+     * Temporal Smooth: a média com os anteriores, presos à vizinhança do valor
+     * atual. A prisão é o que rejeita o fantasma: um pixel que mudou de verdade
+     * (um corte, um objeto passando) não carrega o passado junto.
+     */
+    if (persistence > 0.0) {
+        vec4 a1 = texture(anterior1, clamp(uvDaFonte, 0.0, 1.0));
+        vec4 a2 = texture(anterior2, clamp(uvDaFonte, 0.0, 1.0));
+        vec4 p1 = vec4(a1.rgb * a1.a, a1.a);
+        vec4 p2 = vec4(a2.rgb * a2.a, a2.a);
+        // Sem o quadro (o primeiro depois de pular no tempo), o anel entrega
+        // transparente: vale o atual, para a média não puxar para o preto.
+        if (a1.a <= 0.0) p1 = c;
+        if (a2.a <= 0.0) p2 = p1;
+        if (persistenceMode == 0) {
+            c = max(c, max(p1 * persistence, p2 * persistence * persistence));
+        } else {
+            vec4 janela = vec4(0.08);
+            vec4 q1 = clamp(p1, c - janela, c + janela);
+            vec4 q2 = clamp(p2, c - janela, c + janela);
+            c = mix(c, (q1 + q2) * 0.5, persistence * 0.7);
+        }
+    }
+
+    if (colorBleed > 0.0) {
+        vec2 o = vec2(acTexelSize.x * (1.5 + colorBleed * 3.0), 0.0);
+        vec4 espalhado = amostraP(uvDaFonte - o) * 0.25 + c * 0.5 + amostraP(uvDaFonte + o) * 0.25;
+        if (quality == 3) {
+            espalhado = espalhado * 0.7
+                      + (amostraP(uvDaFonte - o * 2.0) + amostraP(uvDaFonte + o * 2.0)) * 0.15;
+        }
+        // Só nas altas: é o fósforo claro que espalha (item 66).
+        float quanto = colorBleed * smoothstep(0.3, 0.85, luma(semPreMultiplicar(c)));
+        c = mix(c, espalhado, quanto);
+    }
+
+    float alfa = c.a;
+    vec3 cor = semPreMultiplicar(c);
+
+    // ------------------------------------------------ preparo da cor (item 45)
+    cor = max(cor * brightness, 0.0);
+    cor = (cor - 0.5) * contrast + 0.5;
+    cor = pow(max(cor, 0.0), vec3(1.0 / max(gammaValue, 0.01)));
+    float l = luma(cor);
+    cor = max(mix(vec3(l), cor, saturationAmt), 0.0);
+    l = luma(cor);
+
+    // ------------------------------------------------ as linhas
+    float fase = phase + tempo * speed;
+    float y = p.y * lineCount / espaco;
+    if (lineDistort > 0.0 || distorcao > 0.0) {
+        float torto = ruidoSuave(vec2(p.x * 6.0 * noiseScale, floor(y) * 0.7 + tempo * 3.0)) - 0.5;
+        y += torto * (lineDistort + distorcao * 0.5) * 1.2;
+    }
+    y += fase;
+
+    float dx = dFdx(y);
+    float dy = dFdy(y);
+    float fw = abs(dx) + abs(dy);
+
+    // Beam Expansion: nas altas o feixe engorda e o vão fecha.
+    float meia = 0.5 * thickness / espaco;
+    meia += (0.5 - meia) * clamp(l * beamExpansion * 1.4, 0.0, 1.0);
+
+    // Fase por canal (itens 15 e 16): o desalinhamento fixo e o rolar animado.
+    float rolar = rollAmount;
+    vec3 desvio = vec3(shiftR + rgbTotal * 0.33, shiftG, shiftB - rgbTotal * 0.33);
+    if (rolar > 0.0) {
+        desvio += rolar * 0.5 * vec3(
+            sin(tempo * rollSpeed * 2.0),
+            sin(tempo * rollSpeed * 2.0 + 2.094),
+            sin(tempo * rollSpeed * 2.0 + 4.188));
+    }
+
+    vec3 linha;
+    bool porCanal = abs(desvio.r) + abs(desvio.g) + abs(desvio.b) > 0.0001;
+    if (porCanal) {
+        linha = vec3(
+            perfilAA(y + desvio.r, meia, dx, dy, fw),
+            perfilAA(y + desvio.g, meia, dx, dy, fw),
+            perfilAA(y + desvio.b, meia, dx, dy, fw));
+    } else {
+        linha = vec3(perfilAA(y, meia, dx, dy, fw));
+    }
+
+    // Cross e Squares: o mesmo padrão no outro eixo, multiplicado (item 25).
+    if (patternMode == 1 || patternMode == 2) {
+        float yv = p.x * lineCount / espaco + fase;
+        float dxv = dFdx(yv);
+        float dyv = dFdy(yv);
+        float fwv = abs(dxv) + abs(dyv);
+        linha *= perfilAA(yv, meia, dxv, dyv, fwv);
+    }
+
+    // O ruído da linha: trechos que falham.
+    float fileira = floor(y);
+    if (lineNoise > 0.0) {
+        float n = ruidoDaLinha(p.x, fileira, quadroDoRuido);
+        linha *= mix(1.0 - lineNoise, 1.0, n);
+    }
+
+    // A faixa de varredura (item 22): uma região mais forte, rolando.
+    float faixa = 0.0;
+    if (bandAmount > 0.0) {
+        float centroDaFaixa = fract(tempo * bandSpeed * 0.25 + 0.5);
+        float dist = abs(fract(uvOriginal.y - centroDaFaixa + 0.5) - 0.5);
+        float meiaFaixa = bandWidth * 0.5;
+        faixa = 1.0 - smoothstep(meiaFaixa * (1.0 - bandSoftness), meiaFaixa + 0.0001, dist);
+        linha = mix(linha, vec3(1.0), faixa * bandAmount * 0.5);
+    }
+
+    // Entrelaçado (item 36): o campo que não é o da vez fica mais escuro.
+    if (interlace > 0) {
+        float taxa = interlace == 1 ? 30.0 : interlace == 2 ? 60.0 : interlaceRate;
+        float campo = mod(floor(tempo * taxa), 2.0);
+        if (abs(mod(fileira, 2.0) - campo) < 0.5) linha *= 1.0 - interlaceAmount * 0.6;
+    }
+
+    // ------------------------------------------------ linha + imagem (item 13)
+    float intens = clamp(intensity * (1.0 + reage(0)), 0.0, 1.0);
+    float nivelDoVao = mix(1.0, gapBrightness, intens);
+    float cobertura = clamp(meia * 2.0, 0.0, 1.0);
+    if (patternMode == 1 || patternMode == 2) cobertura *= cobertura;
+
+    vec3 resultado;
+    float media;
+    if (lineStyle == 0) {
+        resultado = cor * mix(vec3(nivelDoVao), vec3(1.0), linha);
+        media = mix(nivelDoVao, 1.0, cobertura);
+    } else if (lineStyle == 1) {
+        resultado = cor + lineColor.rgb * lineColor.a * linha * intens * lineBrightness;
+        media = 1.0;
+    } else {
+        resultado = cor * mix(vec3(nivelDoVao), vec3(1.0), linha);
+        resultado += cor * linha * lineBrightness * intens * 0.6;
+        media = mix(nivelDoVao, 1.0, cobertura) + lineBrightness * intens * 0.6 * cobertura;
+    }
+    // Keep Brightness: devolve a luz que as linhas tiraram, com teto.
+    resultado *= mix(1.0, 1.0 / clamp(media, 0.35, 3.0), keepBrightness);
+
+    // ------------------------------------------------ fósforo
+    int tipoDaMascara = maskType;
+    float forcaDaMascara = maskStrength;
+    if (tipoDaMascara == 0 && patternMode == 3) { tipoDaMascara = 3; forcaDaMascara = 0.45; }
+    if (tipoDaMascara == 0 && patternMode == 4) { tipoDaMascara = 5; forcaDaMascara = 0.45; }
+    // A máscara some quando o fósforo fica menor que um pixel e meio: é moiré,
+    // não estrutura (item 35).
+    forcaDaMascara *= smoothstep(1.0, 1.5, maskSize);
+    resultado *= fosforo(gl_FragCoord.xy, tipoDaMascara, forcaDaMascara);
+
+    // ------------------------------------------------ ruído da imagem (itens 17 e 20)
+    float ruidoTotal = noiseAmt + reage(2) * 0.5;
+    vec3 grao = vec3(0.5);
+    if (ruidoTotal > 0.0) {
+        vec2 celula = noiseType == 1
+            ? floor(gl_FragCoord.xy / max(blockSize, 1.0))
+            : floor(gl_FragCoord.xy / max(noiseScale, 0.1));
+        if (noiseMono) {
+            grao = vec3(hash21(celula + quadroDoRuido * 13.1));
+        } else {
+            grao = vec3(
+                hash21(celula + quadroDoRuido * 13.1),
+                hash21(celula + quadroDoRuido * 13.1 + 71.3),
+                hash21(celula + quadroDoRuido * 13.1 + 143.9));
+        }
+        // Mais nos meios-tons, como grão de verdade.
+        float peso = 0.35 + 2.6 * l * (1.0 - l);
+        resultado += (grao - 0.5) * ruidoTotal * 0.6 * peso;
+    }
+
+    // ------------------------------------------------ o tempo (item 21)
+    if (flicker > 0.0) {
+        float oscilacao = sin(tempo * TAU * 9.3) * 0.35 + (ruidoSuave(vec2(tempo * 14.0, 3.1)) - 0.5) * 1.3;
+        resultado *= 1.0 + oscilacao * flicker * 0.3;
+    }
+    resultado *= 1.0 + faixa * bandAmount * 0.35;
+
+    resultado = max(resultado, 0.0);
+
+    /*
+     * AS ALTAS SEM MUDAR DE COR.
+     *
+     * A linha acesa passa de 1 (é luz concentrada), e cortar cada canal no 1
+     * separado muda o TOM: um amarelo forte, com o vermelho batendo no teto e o
+     * verde ainda subindo, vira amarelo-esverdeado. Aqui o pico é comprimido e
+     * os três canais descem juntos, na mesma proporção.
+     */
+    float pico = max(resultado.r, max(resultado.g, resultado.b));
+    if (pico > 0.8) {
+        float novoPico = 0.8 + 0.2 * (1.0 - exp(-(pico - 0.8) / 0.2));
+        resultado *= novoPico / pico;
+    }
+    if (fora) alfa = 0.0;
+
+    // ------------------------------------------------ os modos de ver (item 76)
+    if (view == 1) return vec4(vec3(dot(linha, vec3(1.0 / 3.0))), 1.0);
+    if (view == 2) return vec4(grao, 1.0);
+    if (view == 3) return vec4(linha, 1.0);
+    if (view == 6) {
+        vec2 xadrez = floor(local * 16.0);
+        float casa = mod(xadrez.x + xadrez.y, 2.0);
+        return vec4(fora ? vec3(0.2, 0.0, 0.0) : vec3(casa * 0.6 + 0.2), 1.0);
+    }
+    if (view == 7) return vec4(vec3(l), 1.0);
+
+    return vec4(clamp(resultado, 0.0, 1.0) * alfa, alfa);
+}
+
+// ============================================================================
+//  PASSES 1 A 3 — O BRILHO, EM RESOLUÇÃO REDUZIDA (itens 29, 30 e 67)
+// ============================================================================
+
+/** O que passa do limiar, já linearizado (o quadrado é o gama 2 aproximado). */
+vec3 brilhante(vec2 uv) {
+    vec4 t = texture(tela, uv);
+    vec3 cor = t.rgb;
+    float w = smoothstep(glowThreshold, glowThreshold + 0.3, luma(cor));
+    return cor * cor * w;
+}
+
+vec3 desfocar(sampler2D fonteDoDesfoque, vec2 uv, float raio) {
+    vec2 o = acTexelSize * raio;
+    vec3 soma = texture(fonteDoDesfoque, uv).rgb * 0.25;
+    soma += (texture(fonteDoDesfoque, uv + vec2(o.x, 0.0)).rgb
+           + texture(fonteDoDesfoque, uv - vec2(o.x, 0.0)).rgb
+           + texture(fonteDoDesfoque, uv + vec2(0.0, o.y)).rgb
+           + texture(fonteDoDesfoque, uv - vec2(0.0, o.y)).rgb) * 0.125;
+    soma += (texture(fonteDoDesfoque, uv + o).rgb
+           + texture(fonteDoDesfoque, uv - o).rgb
+           + texture(fonteDoDesfoque, uv + vec2(o.x, -o.y)).rgb
+           + texture(fonteDoDesfoque, uv + vec2(-o.x, o.y)).rgb) * 0.0625;
+    return soma;
+}
+
+// ============================================================================
+//  PASSE 4 — JUNTAR
+// ============================================================================
+
+/** Onde o efeito age (item 49), de 0 a 1. */
+float ondeAplicar(vec2 uv, vec4 original) {
+    float m = 1.0;
+    float f = max(maskFeather, 0.001);
+    if (maskSource == 1) {
+        m = smoothstep(0.5 - f * 0.5, 0.5 + f * 0.5, luma(original.rgb));
+    } else if (maskSource == 2) {
+        m = smoothstep(0.0, f, original.a);
+    } else if (maskSource == 3) {
+        vec4 camada = texture(maskLayerImg, uv);
+        m = luma(camada.rgb) * camada.a;
+    } else if (maskSource == 4) {
+        float a = radians(gradientAngle);
+        vec2 q = uv - 0.5;
+        q.x *= acAspect;
+        float t = dot(q, vec2(cos(a), sin(a))) + 0.5;
+        m = smoothstep(gradientPosition - f * 0.5, gradientPosition + f * 0.5, t);
+    } else if (maskSource == 5) {
+        vec2 q = uv - 0.5;
+        q.x *= acAspect;
+        m = 1.0 - smoothstep(gradientPosition - f * 0.5, gradientPosition + f * 0.5, length(q) * 1.4);
+    }
+    return maskInvert ? 1.0 - m : m;
+}
+
+vec4 juntar() {
+    vec2 uv = acScreenNorm;
+    vec4 base = texture(tela, uv);
+
+    if (view == 1 || view == 2 || view == 3 || view == 6 || view == 7) return base;
+
+    // ------------------------------------------------ o brilho
+    float forcaDoBrilho = glow * (1.0 + reage(1) * 2.0);
+    vec3 brilho = vec3(0.0);
+    if (forcaDoBrilho > 0.0) {
+        vec3 pequeno = desfocar(brilhoA, uv, glowRadius * 0.75);
+        vec3 medio = texture(brilhoB, uv).rgb;
+        vec3 grande = texture(brilhoC, uv).rgb;
+        vec3 multi = pequeno;
+        if (quality >= 1) multi += medio * 0.45;
+        if (quality >= 2) multi += grande * 0.18;
+
+        if (glowMode == 0) {
+            // Glow Lines: o brilho sai das próprias linhas — um desfoque curto
+            // na direção que as atravessa, e um pouco de atmosfera por cima.
+            float a = radians(angle);
+            vec2 normal = vec2(-sin(a), cos(a)) / vec2(max(acAspect, 0.0001), 1.0);
+            vec2 passo = normal * (0.5 / max(lineCount, 1.0)) * glowRadius;
+            vec3 nasLinhas = brilhante(uv) * 0.4
+                + (brilhante(uv + passo) + brilhante(uv - passo)) * 0.2
+                + (brilhante(uv + passo * 2.0) + brilhante(uv - passo * 2.0)) * 0.1;
+            brilho = nasLinhas * 1.6 + multi * 0.35;
+        } else {
+            brilho = multi;
+        }
+        brilho *= forcaDoBrilho * glowColor.rgb;
+    }
+
+    if (view == 4) return vec4(sqrt(brilho), 1.0);
+
+    // Soma no linear e volta: o brilho em gama somaria "leitoso" (item 72).
+    vec3 lin = base.rgb * base.rgb;
+    float alfa = base.a;
+    if (glowSpill) {
+        lin += brilho;
+        alfa = max(alfa, clamp(luma(brilho) * 1.5, 0.0, 1.0));
+    } else {
+        lin += brilho * base.a;
+    }
+    // Segura as altas em vez de estourar (item 73).
+    lin = lin / (1.0 + max(lin - 1.0, 0.0));
+    vec3 cor = sqrt(lin);
+
+    vec4 geo = geometria(uv);
+    vec2 local = geo.zw;
+    bool fora = foraDaTela(local);
+
+    // ------------------------------------------------ o vidro (item 89)
+    if (!fora && (reflectionAmount > 0.0 || glassSheen > 0.0)) {
+        vec2 r = local;
+        if (reflectionMirror) r.x = 1.0 - r.x;
+        r = (r - 0.5) / max(reflectionScale, 0.01) + 0.5;
+        vec3 vidro = vec3(0.0);
+        if (reflectionAmount > 0.0 && !foraDaTela(r)) {
+            vec4 refl = texture(reflexo, r);
+            // Reflexo aparece onde a tela está escura: onde ela brilha, a luz
+            // dela vence a do quarto.
+            float escuro = 1.0 - luma(cor / max(alfa, 0.0001)) * 0.8;
+            vidro += refl.rgb * refl.a * reflectionAmount * 0.45 * escuro;
+        }
+        if (glassSheen > 0.0) {
+            // O lustro: uma mancha larga vinda de cima à esquerda e a borda
+            // acendendo de raspão.
+            vec2 d = local - vec2(0.3, 0.2);
+            float mancha = exp(-dot(d, d) * 6.0) * 0.5;
+            vec2 q = abs(local - 0.5) * 2.0;
+            float borda = pow(max(q.x, q.y), 6.0) * 0.35;
+            vidro += vec3(mancha + borda) * glassSheen * 0.35;
+        }
+        // Tela (screen) em pré-multiplicado: nunca passa do alfa.
+        cor += clamp(vidro, 0.0, 1.0) * max(alfa - cor, 0.0);
+    }
+
+    // ------------------------------------------------ vinheta (item 32)
+    if (vignette > 0.0) {
+        vec2 q = abs(local - 0.5) * 2.0;
+        float potencia = mix(8.0, 2.0, vignetteRoundness);
+        float d = pow(pow(q.x, potencia) + pow(q.y, potencia), 1.0 / potencia);
+        float v = smoothstep(vignetteSize, vignetteSize + vignetteSoftness, d) * vignette * vignetteColor.a;
+        cor = mix(cor, vignetteColor.rgb * alfa, v);
+    }
+
+    // ------------------------------------------------ moldura (item 69)
+    if (frameAmount > 0.0) {
+        // A caixa da TV: a tela encolhe um pouco para dentro de um aro de
+        // cantos redondos, e o que sobra (inclusive o que o vidro curvo empurrou
+        // para fora, e as faixas de uma tela 4:3 numa camada deitada) é o
+        // plástico escuro — que, ao contrário da tela, cobre a camada inteira.
+        vec2 q = abs(local - 0.5) * 2.0 * (1.0 + frameAmount * 0.08);
+        float raio = max(frameRoundness * 0.3, 0.001);
+        vec2 dentro = max(q - (1.0 - raio), 0.0);
+        float borda = length(dentro) - raio;
+        float moldura = max(smoothstep(-0.006, 0.006, borda), fora ? 1.0 : 0.0);
+        float quanto = moldura * clamp(frameAmount * 3.0, 0.0, 1.0);
+        vec4 original0 = texture(inputImg, uv);
+        float alfaDaCaixa = max(alfa, original0.a);
+        cor = mix(cor, vec3(0.035, 0.035, 0.045) * alfaDaCaixa, quanto);
+        alfa = mix(alfa, alfaDaCaixa, quanto);
+    }
+
+    // ------------------------------------------------ tinta
+    /*
+     * Colorir pela luminância, e não multiplicar: multiplicar um amarelo por
+     * azul dá VERDE, e o "monitor neon" saía esverdeado. Aqui o claro vira a
+     * cor escolhida e o escuro continua escuro — a tela de uma cor só.
+     */
+    if (tintAmount > 0.0) {
+        vec3 tinta = tintColor.rgb / max(luma(tintColor.rgb), 0.2);
+        cor = mix(cor, luma(cor) * tinta, tintAmount);
+    }
+
+    // ------------------------------------------------ onde e quanto (itens 48 e 49)
+    vec4 original = texture(inputImg, uv);
+    float quanto = clamp(mixAmt, 0.0, 1.0) * ondeAplicar(uv, original);
+    if (view == 5) return vec4(vec3(quanto), 1.0);
+
+    vec4 efeito = vec4(clamp(cor, 0.0, max(alfa, 0.0001)), alfa);
+    vec4 originalP = vec4(original.rgb * original.a, original.a);
+    vec4 saida = mix(originalP, efeito, quanto);
+    return vec4(semPreMultiplicar(saida), saida.a);
+}
+
+void main() {
+    if (acPass == 0) { fragColor = passeDaTela(); return; }
+
+    if (acPass == 1) {
+        // Redução para 1/4 com quatro amostras bilineares: cada uma já é a média
+        // de 2×2 pixels da tela, então as quatro cobrem 4×4 sem pular nada.
+        vec2 t = acTexelSize * 0.25;
+        vec3 soma = brilhante(acScreenNorm + vec2(-t.x, -t.y))
+                  + brilhante(acScreenNorm + vec2( t.x, -t.y))
+                  + brilhante(acScreenNorm + vec2(-t.x,  t.y))
+                  + brilhante(acScreenNorm + vec2( t.x,  t.y));
+        fragColor = vec4(soma * 0.25, 1.0);
+        return;
+    }
+
+    if (acPass == 2) { fragColor = vec4(desfocar(brilhoA, acScreenNorm, 1.5 * glowRadius), 1.0); return; }
+    if (acPass == 3) { fragColor = vec4(desfocar(brilhoB, acScreenNorm, 1.5 * glowRadius), 1.0); return; }
+
+    fragColor = juntar();
+}
+    ]]></shader>
+</effect>

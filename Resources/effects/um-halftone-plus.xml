@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.halftoneplus"
+    name="Meio-Tom Plus (Ultra Motion)"
+    name-en="Halftone Plus (Ultra Motion)"
+    desc="Pontos que crescem com a luminância, em grelha rotacionada."
+    desc-en="Dots scaling by luminance on a rotated grid."
+    category="stylize"
+    tags="ultramotion,halftone,dots,print,stylize">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="size"   label="Tamanho" default="6.0" min="2.0" max="30.0" step="0.5" />
+        <slider id="angle"  label="Ângulo"  default="30.0" min="0.0" max="90.0" step="1.0" />
+        <slider id="softness" label="Suavidade" default="0.15" min="0.0" max="0.5" step="0.01" />
+        <color  id="dotColor" label="Cor do ponto" default="#ff000000" />
+        <color  id="bgColor"  label="Cor do fundo" default="#ffffffff" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    vec2 px = acScreenNorm * acResolution;
+    float a = radians(angle);
+    float c = cos(a), s = sin(a);
+    vec2 rot = vec2(px.x * c - px.y * s, px.x * s + px.y * c);
+    vec2 cell = floor(rot / size) * size + size * 0.5;
+    vec2 centro = vec2(cell.x * c + cell.y * s, -cell.x * s + cell.y * c);
+    vec2 uv = centro / acResolution;
+
+    vec3 amostra = texture(inputImg, clamp(uv, 0.0, 1.0)).rgb;
+    float l = dot(amostra, LUMA);
+    float raio = sqrt(1.0 - l) * size * 0.5;
+    float d = distance(rot, cell);
+    float pt = 1.0 - smoothstep(raio - softness * size, raio + softness * size, d);
+    vec3 cor = mix(bgColor.rgb, dotColor.rgb, pt);
+    float alphaOrig = texture(inputImg, acScreenNorm).a;
+    fragColor = vec4(cor, alphaOrig);
+}
+    ]]></shader>
+</effect>

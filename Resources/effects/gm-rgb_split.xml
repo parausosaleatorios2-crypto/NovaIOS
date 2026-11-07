@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.rgb_split" name="RGB Split" desc="Offsets the red and blue channels for a chromatic ghost. Angle and distance are independent." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/rgb_split.png"
+        tags="glitch,rgb,chromatic,split" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Split" />
+<spinner id="amount" default="0.01" min="0.0" max="0.1" step="0.0005" label="Amount" />
+<spinner id="angle" default="0.0" min="-180.0" max="180.0" step="0.5" label="Angle" type="angle" />
+<spinner id="radial" default="0.0" min="0.0" max="1.0" step="0.01" label="Radial Bias" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  float rad = radians(angle);
+  vec2 dir = vec2(cos(rad), sin(rad));
+  vec2 rdir = normalize(uv - 0.5 + 1e-5);
+  dir = normalize(mix(dir, rdir, radial) + 1e-5);
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = src.a;
+  float amt = amount * mixAmt;
+  float r = texture2DCv(inputImg.texture, uv + dir * amt).r;
+  float g = src.g;
+  float b = texture2DCv(inputImg.texture, uv - dir * amt).b;
+  gl_FragColor = vec4(r, g, b, a);
+}
+]]></shader>
+</effect>

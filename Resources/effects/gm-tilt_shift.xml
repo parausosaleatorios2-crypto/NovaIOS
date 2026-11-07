@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.tilt_shift" name="Tilt Shift" desc="Blurs everything outside a horizontal band, leaving a sharp strip. Makes any footage read as a miniature." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/tilt_shift.png"
+        tags="blur,tilt,shift,miniature,dof" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Band" />
+<spinner id="center" default="0.50" min="0.0" max="1.0" step="0.01" label="Band Centre" />
+<spinner id="width" default="0.18" min="0.01" max="0.8" step="0.01" label="Band Width" />
+<spinner id="falloff" default="0.25" min="0.01" max="1.0" step="0.01" label="Falloff" />
+<spinner id="strength" default="1.0" min="0.0" max="3.0" step="0.01" label="Blur Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 8;
+void main(){
+  vec2 uv = acScreenNorm;
+  float d = abs(uv.y - center);
+  float amt = smoothstep(width, width + falloff, d) * strength;
+  float r = amt * 0.035;
+  vec4 sum = texture2DCv(inputImg.texture, uv);
+  for (int i = 0; i < TAPS; i++){
+    float ang = float(i) * 6.2831853 / float(TAPS);
+    vec2 o = vec2(cos(ang), sin(ang) * 0.5) * r;
+    sum += texture2DCv(inputImg.texture, uv + o);
+  }
+  gl_FragColor = sum / float(TAPS + 1);
+}
+]]></shader>
+</effect>

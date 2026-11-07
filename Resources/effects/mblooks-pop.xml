@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Pop (`pop2`, vídeo). O render do host (`0x1803f9870`, lido em
+  `tools/looks/benchmark/pop2.py`) tem dois caminhos:
+    - Pop > 0 (o dos presets): a lightness HSL desfocada pelo gaussiano do motor (o da Edge Softness, raio
+      (p·0,015 + 0,015)·Size·2) e a lightness ganha p·0,9 da diferença para a desfocada, nos meios-tons; a cor sai
+      com o mesmo matiz e saturação (`assets/mblooks/pop2luz.frag` + `gauss.comp` + `pop2pos.frag`);
+    - Pop < 0: um filtro bilateral em meia resolução (raio (5 − 20p)·largura/1080·Size/200) que alisa sem borrar as
+      bordas, misturado com −p·0,97 nos meios-tons e menos onde a diferença é grande — o Preserve Detail, com a
+      inclinação 50·d^2,5 medida no AE (`pop2reduz`/`pop2bilateral`/`pop2amplia`/`pop2neg.frag`).
+  Preserve Detail só muda o caminho negativo. Conferido contra o After Effects (rodadas `pop` e `pop_d`, LEIAME.md).
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.pop"
+    name="Looks: Pop"
+    name-en="Looks: Pop"
+    desc="A ferramenta Pop do Magic Bullet Looks: realça o contraste local dos meios-tons (ou, negativa, alisa a imagem preservando as bordas)."
+    desc-en="Magic Bullet Looks' Pop tool: boosts midtone local contrast (or, negative, smooths the image while keeping edges)."
+    category="looks"
+    stage="mblooks"
+    looks="pop2"
+    tags="magic bullet,looks,red giant,pop,contraste local,local contrast,clarity,nitidez,detalhe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="pop" label="Pop" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="size" label="Size" default="100.0" min="0.0" max="300.0" step="0.1" />
+        <slider id="preserveDetail" label="Preserve Detail" default="30.0" min="0.0" max="100.0" step="0.1" />
+    </params>
+
+    <!-- Na vitrine, o padrão (Pop 0) não muda nada: o realce dos presets, forte. -->
+    <preview>
+        <set param="pop" value="100.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

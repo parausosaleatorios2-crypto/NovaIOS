@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — a cabeça de um Look: o Strength do efeito do AE (`MB LookSuite3-0013`), a mistura
+  do resultado com a entrada, feita NO LINEAR num passe próprio (medido no AE; a força interna do Look, `strn`,
+  e a de cada ferramenta, `Tstr`, não mudam o render).
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks"
+    name="Magic Bullet Looks"
+    name-en="Magic Bullet Looks"
+    desc="O Magic Bullet Looks (Red Giant): a cabeça de um Look. As ferramentas vêm logo depois dela na lista; aqui fica o Strength do efeito do AE."
+    desc-en="Red Giant's Magic Bullet Looks: the head of a Look. Its tools follow it in the list; this holds the AE effect's Strength."
+    category="looks"
+    stage="mblooks"
+    tags="magic bullet,looks,red giant,look,cabeca,strength">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="strength" label="Strength" default="100.0" min="0.0" max="100.0" step="1.0" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

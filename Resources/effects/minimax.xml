@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MINIMAX (ADBE Minimax, nativo do After Effects) — a conta do plugin (0.860.0)
+  ============================================================================
+
+  Erosão, dilatação, abertura e fechamento: para cada pixel, o MENOR (ou o MAIOR) valor de cada canal numa janela
+  de 2R + 1 pixels, primeiro na horizontal e depois na vertical. Da fila da pasta Desktop\Presets
+  (docs/PRESETS-DA-PASTA-DO-SNOW.md): 24 presets usam, 14 só esperavam por ele — todos com Maximum, quase sempre no
+  canal Color, nas três direções, raio de 1 a 68 ou animado.
+
+  O algoritmo foi LIDO do Minimax.aex do AE 2023 (tools/minimax/leitura: Ghidra), reescrito em Python
+  (tools/minimax/benchmark/modelo.py) e conferido com o After Effects em 8 bpc: 0 pixels diferentes em 17,6 milhões,
+  todas as operações × canais × direções × a chave da borda, raio 1 a 500, comp maior que a camada
+  (tools/minimax/LEIAME.md).
+
+  O QUE O PLUGIN FAZ (o render de 8 bpc, 0x180007f60), e este shader repete:
+  - Rx = trunc(R · escala + 0,5); "Just Horizontal" zera o Ry e "Just Vertical" o Rx; Rx = Ry = 0: a camada como está.
+  - Um passe horizontal com Rx e um vertical com Ry; "Minimum Then Maximum" e "Maximum Then Minimum" fazem mais dois,
+    com a operação trocada. Cada passe é o mínimo/máximo EXATO da janela (uma fila monotônica por canal) — sem
+    arredondamento nenhum. Os canais fora da escolha passam como estão.
+  - A COR CHEGA RETA (medido: a hipótese pré-multiplicada não bate). O Color mexe só no RGB, o Alpha só no alfa.
+  - O MUNDO de cada fase: o Máximo CRESCE R além da camada se o canal tem o alfa (numa fase só) ou sempre (nas duas
+    fases); o Mínimo ENCOLHE R se a borda encolhe e o canal é "Alpha and Color"; senão fica do tamanho da fonte.
+    Fora do mundo da saída, transparente.
+  - A BORDA: com "Don't Shrink Edges" desligado (o padrão), o que passa do mundo da fonte vale 0 — o Mínimo come a
+    beirada; ligado, a janela é cortada no mundo da fonte (que é repetir a borda, para mínimo e máximo).
+
+  POR QUE ISTO NÃO É UM LAÇO DE 2R + 1 AMOSTRAS: a janela vira uma CADEIA de passos esparsos de três amostras
+  ({−s, 0, +s}), cujo alcance quase triplica a cada volta (raio 5: 3 passos; 50: 5; 500: 7) — o resultado é IGUAL
+  ao da janela cheia (Morfologia.kt, com teste contra a força bruta). As repetições saem do próprio raio
+  (<iterations mode="morfologia">) e vêm em dobro: a primeira metade é a primeira fase, a segunda é a outra (ou
+  cópia, nas operações simples). Em cada volta, o passe 0 dá um passo na horizontal e o 1 na vertical (máximo e
+  mínimo de um retângulo não dependem da ordem dos eixos). A cadeia só é exata se a borda for uma imagem infinita
+  válida, então ela é resolvida no PRIMEIRO passo de cada eixo de cada fase: o que cai fora do mundo da fonte vira 0
+  (a borda que encolhe) ou a beira mais próxima (a que não encolhe); os passos seguintes leem o que os anteriores
+  deixaram (a beira do buffer presa, que não sai da janela). O Mínimo com a borda que encolhe zera, de conta, o pixel
+  cuja janela passa do mundo da fonte — a beira do buffer não guarda os zeros de fora dela.
+
+  O RETÂNGULO DA CAMADA é o `acCamada` (a mídia encaixada; texto, forma e sólido: a composição inteira), como no CC
+  Burn Film. O que o Máximo faz crescer além dele tem a folga do buffer (`SceneRenderer.margemDoMinimax`): sem ela,
+  a camada de vídeo que enche a composição perderia o que cresce para fora quando é movida ou reduzida, e o "Maximum
+  Then Minimum" leria a beira do buffer no lugar do que o AE calcula além dela.
+
+  O QUE NÃO ENTROU (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md): 16 e 32 bpc (o app é 8 bits; o plugin tem um render para
+  cada); pixel não quadrado (o Rx do plugin leva a proporção do pixel); raio acima de 3280 (oito passos de cadeia, o
+  teto de repetições do motor — o AE vai a 32000); o "preserve RGB of zero alpha" do pedido de render (o AE só o pede
+  em casos especiais; o app nunca); o RGB dos pixels transparentes (o AE guarda o da imagem, o app pode ter zerado ao
+  carregar — só pesa no Color sobre transparente); sem folga no buffer (camada com máscara, ladrilho, grupo solto) o
+  que cresce além da borda do buffer some, como em qualquer efeito; na prévia reduzida a escala do AE vira
+  acEscalaDePixel (a mesma conta do plugin com o raio reduzido).
+-->
+<effect
+    id="nova.effect.minimax"
+    name="Mínimo e máximo"
+    name-en="Minimax"
+    desc="O Minimax do After Effects, conta por conta: erosão, dilatação, abertura e fechamento. A ferramenta de engordar ou afinar um recorte."
+    desc-en="After Effects' Minimax, step by step: erode, dilate, open and close. The tool for growing or choking a matte."
+    category="matte"
+    tags="minimax,minimo,maximo,erosao,dilatacao,morfologia,matte,choke,spread,erode,dilate,abertura,fechamento,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Onde o passe horizontal deposita o resultado para o vertical ler. -->
+        <texture id="morf" src="buffer" />
+
+        <selector id="operation" label="Operação" default="1"
+                  options="Mínimo|Máximo|Mínimo e depois máximo|Máximo e depois mínimo" />
+
+        <!--
+          Raio em pixels da composição, inteiro como o do AE (um slider de long: o plugin lê o valor do controle
+          arredondado). O teto é o que oito passos de cadeia alcançam; o AE vai a 32000.
+        -->
+        <slider id="radius" label="Raio"
+                default="1" min="0" max="3280" step="1" type="integer"
+                ticks="0,10,50,100,250,500" snap="0,1" />
+
+        <selector id="channel" label="Canal" default="0"
+                  options="Cor|Alfa e cor|Vermelho|Verde|Azul|Alfa" />
+
+        <selector id="direction" label="Direção" default="0"
+                  options="Horizontal e vertical|Horizontal|Vertical" />
+
+        <switch id="dontShrinkEdges" label="Não encolher nas bordas" default="false" />
+    </params>
+
+    <!-- Na vitrine, o raio padrão (1 px) não aparece: oito. (vitrine, 0.668.0) -->
+    <preview amostra="personagem">
+        <set param="radius" value="8.0" ate="0.0" />
+    </preview>
+
+    <iterations param="radius" mode="morfologia" />
+
+    <passes>
+        <pass target="morf" />  <!-- passe 0: um passo na horizontal -->
+        <pass />                <!-- passe 1: um passo na vertical, para o destino final -->
+    </passes>
+
+    <shader><![CDATA[
+
+const int OP_MIN = 0;
+const int OP_MAX = 1;
+const int OP_MIN_MAX = 2;
+const int OP_MAX_MIN = 3;
+
+const int CANAL_COR = 0;
+const int CANAL_ALFA_E_COR = 1;
+const int CANAL_R = 2;
+const int CANAL_G = 3;
+const int CANAL_B = 4;
+const int CANAL_ALFA = 5;
+
+const int DIR_H = 1;
+const int DIR_V = 2;
+
+/** O teto do raio: o alcance de oito passos da cadeia ((3⁸ − 1) / 2), o teto de repetições do motor. */
+const int RAIO_MAXIMO = 3280;
+
+ivec2 buf;
+
+/** O alcance da cadeia ANTES do passo `passo` (x) e o salto dele (y), pela regra gulosa do `Morfologia.kt`. */
+ivec2 cadeia(int raio, int passo) {
+    int alcance = 0;
+    for (int k = 0; k < 8; k++) {
+        int salto = max(min(2 * alcance + 1, raio - alcance), 0);
+        if (k == passo) return ivec2(alcance, salto);
+        alcance += salto;
+    }
+    return ivec2(alcance, 0);
+}
+
+/** Quanto o mundo de saída de uma fase cresce (+) ou encolhe (−) num eixo, pela regra do plugin (0x1800039e0). */
+int mudanca(int r, bool eMin, bool duas) {
+    if (r == 0) return 0;
+    if (!eMin) return (duas || channel == CANAL_ALFA_E_COR || channel == CANAL_ALFA) ? r : 0;
+    return (!dontShrinkEdges && channel == CANAL_ALFA_E_COR) ? -r : 0;
+}
+
+/** O retângulo (x0, y0, x1, y1; o fim fora) crescido de (dx, dy); o vazio continua vazio, como no plugin. */
+ivec4 cresce(ivec4 q, int dx, int dy) {
+    if (q.x >= q.z || q.y >= q.w) return ivec4(0);
+    ivec4 n = ivec4(q.x - dx, q.y - dy, q.z + dx, q.w + dy);
+    return (n.x < n.z && n.y < n.w) ? n : ivec4(0);
+}
+
+bool dentro(ivec2 p, ivec4 q) {
+    return p.x >= q.x && p.x < q.z && p.y >= q.y && p.y < q.w;
+}
+
+vec4 ler(ivec2 q) {
+    ivec2 c = clamp(q, ivec2(0), buf - 1);
+    return (acPass == 0) ? texelFetch(inputImg, c, 0) : texelFetch(morf, c, 0);
+}
+
+/**
+ * O primeiro passo de um eixo numa fase lê a FONTE da fase: fora do mundo dela, 0 (a borda que encolhe) ou a beira
+ * mais próxima (a que não encolhe). Na horizontal, a linha fora do mundo também é fora; na vertical a coluna fora
+ * só sai no fim da fase (o mundo de saída não a tem).
+ */
+vec4 lerDaFonte(ivec2 q, ivec2 p, ivec4 fonte, bool horizontal) {
+    bool fora = horizontal
+        ? (q.x < fonte.x || q.x >= fonte.z || p.y < fonte.y || p.y >= fonte.w)
+        : (q.y < fonte.y || q.y >= fonte.w);
+    if (!dontShrinkEdges) return fora ? vec4(0.0) : ler(q);
+    if (fonte.x >= fonte.z) return vec4(0.0);
+    ivec2 c = horizontal ? ivec2(clamp(q.x, fonte.x, fonte.z - 1), q.y) : ivec2(q.x, clamp(q.y, fonte.y, fonte.w - 1));
+    return ler(c);
+}
+
+void main() {
+    buf = ivec2(acResolution + 0.5);
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    bool horizontal = acPass == 0;
+    vec4 centro = ler(p);
+
+    // ---------------------------------------------------------- os raios (0x180003b40)
+    // O controle é um slider de long no AE: o plugin lê o valor arredondado. A escala é a da prévia reduzida.
+    int R = min(int(floor(max(radius, 0.0) + 0.5)), RAIO_MAXIMO);
+    float esc = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+    int rs = int(floor(float(R) * esc + 0.5));
+    int rx = direction == DIR_V ? 0 : rs;
+    int ry = direction == DIR_H ? 0 : rs;
+    if (rx == 0 && ry == 0) {
+        fragColor = centro;
+        return;
+    }
+
+    // ---------------------------------------------------------- a fase e o passo
+    int voltas = max(acIterationCount / 2, 1);
+    int fase = min(acIteration / voltas, 1);
+    int passo = acIteration - fase * voltas;
+    bool duas = operation == OP_MIN_MAX || operation == OP_MAX_MIN;
+    if (!duas && fase == 1) {
+        fragColor = centro;
+        return;
+    }
+    bool min1 = operation == OP_MIN || operation == OP_MIN_MAX;
+    bool eMin = fase == 0 ? min1 : !min1;
+
+    // ---------------------------------------------------------- os mundos (0x180003e80)
+    // A fonte da primeira fase é a camada; a da segunda, o mundo de saída da primeira.
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    ivec2 ini = (buf - tam) / 2;
+    ivec4 s1 = ivec4(ini, ini + tam);
+    ivec4 o1 = cresce(s1, mudanca(rx, min1, duas), mudanca(ry, min1, duas));
+    ivec4 o2 = cresce(o1, mudanca(rx, !min1, duas), mudanca(ry, !min1, duas));
+    ivec4 fonte = fase == 0 ? s1 : o1;
+    ivec4 saida = fase == 0 ? o1 : o2;
+
+    // ---------------------------------------------------------- um passo da cadeia
+    int r = horizontal ? rx : ry;
+    ivec2 c = cadeia(r, passo);
+    int salto = c.y;
+    int alcance = c.x + salto;
+    bool primeiro = passo == 0;
+
+    vec4 v = centro;
+    if (salto > 0) {
+        ivec2 d = horizontal ? ivec2(salto, 0) : ivec2(0, salto);
+        vec4 a, m, b;
+        if (primeiro) {
+            a = lerDaFonte(p - d, p, fonte, horizontal);
+            m = lerDaFonte(p, p, fonte, horizontal);
+            b = lerDaFonte(p + d, p, fonte, horizontal);
+        } else {
+            a = ler(p - d);
+            m = centro;
+            b = ler(p + d);
+        }
+        v = eMin ? min(m, min(a, b)) : max(m, max(a, b));
+        // O Mínimo com a borda que encolhe: a janela que passa do mundo da fonte tem um 0 — que a beira presa do
+        // buffer não guarda.
+        if (eMin && !dontShrinkEdges) {
+            int pe = horizontal ? p.x : p.y;
+            int lo = horizontal ? fonte.x : fonte.y;
+            int hi = horizontal ? fonte.z : fonte.w;
+            if (pe - alcance < lo || pe + alcance >= hi) v = vec4(0.0);
+        }
+    }
+
+    // Os canais fora da escolha: a fonte (0 fora do mundo dela), copiada no começo da fase e depois carregada.
+    vec4 resto = centro;
+    if (horizontal && primeiro && !dentro(p, fonte)) resto = vec4(0.0);
+    bvec4 tocado = bvec4(channel != CANAL_ALFA && channel != CANAL_G && channel != CANAL_B,
+                         channel == CANAL_COR || channel == CANAL_ALFA_E_COR || channel == CANAL_G,
+                         channel == CANAL_COR || channel == CANAL_ALFA_E_COR || channel == CANAL_B,
+                         channel == CANAL_ALFA_E_COR || channel == CANAL_ALFA);
+    vec4 cor = mix(resto, v, tocado);
+
+    // No fim da fase, fora do mundo de saída: transparente.
+    if (!horizontal && passo == voltas - 1 && !dentro(p, saida)) cor = vec4(0.0);
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  omino diffusion (omino.com, `omino_diffusion`) — a conta do plugin.
+
+  O efeito é código de CPU (`omino_diffusion.aex`): a conta foi LIDA no binário e conferida contra o After Effects
+  (`tools/ominodiffusion/benchmark`, LEIAME.md) pixel a pixel — 0 diferença em 49 casos de 8 bpc: as quatro
+  direções, across de 0 a 4, aside, 2 a 6 cores, as larguras (inclusive a do erro estourado, quando nenhuma cor
+  serve), a fase, o alfa e os presets "omino 1" e "1frame_omino_glitch".
+
+  `stage="ominodiffusion"`: o efeito roda NA cadeia, mas na CPU — o `PasseDoOminoDiffusion` lê o buffer, faz a conta
+  de `model/OminoDiffusion.kt` e sobe o resultado. Este `<shader>` é só a cópia da entrada.
+
+  As faixas são as do plugin (a tabela de parâmetros do .aex): across e aside de 0 a 4, color count de 2 a 6,
+  larguras de 1 a 32. Fica de fora o grupo "debug" do plugin (carimbar os parâmetros e o tempo na imagem).
+  Na prévia em meia resolução o efeito roda sobre a imagem menor (as larguras em pixel pesam o dobro); a exportação
+  é na resolução cheia. Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.ominodiffusion"
+    name="omino diffusion"
+    name-en="omino diffusion"
+    desc="O omino diffusion: a imagem vira poucas cores com o erro andando de pixel em pixel pela linha, em faixas e listras, igual ao After Effects."
+    desc-en="omino diffusion: the image turns into a few colors with the error carried pixel to pixel along each line, in bands and streaks, as in After Effects."
+    category="stylize"
+    stage="ominodiffusion"
+    tags="omino,diffusion,difusão,dither,pontilhado,paleta,palette,glitch,listras,streaks,1 bit,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="across" label="error across" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="aside" label="error aside" default="0.0" min="0.0" max="4.0" step="0.01" snap="0.0" />
+        <color id="phase" label="initial phase" default="#000000" />
+        <selector id="direction" label="direction" default="0" options="right|left|down|up" />
+        <slider id="count" label="color count" type="integer" default="2" min="2" max="6" step="1" />
+
+        <color id="color1" label="color 1" default="#000000" />
+        <slider id="width1" label="width 1" type="integer" default="1" min="1" max="32" step="1" />
+        <color id="color2" label="color 2" default="#FFFFFF" />
+        <slider id="width2" label="width 2" type="integer" default="1" min="1" max="32" step="1" />
+        <color id="color3" label="color 3" default="#800000" />
+        <slider id="width3" label="width 3" type="integer" default="1" min="1" max="32" step="1" />
+        <color id="color4" label="color 4" default="#008000" />
+        <slider id="width4" label="width 4" type="integer" default="1" min="1" max="32" step="1" />
+        <color id="color5" label="color 5" default="#000080" />
+        <slider id="width5" label="width 5" type="integer" default="1" min="1" max="32" step="1" />
+        <color id="color6" label="color 6" default="#404040" />
+        <slider id="width6" label="width 6" type="integer" default="1" min="1" max="32" step="1" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoOminoDiffusion` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

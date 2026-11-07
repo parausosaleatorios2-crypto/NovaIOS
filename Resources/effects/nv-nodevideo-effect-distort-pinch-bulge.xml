@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Distort_pinch_bulge
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-distort-pinch-bulge"
+    name="Effect Distort Pinch Bulge (NV)"
+    name-en="Effect Distort Pinch Bulge (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Distort_pinch_bulge', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Distort_pinch_bulge', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <point id="_center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="_strength" label="Strength" default="0.4" min="-1" max="1" step="0.01" />
+        <slider id="_radius" label="Radius" default="0.3" min="0" max="1" step="0.01" />
+        <slider id="_feather" label="Feather" default="0" min="0" max="1" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+bvec4 u_xlatb0;
+vec4 u_xlat1;
+vec2 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+bool u_xlatb7;
+vec2 u_xlat8;
+vec2 u_xlat12;
+float u_xlat14;
+float u_xlat18;
+float u_xlat19;
+float u_xlat20;
+void main()
+{
+    u_xlatb0.xy = greaterThanEqual(acScreenNorm.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb0.zw = greaterThanEqual(vec4(0.0, 0.0, 1.0, 1.0), acScreenNorm.xxxy).zw;
+    u_xlat0.x = u_xlatb0.x ? float(1.0) : 0.0;
+    u_xlat0.y = u_xlatb0.y ? float(1.0) : 0.0;
+    u_xlat0.z = u_xlatb0.z ? float(1.0) : 0.0;
+    u_xlat0.w = u_xlatb0.w ? float(1.0) : 0.0;
+;
+    u_xlat0.x = u_xlat0.z * u_xlat0.x;
+    u_xlat0.x = u_xlat0.y * u_xlat0.x;
+    u_xlat6.x = float(1.0) / _feather;
+    u_xlat6.xy = u_xlat6.xx * acScreenNorm.xy;
+    u_xlat6.xy = clamp(u_xlat6.xy, 0.0, 1.0);
+    u_xlat1.xy = u_xlat6.xy * vec2(-2.0, -2.0) + vec2(3.0, 3.0);
+    u_xlat6.xy = u_xlat6.xy * u_xlat6.xy;
+    u_xlat0.yz = u_xlat6.xy * u_xlat1.xy;
+    u_xlat0.xy = u_xlat0.wz * u_xlat0.xy;
+    u_xlat12.xy = acScreenNorm.xy + vec2(-1.0, -1.0);
+    u_xlat1.x = float(1.0) / (-_feather);
+    u_xlat12.xy = u_xlat12.xy * u_xlat1.xx;
+    u_xlat12.xy = clamp(u_xlat12.xy, 0.0, 1.0);
+    u_xlat1.xy = u_xlat12.xy * vec2(-2.0, -2.0) + vec2(3.0, 3.0);
+    u_xlat12.xy = u_xlat12.xy * u_xlat12.xy;
+    u_xlat12.xy = u_xlat12.xy * u_xlat1.xy;
+    u_xlat6.x = u_xlat12.x * u_xlat0.y;
+    u_xlat6.x = u_xlat12.y * u_xlat6.x;
+    u_xlat1.yz = acScreenNorm.xy + (-_center.xy);
+    u_xlat12.x = _viewport_ratio.xxxy.z / _viewport_ratio.xxxy.w;
+    u_xlat1.x = u_xlat12.x * u_xlat1.y;
+    u_xlat18 = dot(u_xlat1.xz, u_xlat1.xz);
+    u_xlat18 = sqrt(u_xlat18);
+    u_xlatb7 = u_xlat18<_radius;
+    u_xlat19 = u_xlat18 / _radius;
+    u_xlatb2.x = 0.0<_strength;
+    u_xlat8.x = _radius / u_xlat18;
+    u_xlat8.x = float(1.0) / u_xlat8.x;
+    u_xlat8.x = u_xlat19 * u_xlat8.x;
+    u_xlat8.x = clamp(u_xlat8.x, 0.0, 1.0);
+    u_xlat14 = u_xlat8.x * -2.0 + 3.0;
+    u_xlat8.x = u_xlat8.x * u_xlat8.x;
+    u_xlat20 = _strength * 0.75;
+    u_xlat8.x = u_xlat14 * u_xlat8.x + -1.0;
+    u_xlat8.x = u_xlat20 * u_xlat8.x + 1.0;
+    u_xlat8.xy = u_xlat1.xz * u_xlat8.xx;
+    u_xlat20 = _strength * 0.75 + 1.0;
+    u_xlat3.x = log2(u_xlat19);
+    u_xlat20 = u_xlat20 * u_xlat3.x;
+    u_xlat20 = exp2(u_xlat20);
+    u_xlat20 = u_xlat20 * _radius;
+    u_xlat18 = u_xlat20 / u_xlat18;
+    u_xlat19 = (-u_xlat19) + 1.0;
+    u_xlat18 = u_xlat18 + -1.0;
+    u_xlat18 = u_xlat19 * u_xlat18 + 1.0;
+    u_xlat3.xy = vec2(u_xlat18) * u_xlat1.xz;
+    u_xlat2.xy = (u_xlatb2.x) ? u_xlat8.xy : u_xlat3.xy;
+    u_xlat0.x = u_xlat0.x * u_xlat6.x;
+    u_xlat6.xz = (-u_xlat1.xz) + u_xlat2.xy;
+    u_xlat0.xy = u_xlat0.xx * u_xlat6.xz + u_xlat1.xz;
+    u_xlat1.yz = (bool(u_xlatb7)) ? u_xlat0.xy : u_xlat1.xz;
+    u_xlat1.x = u_xlat1.y / u_xlat12.x;
+    u_xlat0.xy = u_xlat1.xz + _center.xy;
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    if(int(_use_inner_mask) != 0) {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

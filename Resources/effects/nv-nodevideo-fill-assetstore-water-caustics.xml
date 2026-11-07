@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Fill_AssetStore_water_caustics
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-fill-assetstore-water-caustics"
+    name="Fill Assetstore Water Caustics (NV)"
+    name-en="Fill Assetstore Water Caustics (NV)"
+    desc="NodeVideo effect 'NodeVideo/Fill_AssetStore_water_caustics', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Fill_AssetStore_water_caustics', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <color id="_color" label="Color" default="#FF7CF6FF" />
+        <point id="_scale" label="Scale" defaultX="0.3" defaultY="0.3" vetor="true" min="0" max="5" />
+        <point id="_offset" label="Offset" defaultX="0" defaultY="0" vetor="true" min="0" max="5" />
+        <slider id="_intensity" label="Intensity" default="1" min="0" max="2" step="0.01" />
+        <slider id="_evolution" label="Evolution" default="0" min="0" max="10" step="0.01" />
+        <slider id="_iteration" type="integer" label="Iteration" default="8" min="1" max="16" step="1" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="2" step="1" />
+        <slider id="_type" type="integer" label="Type" default="1" min="0" max="3" step="1" />
+        <slider id="_brightness" label="Brightness" default="5" min="0" max="10" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+bool u_xlatb2;
+vec4 u_xlat3;
+int u_xlati3;
+bvec3 u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec2 u_xlat6;
+bool u_xlatb6;
+vec3 u_xlat8;
+vec2 u_xlat9;
+bool u_xlatb9;
+float u_xlat12;
+vec2 u_xlat14;
+float u_xlat15;
+float u_xlat18;
+bool u_xlatb18;
+float u_xlat21;
+void main()
+{
+    u_xlat0.xyz = _color.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat0.xyz = _color.xyz * u_xlat0.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat1.xzw = u_xlat0.xzy * _color.xzy;
+    u_xlat0.xw = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat0.xw = u_xlat0.xw * _scale.xy;
+    u_xlat0.xw = u_xlat0.xw * vec2(10.0, 10.0) + vec2(_offset.x, _offset.y);
+    u_xlat0.xw = u_xlat0.xw + vec2(-19.0, -19.0);
+    u_xlat2.x = _brightness * 0.00999999978;
+    u_xlat8.x = 1.0;
+    u_xlat14.xy = u_xlat0.xw;
+    u_xlati3 = 0;
+    while(true){
+        u_xlatb9 = u_xlati3>=int(_iteration);
+        if(u_xlatb9){break;}
+        u_xlati3 = u_xlati3 + 1;
+        u_xlat9.x = float(u_xlati3);
+        u_xlat9.x = 0.200000003 / u_xlat9.x;
+        u_xlat9.x = (-u_xlat9.x) + 0.699999988;
+        u_xlat15 = _evolution * u_xlat9.x + (-u_xlat14.x);
+        u_xlat15 = cos(u_xlat15);
+        u_xlat21 = _evolution * u_xlat9.x + u_xlat14.y;
+        u_xlat21 = sin(u_xlat21);
+        u_xlat4.x = u_xlat21 + u_xlat15;
+        u_xlat15 = _evolution * u_xlat9.x + (-u_xlat14.y);
+        u_xlat15 = sin(u_xlat15);
+        u_xlat21 = _evolution * u_xlat9.x + u_xlat14.x;
+        u_xlat21 = cos(u_xlat21);
+        u_xlat4.y = u_xlat21 + u_xlat15;
+        u_xlat14.xy = u_xlat0.xw + u_xlat4.xy;
+        u_xlat9.xy = vec2(vec2(_evolution, _evolution)) * u_xlat9.xx + u_xlat14.xy;
+        u_xlat9.x = sin(u_xlat9.x);
+        u_xlat9.x = u_xlat9.x + u_xlat9.x;
+        u_xlat9.x = u_xlat9.x / u_xlat2.x;
+        u_xlat4.x = u_xlat0.x / u_xlat9.x;
+        u_xlat9.x = cos(u_xlat9.y);
+        u_xlat9.x = u_xlat9.x / u_xlat2.x;
+        u_xlat4.y = u_xlat0.w / u_xlat9.x;
+        u_xlat9.x = dot(u_xlat4.xy, u_xlat4.xy);
+        u_xlat9.x = sqrt(u_xlat9.x);
+        u_xlat9.x = float(1.0) / u_xlat9.x;
+        u_xlat8.x = u_xlat8.x + u_xlat9.x;
+    }
+    u_xlat0.x = float(int(_iteration));
+    u_xlat0.x = u_xlat8.x / u_xlat0.x;
+    u_xlat0.x = -abs(u_xlat0.x) + 1.5;
+    if(int(_type) == 0) {
+        u_xlat1.xyz = u_xlat1.xwz;
+    } else {
+        u_xlatb18 = int(_type)==1;
+        if(u_xlatb18){
+            u_xlat18 = log2(u_xlat0.x);
+            u_xlat18 = u_xlat18 * _intensity;
+            u_xlat18 = exp2(u_xlat18);
+            u_xlat1.y = u_xlat18 * acScreenNorm.x;
+        } else {
+            u_xlatb18 = int(_type)==2;
+            if(u_xlatb18){
+                u_xlatb18 = u_xlat1.w>=u_xlat1.z;
+                u_xlat18 = u_xlatb18 ? 1.0 : float(0.0);
+                u_xlat2.xy = _color.yz * u_xlat0.yz + (-u_xlat1.zw);
+                u_xlat1.zw = vec2(u_xlat18) * u_xlat2.yx + u_xlat1.wz;
+                u_xlatb18 = u_xlat1.x>=u_xlat1.w;
+                u_xlat18 = u_xlatb18 ? 1.0 : float(0.0);
+                u_xlat2.xyz = (-u_xlat1.wzx) + u_xlat1.xzw;
+                u_xlat2.xyz = vec3(u_xlat18) * u_xlat2.xyz + u_xlat1.wzx;
+                u_xlat18 = min(u_xlat2.y, u_xlat2.z);
+                u_xlat18 = (-u_xlat18) + u_xlat2.x;
+                u_xlat8.x = u_xlat2.x + 1.00000001e-10;
+                u_xlat18 = u_xlat18 / u_xlat8.x;
+                u_xlat8.x = u_xlat0.x * acScreenNorm.x;
+                u_xlat8.x = u_xlat8.x * _intensity;
+                u_xlat8.xyz = u_xlat8.xxx * vec3(6.0, 6.0, 6.0) + vec3(0.0, 4.0, 2.0);
+                u_xlat8.xyz = u_xlat8.xyz * vec3(0.166666672, 0.166666672, 0.166666672);
+                u_xlatb3.xyz = greaterThanEqual(u_xlat8.xyzx, (-u_xlat8.xyzx)).xyz;
+                u_xlat8.xyz = fract(abs(u_xlat8.xyz));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat8;
+                    hlslcc_movcTemp.x = (u_xlatb3.x) ? u_xlat8.x : (-u_xlat8.x);
+                    hlslcc_movcTemp.y = (u_xlatb3.y) ? u_xlat8.y : (-u_xlat8.y);
+                    hlslcc_movcTemp.z = (u_xlatb3.z) ? u_xlat8.z : (-u_xlat8.z);
+                    u_xlat8 = hlslcc_movcTemp;
+                }
+                u_xlat8.xyz = u_xlat8.xyz * vec3(6.0, 6.0, 6.0) + vec3(-3.0, -3.0, -3.0);
+                u_xlat8.xyz = abs(u_xlat8.xyz) + vec3(-1.0, -1.0, -1.0);
+                u_xlat8.xyz = clamp(u_xlat8.xyz, 0.0, 1.0);
+                u_xlat3.xyz = u_xlat8.xyz * u_xlat8.xyz;
+                u_xlat3.xyz = u_xlat8.xyz * u_xlat3.xyz;
+                u_xlat8.xyz = (-u_xlat8.xyz) * vec3(2.0, 2.0, 2.0) + vec3(3.0, 3.0, 3.0);
+                u_xlat8.xyz = u_xlat3.xyz * u_xlat8.xyz + vec3(-1.0, -1.0, -1.0);
+                u_xlat8.xyz = vec3(u_xlat18) * u_xlat8.xyz + vec3(1.0, 1.0, 1.0);
+                u_xlat1.xyz = u_xlat8.xyz * u_xlat2.xxx;
+            } else {
+                u_xlatb18 = int(_type)==3;
+                u_xlatb2 = u_xlat1.w>=u_xlat1.z;
+                u_xlat2.x = u_xlatb2 ? 1.0 : float(0.0);
+                u_xlat6.xy = _color.yz * u_xlat0.yz + (-u_xlat1.zw);
+                u_xlat2.xy = u_xlat2.xx * u_xlat6.xy + u_xlat1.zw;
+                u_xlatb6 = u_xlat1.x>=u_xlat2.x;
+                u_xlat6.x = u_xlatb6 ? 1.0 : float(0.0);
+                u_xlat2.z = u_xlat1.x;
+                u_xlat3.xyz = (-u_xlat2.xyz) + u_xlat2.zyx;
+                u_xlat2.xyz = u_xlat6.xxx * u_xlat3.xyz + u_xlat2.xyz;
+                u_xlat6.x = min(u_xlat2.y, u_xlat2.z);
+                u_xlat6.x = (-u_xlat6.x) + u_xlat2.x;
+                u_xlat12 = u_xlat2.x + 1.00000001e-10;
+                u_xlat6.x = u_xlat6.x / u_xlat12;
+                u_xlat12 = u_xlat0.x * _intensity;
+                u_xlat8.xyz = vec3(u_xlat12) * vec3(6.0, 6.0, 6.0) + vec3(0.0, 4.0, 2.0);
+                u_xlat8.xyz = u_xlat8.xyz * vec3(0.166666672, 0.166666672, 0.166666672);
+                u_xlatb3.xyz = greaterThanEqual(u_xlat8.xyzx, (-u_xlat8.xyzx)).xyz;
+                u_xlat8.xyz = fract(abs(u_xlat8.xyz));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat8;
+                    hlslcc_movcTemp.x = (u_xlatb3.x) ? u_xlat8.x : (-u_xlat8.x);
+                    hlslcc_movcTemp.y = (u_xlatb3.y) ? u_xlat8.y : (-u_xlat8.y);
+                    hlslcc_movcTemp.z = (u_xlatb3.z) ? u_xlat8.z : (-u_xlat8.z);
+                    u_xlat8 = hlslcc_movcTemp;
+                }
+                u_xlat8.xyz = u_xlat8.xyz * vec3(6.0, 6.0, 6.0) + vec3(-3.0, -3.0, -3.0);
+                u_xlat8.xyz = abs(u_xlat8.xyz) + vec3(-1.0, -1.0, -1.0);
+                u_xlat8.xyz = clamp(u_xlat8.xyz, 0.0, 1.0);
+                u_xlat3.xyz = u_xlat8.xyz * u_xlat8.xyz;
+                u_xlat3.xyz = u_xlat8.xyz * u_xlat3.xyz;
+                u_xlat8.xyz = (-u_xlat8.xyz) * vec3(2.0, 2.0, 2.0) + vec3(3.0, 3.0, 3.0);
+                u_xlat8.xyz = u_xlat3.xyz * u_xlat8.xyz + vec3(-1.0, -1.0, -1.0);
+                u_xlat8.xyz = u_xlat6.xxx * u_xlat8.xyz + vec3(1.0, 1.0, 1.0);
+                u_xlat2.xyz = u_xlat8.xyz * u_xlat2.xxx;
+                u_xlat1.xyz = (bool(u_xlatb18)) ? u_xlat2.xyz : u_xlat1.xwz;
+            }
+        }
+    }
+    u_xlat2 = texture(inputImg, acScreenNorm.xy);
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat3.xyz = u_xlat0.xxx * u_xlat1.xyz;
+    u_xlatb6 = int(_blend_mode)==1;
+    u_xlat3.w = _brightness;
+    u_xlat4 = u_xlat2 * u_xlat3;
+    u_xlat1.xyz = u_xlat1.xyz * u_xlat0.xxx + u_xlat2.xyz;
+    u_xlat1.w = u_xlat2.w;
+    u_xlat0 = (bool(u_xlatb6)) ? u_xlat4 : u_xlat1;
+    u_xlat4.xyz = u_xlat3.xyz;
+    u_xlat0 = (int(_blend_mode) != 0) ? u_xlat0 : u_xlat4;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb1.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat2 = u_xlat2 * u_xlat5;
+        u_xlat2 = u_xlat3 * u_xlat4 + u_xlat2;
+        u_xlat1.x = u_xlat4.x * u_xlat2.w;
+        fragColor.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat2.w;
+        fragColor.xyz = u_xlat2.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chroma key (fundo verde).
+
+  A conta boa aqui é fazer a comparação em YCbCr e não em RGB. Em RGB, "quão
+  verde é este pixel" muda junto com a iluminação, então uma sombra no fundo
+  verde não é reconhecida e sobra sujeira. Em YCbCr o brilho (Y) fica num canal
+  separado, e a comparação usa só a crominância (Cb, Cr) — o recorte passa a
+  funcionar em fundo mal iluminado, que é o fundo que todo mundo tem em casa.
+
+  Só que preto, cinza e branco têm a MESMA crominância (zero): com a cor do
+  fundo em preto, só a crominância apagava a camada inteira, cinza e branco
+  junto. Quanto menos saturada a cor escolhida, mais o brilho entra na conta —
+  em verde/azul de verdade ele não entra e o recorte fica como sempre foi.
+-->
+<effect
+    id="nova.effect.chromakey"
+    name="Chroma key"
+    name-en="Chroma Key"
+    desc="Remove um fundo de cor sólida. Funciona em verde, azul ou qualquer cor."
+    desc-en="Cuts out a colour — the green screen, with spill control."
+    category="matte"
+    tags="recorte,fundo verde,transparência,croma">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="keyColor" label="Cor do fundo" default="#00B140" />
+        <slider id="tolerance" label="Tolerância" default="0.30" min="0.0" max="1.0" step="0.01" />
+        <slider id="softness" label="Suavidade da borda" default="0.10" min="0.0" max="0.5" step="0.01" />
+        <slider id="spill" label="Remover vazamento" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <switch id="showMatte" label="Ver o recorte" default="false" />
+    </params>
+
+    <preview mostrar="antes-depois">
+        <set param="tolerance" value="0.12" />
+        <set param="softness" value="0.08" />
+    </preview>
+
+    <shader><![CDATA[
+
+vec2 chroma(vec3 rgb) {
+    float cb = -0.168736 * rgb.r - 0.331264 * rgb.g + 0.5 * rgb.b;
+    float cr =  0.5 * rgb.r - 0.418688 * rgb.g - 0.081312 * rgb.b;
+    return vec2(cb, cr);
+}
+
+float luma(vec3 rgb) {
+    return dot(rgb, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    // Saturação da cor escolhida: ~0,53 no verde puro, 0 em preto/cinza/branco.
+    // Até 0,05 o brilho conta inteiro; de 0,15 para cima não conta nada.
+    vec2 keyChroma = chroma(keyColor.rgb);
+    float lumaWeight = 1.0 - smoothstep(0.05, 0.15, length(keyChroma));
+
+    // Não chamar de `distance`: sombrearia a função nativa distance() para o
+    // resto do shader. É legal em GLSL, mas basta alguém acrescentar uma linha
+    // que a use para o arquivo parar de compilar sem motivo óbvio.
+    float lumaGap = (luma(color.rgb) - luma(keyColor.rgb)) * lumaWeight;
+    float chromaGap = length(vec3(chroma(color.rgb) - keyChroma, lumaGap));
+
+    // smoothstep dá a rampa de transparência. Sem essa rampa a borda do recorte
+    // fica serrilhada como recorte de tesoura.
+    float alpha = smoothstep(tolerance, tolerance + softness + 0.001, chromaGap);
+
+    vec3 rgb = color.rgb;
+
+    // Vazamento: o verde do fundo reflete na pessoa e tinge a borda do cabelo.
+    // A correção puxa o canal dominante do fundo para a média dos outros dois —
+    // é o truque padrão, barato e convincente. Fundo sem cor não tinge nada:
+    // com preto o "canal dominante" caía no verde e tirava verde da imagem toda.
+    if (spill > 0.0 && lumaWeight < 1.0) {
+        float keyStrength = max(max(keyColor.r, keyColor.g), keyColor.b);
+        if (keyColor.g >= keyStrength) {
+            float limit = (rgb.r + rgb.b) * 0.5;
+            rgb.g = mix(rgb.g, min(rgb.g, limit), spill);
+        } else if (keyColor.b >= keyStrength) {
+            float limit = (rgb.r + rgb.g) * 0.5;
+            rgb.b = mix(rgb.b, min(rgb.b, limit), spill);
+        } else {
+            float limit = (rgb.g + rgb.b) * 0.5;
+            rgb.r = mix(rgb.r, min(rgb.r, limit), spill);
+        }
+    }
+
+    // Ver o recorte em preto e branco é como se ajusta tolerância de verdade:
+    // o alvo é fundo 100% preto e sujeito 100% branco, sem cinza no meio.
+    if (showMatte) {
+        fragColor = vec4(vec3(alpha), 1.0);
+        return;
+    }
+
+    fragColor = vec4(rgb, color.a * alpha);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Distort_skew
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-distort-skew"
+    name="Effect Distort Skew (NV)"
+    name-en="Effect Distort Skew (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Distort_skew', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Distort_skew', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="SourceTexMirror" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <point id="_skew_pivot" label="Skew Pivot" defaultX="0.5" defaultY="0.5" />
+        <point id="_skew_pivot_prev" label="Skew Pivot Prev" defaultX="0.5" defaultY="0.5" />
+        <slider id="_skew_x" label="Skew X" default="0.0" min="-2.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="_skew_y" label="Skew Y" default="0.0" min="-2.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="_motion_amount" label="Motion Amount" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_motion_stay" label="Motion Stay" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_motion_samples" type="integer" label="Motion Samples" default="4" min="1" max="32" step="1" />
+        <slider id="_enable_motion_blur" type="integer" label="Enable Motion Blur" default="0" min="0" max="1" step="1" />
+        <slider id="_texture_wrap_mode" type="integer" label="Texture Wrap Mode" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <!-- A miniatura do catálogo: o padrão do Node é neutro (o efeito não faz nada até mexer). -->
+    <preview>
+        <set param="_skew_x" value="0.45" />
+        <set param="_skew_y" value="0.15" />
+    </preview>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+// Matrizes de skew que o HLSLcc esperava do cbuffer VGlobals do Unity (que o conversor automático perdeu).
+// Column-major (GLSL): coluna 0 = (1, shearY, 0, 0); coluna 1 = (shearX, 1, 0, 0); coluna 3 = translação (zero aqui,
+// o pivô é tratado fora da matriz). O _prev é identidade — motion blur do skew exige o valor do quadro anterior,
+// que o motor não guarda hoje; fica off (passthrough) pra esse lado até surgir `prevState`.
+// Global do GLSL ES só aceita valor constante: a matriz é montada no começo do main (0.910.0).
+mat4 hlslcc_mtx4x4_skew_mat;
+mat4 hlslcc_mtx4x4_skew_mat_prev = mat4(1.0);
+
+vec4 u_xlat0;
+bvec2 u_xlatb0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+bool u_xlatb4;
+vec4 u_xlat5;
+vec2 u_xlat7;
+int u_xlati7;
+bool u_xlatb7;
+vec2 u_xlat12;
+bvec2 u_xlatb12;
+int u_xlati13;
+bool u_xlatb16;
+int u_xlati19;
+void main()
+{
+    hlslcc_mtx4x4_skew_mat = mat4(
+    vec4(1.0, _skew_y, 0.0, 0.0),
+    vec4(_skew_x, 1.0, 0.0, 0.0),
+    vec4(0.0, 0.0, 1.0, 0.0),
+    vec4(0.0, 0.0, 0.0, 1.0));
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = _skew_pivot.xy + vec2(-0.5, -0.5);
+    u_xlat1.xy = (-u_xlat12.xy) + u_xlat0.xy;
+    u_xlat1.xy = u_xlat1.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat7.xy = u_xlat1.yy * hlslcc_mtx4x4_skew_mat[1].xy;
+    u_xlat1.xy = hlslcc_mtx4x4_skew_mat[0].xy * u_xlat1.xx + u_xlat7.xy;
+    u_xlat1.xy = u_xlat1.xy + hlslcc_mtx4x4_skew_mat[3].xy;
+    u_xlat1.xy = u_xlat1.xy / vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat12.xy = u_xlat12.xy + u_xlat1.xy;
+    u_xlat12.xy = u_xlat12.xy + vec2(0.5, 0.5);
+    u_xlatb1 = int(_texture_wrap_mode)==2;
+    if(u_xlatb1){
+        u_xlat2 = texture(SourceTexMirror, u_xlat12.xy);
+    } else {
+        u_xlat2 = texture(inputImg, u_xlat12.xy);
+    }
+    u_xlatb7 = 0<int(_enable_motion_blur);
+    if(u_xlatb7){
+        u_xlat7.xy = vec2(_skew_pivot_prev.x, _skew_pivot_prev.y) + vec2(-0.5, -0.5);
+        u_xlat0.xy = u_xlat0.xy + (-u_xlat7.xy);
+        u_xlat0.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+        u_xlat3.xy = u_xlat0.yy * hlslcc_mtx4x4_skew_mat_prev[1].xy;
+        u_xlat0.xy = hlslcc_mtx4x4_skew_mat_prev[0].xy * u_xlat0.xx + u_xlat3.xy;
+        u_xlat0.xy = u_xlat0.xy + hlslcc_mtx4x4_skew_mat_prev[3].xy;
+        u_xlat0.xy = u_xlat0.xy / vec2(_viewport_ratio.x, _viewport_ratio.y);
+        u_xlat0.xy = u_xlat7.xy + u_xlat0.xy;
+        u_xlat0.xy = u_xlat0.xy + vec2(0.5, 0.5);
+        u_xlat0.xy = (-u_xlat0.xy) + u_xlat12.xy;
+        u_xlat0.xy = u_xlat0.xy * vec2(_motion_amount);
+        u_xlati7 = int(_motion_samples) + int(0xFFFFFFFFu);
+        u_xlat7.x = float(u_xlati7);
+        u_xlat3 = u_xlat2;
+        u_xlati13 = int(_texture_wrap_mode);
+        for(int u_xlati_loop_1 = 1 ; u_xlati_loop_1<int(_motion_samples) ; u_xlati_loop_1++)
+        {
+            u_xlat4.x = float(u_xlati_loop_1);
+            u_xlat4.x = u_xlat4.x / u_xlat7.x;
+            u_xlat4.xy = (-u_xlat0.xy) * u_xlat4.xx + u_xlat12.xy;
+            u_xlatb16 = u_xlati13==2;
+            if(u_xlatb16){
+                u_xlat5 = texture(SourceTexMirror, u_xlat4.xy);
+            } else {
+                u_xlat5 = texture(inputImg, u_xlat4.xy);
+            }
+            u_xlat3 = u_xlat3 + u_xlat5;
+            u_xlat3.xyz = u_xlat2.xyz * vec3(vec3(_motion_stay, _motion_stay, _motion_stay)) + u_xlat3.xyz;
+        }
+        u_xlat0.x = float(int(_motion_samples));
+        u_xlat2 = u_xlat3 / u_xlat0.xxxx;
+    }
+    u_xlatb0.xy = lessThan(u_xlat12.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb12.xy = lessThan(vec4(1.0, 1.0, 1.0, 1.0), u_xlat12.xyxy).xy;
+    u_xlatb0.x = u_xlatb12.x || u_xlatb0.x;
+    u_xlatb0.x = u_xlatb0.y || u_xlatb0.x;
+    u_xlatb0.x = u_xlatb12.y || u_xlatb0.x;
+    u_xlat0.x = (u_xlatb0.x) ? 0.0 : 1.0;
+    u_xlat0.x = (int(_texture_wrap_mode) != 0) ? 1.0 : u_xlat0.x;
+    u_xlat0 = u_xlat0.xxxx * u_xlat2;
+    if(u_xlatb1){
+        u_xlat1 = texture(SourceTexMirror, acScreenNorm.xy);
+    } else {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    }
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

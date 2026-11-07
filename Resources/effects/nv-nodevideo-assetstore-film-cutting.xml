@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_film_cutting
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-film-cutting"
+    name="Film Cutting (NV)"
+    name-en="Film Cutting (NV)"
+    desc="NodeVideo Asset Store effect 'film_cutting', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'film_cutting', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="texture0" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_luminosity" label="Luminosity" default="1" min="0" max="2" step="0.01" />
+        <slider id="_vignetting" label="Vignetting" default="1" min="0" max="1" step="0.01" />
+        <slider id="_speed" label="Speed" default="1" min="0" max="10" step="0.01" />
+        <slider id="_invert" label="Invert" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// tempo do Node ligado ao motor (tools/nodevideo/ligar_tempo.py)
+#define _cur_time acTime
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec3 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat6;
+float u_xlat18;
+void main()
+{
+    u_xlat0.x = _cur_time * 15.0;
+    u_xlat0.x = trunc(u_xlat0.x);
+    u_xlat6 = dot(u_xlat0.xx, vec2(12.9898005, 78.2330017));
+    u_xlat6 = sin(u_xlat6);
+    u_xlat0.y = u_xlat6 * 43758.5469;
+    u_xlat0.x = u_xlat0.x + 23.0;
+    u_xlat0.x = dot(u_xlat0.xx, vec2(12.9898005, 78.2330017));
+    u_xlat0.x = sin(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * 43758.5469;
+    u_xlat1.xy = fract(u_xlat0.yx);
+    u_xlat0.xyw = u_xlat1.xyy * vec3(-0.00800000038, 0.00400000019, 0.00999999978) + acScreenNorm.xyy;
+    u_xlat1.xyz = texture(inputImg, u_xlat0.xy).xyz;
+    u_xlat2.xyz = u_xlat1.xyz * vec3(-2.0, -2.0, -2.0) + vec3(1.0, 1.0, 1.0);
+    u_xlat1.xyz = vec3(vec3(_invert, _invert, _invert)) * u_xlat2.xyz + u_xlat1.xyz;
+    u_xlat0.z = _cur_time * _speed + acScreenNorm.x;
+    u_xlat0.xyz = texture(texture0, u_xlat0.zw).xyz;
+    u_xlat18 = acScreenNorm.x * 16.0;
+    u_xlat2.xy = (-acScreenNorm.xy) + vec2(1.0, 1.0);
+    u_xlat18 = u_xlat18 * u_xlat2.x;
+    u_xlat18 = u_xlat18 * acScreenNorm.y;
+    u_xlat18 = u_xlat2.y * u_xlat18;
+    u_xlat18 = log2(abs(u_xlat18));
+    u_xlat18 = u_xlat18 * 0.400000006;
+    u_xlat18 = exp2(u_xlat18);
+    u_xlat18 = u_xlat18 + (-_vignetting);
+    u_xlat18 = u_xlat18 + 1.0;
+    u_xlat1.xyz = vec3(u_xlat18) * u_xlat1.xyz;
+    u_xlat18 = dot(vec3(0.212599993, 0.715200007, 0.0722000003), u_xlat1.xyz);
+    u_xlat0.xyz = u_xlat0.xyz * vec3(2.0, 2.0, 2.0) + vec3(u_xlat18);
+    u_xlat18 = (-_luminosity) + 2.0;
+    u_xlat0.xyz = (-vec3(u_xlat18)) + u_xlat0.xyz;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat0.w = u_xlat1.w;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat5 = u_xlat1 * u_xlat5;
+        u_xlat3 = u_xlat3 * u_xlat4 + u_xlat5;
+        u_xlat18 = u_xlat4.x * u_xlat3.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat18 : u_xlat3.w;
+        fragColor.xyz = u_xlat3.xyz;
+    } else {
+        fragColor.xyz = u_xlat0.xyz;
+        fragColor.w = u_xlat1.w;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

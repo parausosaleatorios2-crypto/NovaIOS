@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   POSTERIZAR TEMPO
+  ============================================================================
+
+  Faz a camada andar numa taxa de quadros MENOR que a da composição. Em 12 fps
+  o movimento ganha o passo de desenho animado; em 8, o de stop-motion; em 2, o
+  de sequência de fotos.
+
+  É o Posterize Time do After Effects, com a conta dele (lida no
+  `Posterize_Time.aex` e medida no AE: `tools/posterizetime/benchmark`, 2034
+  quadros iguais):
+
+  - congela o CONTEÚDO da camada (o quadro do vídeo, o texto, a forma, a
+    máscara) e os efeitos ANTES dele na lista. A transformação (posição,
+    escala, opacidade) e os efeitos DEPOIS dele continuam andando — no AE
+    também; para congelar tudo, ponha-o no fim da lista e anime pelo efeito
+    Transform;
+  - a grade conta do Start Time da camada do AE (não do zero da composição nem
+    do ponto de corte). No vídeo e na foto é o relógio do ARQUIVO: aparar ou
+    cortar o clipe não desloca a grade. Nas outras camadas é o início da camada,
+    mais a `origem` (escondida) que o importador de projeto do AE guarda quando
+    a camada de lá foi cortada longe do Start Time;
+  - numa camada de AJUSTE ele congela a cena de baixo inteira; num GRUPO, tudo o
+    que há dentro (medido: rodada 2 do benchmark);
+  - o instante é o do AE, em ticks (`model/PosterizacaoDeTempo.kt`): onde um
+    múltiplo cai exato num quadro (2/12 s = 5/30 s), é aquele quadro.
+
+  ============================================================================
+   POR QUE ESTE EFEITO NÃO TEM SHADER DE VERDADE
+  ============================================================================
+
+  Porque **nenhum shader consegue fazer isto**. Um fragmento recebe a imagem do
+  instante atual já pronta; ele pode mudar a cor de cada pixel, e não pode pedir
+  "me dê o quadro de 1/12 de segundo atrás". Quem decide qual instante da camada
+  vira imagem é o compositor, antes de o shader existir.
+
+  Então este manifesto usa a mesma saída que o desfoque de movimento usa:
+  `stage`. Um efeito com `stage` mora na lista de efeitos — para ser achado,
+  ligado, desligado e animado como qualquer outro —, mas a cadeia de passes o
+  PULA, e quem o executa é o motor. Aqui, `stage="time"`: o compositor lê o
+  `fps` e escolhe o instante do conteúdo e dos efeitos de antes. Ver
+  `SceneRenderer.temposDaCadeia`.
+
+  O `<shader>` abaixo é uma cópia fiel da entrada. Ele só roda se algum caminho
+  que não conhece `stage` executar o efeito — e, nesse caso, não fazer nada é
+  exatamente o certo.
+
+  ## A posição dele na lista IMPORTA
+
+  Como no AE: um efeito animado antes dele anda aos saltos; depois dele, liso.
+-->
+<effect
+    id="nova.effect.posterizetime"
+    name="Posterizar tempo"
+    name-en="Posterize Time"
+    desc="Faz a camada andar numa taxa de quadros menor: 12 fps de animação, 8 de stop-motion."
+    desc-en="Runs the layer at a lower frame rate — 12 fps cartoon, 8 fps stop motion."
+    category="stylize"
+    stage="time"
+    tags="posterize time,tempo,quadros,fps,stop motion,animacao,travado,choppy">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          De 1 a 60 no controle (o AE vai de 0,01 a 999, e o preset entra com
+          o valor dele). Acima da taxa da composição não há o que congelar.
+
+          12 é o padrão porque é a taxa do desenho animado tradicional, o uso
+          mais comum deste efeito.
+        -->
+        <slider id="fps" label="Quadros por segundo"
+                default="12" min="1" max="60" step="0.5"
+                snap="12" type="number" />
+
+        <!--
+          Escondida: quem escreve é o importador de projeto do After Effects.
+          É o tempo da camada de lá (em segundos) no início da camada daqui —
+          `In Point − Start Time` —, para a grade cair nos mesmos quadros. Fica
+          negativa quando a camada entra antes do Start Time. Na mídia de
+          velocidade constante o compositor usa o relógio do arquivo e não lê
+          este valor. Ver `model/PosterizacaoDeTempo.kt`.
+        -->
+        <slider id="origem" label="Início da grade (s)" hidden="true"
+                default="0" min="-36000" max="36000" step="0.001" type="number" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

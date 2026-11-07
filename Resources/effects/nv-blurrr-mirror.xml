@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.mirror"
+    name="Desfoque Espelho (Blurrr)"
+    name-en="Mirror Blur (Blurrr)"
+    desc="Espelha a camada no eixo escolhido e mistura com desfoque."
+    desc-en="Mirrors the layer on the chosen axis and blends with a blur."
+    category="blur"
+    tags="blurrr,espelho,mirror,simetria,desfoque,blur,reflect">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+
+        <slider id="axis" label="Eixo" default="0" min="0" max="3" passo="1" type="integer" />
+        <slider id="mixAmount" label="Mistura"
+                default="0.5" min="0.0" max="1.0" passo="0.01" snap="0.5" />
+        <slider id="blurRadius" label="Desfoque"
+                default="6.0" min="0.0" max="40.0" passo="0.5" />
+        <slider id="center" label="Linha do espelho"
+                default="0.5" min="0.0" max="1.0" passo="0.01" snap="0.5" />
+    </params>
+
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+const int N = 7;
+const float OFF[7] = float[7](-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0);
+const float WT[7]  = float[7](0.071, 0.131, 0.190, 0.216, 0.190, 0.131, 0.071);
+
+vec2 espelhar(vec2 uv) {
+    int a = int(axis);
+    if (a == 0) return vec2(2.0 * center - uv.x, uv.y);
+    if (a == 1) return vec2(uv.x, 2.0 * center - uv.y);
+    if (a == 2) return 2.0 * vec2(center) - uv;
+    return vec2(2.0 * center - uv.x, 2.0 * center - uv.y);
+}
+
+void main() {
+    vec2 direction = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 passo = direction * acTexelSize * (blurRadius * acEscalaDePixel);
+
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i < N; i++) {
+        vec2 uv = acScreenNorm + passo * OFF[i];
+        vec4 c = (acPass == 0) ? texture(inputImg, uv) : texture(hblur, uv);
+        soma += c * WT[i];
+    }
+
+    if (acPass == 0) {
+        fragColor = soma;
+        return;
+    }
+
+    vec4 espelhado = texture(hblur, espelhar(acScreenNorm));
+    vec4 direto    = soma;
+    fragColor = mix(direto, espelhado, mixAmount);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O efeito mais simples possível. Comece por aqui para entender o formato.
+
+  Três partes:
+    1. os atributos do <effect>  → como ele aparece no catálogo
+    2. os <params>               → viram sliders na UI E uniforms no shader
+    3. o <shader>                → o que roda para cada pixel
+
+  Note que o shader usa `brightness` e `contrast` sem declarar nada. As
+  declarações são geradas a partir dos <params> pelo ShaderPrelude.
+-->
+<effect
+    id="nova.effect.brightcontrast"
+    name="Brilho e contraste"
+    name-en="Brightness and Contrast"
+    desc="Ajusta o brilho e o contraste da camada."
+    desc-en="The two basic corrections, in one pass."
+    category="color"
+    blend="true"
+    tags="cor,básico,correção">
+
+    <params>
+        <!-- Toda cadeia começa lendo o que a camada desenhou. -->
+        <texture id="inputImg" src="content" />
+
+        <slider id="brightness" label="Brilho"
+                default="0.0" min="-1.0" max="1.0" step="0.01"
+                snap="0.0" ticks="-1.0,0.0,1.0" type="relative-percent" />
+
+        <slider id="contrast" label="Contraste"
+                default="0.0" min="-1.0" max="3.0" step="0.01"
+                snap="0.0" ticks="-1.0,0.0,1.0,3.0" type="relative-percent" />
+    </params>
+
+    <!--
+      Só para a MINIATURA do catálogo.
+
+      O padrão deste efeito é neutro de propósito: aplicá-lo não pode mudar a
+      imagem antes de a pessoa mexer em alguma coisa. Mas uma miniatura neutra
+      sai idêntica à imagem de amostra e diz "este efeito não faz nada".
+    -->
+    <preview>
+        <set param="contrast" value="0.9" />
+        <set param="brightness" value="0.08" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    // Contraste é uma escala em torno do cinza médio (0.5). Escalar em torno do
+    // zero clarearia a imagem em vez de aumentar contraste — erro clássico.
+    vec3 rgb = (color.rgb - 0.5) * (contrast + 1.0) + 0.5;
+
+    rgb += brightness;
+
+    // O clamp evita que valores estourados virem NaN mais adiante na cadeia.
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

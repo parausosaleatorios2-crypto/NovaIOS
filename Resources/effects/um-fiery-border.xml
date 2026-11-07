@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.fieryborder"
+    name="Borda em Chamas (Ultra Motion)"
+    name-en="Fiery Border (Ultra Motion)"
+    desc="Fogo subindo pela borda do alfa — queimadura ao redor."
+    desc-en="Flame climbing the alpha edge — burning rim."
+    category="stylize"
+    tags="ultramotion,fire,flame,border,edge,alpha">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="height"    label="Altura"    default="0.1" min="0.0" max="0.3" step="0.005" />
+        <slider id="speed"     label="Velocidade" default="2.0" min="0.0" max="8.0" step="0.1" />
+        <slider id="intensity" label="Intensidade" default="1.2" min="0.0" max="3.0" step="0.05" />
+        <slider id="scale"     label="Escala do ruído" default="4.0" min="0.5" max="20.0" step="0.1" />
+    </params>
+
+    <!-- Na vitrine: o efeito acende a borda do ALFA; so a figura solta no xadrez tem borda. -->
+    <preview amostra="figura" />
+
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float ruido(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float a = hash21(i), b = hash21(i + vec2(1,0));
+    float c = hash21(i + vec2(0,1)), d = hash21(i + vec2(1,1));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(vec2 p) {
+    float v = 0.0; float a = 0.5;
+    for (int i = 0; i < 4; i++) { v += a * ruido(p); p *= 2.0; a *= 0.5; }
+    return v;
+}
+vec3 corDoFogo(float t) {
+    vec3 preto = vec3(0.0);
+    vec3 vermelho = vec3(1.0, 0.1, 0.0);
+    vec3 laranja = vec3(1.0, 0.5, 0.0);
+    vec3 amarelo = vec3(1.0, 0.95, 0.4);
+    if (t < 0.33) return mix(preto, vermelho, t / 0.33);
+    if (t < 0.66) return mix(vermelho, laranja, (t - 0.33) / 0.33);
+    return mix(laranja, amarelo, clamp((t - 0.66) / 0.34, 0.0, 1.0));
+}
+
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    // Distância à borda do alfa: procuramos o alfa num anel
+    float dentro = orig.a;
+    float fora = 0.0;
+    const int R = 6;
+    for (int y = -R; y <= R; y++) {
+        for (int x = -R; x <= R; x++) {
+            vec2 off = vec2(x, y) * acTexelSize * 2.0;
+            fora = max(fora, 1.0 - texture(inputImg, acScreenNorm + off).a);
+        }
+    }
+    float borda = dentro * fora;
+    if (borda <= 0.0) { fragColor = orig; return; }
+
+    float n = fbm(acScreenNorm * scale + vec2(0.0, -acTime * speed));
+    float chama = clamp(borda * (0.3 + n), 0.0, 1.0) * intensity;
+    chama *= smoothstep(0.0, height, borda);
+    vec3 fogo = corDoFogo(chama);
+    fragColor = vec4(orig.rgb + fogo, orig.a);
+}
+    ]]></shader>
+</effect>

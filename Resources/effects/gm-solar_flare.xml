@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.solar_flare" name="Solar Flare Pro" desc="Oversized bright-pass glow with horizontal streaks, star spikes and a hot colour tint for cinematic light impacts." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/solar_flare.png"
+        tags="light,pro,strong,bloom,flare,streak,glow" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Solar Flare" />
+<spinner id="threshold" default="0.45" min="0.0" max="1.0" step="0.01" label="Light Threshold" />
+<spinner id="intensity" default="1.80" min="0.0" max="4.0" step="0.01" label="Intensity" />
+<spinner id="radius" default="0.055" min="0.005" max="0.16" step="0.002" label="Glow Radius" />
+<spinner id="streak" default="0.75" min="0.0" max="1.5" step="0.01" label="Horizontal Streak" />
+<color id="tint" default="#FFFFB24B" label="Flare Tint" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 16;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 ring = vec3(0.0);
+  vec3 lineGlow = vec3(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float ang = float(i) * 6.2831853 / float(TAPS);
+    vec2 o = vec2(cos(ang), sin(ang)) * radius;
+    vec3 s = texture2DCv(inputImg.texture, uv + o).rgb / max(texture2DCv(inputImg.texture, uv + o).a, 1e-4);
+    ring += s * max(gmLum(s) - threshold, 0.0);
+    float x = (float(i) / float(TAPS - 1) - 0.5) * radius * 4.0;
+    vec3 h = texture2DCv(inputImg.texture, uv + vec2(x, 0.0)).rgb / max(texture2DCv(inputImg.texture, uv + vec2(x, 0.0)).a, 1e-4);
+    lineGlow += h * max(gmLum(h) - threshold, 0.0);
+  }
+  ring /= float(TAPS);
+  lineGlow /= float(TAPS);
+  vec2 d = (uv - 0.5) * vec2(acScreenSize.x / acScreenSize.y, 1.0);
+  float spikes = pow(abs(cos(atan(d.y, d.x) * 4.0)), 12.0);
+  vec3 flare = (ring + lineGlow * streak) * intensity * (0.78 + 0.35 * spikes);
+  vec3 col = c + flare * tint.rgb * mixAmt;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * src.a, src.a);
+}
+]]></shader>
+</effect>

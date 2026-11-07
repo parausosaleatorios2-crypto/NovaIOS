@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Stylize_fill_color
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-stylize-fill-color"
+    name="Effect Stylize Fill Color (NV)"
+    name-en="Effect Stylize Fill Color (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Stylize_fill_color', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Stylize_fill_color', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <color id="_fill_color2" label="Fill Color2" default="#FFFFFFFF" />
+        <slider id="_fill_blend" type="integer" label="Fill Blend" default="0" min="0" max="2" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1.xyz = _fill_color2.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = _fill_color2.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat1.xyz = u_xlat1.xyz * _fill_color2.xyz;
+    u_xlatb2.x = int(_fill_blend)==1;
+    u_xlat1.w = _fill_color2.w;
+    u_xlat3 = u_xlat0 * u_xlat1;
+    u_xlat4 = u_xlat0 + u_xlat1;
+    u_xlat4.w = u_xlat0.w * u_xlat4.w;
+    u_xlat2 = (u_xlatb2.x) ? u_xlat3 : u_xlat4;
+    u_xlat3.xyz = u_xlat1.xyz;
+    u_xlat1 = (int(_fill_blend) != 0) ? u_xlat2 : u_xlat3;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

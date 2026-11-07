@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   FAIXAS LINEARES — o Linear Streaks do Alight Motion, conta por conta (0.747.0)
+  ============================================================================
+
+  Pedido do snow (22/10/2026): "faz o faixas lineares do alight motion? 100% igual". Mesmos ids, padrões, faixas,
+  passos, marcas e escolhas do `com.alightcreative.effects.streaks` (o nome dele é "Faixas Lineares"). A conta foi
+  LIDA do efeito do AM 5.0.281 (`assets/effects/streaks-linear.xml` do APK descompactado) e escrita de novo aqui; o
+  arquivo do AM não entra no repositório. A conferência é `python tools/amfaixaslineares/comparar.py`: o efeito do AM
+  rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A conta é na TELA: a camada desliza Intensidade × (cos Ângulo, −sen Ângulo) em fração da tela, com o X corrigido
+    pela proporção (altura ÷ largura, sempre o X, mesmo na tela deitada). Cada pixel junta N leituras da camada ao
+    longo desse caminho (N = o comprimento em pixels da imagem, de 1 a 100), centradas nele; a Inclinação empurra o
+    caminho para um lado (−1: todo à frente, 1: todo atrás). Fora da tela não há camada.
+  - Cada canal escolhe como junta: Mín (o menor), Máx (o maior, o padrão), Méd (a média) ou Off (o do próprio pixel).
+    O pixel entra em cor RETA e as leituras em cor PRÉ-multiplicada — é como o AM faz, e muda a cor onde há alfa
+    parcial; a média divide pelas N leituras (o pixel e as N − 1 do caminho).
+  - No fim a cor vai × o alfa juntado (volta a ser pré-multiplicada) e o Alfa mistura com a camada original.
+  - O AM roda o efeito NA TELA, depois de mover, girar e escalar a camada, e lê a camada JÁ na tela (filtro linear
+    sobre a cor PRÉ-multiplicada, a textura de 8 bits dele). Aqui é igual: `stage="screen"`, o passe 0 guarda a
+    camada pré-multiplicada num buffer de 8 bits (`pre`) e as leituras usam o filtro da própria GPU nele.
+  - A saída nunca tem cor acima do alfa (os canais juntados ficam em 0..1 antes de × alfa): não precisa do fundo.
+  - O `overdraw`/`max-overdraw` do AM só alarga a área que o EDITOR dele desenha fora da composição; a imagem
+    exportada é a mesma.
+  - Prévia reduzida (`screen-scale="safe"`): o deslocamento é fração da tela; na metade, N cai pela metade e as
+    leituras continuam um pixel da imagem uma da outra (no teto de 100, o mesmo passo em fração da tela).
+  - Dentro de grupo, como fora: o filho roda os efeitos "na tela" na tela do grupo. Só numa camada que o motor não
+    leva à tela (Motion Tile na tela, Estilhaçar/Extrusão) o efeito roda no buffer da camada, levado à tela pelo
+    `acTela` e de volta: lá a faixa acaba na borda do buffer (fora dele, sem camada).
+-->
+<effect
+    id="nova.effect.am-linear-streaks"
+    name="Faixas Lineares"
+    name-en="Linear Streaks"
+    desc="Cria listras em forma de linha, deslizando a camada em um ângulo e combinando pixels sobrepostos (o Linear Streaks do Alight Motion)."
+    desc-en="Creates line-shaped streaks by sliding the layer along an angle and combining overlapping pixels (Alight Motion's Linear Streaks)."
+    category="blur"
+    tags="faixas,faixas lineares,listras,rastro,arrastar,borrão de movimento,streaks,linear streaks,smear,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A camada pré-multiplicada em 8 bits: a textura que o AM lê. -->
+        <texture id="pre" src="buffer" />
+        <!-- `<spinner>` como no AM: sem `step`, o `readSpinnerParam` dele dá a potência de 10 logo abaixo de
+             (máx − mín) ÷ 100; lê `ticks` (as marcas claras) e não lê `snap`. -->
+        <spinner id="strength" label="Intensidade" default="0.15" min="0.0" max="1.0" step="0.01" />
+        <spinner id="angle" label="Ângulo" default="0.0" min="0.0" max="3600.0" step="0.5" type="angle"
+            ticks="0.0,45.0,90.0,135.0,180.0,225.0,270.0,315.0,360.0" />
+        <spinner id="alpha" label="Alfa" default="1.0" min="0.0" max="1.0" step="0.01" type="percent" />
+        <spinner id="bias" label="Inclinação" default="0.0" min="-1.0" max="1.0" step="0.01" type="percent"
+            ticks="0.0" />
+        <!-- O AM guarda o VALOR da escolha (Mín 0, Máx 1, Méd 3, Off 2), numa fileira de botões. -->
+        <selector id="rmode" label="R" style="radio" options="Mín|Máx|Méd|Off" values="0|1|3|2" default="1" />
+        <selector id="gmode" label="G" style="radio" options="Mín|Máx|Méd|Off" values="0|1|3|2" default="1" />
+        <selector id="bmode" label="B" style="radio" options="Mín|Máx|Méd|Off" values="0|1|3|2" default="1" />
+        <selector id="amode" label="A" style="radio" options="Mín|Máx|Méd|Off" values="0|1|3|2" default="1" />
+    </params>
+
+    <passes>
+        <pass target="pre" />
+        <pass />
+    </passes>
+
+    <!-- Amostra: a figura solta no xadrez — a faixa precisa de espaço transparente em volta para aparecer. -->
+    <preview amostra="figura">
+        <set param="strength" value="0.3" />
+    </preview>
+
+    <shader><![CDATA[
+// Pré-calculado uma vez por pixel no passe 1 para não chamar inverse() em cada amostra do laço.
+mat3 g_invParaTela;
+
+// A volta do `acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
+vec2 daTela(vec2 t) {
+    vec3 c = g_invParaTela * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// O `texture2DCv(inputImg.texture, t)` do AM: a camada pré-multiplicada num ponto da tela, com o filtro da GPU. Na
+// tela o buffer É a tela; no filho de grupo, fora do buffer não há camada (o AM a desenha na tela do grupo).
+vec4 camadaNaTela(vec2 t) {
+    if (acEntradaDePe == 1) return texture(pre, t);
+    vec2 uv = daTela(t);
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec4(0.0);
+    return texture(pre, uv);
+}
+
+void main() {
+    if (acPass == 0) {
+        vec4 c = texture(inputImg, acScreenNorm);
+        fragColor = vec4(c.rgb * c.a, c.a);
+        return;
+    }
+    g_invParaTela = inverse(acParaTela);
+
+    // O `acScreenNorm` do AM: a UV da tela com t = 0 EMBAIXO. Na tela (`stage="screen"`) a entrada já é a tela, de
+    // pé; no filho de grupo, o `acTela` leva o buffer à tela do grupo (também de pé).
+    vec2 tela = acEntradaDePe == 1 ? acScreenNorm : acTela(acScreenNorm);
+    vec2 acScreenSize = acTamanhoDaTela;
+
+    // A conta do AM, linha por linha. O `getTexSize(inputImg.size)` é o tamanho da camada na tela, em pixels da
+    // renderização (a prévia reduzida inclusive).
+    vec2 texelSize = 1.0 / vec2(textureSize(pre, 0));
+    float rad = angle * 0.0174533;
+    vec2 velocity = vec2(cos(rad)*strength,-sin(rad)*strength);
+    velocity.x *= acScreenSize.y / acScreenSize.x;
+    float speed = length(velocity / texelSize);
+    int nSamples = int(clamp(speed, 1.01, 100.01));
+    vec4 originalColor = camadaNaTela(tela);
+    vec4 outColor = originalColor;
+    outColor.rgb = outColor.a > 0.0 ? outColor.rgb/outColor.a : outColor.rgb;
+    for(int i=1; i<nSamples; i++ ) {
+        vec2 offset = velocity * (float(i) / float(nSamples - 1) - (0.5+bias/2.0));
+        vec2 sampleCoord = tela-offset;
+        float insideTexture = step(0.0,sampleCoord.x) * step(sampleCoord.x,1.0) * step(0.0,sampleCoord.y) * step(sampleCoord.y,1.0);
+        vec4 c = camadaNaTela(sampleCoord) * insideTexture;
+        float r;
+        float g;
+        float b;
+        float a;
+        if( rmode == 0 ) {
+            r = min(outColor.r,c.r);
+        } else if( rmode == 1 ) {
+            r = max(outColor.r,c.r);
+        } else if( rmode == 3 ) {
+            r = outColor.r + c.r;
+        } else {
+            r = outColor.r;
+        }
+        if( gmode == 0 ) {
+            g = min(outColor.g,c.g);
+        } else if( gmode == 1 ) {
+            g = max(outColor.g,c.g);
+        } else if( gmode == 3 ) {
+            g = outColor.g + c.g;
+        } else {
+            g = outColor.g;
+        }
+        if( bmode == 0 ) {
+            b = min(outColor.b,c.b);
+        } else if( bmode == 1 ) {
+            b = max(outColor.b,c.b);
+        } else if( bmode == 3 ) {
+            b = outColor.b + c.b;
+        } else {
+            b = outColor.b;
+        }
+        if( amode == 0 ) {
+            a = min(outColor.a,c.a);
+        } else if( amode == 1 ) {
+            a = max(outColor.a,c.a);
+        } else if( amode == 3 ) {
+            a = outColor.a + c.a;
+        } else {
+            a = outColor.a;
+        }
+        outColor = vec4(r,g,b,a);
+    }
+    outColor = outColor / vec4(
+        rmode == 3 ? float(nSamples) : 1.0,
+        gmode == 3 ? float(nSamples) : 1.0,
+        bmode == 3 ? float(nSamples) : 1.0,
+        amode == 3 ? float(nSamples) : 1.0
+    );
+    outColor.rgb *= outColor.a;
+    vec4 p = mix(originalColor,outColor,alpha);
+
+    // A saída pré-multiplicada do AM (o alvo de 8 bits dele corta em 0..1) em cor reta.
+    p = clamp(p, 0.0, 1.0);
+    fragColor = p.a > 0.0 ? vec4(min(p.rgb / p.a, vec3(1.0)), p.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

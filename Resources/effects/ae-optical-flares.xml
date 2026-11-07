@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   OPTICAL FLARES — o plugin da Video Copilot, lido do OpticalFlares.aex 1.3
+  ============================================================================
+
+  Pedido do snow (21/10/2026): "faça o optical flares 100% igual o do after effects". Os presets da pasta dele
+  com Optical Flares (furys optical flare 1 a 11, kl4ps flare, Alvar, vito…) convertem com o flare deles.
+
+  DE ONDE VEIO (tools/opticalflares): o caminho de CPU do plugin desmontado (Ghidra + o assembly) e portado em
+  float32 na ordem do assembly — os 12 elementos (Glow, Streak, Multi Iris, Shimmer, Ring, Hoop, Glint, Sparkle,
+  Spike Ball, Caustic, Lens Orbs, Iris) com o rasterizador do plugin, o Dynamic Triggering, o Matte Box, o Tint e
+  o Multiply, o Screen, a Chromatic Aberration (com o PF_SubpixelBilinearFloat do próprio AE), Saturation e
+  Contrast e os três Render Mode. O ORÁCULO é a DLL do plugin carregada e chamada de verdade: em 200 flares
+  sorteados e nos 32 flares distintos da pasta do snow que não pedem textura, 0 bytes diferentes (`OpticalFlaresTest`).
+
+  O FLARE (o parâmetro "Options" do AE, o desenho feito no Lens Editor) é o bloco `.ofp` do plugin, guardado
+  como está na instância (`<flare>`); sem um, vale o flare que o AE põe ao aplicar o efeito.
+
+  Roda na CPU (`PasseDoOpticalFlares`, a conta em `model/opticalflares/MotorDoOf.kt`): a ordem das somas em
+  float32 é a do plugin e um shader não a garante.
+
+  O QUE NÃO ENTROU (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md, seção Optical Flares): a Lens Texture e a forma de
+  textura do Iris/Multi Iris/Lens Orbs (as imagens da Video Copilot; o elemento sai sem ela — 8 dos 40 flares
+  da pasta usam); Flicker; Motion Blur; Position Z e as luzes 3D (Positioning Mode); Foreground Layers, máscara e fonte
+  por luminância; o Lens Editor (o flare só troca pelo import ou pelo padrão).
+-->
+<effect
+    id="nova.effect.aeopticalflares"
+    name="Optical Flares"
+    name-en="Optical Flares"
+    desc="O Optical Flares da Video Copilot: o flare inteiro (brilhos, raios, íris, anéis…) na posição da luz, com o mesmo resultado do After Effects."
+    desc-en="Video Copilot's Optical Flares: the whole flare (glows, streaks, irises, rings…) at the light position, matching After Effects."
+    category="generate"
+    stage="opticalflares"
+    tags="optical flares,lens flare,flare,video copilot,luz,light,brilho,glow,streak,iris,anamórfico,anamorphic,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="positionXY" label="Position XY" defaultX="0.35" defaultY="0.35" />
+        <point id="centerPosition" label="Center Position" defaultX="0.5" defaultY="0.5" />
+        <slider id="brightness" label="Brightness" default="100.0" min="0.0" max="1000.0" step="0.1" snap="100.0" />
+        <slider id="scale" label="Scale" default="100.0" min="0.0" max="1000.0" step="0.1" snap="100.0" />
+        <slider id="rotationOffset" label="Rotation Offset" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="0.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <selector id="colorMode" label="Color Mode" default="0" options="Tint|Multiply" />
+        <slider id="animationEvolution" label="Animation Evolution" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" snap="0.0" />
+        <selector id="renderMode" label="Render Mode" default="0" options="On Black|On Transparent|Over Original" />
+        <flare id="flare" label="Flare" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoOpticalFlares` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

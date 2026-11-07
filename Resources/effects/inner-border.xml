@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BORDAS INTERNAS
+  ============================================================================
+
+  Contorno desenhado POR DENTRO do alfa da camada, com largura e suavidade. É o
+  par natural do contorno externo que já existe — e o truque é diferente.
+
+  ============================================================================
+   O ALFA JÁ É O DESENHO
+  ============================================================================
+
+  A camada chega aqui com uma máscara própria: onde o pixel é opaco, tem desenho;
+  onde é transparente, não tem. A borda interna é o LIMITE visto por dentro: os
+  pixels que estão opacos mas perto de algum vizinho transparente.
+
+  O shader faz amostras em volta — 8 direções, no raio da largura — e pergunta
+  se ALGUMA caiu fora do alfa. Se o pixel está dentro e um vizinho está fora, o
+  pixel está no anel da borda. A suavidade vem de amostrar em dois raios: um
+  marca o INÍCIO da faixa (bem na quina), outro o FIM (afastado para dentro). Um
+  `smoothstep` entre os dois dá a transição.
+
+  ============================================================================
+   POR QUE 8 AMOSTRAS, E NÃO UM BLUR DE VERDADE
+  ============================================================================
+
+  Um SDF do alfa — a distância ao limite mais próximo — daria resolução perfeita
+  em qualquer largura, mas precisa de um PASSE próprio só para montar o mapa de
+  distâncias. Oito amostras custam oito `texture()` por pixel e cobrem bem até ~12
+  px de largura, que é a faixa em que a borda é usada na prática.
+-->
+<effect
+    id="nova.effect.inner-border"
+    name="Bordas internas"
+    name-en="Inner Border"
+    desc="Contorno desenhado por dentro do alfa da camada."
+    desc-en="Outline drawn inside the layer's alpha."
+    category="stylize"
+    tags="borda,contorno,interno,inside,stroke,anel,moldura">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="borderColor" label="Cor" default="#000000FF" />
+        <slider id="width" label="Largura (px)"
+                default="4.0" min="0.5" max="40.0" step="0.5" snap="0.0" />
+        <slider id="offset" label="Afastar da quina (px)"
+                default="0.0" min="0.0" max="20.0" step="0.5" snap="0.0" />
+        <slider id="softness" label="Suavidade"
+                default="1.5" min="0.0" max="12.0" step="0.5" snap="0.0" />
+        <slider id="opacity" label="Opacidade"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais grossa que o padrão: 12 px dá para ler. -->
+    <preview>
+        <set param="width" value="12.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int AMOSTRAS = 8;
+
+/** O alfa num pixel com deslocamento em px (vai pra UV pela textura de entrada). */
+float alfaEm(vec2 uv, vec2 deslocamentoPx) {
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    return texture(inputImg, uv + deslocamentoPx / tam).a;
+}
+
+/**
+ * A menor "proximidade do limite" nas 8 amostras em volta, no raio dado (px).
+ * Retorna 0 = tudo opaco em volta; 1 = alguém ali está transparente.
+ */
+float probaForaNoRaio(vec2 uv, float raio) {
+    float maximo = 0.0;
+    for (int i = 0; i < AMOSTRAS; i++) {
+        float a = 6.2831853 * (float(i) + 0.5) / float(AMOSTRAS);
+        vec2 d = vec2(cos(a), sin(a)) * raio;
+        float fora = 1.0 - alfaEm(uv, d);
+        maximo = max(maximo, fora);
+    }
+    return maximo;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // Fora do alfa, o pixel não ganha borda.
+    if (original.a < 1e-3) {
+        fragColor = original;
+        return;
+    }
+
+    // Dois raios: o INÍCIO da faixa (perto da quina) e o FIM (afastado por width+softness).
+    // O `offset` empurra a faixa para dentro, saindo da quina.
+    float raioInicio = max(offset, 0.5);
+    float raioFim = raioInicio + max(width, 0.5);
+    float extra = max(softness, 0.5);
+
+    float noInicio = probaForaNoRaio(acScreenNorm, raioInicio);
+    float noFim = probaForaNoRaio(acScreenNorm, raioFim + extra);
+
+    // Dentro da faixa: inicio detecta algum vizinho fora, fim não vê mais nada fora.
+    // (noInicio - noFim) dá o ANEL: alto no meio, zero nas duas pontas.
+    float dentroDoAnel = clamp(noInicio - noFim, 0.0, 1.0);
+
+    // A borda sempre pinta sobre o alfa original (não transborda).
+    float forca = dentroDoAnel * opacity * original.a * borderColor.a;
+
+    vec3 corDePintura = borderColor.rgb;
+    vec3 saidaCor = mix(original.rgb, corDePintura, forca);
+
+    fragColor = vec4(saidaCor, original.a);
+}
+
+    ]]></shader>
+</effect>

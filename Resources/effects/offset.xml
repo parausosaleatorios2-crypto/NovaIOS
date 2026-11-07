@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESLOCAR (OFFSET)
+  ============================================================================
+
+  O Offset do After Effects: empurra a imagem dentro da camada, e o que sai por
+  um lado ENTRA pelo lado oposto. É o efeito do fundo que rola sem fim, do
+  "loop" de um padrão, do glitch em que a imagem escorrega e volta pela outra
+  borda.
+
+  Os dois parâmetros são os do original:
+
+  - **Shift Center To** — para onde vai o CENTRO da imagem. O padrão é o centro
+    da camada, que não move nada; arrastar o ponto para a direita empurra a
+    imagem para a direita. É mostrado em pixels, como no After Effects, e
+    guardado normalizado.
+  - **Blend With Original** — quanto da imagem original volta por cima do
+    resultado. 0% = só a imagem deslocada; 100% = só a original.
+
+  ## Igual ao After Effects (tools/offset/benchmark, 09/10/2026)
+
+  Medido no AE 2023 do snow em 8 bpc, contra 32 renders (foto opaca, foto com
+  alfa variável e buracos, camada menor que a composição; deslocamentos
+  inteiros, de meio, de um quarto e de 1/100 de pixel, negativos, de mais de
+  uma volta; Blend de 25, 50, 73 e 100%). O modelo em `modelo.py` bate com o AE
+  pixel a pixel; o que sobra é 1 nível em até 0,2% dos pixels, só na fileira e
+  na coluna da emenda (onde a leitura dá a volta).
+
+  - **O Offset roda na GPU do AE.** O `Offset.aex` tem um caminho de CPU
+    (bilinear em ponto fixo, a cor pesada pelo alfa), mas o render do AE não é
+    ele: a cor sai do bilinear da cor RETA, com os pesos do filtro de textura
+    do hardware — arredondados a 1/256 de pixel.
+  - **O deslocamento:** o pixel x da saída lê a camada em
+    x + L/2 − fmod(Shift Center To, L), no canto do pixel (o pixel i está na
+    coordenada i), e dá a volta nas bordas da CAMADA.
+  - **Blend With Original:** em cor PRÉ-MULTIPLICADA, sobre o valor deslocado
+    ainda sem arredondar; arredonda uma vez, no fim.
+
+  ## A repetição é da CAMADA
+
+  No After Effects uma foto ou um vídeo têm o tamanho do arquivo, e a imagem dá
+  a volta nas bordas DELES — fora da camada não há nada. Aqui toda camada é
+  desenhada num buffer do tamanho da composição, com a mídia encaixada no meio:
+  a volta é nas bordas da mídia encaixada (`acCamada`, ver
+  `SceneRenderer.camadaNoBuffer`). Texto, forma e sólido têm o tamanho da
+  composição no AE também — para eles, as bordas da composição.
+
+  O ponto é em pixels da composição (o centro da imagem vai para onde a alça
+  está), como no AE, onde ele é em pixels da camada.
+-->
+<effect
+    id="nova.effect.offset"
+    name="Deslocar (Offset)"
+    name-en="Offset"
+    desc="Empurra a imagem dentro da camada: o que sai por um lado entra pelo oposto."
+    desc-en="Pans the image inside the layer; what leaves one edge re-enters from the opposite one."
+    category="distort"
+    tags="offset,deslocar,deslocamento,mover,rolar,loop,repetir,wrap,pan,infinito,scroll"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Vai de -1 a 2 vezes o tamanho da composição: o deslocamento passa de uma volta inteira. -->
+        <point id="shiftCenterTo" label="Shift Center To"
+               defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+
+        <slider id="blendWithOriginal" label="Blend With Original"
+                default="0.0" min="0.0" max="1.0" step="0.01"
+                type="relative-percent" snap="0.0,1.0" />
+    </params>
+
+    <!-- Na vitrine, o padrão (o centro no centro) não desloca nada: o centro vai para o canto. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="shiftCenterTo" x="0.8" y="0.25" />
+    </preview>
+
+    <shader><![CDATA[
+
+// O filtro de textura da GPU (o do AE no render, medido): os pesos do bilinear andam em 1/256 de pixel.
+vec2 pesoDaGpu(vec2 f) { return floor(f * 256.0 + 0.5) / 256.0; }
+
+// O texel em níveis de 8 bits, inteiros.
+vec4 nivel(vec4 c) { return floor(c * 255.0 + 0.5); }
+
+void main() {
+    ivec2 tam = textureSize(inputImg, 0);
+    ivec2 aqui = min(ivec2(floor(acScreenNorm * vec2(tam))), tam - ivec2(1));
+    vec4 original = texelFetch(inputImg, aqui, 0);
+
+    // A camada do AE dentro do buffer: L px inteiros, centrada (a foto encaixada; o resto, a composição).
+    ivec2 L = clamp(ivec2(floor(acCamada * vec2(tam) + 0.5)), ivec2(1), tam);
+    ivec2 inicio = (tam - L) / 2;
+    ivec2 q = aqui - inicio;
+    if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, L))) {
+        fragColor = original;        // fora da camada: no AE não há camada aqui
+        return;
+    }
+    vec2 Lf = vec2(L);
+
+    // O centro da imagem vai para `shiftCenterTo`: o pixel q lê a camada em q − deslocamento, com a volta.
+    vec2 deslocamento = (shiftCenterTo - 0.5) * vec2(tam);
+    vec2 X = vec2(q) - mod(deslocamento, Lf);
+    vec2 base = floor(X);
+    vec2 g = pesoDaGpu(X - base);
+    ivec2 i0 = min(ivec2(mod(base, Lf)), L - ivec2(1));
+    ivec2 i1 = min(ivec2(mod(base + 1.0, Lf)), L - ivec2(1));
+
+    // Bilinear da cor RETA, como o AE (a cor dos pixels transparentes entra também). Em NÍVEIS (0..255)
+    // inteiros: com os pesos em 1/256, a conta sai exata em float — e o empate de meio nível (o deslocamento
+    // de meio pixel) arredonda para cima, como no AE, em vez de cair para qualquer lado.
+    vec4 a = nivel(texelFetch(inputImg, inicio + ivec2(i0.x, i0.y), 0));
+    vec4 b = nivel(texelFetch(inputImg, inicio + ivec2(i1.x, i0.y), 0));
+    vec4 c = nivel(texelFetch(inputImg, inicio + ivec2(i0.x, i1.y), 0));
+    vec4 d = nivel(texelFetch(inputImg, inicio + ivec2(i1.x, i1.y), 0));
+    vec4 m = mix(mix(a, b, g.x), mix(c, d, g.x), g.y);
+
+    // Blend With Original em cor pré-multiplicada, antes de arredondar.
+    float r = blendWithOriginal;
+    if (r > 0.0) {
+        vec4 o = nivel(original);
+        float alfa = mix(m.a, o.a, r);
+        vec3 cor = mix(m.rgb * m.a, o.rgb * o.a, r);
+        m = vec4(alfa > 0.0 ? cor / alfa : vec3(0.0), alfa);
+    }
+
+    // Uma vez só, no fim, em 8 bits (o AE em 8 bpc).
+    fragColor = floor(clamp(m, 0.0, 255.0) + 0.5) / 255.0;
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   RAIOS RADIAIS — o Radial Rays do Alight Motion, conta por conta (0.740.0)
+  ============================================================================
+
+  Pedido do snow (21/10/2026): "faz o efeito radial rays 100% igual do alight motion". Mesmos parâmetros, mesmos
+  ids, mesmos padrões e as mesmas seções do `com.alightcreative.effects.radialrays` (um projeto do AM importado cai
+  direto aqui, ver `EfeitosDoAm.TABELA`). A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/radial_rays.xml`
+  do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é
+  `tools/amraiosradiais`: o efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Os raios contam na coordenada da CAMADA (`acLayerNorm` do AM: o retângulo do conteúdo, sem a escala), com o
+    meio no meio do conteúdo e o X multiplicado pela proporção dele — as duas medidas em ALTURAS do conteúdo. Por
+    isso eles giram e escalam com a camada. A Posição desloca o meio em milésimos dessa altura (Y para baixo).
+  - θ = (atan(x, y) + Ângulo ÷ 57,2958) ÷ 2π, mais sen(r · Frequência + Fase) × Magnitude ÷ 10 (o Agitar); a fatia
+    de cada raio é 1 ÷ Contagem, e o raio é o pedaço de Largura no meio dela.
+  - As penas são em PIXELS da tela, numa conta própria do AM: o "tamanho do pixel" é 1 ÷ a diagonal da imagem de
+    entrada (que lá é a tela inteira), e a pena angular ainda é dividida por r — a borda tem a mesma largura perto e
+    longe do meio. Aqui a diagonal é a da composição (`acTamanhoDaTela`, a exportação do AM), para a prévia
+    reduzida sair igual ao vídeo.
+  - Raio interno e externo cortam o raio (com a pena radial), na mesma unidade da distância.
+  - A cor sem alfa (`alpha="false"` no AM) vezes a máscara entra só nas partes opacas: Normal pinta por cima,
+    Multiplicar multiplica a cor da camada pela da máscara (FORA dos raios a máscara é 0: a camada fica PRETA, é o
+    que o AM faz) e Tela clareia. O Alfa mistura o resultado com a camada original.
+  - Tudo em cor pré-multiplicada, como a textura do AM; onde a camada é transparente, nada (lá a divisão por zero
+    vira NaN e o pixel sai vazio).
+
+  Roda NA TELA (`stage="screen"`, o caminho do Túnel): o AM roda depois da transformação, pixel a pixel na tela, e é
+  na tela que a pena tem a largura de pixel dela.
+-->
+<effect
+    id="nova.effect.am-radial-rays"
+    name="Raios radiais"
+    name-en="Radial Rays"
+    desc="Sobrepõe vários raios radiais de cores sólidas nas partes opacas da camada (o Radial Rays do Alight Motion)."
+    desc-en="Overlays multiple solid-color radial rays in the opaque parts of the layer (Alight Motion's Radial Rays)."
+    category="procedural"
+    tags="raios,raios radiais,radial,estrela,sol,explosão,pop,retrô,radial rays,rays,sunburst,starburst,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- `<point>` do AM sem atributos: (0, 0), ±9999 e passo 1 (`readPointParam`), número cru. -->
+        <point id="position" label="Posição" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <slider id="pointCount" label="Contagem" default="5.0" min="3.0" max="32.0" step="1.0" type="integer"
+            ticks="3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0,24.0,25.0,26.0,27.0,28.0,29.0,30.0,31.0,32.0" />
+        <!-- `<spinner>` como no AM: o `readSpinnerParam` dele lê `ticks` (as marcas claras) e não lê `snap`. -->
+        <spinner id="rayWidth" label="Largura" default="0.5" min="0.0" max="1.0" step="0.001" />
+        <spinner id="angle" label="Ângulo" default="0.0" min="0.0" max="3600.0" step="0.5" type="angle"
+            ticks="0.0,45.0,90.0,135.0,180.0,225.0,270.0,315.0,360.0" />
+
+        <color id="color" label="Cor" default="#FF2D1EF6" alpha="false" group="Cor e Mistura" />
+        <spinner id="alpha" label="Alfa" default="1.0" min="0.0" max="1.0" step="0.01" type="percent"
+            group="Cor e Mistura" />
+        <selector id="blendMode" label="Modo de Mesclagem" options="Normal|Multiplicar|Tela" default="0"
+            group="Cor e Mistura" />
+
+        <spinner id="innerRadius" label="Raio interno" default="0.0" min="0.0" max="1.0" step="0.005"
+            ticks="0.0,0.5,1.0" group="Raio" />
+        <spinner id="outerRadius" label="Raio externo" default="1.0" min="0.0" max="1.0" step="0.005"
+            ticks="0.0,0.5,1.0" group="Raio" />
+
+        <spinner id="feather" label="Angular" default="1.0" min="1.0" max="500.0" step="1.0" group="Pena" />
+        <spinner id="radialFeather" label="Radial" default="1.0" min="1.0" max="500.0" step="1.0" group="Pena" />
+
+        <spinner id="bendStrength" label="Magnitude" default="0.0" min="0.0" max="10.0" step="0.001" group="Agitar" />
+        <spinner id="bendFrequency" label="Frequência" default="50.0" min="0.0" max="200.0" step="0.1"
+            group="Agitar" />
+        <spinner id="bendPhase" label="Fase" default="0.0" min="0.0" max="2000.0" step="0.1" group="Agitar" />
+    </params>
+
+    <preview>
+        <set param="angle" value="0.0" ate="72.0" />
+    </preview>
+
+    <shader><![CDATA[
+#define PI 3.1415926536
+
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// A função do AM, linha por linha.
+float rays(vec2 st, float pixelSize, float feather, float width, float count, float innerRadius, float outerRadius,
+           float radialFeather, float bendStrength, float bendFrequency, float bendPhase, float angle) {
+    float r = length(st);
+    float theta = (atan(st.x, st.y) + angle) / (2.0 * PI);
+    theta += sin(r * bendFrequency + bendPhase) * bendStrength;
+    float sweep = 1. / count;
+    float t = mod(theta, sweep) / sweep;
+    float h = feather / 2. * pixelSize / r;
+    float halfWidth = width / 2.;
+    float low = smoothstep(0.5 - halfWidth - h, 0.5 - halfWidth + h, t);
+    float high = smoothstep(0.5 + halfWidth + h, 0.5 + halfWidth - h, t);
+    float rf = radialFeather / 2. * pixelSize;
+    float inside = smoothstep(innerRadius - rf, innerRadius + rf, r);
+    float outside = smoothstep(outerRadius + rf, outerRadius - rf, r);
+    return low * high * inside * outside;
+}
+
+void main() {
+    vec4 texColor = preMultiplicada(texture(inputImg, acScreenNorm));
+
+    // O `acLayerNorm` do AM: o retângulo do conteúdo de 0 a 1, com o Y para CIMA (a matriz dele inverte o Y da tela;
+    // o buffer de camada do Nova cresce para baixo). A mesma ponte do Túnel (AM).
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 st = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+    st.y = 1.0 - st.y;
+
+    // Daqui em diante, o `main` do AM.
+    st.y = 1. - st.y;
+    st -= 0.5;
+    st.x *= conteudo.x / conteudo.y;
+    float pixelSize = 1. / length(acTamanhoDaTela);
+
+    float p = rays(st - position / 1000.0, pixelSize, feather, rayWidth, pointCount, innerRadius, outerRadius,
+                   radialFeather, bendStrength / 10., bendFrequency, bendPhase, angle / 57.2958);
+
+    vec4 adjColor = vec4(color.rgb, 1.0) * p;
+
+    vec4 result;
+    if (texColor.a <= 0.0) {
+        // Lá, 0 ÷ 0 = NaN nos dois modos que dividem pelo alfa, e o pixel sai vazio; no Normal, a camada (vazia).
+        result = vec4(0.0);
+    } else if (blendMode == 1) {
+        result = vec4((texColor.rgb / texColor.a) * adjColor.rgb, 1.0) * texColor.a;
+    } else if (blendMode == 2) {
+        result = vec4(1. - ((1. - (texColor.rgb / texColor.a)) * (1. - adjColor.rgb)), 1.0) * texColor.a;
+    } else {
+        result = adjColor * texColor.a;
+        result = texColor * (1. - result.a) + result;
+    }
+    vec4 c = mix(texColor, result, alpha);
+    fragColor = c.a > 0.0 ? vec4(min(c.rgb / c.a, vec3(1.0)), c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

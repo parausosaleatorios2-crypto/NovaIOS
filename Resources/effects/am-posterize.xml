@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   POSTERIZAR (AM) — o Posterize do Alight Motion, conta por conta (0.551.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "faz o Posterize (Posterizar) 100% parecido com o alight motion", da série "100%
+  iguais ao AM". Mesmos parâmetros, mesmos ids, faixas, passos e padrões do `com.alightcreative.effects.posterize`
+  (um projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281
+  (`assets/effects/posterize.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no
+  repositório. A conferência é `python tools/amposterizar/comparar.py`: o efeito do AM rodado na GPU do PC ao lado
+  deste.
+
+  O "Posterizar" que já existia (`posterize.xml`) é outra conta (Níveis de 2 a 32, divide por Níveis − 1, um modo
+  só de brilho); ESTE é o do AM, com o nome dele mais "(AM)".
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Dois números: Passos (de 2 a 255, padrão 10, passo 1) e Deslocamento (de −1 a 1, padrão 0, passo 0,001). Em
+    cada canal, na ordem do AM, com d = Deslocamento + 0,05:
+      cor = (piso(cor × Passos + d) − d) ÷ Passos
+    O 0,05 a mais é do AM: com Deslocamento 0, nenhum nível de 8 bits cai em cima do degrau. O degrau é piso, então
+    a cor só desce (no máximo 1 ÷ Passos) e o preto vai a 0. O alfa nunca muda.
+  - Divide por Passos, e não por Níveis − 1 como o Posterizar do Nova: saem Passos + 1 degraus, 0, 1/Passos,
+    2/Passos … até 1, cada um 0,05/Passos abaixo (com 10 Passos o branco sai 0,995 × 255 ≈ 254 e o preto 0). O
+    Deslocamento empurra o degrau: d perto de 1 (Deslocamento 0,95) leva o branco de volta a 255.
+  - Tudo na cor PRÉ-MULTIPLICADA (p = cor × alfa), como o AM: numa borda de alfa 0,5 o degrau cai em 0,5 × cor, e
+    não na cor (a borda de um branco sai com os degraus do cinza do meio). A camada do AM é pré-multiplicada em 8
+    bits antes do efeito; aqui é arredondada do mesmo jeito (o premul do Android, pelo mais perto). O resultado é
+    cortado em 0 e 1 (o buffer de 8 bits do AM) e só então volta para a cor reta do Nova. O piso nunca sobe a cor,
+    então ela nunca passa do alfa (diferente do Colorizar e da Exposição/gama: aqui não há borda "mais forte").
+  - O último bit decide o degrau: com d = 0, 0,2, 0,4 … (Deslocamento −0,05, 0,15, 0,35 … e −0,85 … 0,95), muita
+    cor de 8 bits cai EXATO em cima do degrau (o 51 com 5 Passos e d = 0: 0,2 × 5 + 0 = 1), e se ela fica no de
+    cima ou no de baixo é o float que decide. Por isso a cor entra aqui bit a bit igual à que a textura de 8 bits devolve ao AM
+    (`oitoBits`, a do Equilíbrio de cor) e a conta é a MESMA expressão do AM, na mesma ordem. Pelo mesmo motivo o
+    efeito só ABRE uma "cor junta" da prévia (`render/FusaoDeCor.kt`).
+  - Com quadro-chave, Passos passa por números quebrados entre um e outro (o AM também: o valor é float).
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-posterize"
+    name="Posterizar (AM)"
+    name-en="Posterize (AM)"
+    desc="Diminui o número de etapas nos canais de cores da camada (o Posterize do Alight Motion)."
+    desc-en="Decreases the number of steps in the layer's color channels (Alight Motion's Posterize)."
+    category="color"
+    tags="posterizar,posterize,passos,níveis,degraus,cor,retrô,pop,raster,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- `<spinner>` como no AM: o painel escreve as casas pelo passo, como ele (10; 0,000). -->
+        <spinner id="stepCount" label="Passos" default="10.0" min="2.0" max="255.0" step="1.0" />
+        <spinner id="offset" label="Deslocamento" default="0.0" min="-1.0" max="1.0" step="0.001" />
+    </params>
+
+    <shader><![CDATA[
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve (o AM lê a camada assim). A
+// divisão do shader vai pelo recíproco e erra o último bit em metade dos k, e o último bit decide o degrau quando
+// cor × Passos + d cai em cima de um inteiro. Aqui: n·2^e ÷ 255 pelo mais perto, em 24 bits, montado nos bits do float.
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    // A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android). No
+    // opaco a cor já é o float da textura, bit a bit.
+    vec3 p = camada.rgb;
+    if (a < 1.0) {
+        vec3 k = floor(camada.rgb * a * 255.0 + 0.5);
+        p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+    // A conta do AM, na ordem dele (o mesmo float em cada passo).
+    float actualOffset = offset + 0.05;
+    vec3 c = p * stepCount;
+    c += actualOffset;
+    c = floor(c);
+    c -= actualOffset;
+    c /= stepCount;
+    vec3 saida = clamp(c, 0.0, 1.0);                              // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = a > 0.0 ? vec4(min(saida / a, vec3(1.0)), a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

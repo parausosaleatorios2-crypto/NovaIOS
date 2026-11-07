@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EXTRUSÃO 3D
+  ============================================================================
+
+  Dá espessura de VERDADE ao texto e à imagem: a silhueta da camada vira um
+  sólido — frente, verso e uma parede em volta —, com profundidade, e ele gira
+  com a camada. Ao girar a camada em X ou em Y (o "Profundidade e 3D" do painel
+  de camada), o lado aparece; a câmera orbita em volta; as luzes da cena
+  iluminam.
+
+  É diferente da "Extrusão 2.5D" (`extrude.xml`), que desenha a espessura como
+  uma imagem plana: ali, girar a camada não revela lado nenhum, porque não há
+  lado — só um desenho de lado. Aqui há geometria.
+
+  ============================================================================
+   POR QUE ESTE ARQUIVO NÃO TEM O SHADER DE VERDADE
+  ============================================================================
+
+  `stage="extrude3d"`: o efeito não roda na cadeia de passes (que é imagem sobre
+  imagem) — o compositor o executa, como faz com o desfoque de movimento. Ver
+  `SceneRenderer.extrudar3D`, `SilhuetasExtrudadas` e `MalhaExtrudada`.
+
+  Por isso a posição dele na lista de efeitos não importa: ele age sobre a
+  camada como ela sai pronta (conteúdo, os outros efeitos e a máscara), e a
+  frente do sólido É essa imagem. Um brilho ou uma cor aplicados à camada
+  aparecem na frente da extrusão.
+
+  ============================================================================
+   O QUE ELE FAZ E O QUE NÃO FAZ
+  ============================================================================
+
+  Faz: a espessura acompanha qualquer forma — letra, logo, adesivo, imagem com
+  recorte —, furos e ilhas incluídos ("O", "B", "8", "@"). A silhueta é a do
+  ALFA da camada, e é lida da GPU uma vez, quando ela muda.
+
+  Não faz:
+  - **bisel** (aresta arredondada): a parede é reta;
+  - **vídeo com transparência mudando quadro a quadro**: a silhueta é relida
+    umas quinze vezes por segundo, no máximo — para texto e imagem, que não
+    mudam de forma, isso é ideal; para um recorte que anima, a parede atrasa;
+  - **desfoque de movimento na mesma camada**: o desfoque re-projeta a imagem
+    plana, e a extrusão já sai projetada. Com os dois ligados, vale a extrusão.
+
+  Uma imagem RETANGULAR (foto, vídeo) vira uma caixa: a silhueta dela é o
+  retângulo. Para uma foto com forma própria, use uma imagem com recorte.
+-->
+<effect
+    id="nova.effect.extrude3d"
+    name="Extrusão 3D"
+    name-en="Extrude 3D"
+    desc="Dá espessura de verdade ao texto e às imagens: um sólido que gira com a camada, com lados, luz e câmera."
+    desc-en="Turns text and images into a real solid with thickness that rotates with the layer, lit and seen by the camera."
+    category="stylize"
+    stage="extrude3d"
+    tags="extrusão 3d,extrude 3d,3d,profundidade,espessura,texto 3d,letra 3d,sólido,volume,giro,malha">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="depth" label="Profundidade"
+                default="80.0" min="0.0" max="800.0" step="1.0" snap="0.0" />
+
+        <selector id="sideMode" group="Lados" label="Cor dos lados" default="0"
+                  options="A da borda da camada|Cor sólida" />
+        <color id="sideColor" group="Lados" label="Cor sólida (e do verso)" default="#5B6CFF" />
+
+        <slider id="faceLight" group="Luz" label="Luz na frente"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0"
+                />
+        <slider id="lightAngle" group="Luz" label="De onde vem a luz"
+                default="135.0" min="0.0" max="360.0" step="1.0" type="angle"
+                snap="0.0,45.0,90.0,135.0,180.0,225.0,270.0,315.0" />
+        <slider id="ambient" group="Luz" label="Luz de ambiente"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.35" />
+        <slider id="shine" group="Luz" label="Brilho do reflexo"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="rim" group="Luz" label="Contorno de luz"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <!-- O reflexo do skybox da câmera (sem skybox, nada). Metal tinge o reflexo. -->
+        <slider id="reflection" group="Luz" label="Reflexo do ambiente"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="metal" group="Luz" label="Metal"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+        <!--
+          ======================= Oclusão de ambiente =======================
+
+          O contato entre letras e a parede escurecendo junto da frente (ver
+          `PasseDeOclusao`). Atenua só a luz de ambiente — a luz direta continua
+          inteira. O raio é medido na PROFUNDIDADE da extrusão. Lidos por nome
+          pelo compositor: `SceneRenderer.ajusteDoManifesto`.
+        -->
+        <switch id="ao" group="Oclusão de ambiente" label="Oclusão de ambiente" default="false" />
+        <slider id="aoIntensity" group="Oclusão de ambiente" label="Intensidade" showIf="ao=true"
+                default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="aoRadius" group="Oclusão de ambiente" label="Raio" showIf="ao=true"
+                default="0.5" min="0.05" max="2.0" step="0.01" snap="0.5" />
+        <slider id="aoContact" group="Oclusão de ambiente" label="AO de contato" showIf="ao=true"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="aoQuality" group="Oclusão de ambiente" label="Qualidade" showIf="ao=true" default="1"
+                  options="Rascunho|Prévia|Alta|Exportação" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

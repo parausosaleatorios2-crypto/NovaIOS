@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TRACKING VHS
+  ============================================================================
+
+  Aquela banda horizontal de distorção que subia pela tela quando a fita de
+  VHS estava desalinhada: uma faixa contínua, movendo devagar de baixo pra
+  cima, onde o sinal "pula" e as linhas se enrolam.
+
+  ============================================================================
+   DIFERENTE DO GLITCH BANDS
+  ============================================================================
+
+  `glitch-bands.xml` é jitter — faixas descontínuas, aleatórias, rítmicas.
+  `vhs-tracking.xml` é UMA FAIXA SÓ, contínua, subindo lentamente pela tela.
+  É a assinatura inconfundível de uma fita rodando com o cabeçote fora do
+  alinhamento.
+
+  Duas camadas se somam no pixel que está DENTRO da banda:
+    - Deslocamento horizontal (a linha entorta pro lado);
+    - Ruído grosso sobreposto (chuveiro na área da banda).
+
+  ============================================================================
+   SUBIR OU DESCER?
+  ============================================================================
+
+  O problema de VHS clássico sobe pela tela — o motor do rolo roda e a área
+  desalinhada percorre a altura. `speed` controla a velocidade; valores
+  negativos descem (algumas fitas davam isso, invertido).
+-->
+<effect
+    id="nova.effect.vhs-tracking"
+    name="Tracking VHS"
+    name-en="VHS Tracking"
+    desc="Faixa horizontal desalinhada subindo pela tela, típica de fita VHS."
+    desc-en="Horizontal misaligned band rolling across the screen, classic VHS."
+    category="stylize"
+    tags="vhs,tracking,fita,retrô,tv,analógico,glitch,distorção">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="bandHeight" label="Altura da faixa"
+                default="0.08" min="0.01" max="0.4" step="0.005" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="0.1" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="displaceAmount" label="Deslocamento horizontal"
+                default="0.04" min="0.0" max="0.3" step="0.005" snap="0.0" />
+        <slider id="noiseAmount" label="Chuveiro na faixa"
+                default="0.3" min="0.0" max="1.0" step="0.02" snap="0.0" />
+        <slider id="softEdges" label="Suavidade das bordas"
+                default="0.4" min="0.0" max="1.0" step="0.02" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <preview>
+        <set param="displaceAmount" value="0.08" />
+        <set param="noiseAmount" value="0.5" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash2(vec2 c) {
+    c += vec2(float(seed) * 13.7);
+    return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+void main() {
+    // A faixa sobe pela tela ao longo do tempo (fract mantém dentro de [0, 1]).
+    float centroDaFaixa = fract(1.0 - acTime * speed);
+
+    // Distância do pixel à faixa, em y.
+    float d = abs(acScreenNorm.y - centroDaFaixa);
+
+    // Está dentro da faixa? (com transição suave nas bordas)
+    float meiaAltura = bandHeight * 0.5;
+    float suavidade = meiaAltura * max(softEdges, 1e-4);
+    float dentro = 1.0 - smoothstep(meiaAltura - suavidade, meiaAltura + suavidade, d);
+
+    // Deslocamento horizontal da faixa (modulado por seno pra "enrolar").
+    float onda = sin(acScreenNorm.y * 60.0 - acTime * 20.0);
+    float dx = displaceAmount * dentro * onda;
+
+    vec2 uv = acScreenNorm + vec2(dx, 0.0);
+    vec4 cor = texture(inputImg, uv);
+
+    // Chuveiro sobreposto só na faixa.
+    float ruido = hash2(acScreenNorm * 800.0 + vec2(acTime * 90.0)) - 0.5;
+    cor.rgb += vec3(ruido) * noiseAmount * dentro;
+
+    cor.rgb = clamp(cor.rgb, 0.0, 1.0);
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Níveis.
+
+  O controle de cor mais básico e mais poderoso que existe. Três perguntas:
+  o que vira preto, o que vira branco, e como o meio se distribui entre os dois.
+
+  A ordem das operações importa e é a mesma de qualquer editor sério:
+  primeiro estica a faixa de entrada, depois aplica a gama, depois comprime
+  para a faixa de saída. Inverter gama e faixa de saída dá resultado diferente,
+  e o resultado diferente é o errado.
+-->
+<effect
+    id="nova.effect.levels"
+    name="Níveis"
+    name-en="Levels"
+    desc="Ajusta preto, branco e meio-tom da imagem, por canal."
+    desc-en="Input and output black, white and gamma."
+    category="color"
+    blend="true"
+    tags="niveis,levels,contraste,gama,curva,preto,branco,correcao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="channel" label="Canal"
+                  options="RGB|Vermelho|Verde|Azul|Alfa" default="0" />
+
+        <slider id="inBlack" label="Entrada: preto"
+                default="0.0" min="0.0" max="1.0" step="0.005" snap="0.0" />
+        <slider id="inWhite" label="Entrada: branco"
+                default="1.0" min="0.0" max="1.0" step="0.005" snap="1.0" />
+
+        <slider id="gammaF" label="Meio-tom"
+                default="1.0" min="0.1" max="4.0" step="0.01" snap="1.0" />
+
+        <slider id="outBlack" label="Saída: preto"
+                default="0.0" min="0.0" max="1.0" step="0.005" snap="0.0" />
+        <slider id="outWhite" label="Saída: branco"
+                default="1.0" min="0.0" max="1.0" step="0.005" snap="1.0" />
+    </params>
+
+    <!--
+      Só para a MINIATURA do catálogo.
+
+      O padrão deste efeito é neutro de propósito: aplicá-lo não pode mudar a
+      imagem antes de a pessoa mexer em alguma coisa. Mas uma miniatura neutra
+      sai idêntica à imagem de amostra e diz "este efeito não faz nada".
+    -->
+    <preview>
+        <set param="inBlack" value="0.18" />
+        <set param="inWhite" value="0.82" />
+    </preview>
+
+    <shader><![CDATA[
+
+float applyLevels(float value) {
+    float range = max(inWhite - inBlack, 0.0001);
+    float stretched = clamp((value - inBlack) / range, 0.0, 1.0);
+    float shaped = pow(stretched, 1.0 / max(gammaF, 0.01));
+    return outBlack + shaped * (outWhite - outBlack);
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    if (channel == 1) {
+        color.r = applyLevels(color.r);
+    } else if (channel == 2) {
+        color.g = applyLevels(color.g);
+    } else if (channel == 3) {
+        color.b = applyLevels(color.b);
+    } else if (channel == 4) {
+        color.a = applyLevels(color.a);
+    } else {
+        color.rgb = vec3(
+            applyLevels(color.r),
+            applyLevels(color.g),
+            applyLevels(color.b)
+        );
+    }
+
+    fragColor = color;
+}
+
+    ]]></shader>
+</effect>

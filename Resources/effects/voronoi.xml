@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CÉLULAS (VORONOI)
+  ============================================================================
+
+  Padrão de células feito de pontos sorteados num grid: cada pixel pertence à
+  célula do ponto mais próximo. Pele de réptil, vitral, bolhas de sabão, água
+  cristalizada — tudo esse mesmo truque.
+
+  ============================================================================
+   COMO SE DESENHA MILHARES DE CÉLULAS SEM GUARDAR MILHARES DE PONTOS
+  ============================================================================
+
+  A conta ingênua é: sortear N pontos, para cada pixel medir a distância aos N
+  e pegar o menor. Em 1080 × 1920 com 400 pontos isso é meio bilhão de contas
+  por quadro. Fora de cogitação num celular.
+
+  O truque é o GRID. O plano é dividido em quadrados; cada quadrado tem UM
+  ponto, no lugar hash(célula). Para achar o mais próximo de um pixel, basta
+  olhar a célula dele e as 8 vizinhas — 9 pontos no total, nunca mais. O número
+  de pontos some da conta: só a densidade do grid importa, e essa é fixa.
+
+  ============================================================================
+   O SEGUNDO MAIS PRÓXIMO É O QUE DÁ A BORDA
+  ============================================================================
+
+  Para desenhar a borda entre células não basta saber a mais próxima: precisa
+  medir a diferença entre a distância à MAIS próxima e à SEGUNDA mais próxima.
+  Onde essa diferença é pequena, o pixel está perto da fronteira de duas
+  células — é onde a linha aparece. Essa é a fórmula do `F2 − F1` do Worley
+  (1996), que inventou o truque.
+-->
+<effect
+    id="nova.effect.voronoi"
+    name="Células (Voronoi)"
+    name-en="Voronoi Cells"
+    desc="Padrão de células do ponto mais próximo num grid de pontos sorteados."
+    desc-en="Cell pattern from nearest-point distance over a scattered grid."
+    category="procedural"
+    tags="células,voronoi,worley,padrão,vitral,réptil,bolhas,gerador">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="density" label="Densidade"
+                default="12.0" min="2.0" max="80.0" step="0.5" snap="0.0" />
+        <slider id="jitter" label="Irregularidade"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="0.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+
+        <!-- ============================== Cor =============================== -->
+        <color id="cellColor" group="Cor" label="Célula" default="#FF336688" />
+        <color id="edgeColor" group="Cor" label="Borda" default="#000000FF" />
+        <slider id="edgeWidth" group="Cor" label="Espessura da borda"
+                default="0.08" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="colorByCell" group="Cor" label="Variar por célula"
+                default="0.6" min="0.0" max="1.0" step="0.02" snap="0.0" />
+        <slider id="blend" group="Cor" label="Sobre a imagem"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais células e sem animação; o laço (0.683.0) varia a densidade. -->
+    <preview>
+        <set param="density" value="18" ate="30" />
+    </preview>
+
+    <shader><![CDATA[
+
+vec2 hash2(vec2 c) {
+    c = vec2(
+        dot(c, vec2(127.1, 311.7)),
+        dot(c, vec2(269.5, 183.3))
+    ) + vec2(seed * 13.7);
+    return fract(sin(c) * 43758.5453);
+}
+
+float hash1(vec2 c) {
+    return fract(sin(dot(c, vec2(419.2, 371.9)) + seed * 13.7) * 9999.9);
+}
+
+/**
+ * As duas menores distâncias (F1, F2) e a célula dona do pixel. Olha as 9 células
+ * da vizinhança 3×3: a ingênua olharia TODAS, esta prende a conta no grid.
+ */
+vec3 voronoi(vec2 p, float t) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+
+    float f1 = 9.0;
+    float f2 = 9.0;
+    vec2 donaDoPixel = vec2(0.0);
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 vizinha = vec2(float(x), float(y));
+            vec2 h = hash2(i + vizinha);
+            // O ponto da célula anima no círculo: `sin/cos` do tempo mantém o movimento preso dentro dela.
+            vec2 ponto = vizinha + 0.5 + (h - 0.5) * jitter + 0.35 * jitter * vec2(
+                sin(t + h.x * 6.2831),
+                cos(t + h.y * 6.2831)
+            );
+            float d = length(ponto - f);
+            if (d < f1) {
+                f2 = f1;
+                f1 = d;
+                donaDoPixel = i + vizinha;
+            } else if (d < f2) {
+                f2 = d;
+            }
+        }
+    }
+    return vec3(f1, f2, hash1(donaDoPixel));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y) * density;
+    vec3 v = voronoi(p, acTime * speed);
+
+    float f1 = v.x;
+    float f2 = v.y;
+    float idDaCelula = v.z;
+
+    // A borda aparece onde F2 − F1 é pequeno: ali duas células disputam o pixel.
+    float dif = f2 - f1;
+    float borda = 1.0 - smoothstep(edgeWidth * 0.5, edgeWidth, dif);
+
+    // Cor da célula: ou a cor base, ou uma tingida pelo id (shift de matiz).
+    vec3 corBase = cellColor.rgb;
+    vec3 corTingida = corBase * (0.5 + idDaCelula);
+    vec3 corDaCelula = mix(corBase, corTingida, colorByCell);
+
+    // Um gradiente dentro da célula (mais escuro perto da borda): barato e dá relevo.
+    float sombra = 1.0 - smoothstep(0.0, 0.6, f1);
+
+    vec3 corDoPadrao = mix(corDaCelula * (0.55 + 0.45 * sombra), edgeColor.rgb, borda);
+    float alfaDoPadrao = mix(cellColor.a, edgeColor.a, borda);
+
+    vec3 cor = mix(original.rgb, corDoPadrao, blend * alfaDoPadrao);
+    float alfa = mix(original.a, max(original.a, alfaDoPadrao), blend);
+
+    fragColor = vec4(cor, alfa);
+}
+
+    ]]></shader>
+</effect>

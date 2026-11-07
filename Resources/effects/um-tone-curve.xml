@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.tonecurve"
+    name="Curva de Tons (Ultra Motion)"
+    name-en="Tone Curve (Ultra Motion)"
+    desc="Levanta pretos, segura brancos, empurra médios — curva em S."
+    desc-en="Lifts blacks, holds whites, pushes midtones — S-curve."
+    category="color"
+    tags="ultramotion,curve,tone,levels,color">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="blackLift" label="Pretos" default="0.0" min="-0.2" max="0.3" step="0.005" />
+        <slider id="whiteHold" label="Brancos" default="0.0" min="-0.3" max="0.2" step="0.005" />
+        <slider id="midShift"  label="Médios" default="0.0" min="-0.3" max="0.3" step="0.005" />
+        <slider id="contrast"  label="Contraste" default="1.0" min="0.3" max="2.5" step="0.01" />
+    </params>
+
+    <!-- Na vitrine: os padroes sao a curva identidade (a camada sairia igual). -->
+    <preview>
+        <set param="blackLift" value="0.08" />
+        <set param="midShift" value="0.18" />
+        <set param="contrast" value="1.7" />
+    </preview>
+
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+float curva(float x) {
+    float bk = blackLift;
+    float wh = 1.0 + whiteHold;
+    float y = (x - bk) / max(wh - bk, 1e-4);
+    y = clamp(y, 0.0, 1.0);
+    // Deslocamento dos médios em torno de 0.5
+    y = pow(y, 1.0 - midShift);
+    // Contraste em torno de 0.5
+    y = clamp((y - 0.5) * contrast + 0.5, 0.0, 1.0);
+    return y;
+}
+
+void main() {
+    vec4 c = texture(inputImg, acScreenNorm);
+    fragColor = vec4(curva(c.r), curva(c.g), curva(c.b), c.a);
+}
+    ]]></shader>
+</effect>

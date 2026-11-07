@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mapa de gradiente.
+
+  Troca cada tom da imagem por uma cor de um gradiente: as sombras viram a cor
+  1, os meios-tons a cor 2, as luzes a cor 3. É a ferramenta que mais rende em
+  correção de cor estilizada — praticamente todo "look" de trailer de cinema é
+  um mapa de gradiente misturado por cima.
+
+  Este É o "Tritone" pedido — três cores mapeadas por luminância é a mesma
+  ideia do mapa de gradiente, só com nome de família de cor (duotone→tritone)
+  em vez de nome de ferramenta. "tritone" entrou nas tags pra aparecer na
+  busca por esse nome também, em vez de duplicar o shader com outro nome.
+
+  Enxugado em 22/09/2026: a "Mistura" e o "Preservar brilho" saíram. Os dois
+  eram repetição do motor — a Mistura do efeito, e o modo de mesclagem "Cor",
+  que é justamente "a cor nova com o brilho da foto".
+-->
+<effect
+    id="nova.effect.gradientmap"
+    name="Mapa de gradiente"
+    name-en="Gradient Map"
+    desc="Recolore a imagem por brilho. Sombras, meios-tons e luzes viram cores suas."
+    desc-en="Maps luminance onto a colour gradient."
+    category="color"
+    blend="mode"
+    tags="cor,look,tonalização,duotone,cinema,tritone,tricolor">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="shadows" label="Sombras" default="#1B1F3B" />
+        <color id="midtones" label="Meios-tons" default="#8C5A78" />
+        <color id="highlights" label="Luzes" default="#FFD9A0" />
+        <slider id="midPoint" label="Ponto médio" default="0.5" min="0.05" max="0.95" step="0.01" snap="0.5" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    // Luma perceptual (coeficientes ITU-R BT.601). Usar a média simples dos
+    // canais daria peso igual ao azul, que o olho enxerga bem menos — e o
+    // resultado ficaria com o mapeamento errado em céu e em pele.
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+
+    vec3 mapped;
+    if (luma < midPoint) {
+        mapped = mix(shadows.rgb, midtones.rgb, luma / midPoint);
+    } else {
+        mapped = mix(midtones.rgb, highlights.rgb, (luma - midPoint) / (1.0 - midPoint));
+    }
+
+    fragColor = vec4(clamp(mapped, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

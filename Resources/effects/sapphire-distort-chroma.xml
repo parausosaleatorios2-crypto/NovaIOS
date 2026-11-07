@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_DISTORTCHROMA — o Distort Chroma do Sapphire (Boris FX), medido (0.454.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "s_distortchroma".
+
+  DE ONDE VEIO (tools/sdistortchroma/benchmark, 162 renders em 16 bpc):
+
+  - Da sapphire_ae.dll (a definição do efeito está lá em texto): a imagem é deslocada pelo
+    GRADIENTE do brilho dela mesma (a "lente"), e cada cor do espectro é lida num ponto diferente
+    desse deslocamento, de Warp Red a Warp Blue.
+  - Medido (a lente pode ser outra camada: com uma rampa de posição na fonte, a saída diz o campo):
+      * brilho = (5 R + 8 G + 3 B) / 16, borrado com Blur Lens pelo desfoque do Sapphire (três
+        caixas por eixo, raios que somam a largura; borda espelhada);
+      * gradiente = (vizinho da frente − o de trás) / 2;
+      * deslocamento em px = 0,4 · L · (Blur Lens + L / 80) · Amount · gradiente, com L = largura
+        do quadro; depois Amount Rel X / Y e o giro. Posição × AE: 0,01 px;
+      * o espectro: `Steps` amostras igualmente espaçadas; três tendas (Color3 na ponta do Warp
+        Blue, Color2 no meio, Color1 na ponta do Warp Red) com a do meio valendo metade; em cada
+        amostra as três são divididas pela soma e tira-se a raiz; cada tenda é dividida pela soma
+        dela nas amostras. White Balance divide cada canal pela soma dele. Pesos × AE: 0,004.
+
+  O modelo em numpy fica a 0,00–0,03 nível (de 255) do AE nos casos controlados e a 0,15 numa
+  foto com o Filter desligado.
+
+  O FILTER (ligado por padrão no plugin) NÃO É IGUAL: ele suaviza onde a imagem é comprimida, e o
+  filtro exato do plugin não foi achado. Aqui é um mipmap pelo fator de redução (raiz do
+  determinante do jacobiano da leitura).
+
+  COMO É FEITO AQUI: o brilho da lente vai em 32 bits por ponto (o gradiente é ampliado milhares
+  de vezes: com 8 bits o deslocamento errava centenas de px). Cada caixa do desfoque soma blocos
+  de 16 pontos já somados num passe anterior e só as pontas ponto a ponto — o resultado é o da
+  caixa inteira, com ~50 leituras em vez de ~480 (Blur Lens 712).
+
+  O QUE NÃO ENTROU: Lens e Matte de outra camada, Mocha, Opacity e Crop.
+-->
+<effect
+    id="nova.effect.sdistortchroma"
+    name="S_DistortChroma"
+    name-en="S_DistortChroma"
+    desc="O Distort Chroma do Sapphire: desloca a imagem pelo relevo do brilho dela e separa as cores em arco-íris."
+    desc-en="Sapphire's Distort Chroma: warps the image by its own brightness relief and splits the colours into a spectrum."
+    category="distort"
+    tags="s_distortchroma,distort chroma,sapphire,aberração cromática,aberracao cromatica,chroma,rgb split,arco-íris,prisma,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- o brilho da lente (um número de 32 bits por ponto): o vai e vem do desfoque e as somas de 16 -->
+        <texture id="la" src="buffer" />
+        <texture id="lb" src="buffer" />
+        <texture id="ls" src="buffer" />
+        <!-- a pirâmide da fonte, para o Filter -->
+        <texture id="m1" src="buffer" scale="0.5" />
+        <texture id="m2" src="buffer" scale="0.25" />
+        <texture id="m3" src="buffer" scale="0.125" />
+        <texture id="m4" src="buffer" scale="0.0625" />
+
+        <slider id="amount" label="Amount" default="1.0" min="-5.0" max="5.0" step="0.01" snap="0.0,1.0" />
+        <slider id="blurLens" label="Blur Lens" default="96.0" min="0.0" max="1000.0" step="1.0" snap="96.0" />
+        <slider id="rotateWarpDir" label="Rotate Warp Dir" default="0.0" min="-360.0" max="360.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="warpRed" label="Warp Red" default="0.5" min="-2.0" max="2.0" step="0.01" snap="0.5" />
+        <slider id="warpBlue" label="Warp Blue" default="1.0" min="-2.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="steps" label="Steps" default="8.0" min="3.0" max="48.0" step="1.0" snap="8.0" />
+        <color id="color1" label="Color1" default="#FF0000" />
+        <color id="color2" label="Color2" default="#00FF00" />
+        <color id="color3" label="Color3" default="#0000FF" />
+        <switch id="whiteBalance" label="White Balance" default="false" />
+        <slider id="amountRelX" label="Amount Rel X" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="amountRelY" label="Amount Rel Y" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <selector id="wrapX" label="Wrap X" default="2" options="No|Tile|Reflect" />
+        <selector id="wrapY" label="Wrap Y" default="2" options="No|Tile|Reflect" />
+        <switch id="useFilter" label="Filter" default="true" />
+    </params>
+
+    <passes>
+        <pass target="la" /> <!-- 0: o brilho da lente -->
+        <pass target="ls" /> <!-- 1..12: seis caixas (3 na horizontal, 3 na vertical); cada uma em dois passes: -->
+        <pass target="lb" /> <!--        as somas de 16 pontos do que ela vai ler, e a caixa -->
+        <pass target="ls" />
+        <pass target="la" />
+        <pass target="ls" />
+        <pass target="lb" />
+        <pass target="ls" />
+        <pass target="la" />
+        <pass target="ls" />
+        <pass target="lb" />
+        <pass target="ls" />
+        <pass target="la" />
+        <pass target="m1" /> <!-- 13..16: a pirâmide da fonte -->
+        <pass target="m2" />
+        <pass target="m3" />
+        <pass target="m4" />
+        <pass />             <!-- 17: o campo, o espectro e a leitura -->
+    </passes>
+
+    <shader><![CDATA[
+const int BLOCO = 16;                 // as somas prontas são de 16 pontos seguidos
+const int NIVEIS = 4;
+const int VOLTAS_MAX = 760;           // teto do laço de uma caixa (raio até 333 perto da borda)
+
+/** Um número de 0 a 1 em quatro bytes (o gradiente do brilho é ampliado milhares de vezes: 8 bits não bastam). */
+vec4 empacotar(float v) {
+    v = clamp(v, 0.0, 0.99999994);
+    vec4 e = fract(v * vec4(1.0, 255.0, 65025.0, 16581375.0));
+    e -= e.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+    return e;
+}
+
+float desempacotar(vec4 c) { return dot(c, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
+
+int espelhar(int i, int n) {
+    // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+float larguraDoBorrao() { return max(blurLens, 0.0) * acEscalaDePixel; }
+
+/** Os números de uma das três caixas de um eixo (`qual` = 0, 1, 2) para a largura `w`: raio, peso de dentro e da ponta.
+ *  O desfoque do Sapphire, medido no S_Glow: largura inteira W -> raios que somam W; de W para W + 1 só a caixa
+ *  (W mod 3) cresce, e a largura quebrada mistura as duas. */
+vec3 numerosDaCaixa(int qual, float w) {
+    float a = floor(w), f = w - a;
+    float r = floor((a + float(2 - qual)) / 3.0 + 1e-4);
+    if (abs(a - 3.0 * floor(a / 3.0 + 1e-4) - float(qual)) > 0.5) f = 0.0;
+    return vec3(r, (1.0 - f) / (2.0 * r + 1.0) + f / (2.0 * r + 3.0), f / (2.0 * r + 3.0));
+}
+
+/** O brilho da lente num ponto da fonte: (5 R + 8 G + 3 B) / 16 da cor pré-multiplicada (medido). */
+float brilhoDaFonte(ivec2 p, ivec2 T) {
+    vec4 c = texelFetch(inputImg, ivec2(espelhar(p.x, T.x), espelhar(p.y, T.y)), 0);
+    return dot(c.rgb * c.a, vec3(0.3125, 0.5, 0.1875));
+}
+
+/** O brilho num dos dois buffers do vai e vem, com a borda espelhada. */
+float lerBrilho(bool doA, ivec2 p, ivec2 T) {
+    p = ivec2(espelhar(p.x, T.x), espelhar(p.y, T.y));
+    if (doA) return desempacotar(texelFetch(la, p, 0));
+    return desempacotar(texelFetch(lb, p, 0));
+}
+
+/** O brilho borrado num ponto qualquer (pontos do buffer), bilinear; o resultado das seis caixas fica em `la`. */
+float brilhoBorrado(vec2 pos, ivec2 T) {
+    vec2 c = pos - 0.5;
+    ivec2 b = ivec2(floor(c));
+    vec2 t = c - vec2(b);
+    return mix(mix(lerBrilho(true, b, T), lerBrilho(true, b + ivec2(1, 0), T), t.x),
+               mix(lerBrilho(true, b + ivec2(0, 1), T), lerBrilho(true, b + ivec2(1, 1), T), t.x), t.y);
+}
+
+/** O deslocamento em pontos do buffer (medido): 0,4 · L · (Blur Lens + L / 80) · Amount · gradiente, depois Rel e giro. */
+vec2 campo(vec2 pos, ivec2 T) {
+    float L = float(T.x);
+    float k = 0.4 * L * (larguraDoBorrao() + L / 80.0) * amount;
+    vec2 g = 0.5 * vec2(brilhoBorrado(pos + vec2(1.0, 0.0), T) - brilhoBorrado(pos - vec2(1.0, 0.0), T),
+                        brilhoBorrado(pos + vec2(0.0, 1.0), T) - brilhoBorrado(pos - vec2(0.0, 1.0), T));
+    vec2 d = g * k * vec2(amountRelX, amountRelY);
+    float a = radians(rotateWarpDir);
+    return vec2(d.x * cos(a) - d.y * sin(a), d.x * sin(a) + d.y * cos(a));
+}
+
+ivec2 tamanhoDoNivel(int n) {
+    if (n == 0) return textureSize(inputImg, 0);
+    if (n == 1) return textureSize(m1, 0);
+    if (n == 2) return textureSize(m2, 0);
+    if (n == 3) return textureSize(m3, 0);
+    return textureSize(m4, 0);
+}
+
+/** Um ponto do nível `n` da pirâmide da fonte, pré-multiplicado, com o Wrap. */
+vec4 pontoDoNivel(int n, ivec2 p, ivec2 Tn) {
+    bool fora = false;
+    if (wrapX == 1) { p.x = p.x - (p.x / Tn.x) * Tn.x; if (p.x < 0) p.x += Tn.x; }
+    else if (wrapX == 2) p.x = espelhar(p.x, Tn.x);
+    else if (p.x < 0 || p.x >= Tn.x) fora = true;
+    if (wrapY == 1) { p.y = p.y - (p.y / Tn.y) * Tn.y; if (p.y < 0) p.y += Tn.y; }
+    else if (wrapY == 2) p.y = espelhar(p.y, Tn.y);
+    else if (p.y < 0 || p.y >= Tn.y) fora = true;
+    if (fora) return vec4(0.0);
+    if (n == 0) { vec4 c = texelFetch(inputImg, p, 0); return vec4(c.rgb * c.a, c.a); }
+    if (n == 1) return texelFetch(m1, p, 0);
+    if (n == 2) return texelFetch(m2, p, 0);
+    if (n == 3) return texelFetch(m3, p, 0);
+    return texelFetch(m4, p, 0);
+}
+
+/** A fonte lida em `pos` (pontos do buffer cheio) no nível `n`, bilinear. */
+vec4 lerNivel(int n, vec2 pos, ivec2 T) {
+    ivec2 Tn = tamanhoDoNivel(n);
+    vec2 c = pos * vec2(Tn) / vec2(T) - 0.5;
+    ivec2 b = ivec2(floor(c));
+    vec2 t = c - vec2(b);
+    return mix(mix(pontoDoNivel(n, b, Tn), pontoDoNivel(n, b + ivec2(1, 0), Tn), t.x),
+               mix(pontoDoNivel(n, b + ivec2(0, 1), Tn), pontoDoNivel(n, b + ivec2(1, 1), Tn), t.x), t.y);
+}
+
+vec4 lerFonte(vec2 pos, float nivel, ivec2 T) {
+    if (nivel <= 0.001) return lerNivel(0, pos, T);
+    float n0 = min(floor(nivel), float(NIVEIS - 1));
+    return mix(lerNivel(int(n0), pos, T), lerNivel(int(n0) + 1, pos, T), clamp(nivel - n0, 0.0, 1.0));
+}
+
+/** As três tendas do espectro em `s` (0 = ponta do Warp Blue, 1 = ponta do Warp Red): (Color1, Color2, Color3). */
+vec3 tendas(float s) {
+    float b = clamp(1.0 - 2.0 * s, 0.0, 1.0), r = clamp(2.0 * s - 1.0, 0.0, 1.0);
+    vec3 e = vec3(r, 0.5 * (1.0 - b - r), b);          // medido: a do meio vale metade
+    return sqrt(e / (e.x + e.y + e.z));
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+
+    // ---- 0: o brilho da lente ----
+    if (acPass == 0) { fragColor = empacotar(brilhoDaFonte(p, T)); return; }
+
+    // ---- 1..12: as seis caixas. A caixa i lê `la` (i par) ou `lb` (i ímpar) e escreve no outro. ----
+    if (acPass <= 12) {
+        int i = (acPass - 1) / 2;
+        bool doA = (i & 1) == 0, vertical = i >= 3;
+        vec3 nc = numerosDaCaixa(vertical ? i - 3 : i, larguraDoBorrao());
+        int r = int(nc.x);
+        ivec2 passo = vertical ? ivec2(0, 1) : ivec2(1, 0);
+        int n = vertical ? T.y : T.x, x = vertical ? p.y : p.x;
+
+        if (((acPass - 1) & 1) == 0) {
+            // a soma (guardada como média) dos BLOCO pontos a partir deste; só serve para caixa larga
+            if (r < BLOCO) { fragColor = vec4(0.0); return; }
+            float s = 0.0;
+            for (int k = 0; k < BLOCO; k++) s += lerBrilho(doA, p + passo * k, T);
+            fragColor = empacotar(s / float(BLOCO));
+            return;
+        }
+
+        // a caixa: blocos prontos onde cabem inteiros (dentro da imagem e do miolo da caixa), pontas ponto a ponto
+        float soma = 0.0;
+        int k = x - r - 1, fim = x + r + 1;
+        for (int volta = 0; volta < VOLTAS_MAX; volta++) {
+            if (k > fim) break;
+            if (r >= BLOCO && k >= x - r && k + BLOCO - 1 <= x + r && k >= 0 && k + BLOCO - 1 < n) {
+                ivec2 q = vertical ? ivec2(p.x, k) : ivec2(k, p.y);
+                soma += nc.y * float(BLOCO) * desempacotar(texelFetch(ls, q, 0));
+                k += BLOCO;
+            } else {
+                float peso = abs(k - x) <= r ? nc.y : nc.z;
+                if (peso > 0.0) soma += peso * lerBrilho(doA, vertical ? ivec2(p.x, k) : ivec2(k, p.y), T);
+                k += 1;
+            }
+        }
+        fragColor = empacotar(soma);
+        return;
+    }
+
+    // ---- 13..16: a pirâmide da fonte (pré-multiplicada), só com o Filter ----
+    if (acPass <= 16) {
+        if (!useFilter) { fragColor = vec4(0.0); return; }
+        int n = acPass - 13;                                            // lê o nível n, escreve o n + 1
+        ivec2 Tc = tamanhoDoNivel(n);
+        vec2 razao = vec2(Tc) / acResolution;
+        vec2 de = floor(acScreenNorm * acResolution) * razao, ate = de + razao;
+        ivec2 b = ivec2(floor(de));
+        vec4 soma = vec4(0.0);
+        float area = 0.0;
+        for (int j = 0; j < 4; j++) {
+            float wy = min(float(b.y + j + 1), ate.y) - max(float(b.y + j), de.y);
+            if (wy <= 0.0) continue;
+            for (int i = 0; i < 4; i++) {
+                float wx = min(float(b.x + i + 1), ate.x) - max(float(b.x + i), de.x);
+                if (wx <= 0.0) continue;
+                ivec2 q = clamp(b + ivec2(i, j), ivec2(0), Tc - 1);
+                vec4 c;
+                if (n == 0) { c = texelFetch(inputImg, q, 0); c.rgb *= c.a; }
+                else if (n == 1) c = texelFetch(m1, q, 0);
+                else if (n == 2) c = texelFetch(m2, q, 0);
+                else c = texelFetch(m3, q, 0);
+                soma += wx * wy * c; area += wx * wy;
+            }
+        }
+        fragColor = soma / max(area, 1e-6);
+        return;
+    }
+
+    // ---- 17: o campo, o espectro e a leitura ----
+    vec2 pos = vec2(p) + 0.5;
+    vec2 d = campo(pos, T);
+
+    // O Filter (aproximado): o quanto a leitura encolhe a imagem, pelo jacobiano do campo.
+    vec2 dx = vec2(0.0), dy = vec2(0.0);
+    if (useFilter) {
+        dx = 0.5 * (campo(pos + vec2(1.0, 0.0), T) - campo(pos - vec2(1.0, 0.0), T));
+        dy = 0.5 * (campo(pos + vec2(0.0, 1.0), T) - campo(pos - vec2(0.0, 1.0), T));
+    }
+
+    int n = int(clamp(floor(steps + 0.5), 3.0, 48.0));
+    // na prévia em movimento (`acRascunho`, play/arraste), no máximo 12 amostras do espectro
+    if (acRascunho == 1) n = min(n, 12);
+    // a soma de cada tenda ao longo das amostras (medido: cada uma é dividida pela soma dela)
+    vec3 somaDasTendas = vec3(0.0);
+    for (int k = 0; k < n; k++) somaDasTendas += tendas(float(k) / float(n - 1));
+
+    vec3 cor = vec3(0.0), somaDaCor = vec3(0.0);
+    float alfa = 0.0;
+    for (int k = 0; k < n; k++) {
+        float s = float(k) / float(n - 1);
+        vec3 w = tendas(s) / somaDasTendas;
+        vec3 tom = w.x * color1.rgb + w.y * color2.rgb + w.z * color3.rgb;
+        float t = mix(warpBlue, warpRed, s);
+        float nivel = 0.0;
+        if (useFilter) {
+            float det = abs((1.0 + t * dx.x) * (1.0 + t * dy.y) - (t * dx.y) * (t * dy.x));
+            nivel = clamp(0.5 * log2(max(det, 1e-6)), 0.0, float(NIVEIS));
+        }
+        vec4 a = lerFonte(pos + d * t, nivel, T);
+        cor += a.rgb * tom; somaDaCor += tom; alfa += a.a;
+    }
+    if (whiteBalance) cor /= max(somaDaCor, vec3(1e-6));
+    alfa /= float(n);
+    cor = clamp(cor, 0.0, 1.0);
+    fragColor = alfa > 0.0 ? vec4(min(cor / alfa, vec3(1.0)), min(alfa, 1.0)) : vec4(0.0);
+}
+]]></shader>
+</effect>

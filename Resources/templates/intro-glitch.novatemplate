@@ -1,0 +1,360 @@
+{
+    "id": "intro-glitch",
+    "nome": "Intro com glitch",
+    "nomeEn": "Glitch intro",
+    "descricao": "Título que entra e sai quebrado em glitch e separação RGB; energético, para abrir edit e cair no drop.",
+    "descricaoEn": "Title that glitches in and out with RGB split; energetic opener that lands on the drop.",
+    "categoria": "intro",
+    "tags": [
+        "intro",
+        "abertura",
+        "titulo",
+        "glitch",
+        "rgb",
+        "energetico",
+        "drop"
+    ],
+    "estilos": [
+        "amv",
+        "phonk",
+        "velocity"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 2000000,
+    "duracaoMinUs": 1000000,
+    "duracaoMaxUs": 6000000,
+    "entradaUs": 600000,
+    "saidaUs": 400000,
+    "impactoUs": 0,
+    "campos": [
+        {
+            "id": "titulo",
+            "tipo": "texto",
+            "rotulo": "Título",
+            "rotuloEn": "Title",
+            "padrao": "TÍTULO",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "cor",
+            "tipo": "cor",
+            "rotulo": "Cor do texto",
+            "rotuloEn": "Text color",
+            "padrao": "#FFFFFFFF",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto:cor"
+                }
+            ]
+        },
+        {
+            "id": "intensidade",
+            "tipo": "numero",
+            "rotulo": "Intensidade",
+            "rotuloEn": "Intensity",
+            "padrao": "1",
+            "min": 0.0,
+            "max": 2.0,
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "efeito:glitch:amount",
+                    "modo": "escala"
+                },
+                {
+                    "camada": "titulo",
+                    "propriedade": "efeito:rgb:amount",
+                    "modo": "escala"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "titulo",
+            "name": "TÍTULO",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "TÍTULO",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        170.0
+                    ]
+                },
+                "fontFamily": "galeria:Montserrat-Black.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 1800000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "3de3f19a-c661-4bbb-9425-f8d8a94034ba"
+                        },
+                        {
+                            "timeUs": 2000000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "f852a93b-4d16-45d3-801b-3ef0a7ab6979"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "glitch",
+                    "manifestId": "nova.effect.glitch",
+                    "enabled": true,
+                    "values": {
+                        "amount": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                2.0
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        2.0
+                                    ],
+                                    "easing": {
+                                        "kind": "linear"
+                                    },
+                                    "id": "6c0f4047-35e8-4166-8009-43c22c2270c8"
+                                },
+                                {
+                                    "timeUs": 350000,
+                                    "value": [
+                                        0.15
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "baf4638a-b0bf-40f5-88d9-642b35ca9089"
+                                },
+                                {
+                                    "timeUs": 1600000,
+                                    "value": [
+                                        0.15
+                                    ],
+                                    "easing": {
+                                        "kind": "linear"
+                                    },
+                                    "id": "97c1b220-4147-4ba5-b16c-f8ec9394c29b"
+                                },
+                                {
+                                    "timeUs": 2000000,
+                                    "value": [
+                                        1.5
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "4ef6ed53-c0ff-4fa3-8c58-9e9d3f81bec5"
+                                }
+                            ]
+                        },
+                        "rate": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                24.0
+                            ]
+                        }
+                    }
+                },
+                {
+                    "id": "rgb",
+                    "manifestId": "nova.effect.rgbsplit",
+                    "enabled": true,
+                    "values": {
+                        "amount": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                40.0
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        40.0
+                                    ],
+                                    "easing": {
+                                        "kind": "linear"
+                                    },
+                                    "id": "c241396a-bc30-4d87-8910-776203d7fc03"
+                                },
+                                {
+                                    "timeUs": 300000,
+                                    "value": [
+                                        4.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "ca2cfb86-fe3b-41af-be37-643dc217bc3f"
+                                },
+                                {
+                                    "timeUs": 1700000,
+                                    "value": [
+                                        4.0
+                                    ],
+                                    "easing": {
+                                        "kind": "linear"
+                                    },
+                                    "id": "3d432df4-f2cd-4f92-b5ec-998765fb22de"
+                                },
+                                {
+                                    "timeUs": 2000000,
+                                    "value": [
+                                        35.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "b0a5fe77-cf19-46e8-82f9-7671ee8a8de9"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 2000000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

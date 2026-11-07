@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COLORAMA — a réplica do efeito do After Effects
+  ============================================================================
+
+  Pedido do snow em 22/09/2026, com um print do After Effects (o Colorama no
+  padrão sobre a imagem da Makima). O plano está em docs/PLANO-COLORAMA.md.
+  Nada do After Effects foi lido: o que existe aqui é a documentação PÚBLICA da
+  Adobe ("Using Color Correction effects"), que descreve cada controle, e o
+  próprio print, usado como gabarito.
+
+  Como funciona, em duas etapas:
+
+   1. A FASE: um atributo de cor de cada pixel (a intensidade, um canal, a
+      matiz…) vira um número de 0 a 1.
+   2. A RODA: esse número vira uma cor da roda de saída. O preto vai para a cor
+      do topo, e cinzas mais claros andam no sentido horário até o branco, que
+      fecha a volta.
+
+  O que o print confirmou (conta em numpy contra ele, erro médio de 4%):
+  "Intensity" é a MÉDIA simples de R, G e B, e o horário da roda padrão é
+  vermelho → amarelo → verde → ciano → azul → magenta.
+
+  A roda mora na instância do efeito (`<cycle>`, como a curva de cor) e chega
+  aqui como uma tabela de 257×1: 256 entradas para a volta e a última para o
+  FIM dela, que numa rampa é diferente do começo (o branco não pode cair no
+  preto de novo). O shader lê duas entradas vizinhas e mistura.
+
+  Os nomes dos controles são os do After Effects, para quem segue tutorial
+  achar tudo no mesmo lugar. "Girar com o tempo" é nosso: no celular, girar as
+  cores sem keyframe é o atalho que mais vai ser usado.
+-->
+<effect
+    id="nova.effect.colorama"
+    name="Colorama"
+    name-en="Colorama FX"
+    desc="Troca cada tom da imagem por uma cor de uma roda: arco-íris, visão térmica, neon. As cores giram com o tempo."
+    desc-en="Remaps a colour attribute onto a cycling palette wheel: rainbow, thermal, neon."
+    category="color"
+    blend="true"
+    tags="colorama,cor,color,arco-iris,rainbow,termica,thermal,heat map,psicodelico,psychedelic,neon,paleta,palette,ciclo,cycle,gradient,gradiente,after effects"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- ================================ O SIMPLES ================================ -->
+        <selector id="getPhase" label="Get Phase From" default="0"
+                  options="Intensity|Red|Green|Blue|Hue|Lightness|Saturation|Value|Alpha|Zero" />
+        <slider id="phaseShift" label="Phase Shift" type="angle"
+                default="0.0" min="-720.0" max="720.0" step="1.0" snap="0.0,90.0,180.0,-90.0,-180.0" />
+        <slider id="velocidade" label="Girar com o tempo (voltas/s)"
+                default="0.0" min="-4.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="repeticoes" label="Cycle Repetitions"
+                default="1.0" min="0.1" max="20.0" step="0.1" snap="1.0,2.0,3.0" />
+        <cycle id="ciclo" label="Output Cycle" default="ciclo" />
+
+        <!-- =============================== INPUT PHASE =============================== -->
+        <texture id="addPhaseLayer" src="layer" group="Input Phase" label="Add Phase" empty="transparent" />
+        <selector id="addPhaseFrom" group="Input Phase" label="Add Phase From" default="0"
+                  options="Intensity|Red|Green|Blue|Hue|Lightness|Saturation|Value|Alpha|Zero" />
+        <selector id="addMode" group="Input Phase" label="Add Mode" default="0"
+                  options="Wrap|Clamp|Average|Screen" />
+
+        <!-- ================================== MODIFY ================================= -->
+        <selector id="modify" group="Modify" label="Modify" default="1"
+                  options="None|All|Red|Green|Blue|Hue|Lightness|Saturation|Value" />
+        <switch id="modifyAlpha" group="Modify" label="Modify Alpha" default="true" />
+        <switch id="changeEmpty" group="Modify" label="Change Empty Pixels" default="false" />
+
+        <!-- ============================== PIXEL SELECTION ============================ -->
+        <selector id="matchMode" group="Pixel Selection" label="Matching Mode" default="0"
+                  options="Off|RGB|Hue|Chroma" />
+        <color id="matchColor" group="Pixel Selection" label="Matching Color" default="#FFFFFFFF" />
+        <slider id="matchTolerance" group="Pixel Selection" label="Matching Tolerance"
+                default="0.2" min="0.0" max="1.0" step="0.01" />
+        <slider id="matchSoftness" group="Pixel Selection" label="Matching Softness"
+                default="0.1" min="0.0" max="1.0" step="0.01" />
+
+        <!-- ================================= MASKING ================================= -->
+        <texture id="maskLayer" src="layer" group="Masking" label="Mask Layer" empty="transparent" />
+        <selector id="maskMode" group="Masking" label="Masking Mode" default="0"
+                  options="Off|Luminance|Inverted Luminance|Alpha|Inverted Alpha" />
+        <switch id="compositeOver" group="Masking" label="Composite Over Layer" default="true" />
+    </params>
+
+    <!-- Na vitrine, a miniatura ANDA (fase 5, 0.669.0): o padrão é parado; com isto o laço de 1,3 s mostra o movimento. -->
+    <preview>
+        <set param="velocidade" value="0.75" />
+    </preview>
+
+    <shader><![CDATA[
+
+// ============================================================================
+//  OS ATRIBUTOS DE COR
+// ============================================================================
+
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** HSL: matiz 0..1 (0 = vermelho), saturação e luminosidade. */
+vec3 paraHsl(vec3 c) {
+    float maior = max(c.r, max(c.g, c.b));
+    float menor = min(c.r, min(c.g, c.b));
+    float l = (maior + menor) * 0.5;
+    float d = maior - menor;
+    if (d < 1e-5) return vec3(0.0, 0.0, l);
+    float s = l > 0.5 ? d / (2.0 - maior - menor) : d / (maior + menor);
+    float h;
+    if (maior == c.r) h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
+    else if (maior == c.g) h = (c.b - c.r) / d + 2.0;
+    else h = (c.r - c.g) / d + 4.0;
+    return vec3(h / 6.0, s, l);
+}
+
+float canalDaMatiz(float p, float q, float t) {
+    t = t - floor(t);
+    if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
+    if (t < 0.5) return q;
+    if (t < 2.0 / 3.0) return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    return p;
+}
+
+vec3 deHsl(vec3 hsl) {
+    if (hsl.y < 1e-5) return vec3(hsl.z);
+    float q = hsl.z < 0.5 ? hsl.z * (1.0 + hsl.y) : hsl.z + hsl.y - hsl.z * hsl.y;
+    float p = 2.0 * hsl.z - q;
+    return vec3(
+        canalDaMatiz(p, q, hsl.x + 1.0 / 3.0),
+        canalDaMatiz(p, q, hsl.x),
+        canalDaMatiz(p, q, hsl.x - 1.0 / 3.0));
+}
+
+/** A fase de um pixel pelo atributo escolhido (a lista do "Get Phase From"). */
+float faseDe(vec4 c, int atributo) {
+    if (atributo == 0) return (c.r + c.g + c.b) / 3.0;   // Intensity: a média simples (o print)
+    if (atributo == 1) return c.r;
+    if (atributo == 2) return c.g;
+    if (atributo == 3) return c.b;
+    if (atributo == 4) return paraHsl(c.rgb).x;
+    if (atributo == 5) return paraHsl(c.rgb).z;
+    if (atributo == 6) return paraHsl(c.rgb).y;
+    if (atributo == 7) return max(c.r, max(c.g, c.b));
+    if (atributo == 8) return c.a;
+    return 0.0;                                           // Zero
+}
+
+// ============================================================================
+//  A RODA
+// ============================================================================
+
+/** A cor da roda em t (0 = topo, começo; 1 = topo, fim). */
+vec4 naRoda(float t) {
+    float x = clamp(t, 0.0, 1.0) * 256.0;
+    int i = min(int(floor(x)), 255);
+    float f = x - float(i);
+    return mix(texelFetch(ciclo, ivec2(i, 0), 0), texelFetch(ciclo, ivec2(i + 1, 0), 0), f);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    float fase = faseDe(original, getPhase);
+
+    // ------------------------------------------------ a segunda fase
+    // Sem camada escolhida o motor entrega uma textura 1×1 (empty="transparent"):
+    // aí não há segunda fase.
+    if (textureSize(addPhaseLayer, 0).x > 1) {
+        float outra = faseDe(texture(addPhaseLayer, acScreenNorm), addPhaseFrom);
+        if (addMode == 0) fase = fase + outra;                           // Wrap: dá a volta
+        else if (addMode == 1) fase = min(fase + outra, 1.0);             // Clamp
+        else if (addMode == 2) fase = (fase + outra) * 0.5;               // Average
+        else fase = 1.0 - (1.0 - fase) * (1.0 - outra);                   // Screen
+    }
+
+    // ------------------------------------------------ a volta na roda
+    // O Phase Shift positivo leva o começo no sentido horário; "Girar com o
+    // tempo" é o mesmo giro andando sozinho.
+    float voltas = fase * repeticoes + phaseShift / 360.0 + velocidade * acTime;
+    float t = voltas - floor(voltas);
+    // Uma volta inteira e exata (o branco, com uma repetição) é o FIM da roda,
+    // e não o começo de novo: numa rampa, o branco tem que ficar branco.
+    if (t == 0.0 && voltas > 0.0) t = 1.0;
+    vec4 nova = naRoda(t);
+
+    // ------------------------------------------------ o que a cor nova troca
+    vec3 cor = original.rgb;
+    if (modify == 1) {
+        cor = nova.rgb;
+    } else if (modify == 2) {
+        cor.r = nova.r;
+    } else if (modify == 3) {
+        cor.g = nova.g;
+    } else if (modify == 4) {
+        cor.b = nova.b;
+    } else if (modify >= 5 && modify <= 7) {
+        vec3 a = paraHsl(original.rgb);
+        vec3 b = paraHsl(nova.rgb);
+        if (modify == 5) a.x = b.x;
+        if (modify == 6) a.z = b.z;
+        if (modify == 7) a.y = b.y;
+        cor = deHsl(a);
+    } else if (modify == 8) {
+        // Value: o maior canal vira o da cor nova, e a cor mantém a proporção.
+        float v = max(original.r, max(original.g, original.b));
+        float vNovo = max(nova.r, max(nova.g, nova.b));
+        cor = v > 1e-5 ? original.rgb * (vNovo / v) : vec3(vNovo);
+    }
+
+    float alfa = original.a;
+    if (modifyAlpha) {
+        alfa = changeEmpty ? nova.a : original.a * nova.a;
+    }
+
+    // ------------------------------------------------ em quais pixels
+    float quanto = 1.0;
+    if (matchMode > 0) {
+        float d;
+        if (matchMode == 1) {
+            d = distance(original.rgb, matchColor.rgb) / sqrt(3.0);
+        } else if (matchMode == 2) {
+            float dh = abs(paraHsl(original.rgb).x - paraHsl(matchColor.rgb).x);
+            d = min(dh, 1.0 - dh) * 2.0;
+        } else {
+            // Chroma: a cor sem a luz (os eixos de cor do YIQ), boa para foto:
+            // a sombra de uma calça azul continua azul.
+            vec2 a = vec2(dot(original.rgb, vec3(0.596, -0.274, -0.322)), dot(original.rgb, vec3(0.211, -0.523, 0.312)));
+            vec2 b = vec2(dot(matchColor.rgb, vec3(0.596, -0.274, -0.322)), dot(matchColor.rgb, vec3(0.211, -0.523, 0.312)));
+            d = clamp(distance(a, b) / 1.2, 0.0, 1.0);
+        }
+        quanto = 1.0 - smoothstep(matchTolerance, matchTolerance + matchSoftness + 0.0001, d);
+    }
+    if (maskMode > 0 && textureSize(maskLayer, 0).x > 1) {
+        vec4 m = texture(maskLayer, acScreenNorm);
+        float v = maskMode <= 2 ? luma(m.rgb) * m.a : m.a;
+        if (maskMode == 2 || maskMode == 4) v = 1.0 - v;
+        quanto *= v;
+    }
+
+    // ------------------------------------------------ a saída
+    // Composite Over Layer desligado: só os pixels modificados aparecem.
+    if (compositeOver) {
+        fragColor = vec4(mix(original.rgb, clamp(cor, 0.0, 1.0), quanto), mix(original.a, alfa, quanto));
+    } else {
+        fragColor = vec4(clamp(cor, 0.0, 1.0), alfa * quanto);
+    }
+}
+    ]]></shader>
+</effect>

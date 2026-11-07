@@ -1,0 +1,53 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.voronoi" name="Voronoi Cells" desc="Distance-field Voronoi rendered as a field or as cell edges. Feeds colour from the layer." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/voronoi.png"
+        tags="procedural,voronoi,cells,pattern" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Voronoi" />
+<spinner id="cells" default="10.0" min="2.0" max="60.0" step="1.0" label="Cell Count" />
+<spinner id="speed" default="0.4" min="0.0" max="4.0" step="0.05" label="Speed" />
+<spinner id="amount" default="0.6" min="0.0" max="1.0" step="0.01" label="Amount" />
+<switch id="edges" default="true" label="Show Edges" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<!-- O sorteio das celulas e floor(acTime*speed): com 0.4 nada muda nos 2 s do laco. (05/11/2026) -->
+<preview>
+<set param="cells" value="8.0" />
+<set param="speed" value="2.0" />
+<set param="amount" value="0.8" />
+</preview>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+vec2 gmCell(vec2 g){
+  return vec2(gmHash(g + floor(acTime * speed)), gmHash(g + floor(acTime * speed) + 3.7));
+}
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 p = uv * vec2(ar, 1.0) * cells;
+  vec2 g = floor(p);
+  float d1 = 8.0, d2 = 8.0;
+  for (int y = -1; y <= 1; y++){
+    for (int x = -1; x <= 1; x++){
+      vec2 o = vec2(float(x), float(y));
+      vec2 pt = o + gmCell(g + o);
+      float d = length(pt - fract(p));
+      d2 = min(d2, max(d1, d));
+      d1 = min(d1, d);
+    }
+  }
+  float field = d1;
+  float edge = smoothstep(0.0, 0.08, d2 - d1);
+  vec3 col;
+  if (edges) col = mix(vec3(0.0), vec3(1.0), edge);
+  else col = vec3(field);
+  col = mix(c, col, amount * mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

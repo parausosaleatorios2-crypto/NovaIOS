@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Risco anamórfico.
+
+  O rastro horizontal azulado que aparece em cima de luzes fortes em filme.
+  Diferente de "Brilho", que espalha para todos os lados: aqui o espalhamento é
+  numa direção só, e é isso que dá o ar de lente de cinema.
+-->
+<effect
+    id="nova.effect.anamorphicstreak"
+    name="Risco anamórfico"
+    name-en="Anamorphic Streak"
+    desc="Rastro horizontal sobre as luzes, como lente de cinema."
+    desc-en="Horizontal lens flare streaks from the bright parts, like an anamorphic lens."
+    category="stylize"
+    blend="true"
+    tags="anamorfico,streak,lente,cinema,brilho,flare,luz">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="threshold" label="Threshold de brilho"
+                default="0.75" min="0.0" max="1.0" step="0.01" />
+        <slider id="reach" label="Comprimento"
+                default="120.0" min="0.0" max="600.0" step="1.0" />
+        <slider id="angle" label="Direção"
+                default="0.0" min="-90.0" max="90.0" step="1.0" type="angle" snap="0.0" />
+        <!-- Escondida (pedido do snow, 25/09/2026): sempre no máximo agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <slider id="quality" label="Amostras" hidden="true"
+                default="64.0" min="4.0" max="64.0" step="1.0" type="integer" />
+        <slider id="intensity" label="Intensidade"
+                default="1.0" min="0.0" max="4.0" step="0.05" snap="1.0" />
+        <color id="streakColor" label="Cor" default="#8FB8FF" />
+    </params>
+
+    <!-- Na vitrine, só o sol passa do limite padrão: limite baixo, risco comprido. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="threshold" value="0.5" />
+        <set param="reach" value="400.0" />
+        <set param="intensity" value="3.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+const int MAX_SAMPLES = 64;
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    float rad = radians(angle);
+    vec2 axis = vec2(cos(rad), sin(rad)) * acTexelSize * reach * acEscalaDePixel;
+    int samples = clamp(int(quality + 0.5), 1, MAX_SAMPLES);
+
+    vec3 streak = vec3(0.0);
+    float weightSum = 0.0;
+
+    for (int i = 0; i < MAX_SAMPLES; i++) {
+        if (i >= samples) break;
+        // Vai dos dois lados a partir do pixel: o risco é simétrico.
+        float t = (float(i) / float(samples - 1)) * 2.0 - 1.0;
+        vec4 texel = texture(inputImg, clamp(acScreenNorm + axis * t, 0.0, 1.0));
+
+        float luma = dot(texel.rgb, vec3(0.299, 0.587, 0.114)) * texel.a;
+        float bright = smoothstep(threshold, min(threshold + 0.2, 1.0), luma);
+
+        // Peso caindo com a distância: sem isso o risco tem a mesma força na
+        // ponta e no meio, e parece uma barra em vez de um brilho.
+        float weight = 1.0 - abs(t);
+        streak += texel.rgb * bright * weight;
+        weightSum += weight;
+    }
+
+    streak *= intensity / max(weightSum, 0.0001);
+
+    // Somado: luz se acumula. Misturar deixaria a imagem lavada.
+    vec3 result = original.rgb + streak * streakColor.rgb * streakColor.a;
+    fragColor = vec4(clamp(result, 0.0, 1.0), original.a);
+}
+
+    ]]></shader>
+</effect>

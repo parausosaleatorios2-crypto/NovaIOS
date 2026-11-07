@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COR DE PREENCHIMENTO (NODE) — o Fill Color do Node Video, conta por conta (0.625.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "começa então com o fill 100% igual do node video". É o efeito que o usuário pôs na
+  cópia da imagem que serve de mapa ao Displacement Map (o projeto `Untitled.nv` dele: Fill Color branco + Gaussian
+  Blur 3,37). O Node é um app em Unity, e tudo aqui foi LIDO do APK 9.0.2 descompactado (nada do Node entra no
+  repositório; `tools/nodepreenchimento/comparar.py` tira o shader do APK na hora e roda os dois na GPU do PC):
+
+  - a definição: `_FillColor` (no projeto, `_Fill/_Pattern/_FillColor`; o "_SolidColorFill" é a mesma coisa), um
+    `AssetEffect` com 2 parâmetros — `_fill_color2` (Color, padrão branco opaco) e `_fill_blend` (Enum _Alpha,
+    _Multiply, _Add; padrão 0). Os rótulos em português são os do próprio Node (o TextAsset `param` dele: "Cor de
+    preenchimento", "Mesclagem", "Alpha", "Multiplicação", "Adicionar");
+  - o shader: `NodeVideo/Effect/Stylize/fill_color` (o GLSL ES 3.00 que o Unity gerou) e o estado de mistura do passe:
+    `Blend SrcAlpha Zero`, a convenção do Node (116 shaders dele saem assim, inclusive o que desenha a mídia);
+  - o RT da camada: `RenderManager.CreateRT` → `new RenderTexture(w, h, 0, ARGB32, Default)` num projeto Unity em
+    espaço de cor LINEAR (`m_ActiveColorSpace` = 1 no PlayerSettings). Ou seja: sRGB de 8 bits — quem lê recebe a
+    cor em luz linear, quem escreve é codificado de volta, e a mistura é feita em linear;
+  - a cor do parâmetro: `PColor.SetShader` → `CommandBuffer.SetGlobalColor`, que no `libunity.so` é a MESMA rotina
+    do `SetGlobalVector` (não converte a cor para linear). Sem quadro-chave o `PColor.EvalColor` devolve a cor
+    guardada; com quadro-chave, mistura componente a componente (como a cor animada do Nova).
+
+  A CONTA DO NODE (e esta repete, na mesma ordem):
+
+  - s = a camada como o RT a guarda (pré-multiplicada, em luz linear); f = GammaToLinearSpace(cor) pelo polinômio do
+    Unity, c·(c·(c·0,305306017 + 0,682171106) + 0,0125228781) — a cor crua do seletor passa por ele uma vez;
+  - Alpha:          saída = (f, s.a · cor.a)            — a cor no lugar da camada, o recorte dela;
+    Multiplicação:  saída = (s.rgb · f, s.a · cor.a)
+    Adicionar:      saída = (s.rgb + f, s.a · (s.a + cor.a))   — o alfa é esse mesmo (no opaco, 1);
+  - a saída é presa a 0..1 (alvo de 8 bits) e o `Blend SrcAlpha Zero` guarda (cor · alfa, alfa · alfa): a camada
+    sai pré-multiplicada, com o alfa ao quadrado no alfa parcial. É por isso que o mapa branco borrado do usuário
+    vale "vermelho = alfa" no Displacement Map, e não vermelho = 1 em toda a camada.
+
+  O QUE É DO NOVA E NÃO DO NODE: o Nova guarda a camada com a cor RETA em 8 bits (gama). A entrada vira o RT do Node
+  (cor linear × alfa, nos 8 bits do sRGB) e a saída volta: alfa = o byte do Node; cor = (cor linear guardada ÷ alfa),
+  de volta ao sRGB. No opaco é o byte do Node, igual; no transparente, nada. No alfa parcial do modo Alpha o Node
+  guarda uma cor "mais clara que o próprio alfa" (branco com alfa 0,5 vira cor 0,5 e alfa 0,25 — por cima de algo,
+  soma luz): o Nova não tem como guardar isso com a cor reta, e ela fica em 1 (a borda de 1 px sai um pouco mais
+  escura por cima de fundo escuro). A máscara interna do Node (`_use_inner_mask`, a máscara de efeito dele) não é
+  parâmetro do efeito e fica de fora.
+
+  Fora do efeito, e por isso fora daqui: a mistura das camadas na composição do Node é em luz linear e a do Nova em
+  gama, e o shader que desenha a mídia no Node também usa `Blend SrcAlpha Zero` depois de pré-multiplicar — a borda
+  antisserrilhada de um PNG chega ao efeito com o alfa ao quadrado. Igual nos dois quando o pixel é opaco ou
+  transparente.
+-->
+<effect
+    id="nova.effect.node-fill-color"
+    name="Cor de preenchimento (Node)"
+    name-en="Fill Color (Node Video)"
+    desc="Pinta a camada de uma cor, mantendo o recorte dela, ou multiplica e soma a cor (o Fill Color do Node Video)."
+    desc-en="Paints the layer a colour keeping its shape, or multiplies or adds the colour (Node Video's Fill Color)."
+    category="color"
+    tags="cor de preenchimento,preencher,preenchimento,fill,fill color,cor,solido,sólido,silhueta,node video,nodevideo,mapa">
+
+    <params>
+        <!-- `highp`: os 8 bits da camada chegam exatos à conversão para luz linear (o modo Multiplicação usa a cor). -->
+        <texture id="inputImg" src="content" precision="highp" />
+
+        <color id="fillColor" label="Cor de preenchimento" default="#FFFFFF" />
+        <selector id="fillBlend" label="Mesclagem" default="0" options="Alpha|Multiplicação|Adicionar" />
+    </params>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (ver
+// `node-displacement-map.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+// O sRGB do GLES nos dois sentidos: o RT sRGB do Node converte para luz linear ao ler e de volta ao escrever.
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+// Os bytes que o RT sRGB de 8 bits guarda para esta cor linear.
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 c = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+
+    // A camada como o RT do Node a guarda: pré-multiplicada em luz linear, nos 8 bits do sRGB. No opaco é a cor
+    // linear do próprio byte.
+    vec3 s = c.a >= 1.0 ? linear(c.rgb) : linear(oitoBits3(bytesSrgb(linear(c.rgb) * c.a)));
+    float sa = c.a;
+
+    // A cor do parâmetro chega crua e passa pelo GammaToLinearSpace do Unity, na ordem de contas do shader do Node.
+    vec3 f = fillColor.rgb * 0.305306017 + 0.682171106;
+    f = fillColor.rgb * f + 0.0125228781;
+    f = f * fillColor.rgb;
+
+    vec4 o;
+    if (fillBlend == 1) {
+        o = vec4(s * f, sa * fillColor.a);
+    } else if (fillBlend == 2) {
+        o = vec4(s + f, sa * (sa + fillColor.a));
+    } else {
+        o = vec4(f, sa * fillColor.a);
+    }
+    // Num alvo de 8 bits a saída é presa a 0..1 antes da mistura.
+    o = clamp(o, 0.0, 1.0);
+
+    // `Blend SrcAlpha Zero` no RT sRGB: a cor vezes o alfa (em linear) e o alfa vezes ele mesmo, em 8 bits.
+    vec3 kc = bytesSrgb(o.rgb * o.a);
+    float ka = floor(o.a * o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    // O Nova guarda reto: a cor linear guardada dividida pelo alfa, de volta ao sRGB. Acima de 1 (a borda que o Node
+    // guarda mais clara que o próprio alfa) fica em 1.
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   REALCES E SOMBRAS — o Highlights and Shadows do Alight Motion, conta por conta (0.554.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora faz 100% igual o highlights and shadows", da série "100% iguais ao AM".
+  Mesmos parâmetros, mesmos ids, faixas, passos e padrões do `com.alightcreative.effects.highlightshadow` do AM
+  5.0.281 (um projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM
+  (`assets/effects/highlight-shadow.xml` do APK descompactado, que por sua vez vem do GPUImageHighlightShadowFilter)
+  e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é
+  `python tools/amrealces/comparar.py`: o efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete, na mesma ordem):
+
+  - O brilho L (Rec. 709: 0,2126 R + 0,7152 G + 0,0722 B) decide quanto clarear as sombras e escurecer os
+    realces: a cor é multiplicada por (L + sombra + realce) ÷ L — muda o brilho e guarda o matiz.
+  - Sombras (0 a 200%, padrão 100%): acima de 100% levanta o escuro pela curva L^(1/s) − 0,76 · L^(2/s);
+    abaixo de 100% puxa para o preto o que tem brilho baixo, com o peso (1 − (1,5 · (L − 0,5) + 0,5))³.
+  - Realces (0 a 200%, padrão 100%): abaixo de 100% abaixa o claro pela curva espelhada (com 0,8); acima de
+    100% puxa para o branco o que tem brilho alto, com o peso (1,5 · (L − 0,5) + 0,5)³. Os dois em 100%: a
+    camada sai como entrou.
+  - Tudo na cor PRÉ-MULTIPLICADA, como o AM: o L de uma borda suave é o do pré-multiplicado (uma borda branca de
+    alfa 0,5 é um "cinza médio"), e o branco do Realces é 1, não o alfa — na borda, o canal pode passar do alfa
+    (o pré-multiplicado cabe no buffer do AM) e a cor reta do Nova corta em 1: por cima de branco dá igual; por
+    cima de preto, a borda do AM sai mais clara. A mesma diferença do Colorizar e da Exposição/gama.
+  - A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android), com o
+    k/255 exato da textura (`oitoBits`, do Equilíbrio de cor). A conta divide pelo L e eleva a potências: um nível
+    a mais na borda de alfa baixo vira vários na saída. Pelo mesmo motivo o efeito só ABRE uma "cor junta" da
+    prévia (`render/FusaoDeCor.kt`): depois de outro, a entrada não seria a do buffer.
+  - O preto (e o transparente) tem L = 0, e o AM divide 0 por 0: o NaN vai para o buffer como 0 — o preto
+    continua preto mesmo com Realces no máximo (e o alfa fica o da camada).
+  - O AM roda este shader em `mediump` (o `<shader>` dele não pede `precision`; o `result` é `lowp`): no celular,
+    meia precisão. As variáveis daqui levam os mesmos qualificadores. A GPU do PC ignora a precisão, então isso só
+    o celular confere.
+  - Os valores em % saem como o AM escreve (passo 0,01 → "100%"). O `<spinner>` do AM lê `ticks` (a marca em 100%)
+    mas não lê `snap` (`readSpinnerParam`), então aqui há a marca e não há o ímã.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-highlights-shadows"
+    name="Realces e sombras"
+    name-en="Highlights and Shadows"
+    desc="Ajusta a intensidade das partes mais claras e mais escuras da camada de forma independente (o Highlights and Shadows do Alight Motion)."
+    desc-en="Independently adjusts the intensity of the lightest and darkest parts of the layer (Alight Motion's Highlights and Shadows)."
+    category="color"
+    tags="realces,sombras,luzes,claros,escuros,recuperar,levantar sombras,highlights,shadows,color grading,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="highlights" label="Realces" default="1.0" min="0.0" max="2.0" step="0.01" ticks="1.0" type="percent" />
+        <spinner id="shadows" label="Sombras" default="1.0" min="0.0" max="2.0" step="0.01" ticks="1.0" type="percent" />
+    </params>
+
+    <!-- Na vitrine, com os padrões (100% e 100%) a camada sai como entrou: a amostra levanta as sombras e abaixa os
+         realces. -->
+    <!-- Amostra: a paisagem, que tem sombra funda e realce forte (vitrine, 0.665.0). -->
+    <preview amostra="paisagem">
+        <set param="shadows" value="1.6" />
+        <set param="highlights" value="0.5" />
+    </preview>
+
+    <shader><![CDATA[
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve ao AM (ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    // A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android). No
+    // opaco a cor já é o float da textura, bit a bit.
+    vec3 p = camada.rgb;
+    if (a < 1.0) {
+        vec3 k = floor(camada.rgb * a * 255.0 + 0.5);
+        p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+
+    // A conta do AM, na mesma ordem (o último bit muda com a ordem das somas) e na MESMA precisão: o `<shader>` dele
+    // não pede `precision`, e aí o AM compila com `precision mediump float` (`ssl/BI`, `ShaderPrecision.MEDIUM`) — no
+    // celular, meia precisão (16 bits). Os parâmetros e as variáveis daqui levam o mesmo `mediump` (e o `result` dele
+    // é `lowp`), variável por variável: um `precision` global vazaria para os efeitos da cor junta. A GPU do PC
+    // ignora a precisão; o celular, não.
+    mediump vec3 cor = p;
+    mediump float realces = highlights;
+    mediump float sombras = shadows;
+    mediump float brilho = dot(cor, vec3(0.2126, 0.7152, 0.0722));
+    // Preto e transparente: o AM divide 0 por 0, e o NaN vai para o buffer como 0.
+    if (brilho == 0.0) {
+        fragColor = vec4(0.0, 0.0, 0.0, a);
+        return;
+    }
+
+    mediump float sombrasPresas = clamp(sombras, 1.0, 2.0);
+    mediump float sombra = clamp((pow(brilho, 1.0 / sombrasPresas) + (-0.76) * pow(brilho, 2.0 / sombrasPresas)) - brilho, 0.0, 1.0);
+    mediump float realce = clamp((1.0 - (pow(1.0 - brilho, 1.0 / (2.0 - realces)) + (-0.8) * pow(1.0 - brilho, 2.0 / (2.0 - realces)))) - brilho, -1.0, 0.0);
+    lowp vec3 r = (brilho + sombra + realce) * (cor / brilho);
+
+    mediump float contrastado = ((brilho - 0.5) * 1.5) + 0.5;
+    mediump float paraBranco = contrastado * contrastado * contrastado;
+    mediump float alvoBranco = clamp(realces, 1.0, 2.0) - 1.0;
+    r = mix(r, vec3(1.0), paraBranco * alvoBranco);
+
+    mediump float inverso = 1.0 - contrastado;
+    mediump float paraPreto = inverso * inverso * inverso;
+    mediump float alvoPreto = 1.0 - clamp(sombras, 0.0, 1.0);
+    r = mix(r, vec3(0.0), paraPreto * alvoPreto);
+
+    vec3 saida = clamp(r, 0.0, 1.0);                             // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = a > 0.0 ? vec4(min(saida / a, vec3(1.0)), a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

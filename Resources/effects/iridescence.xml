@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   IRIDESCÊNCIA
+  ============================================================================
+
+  Aquele arco-íris de superfície — óleo em poça, bolha de sabão, asa de besouro,
+  caixa de CD. A cor muda com o ângulo e com a espessura: o mesmo ponto visto
+  por outro lado, outra cor.
+
+  ============================================================================
+   DE ONDE SAI A COR
+  ============================================================================
+
+  Na natureza, iridescência é INTERFERÊNCIA: um filme fino deixa a luz entrar,
+  bater no fundo e voltar — a que voltou se atrasou em relação à que refletiu
+  na frente, e as duas se somam ou se cancelam dependendo do comprimento de
+  onda. Comprimentos diferentes (= cores) ganham ou perdem em pontos
+  diferentes, e o arco-íris aparece.
+
+  Aqui a conta não precisa ser físico-química: basta pegar uma fase que varia
+  com a imagem (a luma, um gradiente, um ruído suave) e ler uma tabela de cor
+  periódica — três cossenos defasados de 120° dão um arco-íris no HSV sem
+  tabela.
+
+  A fase pode ainda andar no tempo (óleo correndo na poça), ou no espaço (bater
+  em um eixo e virar o arco-íris em listras).
+-->
+<effect
+    id="nova.effect.iridescence"
+    name="Iridescência"
+    name-en="Iridescence"
+    desc="Arco-íris de superfície que muda com a luminosidade, o ângulo e o tempo."
+    desc-en="Surface rainbow that shifts with luminance, angle and time."
+    category="stylize"
+    tags="iridescência,holográfico,arco-íris,óleo,bolha,prismático,oil slick">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="strength" label="Força"
+                default="0.7" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="bands" label="Densidade das faixas"
+                default="4.0" min="0.5" max="20.0" step="0.1" snap="0.0" />
+        <slider id="phaseOffset" label="Deslocamento"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="angleDeg" label="Direção"
+                default="45.0" min="0.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="angleMix" label="Entrada do ângulo"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="0.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="saturation" label="Saturação"
+                default="1.0" min="0.0" max="2.0" step="0.05" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais força e um sopro de ângulo para ver o arco-íris correr. -->
+    <preview>
+        <set param="strength" value="0.9" />
+        <set param="bands" value="6.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/**
+ * O arco-íris sem tabela: três cossenos defasados de 120° dão R, G e B periódicos
+ * em `fase`. É o mesmo truque do `hsv2rgb` do IQ — um HSV sem a conta das faixas,
+ * com a vantagem de ser suave de verdade (nada de discontinuidade no limite dos 6
+ * setores do HSV).
+ */
+vec3 arcoIris(float fase) {
+    const vec3 defasagem = vec3(0.0, 2.094395, 4.188790); // 0°, 120°, 240°
+    return 0.5 + 0.5 * cos(6.2831853 * fase + defasagem);
+}
+
+/** A luminância ITU-R BT.709 — mesmo peso que o resto do app usa. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // A fase tem duas entradas: a LUMA da imagem (por isso o arco-íris segue o relevo
+    // do que está pintado) e a projeção do pixel num eixo (as faixas atravessando a
+    // camada). O slider de ângulo mistura entre os dois.
+    float lumaDaImagem = luma(original.rgb);
+    vec2 direcao = vec2(cos(radians(angleDeg)), sin(radians(angleDeg)));
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+    float projecao = dot(p, direcao);
+
+    float fase = mix(lumaDaImagem, projecao, angleMix) * bands
+               + phaseOffset
+               + acTime * speed;
+
+    vec3 iris = arcoIris(fase);
+
+    // A saturação muda o alcance do arco-íris em volta do cinza médio: 1 mantém o
+    // clássico, 0 vira cinza (iridescência "só brilho"), 2 estoura as cores.
+    vec3 cinza = vec3(luma(iris));
+    iris = mix(cinza, iris, saturation);
+
+    // A MISTURA é por LUMINOSIDADE: o arco-íris pinta multiplicativo, e o pixel mantém
+    // a sua luminância original. É assim que óleo numa superfície escura não acende a
+    // tela toda — só muda a cor.
+    float lumaDoIris = max(luma(iris), 1e-4);
+    vec3 pintado = iris * (lumaDaImagem / lumaDoIris);
+
+    vec3 cor = mix(original.rgb, pintado, strength);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

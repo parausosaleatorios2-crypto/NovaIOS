@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.aurora" name="Aurora" desc="Flowing vertical curtains of coloured light. Two colour bands with a soft mask." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/aurora.png"
+        tags="procedural,aurora,curtain,light" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Aurora" />
+<spinner id="scale" default="3.0" min="0.5" max="12.0" step="0.1" label="Scale" />
+<spinner id="speed" default="0.5" min="0.0" max="4.0" step="0.05" label="Speed" />
+<spinner id="amount" default="0.7" min="0.0" max="1.0" step="0.01" label="Amount" />
+<color id="colorA" default="#FF14FFA0" label="Colour A" />
+<color id="colorB" default="#FF3A6BFF" label="Colour B" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float gmNoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gmHash(i), gmHash(i + vec2(1.0, 0.0)), u.x),
+             mix(gmHash(i + vec2(0.0, 1.0)), gmHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float gmFbm(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 5; i++){ s += a * gmNoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec2 p = uv * scale;
+  float n = gmFbm(vec2(p.x * 1.5, p.y * 0.5 + acTime * speed));
+  float band = 0.5 + 0.5 * sin((uv.x * 3.0 + n * 4.0) * 3.14159);
+  float mask = smoothstep(0.0, 0.55, uv.y) * (1.0 - smoothstep(0.55, 1.0, uv.y));
+  vec3 aur = mix(colorA.rgb, colorB.rgb, band) * mask * n * 1.6;
+  vec3 col = c + aur * amount * mixAmt;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MESH WARP — o efeito nativo do After Effects, lido do plugin e conferido no AE
+  ============================================================================
+
+  Pedido do snow (16/10/2026): "faça o efeito mesh warp 100% igual o do after effects". Os presets da
+  pasta dele que usam o Mesh Warp (furys mesh warp, frame 1, mesh warp 2, mesh warp text, kl4ps one
+  frame) convertem com a malha deles.
+
+  DE ONDE VEIO (tools/meshwarp/benchmark — o MshWrp_New.aex desmontado, as funções dele chamadas de
+  verdade pelo chamar.py e 31 renders do AE): uma grade de Bézier (Rows x Columns células; cada vértice
+  com quatro alças) sobre a camada. Cada célula é partida ao meio até os pedaços ficarem planos (a
+  Quality e o tamanho da camada dizem quanto é "plano"), cada pedaço vira dois triângulos com a fonte
+  afim, e os triângulos são varridos por linha, sem antialias, com a amostra bilinear de cor pesada pelo
+  alfa e um mip de dois níveis. A saída cresce até onde a malha vai (pode passar da camada).
+
+  QUANTO BATE: a conta é `model/MeshWarpDoAe.kt`, a do `modelo.py`, que dá o mesmo pixel que o AE em
+  8,84 milhões de pixels de 31 casos menos 103 — pixels que dois triângulos da mesma célula cobrem e
+  que o próprio AE decide na corrida entre as threads dele. Roda na CPU (a soma em float das bordas,
+  linha a linha, não cabe num shader sem mudar o último bit).
+
+  A MALHA ANIMADA (0.584.0, rodada 2 no AE): entre duas chaves as duas vão para o Rows x Columns do
+  instante e se misturam com a fração do quadro em double; na chave, a malha dela como está; hold
+  segura. O .aep que anima a malha entra animado (um bloco aRbp por chave).
+
+  O QUE FALTA (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md): a camada que chega maior que ela mesma (um
+  efeito antes que cresce a borda) entra só no retângulo da camada; chave da malha com suavização no
+  AE entra linear (não conferida); o modo de rascunho (Quality do render = Draft) não existe.
+-->
+<effect
+    id="nova.effect.aemeshwarp"
+    name="Mesh Warp (AE)"
+    name-en="Mesh Warp (AE)"
+    desc="O Mesh Warp do After Effects: uma grade de Bézier sobre a camada; arrastar os pontos e as alças deforma a imagem, com o mesmo resultado do AE."
+    desc-en="After Effects' Mesh Warp: a Bézier grid over the layer; dragging its points and handles warps the image, matching AE."
+    category="distort"
+    stage="meshwarp"
+    tags="mesh warp,malha,grade,grid,warp,deformar,distorcer,distort,liquify,liquidificar,bezier,after effects,1 frame,one frame">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="rows" label="Rows" type="integer" default="7" min="1" max="31" step="1" />
+        <slider id="columns" label="Columns" type="integer" default="7" min="1" max="31" step="1" />
+        <slider id="quality" label="Quality" type="integer" default="8" min="1" max="10" step="1" />
+        <malha id="distortionMesh" label="Distortion Mesh" linhas="rows" colunas="columns" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoMeshWarp` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

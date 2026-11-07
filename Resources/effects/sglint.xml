@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_GLINT — o S_Glint (Sapphire) do After Effects (0.402.0)
+  ============================================================================
+
+  Pedido do snow (04/10/2026): "agr o s_glint ai faz os benchmark pra deixar 100% igual". MEDIDO no
+  plugin do AE dele (matchName "S_Glint"), numa instância separada do AE: 178 renders em 16 bits
+  comparados PIXEL A PIXEL (tools/sglint/benchmark/). A comp dele usa os valores de fábrica do
+  plugin, que são os padrões daqui.
+
+  O QUE O PLUGIN FAZ, MEDIDO (na ordem dos passes):
+
+  1. THRESHOLD BLUR: a fonte borrada (gaussiano, σ = 0,42 × valor, em pixels da composição) ANTES
+     do limiar — um ponto pequeno e claro some com o blur alto.
+  2. LIMIAR: (c − Threshold − Threshold Add Color)/(1 − Threshold) por canal (a cor SOBE o limiar
+     daquele canal), devolvido com a cor da fonte: a soma dos três vezes a cor sobre a soma dela.
+     Depois × Scale Colors.
+  3. RAIOS (X, Y e as duas diagonais): a imagem do limiar borrada em UMA direção por três caixas
+     seguidas de largura 2/3 do alcance — juntas, uma B-spline quadrática de alcance ±Size × Size
+     da direção × Size da cor (o vermelho, o verde e o azul têm alcances diferentes: é o arco-íris
+     do raio). O Size é em pixels da composição; nas diagonais conta em passos (√2 mais longe).
+     A caixa nunca é mais larga do que a imagem, e o que sai da imagem é cortado ENTRE uma caixa
+     e a outra; nas diagonais um lado fica livre (a direita na Diag1, embaixo na Diag2).
+     Brilho de cada raio = 4 × Brightness × Brightness da direção × Size da direção (esticar o raio
+     não o enfraquece; as diagonais contam a partir dos 0,75 de fábrica).
+  4. Os quatro raios se juntam em SCREEN; BLUR GLINT borra o resultado (σ = 0,40 × valor).
+  5. HUE SHIFT: gira o matiz do glint como no HSV e devolve o brilho que ele tinha
+     (5/16·R + 8/16·G + 3/16·B).
+  6. SAÍDA: fonte × Source Opacity em screen com o glint (ou o glint por baixo, com Glint Under
+     Source); o alfa sobe com o glint × Affect Alpha.
+
+  CONTRA O AE (na GPU do PC, erro médio por pixel): com os raios em resolução cheia, 178 casos,
+  mediana 0,033%, o pior 0,87%. O efeito roda os raios em MEIA resolução (≈8× mais leve; são 43
+  passes): mediana 0,10%, 162 abaixo de 1%, o pior 1,7% — os piores são os casos com Threshold
+  Blur 0 (bordas duras). Com os valores de fábrica: 0,25% na resolução da comp do snow (1618×885)
+  e 0,35–0,41% em 640×360.
+
+  Fora: Background e Bg Brightness, Matte (camada, caminho, Invert Matte, Matte Type), o Mocha,
+  Expand Borders e o menu Opacity. Em imagem em pé (mais alta que larga) a margem livre da Diag1
+  fica menor do que a do plugin.
+-->
+<effect
+    id="nova.effect.sglint"
+    name="S_Glint"
+    name-en="S_Glint"
+    desc="O S_Glint do After Effects (Sapphire): estrelas de oito pontas saindo das áreas claras, com as cores abrindo em arco-íris ao longo do raio."
+    desc-en="After Effects' S_Glint (Sapphire): eight-pointed stars streaking out of the bright areas, with the colours fanning into a rainbow along each ray."
+    category="stylize"
+    tags="s_glint,glint,sapphire,estrela,star,brilho,raios,rays,streak,sparkle,cintilar,glow,flare,star filter,filtro estrela">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="bh" src="buffer" scale="1.0" />
+        <texture id="bv" src="buffer" scale="1.0" />
+        <texture id="lim" src="buffer" scale="0.5" />
+        <texture id="ta" src="buffer" scale="0.5" />
+        <texture id="tb" src="buffer" scale="0.5" />
+        <texture id="ua" src="buffer" scale="0.5" />
+        <texture id="ub" src="buffer" scale="0.5" />
+        <texture id="rx" src="buffer" scale="0.5" />
+        <texture id="ry" src="buffer" scale="0.5" />
+        <texture id="rd1" src="buffer" scale="0.5" />
+        <texture id="rd2" src="buffer" scale="0.5" />
+        <texture id="gl" src="buffer" scale="1.0" />
+
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="hueShift" label="Hue Shift" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="scaleColors" group="Brightness Details" label="Scale Colors" default="#FFFFFFFF" />
+        <slider id="brightnessX" group="Brightness Details" label="Brightness X" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="brightnessY" group="Brightness Details" label="Brightness Y" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="brightnessDiag1" group="Brightness Details" label="Brightness Diag1" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="brightnessDiag2" group="Brightness Details" label="Brightness Diag2" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="threshold" label="Threshold" default="0.7" min="0.0" max="1.0" step="0.01" snap="0.7" />
+        <color id="thresholdAddColor" label="Threshold Add Color" default="#FF000000" />
+        <slider id="thresholdBlur" label="Threshold Blur" default="5.376" min="0.0" max="100.0" step="0.1" snap="5.376" />
+        <slider id="size" label="Size" default="480.0" min="0.0" max="2000.0" step="1.0" snap="480.0" />
+        <slider id="sizeX" group="Size Details" label="Size X" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="sizeY" group="Size Details" label="Size Y" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="sizeDiag1" group="Size Details" label="Size Diag1" default="0.75" min="0.0" max="4.0" step="0.01" snap="0.75" />
+        <slider id="sizeDiag2" group="Size Details" label="Size Diag2" default="0.75" min="0.0" max="4.0" step="0.01" snap="0.75" />
+        <slider id="sizeRed" group="Size Details" label="Size Red" default="0.5" min="0.0" max="4.0" step="0.01" snap="0.5,1.0" />
+        <slider id="sizeGreen" group="Size Details" label="Size Green" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="sizeBlue" group="Size Details" label="Size Blue" default="1.5" min="0.0" max="4.0" step="0.01" snap="1.0,1.5" />
+        <slider id="blurGlint" label="Blur Glint" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="affectAlpha" label="Affect Alpha" default="1.0" min="0.0" max="4.0" step="0.01" snap="0.0,1.0" />
+        <switch id="glintFromAlpha" label="Glint From Alpha" default="false" />
+        <switch id="glintUnderSource" label="Glint Under Source" default="false" />
+        <slider id="sourceOpacity" label="Source Opacity" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+    </params>
+
+    <passes>
+        <pass target="bh" />    <!-- 0: Threshold Blur, X -->
+        <pass target="bv" />    <!-- 1: Threshold Blur, Y -->
+        <pass target="lim" />   <!-- 2: o que passa do limiar, com a cor da fonte -->
+        <pass target="ta" />    <!-- 3..8: o raio X = três caixas seguidas, cada uma em dois passes -->
+        <pass target="tb" />
+        <pass target="ta" />
+        <pass target="tb" />
+        <pass target="ta" />
+        <pass target="rx" />
+        <pass target="ta" />    <!-- 9..14: o raio Y = três caixas seguidas, cada uma em dois passes -->
+        <pass target="tb" />
+        <pass target="ta" />
+        <pass target="tb" />
+        <pass target="ta" />
+        <pass target="ry" />
+        <pass target="ta" />    <!-- 15..26: o raio Diag1, cada passe duas vezes: a imagem e a margem livre -->
+        <pass target="ua" />
+        <pass target="tb" />
+        <pass target="ub" />
+        <pass target="ta" />
+        <pass target="ua" />
+        <pass target="tb" />
+        <pass target="ub" />
+        <pass target="ta" />
+        <pass target="ua" />
+        <pass target="rd1" />
+        <pass target="ub" />
+        <pass target="ta" />    <!-- 27..38: o raio Diag2, cada passe duas vezes: a imagem e a margem livre -->
+        <pass target="ua" />
+        <pass target="tb" />
+        <pass target="ub" />
+        <pass target="ta" />
+        <pass target="ua" />
+        <pass target="tb" />
+        <pass target="ub" />
+        <pass target="ta" />
+        <pass target="ua" />
+        <pass target="rd2" />
+        <pass target="ub" />
+        <pass target="gl" />    <!-- 39: os quatro raios, juntos em screen -->
+        <pass target="bh" />    <!-- 40: Blur Glint, X (os buffers do Threshold Blur já estão livres) -->
+        <pass target="bv" />    <!-- 41: Blur Glint, Y -->
+        <pass />                <!-- 42: a saída -->
+    </passes>
+
+    <shader><![CDATA[
+const int TOQUES = 16;                       // amostras do pente de cada caixa
+
+vec4 pre(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+vec4 fonte(vec2 uv) { return pre(texture(inputImg, uv)); }
+
+/** Gaussiano de um eixo. `de`: 0 = a fonte, 1 = bh, 2 = gl. */
+vec4 ler(int de, vec2 q) { return de == 0 ? fonte(q) : de == 1 ? texture(bh, q) : texture(gl, q); }
+vec4 gauss(int de, vec2 eixo, float sigma) {
+    vec2 uv = acScreenNorm;
+    if (sigma < 0.05) return ler(de, uv);
+    float passo = max(1.0, ceil(3.0 * sigma / 20.0));
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int n = -20; n <= 20; n++) {
+        float d = float(n) * passo;
+        if (abs(d) > 3.0 * sigma + 0.5) continue;
+        float w = exp(-0.5 * d * d / (sigma * sigma));
+        soma += w * ler(de, clamp(uv + eixo * d * acTexelSize, 0.0, 1.0));
+        pesos += w;
+    }
+    return soma / max(pesos, 1e-6);
+}
+
+float sigmaDoLimiar() { return 0.42 * thresholdBlur * acEscalaDePixel; }
+float sigmaDoGlint() { return 0.4 * blurGlint * acEscalaDePixel; }
+
+/**
+ * Hue Shift (medido num raio branco com 0,25 e 0,5): gira o matiz como no HSV e devolve o brilho
+ * que a cor tinha — o brilho da Sapphire, 5/16·R + 8/16·G + 3/16·B.
+ */
+vec3 girarMatiz(vec3 c, float voltas) {
+    if (voltas == 0.0) return c;
+    float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+    float d = mx - mn;
+    if (d < 1e-6) return c;
+    float h = mx == c.r ? (c.g - c.b) / d : mx == c.g ? 2.0 + (c.b - c.r) / d : 4.0 + (c.r - c.g) / d;
+    h = fract(h / 6.0 + voltas);
+    vec3 puro = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    vec3 r = mn + d * puro;
+    const vec3 PESO = vec3(0.3125, 0.5, 0.1875);
+    return r * dot(c, PESO) / max(dot(r, PESO), 1e-6);
+}
+
+/**
+ * O que passa do limiar: (c − limiar − Threshold Add Color)/(1 − limiar) por canal (a cor SOBE o
+ * limiar daquele canal: medido), devolvido com a COR da fonte — a soma dos três vezes a cor
+ * dividida pela soma dela (medido na cartela, com Size 0).
+ */
+vec3 limiar(vec4 c) {
+    vec3 v = glintFromAlpha ? vec3(c.a) : c.rgb;
+    vec3 t = max(v - threshold - thresholdAddColor.rgb, 0.0) / max(1.0 - threshold, 1e-4);
+    float soma = v.r + v.g + v.b;
+    vec3 g = soma > 1e-5 ? v * (t.r + t.g + t.b) / soma : vec3(0.0);
+    return g * scaleColors.rgb;
+}
+
+// ---------------------------------------------------------------- os raios
+// Medido (tools/sglint/benchmark): cada raio é a imagem do limiar borrada em UMA direção por TRÊS
+// caixas seguidas de largura 2/3 do alcance — juntas dão uma B-spline quadrática de alcance ±Size —,
+// a caixa nunca é mais larga do que a imagem, e o plugin corta o que sai da imagem ENTRE uma caixa e
+// a outra (por isso o raio enfraquece perto da borda). Nas diagonais um lado fica LIVRE: na Diag1 o
+// que sai pela direita continua valendo, na Diag2 o que sai por baixo (conferido lado por lado;
+// erro de 0,05% contra 0,3–0,6% de qualquer outra combinação). Essa margem mora nos buffers `ua`/`ub`.
+// Cada caixa aqui são dois passes: uma caixa pequena (largura s) e um pente de TOQUES amostras
+// espaçadas de s.
+
+/**
+ * O brilho do raio `i`. Medido com um tamanho de direção por vez: esticar o raio NÃO o deixa mais
+ * fraco — o pico fica onde estava e a energia cresce com o Size X / Y / Diag (as diagonais contam
+ * a partir dos 0,75 de fábrica).
+ */
+float brilhoDe(int i) {
+    float b = brightness * (i == 0 ? brightnessX : i == 1 ? brightnessY : i == 2 ? brightnessDiag1 : brightnessDiag2);
+    return b * (i == 0 ? sizeX : i == 1 ? sizeY : i == 2 ? sizeDiag1 / 0.75 : sizeDiag2 / 0.75);
+}
+/** Pixels deste buffer por pixel da composição (os raios podem rodar em resolução reduzida). */
+float escalaDoBuffer() { return acEscalaDePixel * acResolution.x / float(textureSize(inputImg, 0).x); }
+ivec2 tamanho() { return ivec2(acResolution + 0.5); }
+ivec2 passoDe(int i) { return i == 0 ? ivec2(1, 0) : i == 1 ? ivec2(0, 1) : i == 2 ? ivec2(1, 1) : ivec2(1, -1); }
+/** O espaçamento do pente, por canal, em PASSOS da direção (na diagonal um passo é √2 pixel: medido). */
+vec3 espacamento(int i) {
+    float alcance = size * escalaDoBuffer() * (i == 0 ? sizeX : i == 1 ? sizeY : i == 2 ? sizeDiag1 : sizeDiag2);
+    float teto = i == 0 ? acResolution.x : acResolution.y;
+    return min(alcance * vec3(sizeRed, sizeGreen, sizeBlue) * (2.0 / 3.0), teto) / float(TOQUES);
+}
+
+/**
+ * Os buffers do motor têm 8 bits por canal, e um raio fraco passa por seis passes: guardado assim
+ * ele perderia 10% (medido). Aqui os três canais vão com 10 bits cada (em raiz quadrada) nos 32
+ * bits do pixel — por isso estes buffers são lidos com `texelFetch`, sem filtro.
+ */
+vec4 empacotar(vec3 v) {
+    uvec3 q = uvec3(sqrt(clamp(v, 0.0, 1.0)) * 1023.0 + 0.5);
+    uint bits = q.r | (q.g << 10) | (q.b << 20);
+    return vec4(float(bits & 255u), float((bits >> 8) & 255u), float((bits >> 16) & 255u), float((bits >> 24) & 255u)) / 255.0;
+}
+vec3 desempacotar(vec4 c) {
+    uvec4 b = uvec4(c * 255.0 + 0.5);
+    uint bits = b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
+    vec3 q = vec3(float(bits & 1023u), float((bits >> 10) & 1023u), float((bits >> 20) & 1023u)) / 1023.0;
+    return q * q;
+}
+
+/**
+ * O estágio anterior na posição `p` (em pixels da imagem; a margem livre fica logo depois dela:
+ * à direita na Diag1, embaixo na Diag2). Fora disso não há nada.
+ */
+vec3 lerEstagio(int i, int estagio, ivec2 p) {
+    ivec2 t = tamanho();
+    bool dentro = p.x >= 0 && p.y >= 0 && p.x < t.x && p.y < t.y;
+    if (estagio == 0) return dentro ? texelFetch(lim, p, 0).rgb : vec3(0.0);
+    bool impar = estagio == 1 || estagio == 3 || estagio == 5;
+    if (dentro) return desempacotar(impar ? texelFetch(ta, p, 0) : texelFetch(tb, p, 0));
+    if (i == 2 && p.y >= 0 && p.y < t.y && p.x >= t.x && p.x < 2 * t.x) p.x -= t.x;
+    else if (i == 3 && p.x >= 0 && p.x < t.x && p.y >= t.y && p.y < 2 * t.y) p.y -= t.y;
+    else return vec3(0.0);
+    return desempacotar(impar ? texelFetch(ua, p, 0) : texelFetch(ub, p, 0));
+}
+
+/**
+ * (desempenho, 0.805.0) Quantos passos da direção o raio já andou ao fim do `estagio`, no máximo: a caixa pequena lê
+ * até ½·maior + 1, o pente até 7,5·maior + ½ (o toque mais longe), somados estágio a estágio. Na margem livre, o
+ * pixel mais longe da imagem do que isso só soma zeros — o passe grava o zero direto, sem andar.
+ */
+int alcanceAte(int estagio, vec3 s) {
+    float maior = max(s.r, max(s.g, s.b));
+    int caixas = estagio / 2 + 1;
+    int pentes = (estagio + 1) / 2;
+    // (+1 em cada termo: a folga do arredondamento do float)
+    return caixas * (int(floor(0.5 * maior + 1.0)) + 1) + pentes * (int(floor(0.5 * float(TOQUES - 1) * maior + 0.5)) + 1);
+}
+
+/** Um dos seis passes de um raio: par = a caixa pequena; ímpar = o pente. `margem` = este buffer é o da margem livre. */
+vec3 passeDoRaio(int i, bool margem, int estagio) {
+    ivec2 d = passoDe(i);
+    ivec2 aqui = ivec2(floor(acScreenNorm * acResolution));
+    vec3 s = espacamento(i);
+    // (na margem, `aqui` = a distância até a imagem: o x além da borda direita na Diag1, o y além da de baixo na Diag2)
+    if (margem && (i == 2 ? aqui.x : aqui.y) > alcanceAte(estagio, s) + 1) return vec3(0.0);
+    if (margem) aqui += i == 2 ? ivec2(tamanho().x, 0) : ivec2(0, tamanho().y);
+    vec3 soma = vec3(0.0);
+    if (estagio == 0 || estagio == 2 || estagio == 4) {
+        float maior = max(s.r, max(s.g, s.b));
+        vec3 meia = 0.5 * max(s, 1.0);
+        for (int k = -32; k <= 32; k++) {
+            float x = float(k);
+            if (abs(x) > 0.5 * maior + 1.0) continue;
+            // quanto do pixel k cai dentro da caixa [−s/2, s/2] de cada canal
+            vec3 w = clamp(min(vec3(x + 0.5), meia) - max(vec3(x - 0.5), -meia), 0.0, 1.0);
+            soma += w * lerEstagio(i, estagio, aqui + d * k);
+        }
+        return soma / max(s, 1.0);
+    }
+    for (int j = 0; j < TOQUES; j++) {
+        float t = float(j) - 0.5 * float(TOQUES - 1);
+        soma.r += lerEstagio(i, estagio, aqui + d * int(floor(t * s.r + 0.5))).r;
+        soma.g += lerEstagio(i, estagio, aqui + d * int(floor(t * s.g + 0.5))).g;
+        soma.b += lerEstagio(i, estagio, aqui + d * int(floor(t * s.b + 0.5))).b;
+    }
+    // (Com a caixa pequena os toques caem repetidos nos mesmos pixels: continua sendo a caixa certa,
+    // e com Size 0 todos caem no próprio pixel — o raio é a imagem do limiar, como no plugin.)
+    return soma / float(TOQUES);
+}
+
+/** O raio `i` pronto no pixel `p`. */
+vec3 raioPronto(int i, ivec2 p, ivec2 t) {
+    vec4 c = i == 0 ? texelFetch(rx, p, 0) : i == 1 ? texelFetch(ry, p, 0) : i == 2 ? texelFetch(rd1, p, 0) : texelFetch(rd2, p, 0);
+    return 4.0 * brilhoDe(i) * desempacotar(c);
+}
+
+/** Os quatro raios juntos em SCREEN (medido com Size 0: 1 − (1 − 4T)^4), no pixel `p` dos buffers dos raios. */
+vec3 glintEmTam(ivec2 p, ivec2 t) {
+    p = clamp(p, ivec2(0), t - 1);
+    vec3 resto = vec3(1.0);
+    for (int i = 0; i < 4; i++) resto *= 1.0 - clamp(raioPronto(i, p, t), 0.0, 1.0);
+    return 1.0 - resto;
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    if (acPass == 0) { fragColor = gauss(0, vec2(1.0, 0.0), sigmaDoLimiar()); return; }
+    if (acPass == 1) { fragColor = gauss(1, vec2(0.0, 1.0), sigmaDoLimiar()); return; }
+    if (acPass == 2) { fragColor = vec4(min(limiar(texture(bv, uv)), 1.0), 1.0); return; }
+    if (acPass >= 3 && acPass <= 14) {
+        int p = acPass - 3;
+        fragColor = empacotar(passeDoRaio(p / 6, false, p - 6 * (p / 6)));
+        return;
+    }
+    if (acPass >= 15 && acPass <= 38) {
+        int p = acPass - 15;
+        int q = p - 12 * (p / 12);
+        // (a margem do último estágio não é lida por ninguém)
+        fragColor = q == 11 ? vec4(0.0) : empacotar(passeDoRaio(2 + p / 12, q - 2 * (q / 2) == 1, q / 2));
+        return;
+    }
+    if (acPass == 39) {
+        // Os buffers dos raios podem ser menores do que a saída: interpolação bilinear à mão (eles não têm filtro).
+        vec2 t = vec2(textureSize(rx, 0));
+        vec2 f = uv * t - 0.5;
+        ivec2 i0 = ivec2(floor(f));
+        vec2 w = fract(f);
+        // (dentro de glintEm, acResolution é a deste passe; o tamanho dos raios vem de textureSize)
+        vec3 g = mix(mix(glintEmTam(i0, ivec2(t)), glintEmTam(i0 + ivec2(1, 0), ivec2(t)), w.x),
+                     mix(glintEmTam(i0 + ivec2(0, 1), ivec2(t)), glintEmTam(i0 + ivec2(1, 1), ivec2(t)), w.x), w.y);
+        fragColor = vec4(g, 1.0);
+        return;
+    }
+    if (acPass == 40) { fragColor = gauss(2, vec2(1.0, 0.0), sigmaDoGlint()); return; }
+    if (acPass == 41) { fragColor = gauss(1, vec2(0.0, 1.0), sigmaDoGlint()); return; }
+
+    vec4 s = fonte(uv) * sourceOpacity;
+    vec3 g = girarMatiz(texture(bv, uv).rgb, hueShift);
+    float ga = clamp(max(g.r, max(g.g, g.b)) * affectAlpha, 0.0, 1.0);
+    vec4 c;
+    if (glintUnderSource) c = vec4(s.rgb + g * (1.0 - s.a), s.a + ga * (1.0 - s.a));
+    else c = vec4(1.0 - (1.0 - s.rgb) * (1.0 - g), 1.0 - (1.0 - s.a) * (1.0 - ga));
+    c.rgb = min(c.rgb, 1.0);
+    fragColor = c.a > 1e-5 ? vec4(min(c.rgb / c.a, 1.0), c.a) : vec4(0.0);
+}
+]]></shader>
+</effect>

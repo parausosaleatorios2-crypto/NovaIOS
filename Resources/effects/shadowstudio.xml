@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SHADOW STUDIO — o Shadow Studio 3 (Plugin Everything) do After Effects, medido no plugin (0.423.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "poderia fazer agora shadow studio 3?". Medido no plugin dele
+  (matchName "PESS3", v1.0.7), numa instância separada do AE: 247 renders em 16 bits — um quadrado,
+  um disco, uma barra, um conjunto de formas e o papel rasgado dele (tools/shadowstudio/benchmark/).
+  O plugin para de desenhar a sombra depois de ~56 composições no mesmo render: foi em lotes.
+
+  É o Renderer 2 (o padrão, o que ele usa). O QUE FOI MEDIDO:
+
+  - A sombra de um ponto depende de QUANTO se anda, contra a luz, até encostar na forma (tau):
+    opacidade = de Opacity Start a Opacity End por (tau / Shadow Length) elevado a
+    (100 − Ease Opacity) / Ease Opacity. Além do Shadow Length não há sombra. A forma é o alfa
+    acima do Alpha Threshold.
+  - A luz tem TAMANHO: a sombra é a média de sombras duras para as direções de um DISCO de luz, cada
+    uma pesando pela corda do disco nela. Na luz direcional o disco aparece sob um meio-ângulo de
+    Light Softness × Light Radius / 7200 radianos (32° com os padrões) e isso não depende do
+    comprimento — por isso a sombra amacia e some com a distância. Passando de 90° o ponto fica
+    DENTRO do disco: há sombra para todos os lados, mais forte no lado oposto à luz, e a partir de
+    180° nada mais muda (medido: Softness 100 e Radius 1000 ou 5000 dão a mesma imagem).
+  - Light Direction 135° = sombra para baixo e para a direita. Comprimento negativo e Inverse
+    Shadow viram o lado.
+  - Luz pontual: a direção é a que vem da Light Origin, e a luz é o mesmo disco, de raio
+    Softness × Radius × 0,07 px em volta dela (perto da origem a sombra abre para todos os lados).
+  - Inner Shadow: quem faz sombra é o lado de fora, e ela só aparece dentro da camada.
+  - Shadow Opacity entra ao QUADRADO (50 dá um quarto). A camada vai por cima da sombra; Source
+    Opacity mexe só nela.
+
+  QUANTO BATE (GPU do PC × AE, 1280 × 720, rodada 2 — sombras largas e longas, Softness até 100,
+  Radius até 3000, Shadow Length até 3000): luz direcional, 63 casos — erro mediano de 7% da sombra
+  de cada caso, pior caso 13%. Luz pontual, 24 casos — mediano 15%, pior 24% (o raio do disco da luz
+  pontual é um ajuste).
+
+  COMO É FEITO: cada raio procura a forma em três andares (mapa de blocos de 32 px, de 8 px e a
+  imagem), então uma sombra de 3000 px não pula um detalhe fino; o número de direções vai de 10 a
+  48 conforme a largura da luz.
+
+  FORA: o Renderer 1 (pilha de cópias), Fill Mode / Color Gradient, Texture, os outros easings
+  (Softness, Gradient, Mode, por atributo), Auto Shadow Length, Shadow Within Light, Inner Blend
+  Mode, Source Blend Mode, Shadow Offset, Buffer Expansion, Samples e Quality Preset.
+-->
+<effect
+    id="nova.effect.shadowstudio"
+    name="Shadow Studio"
+    name-en="Shadow Studio"
+    desc="O Shadow Studio 3 do After Effects: sombra longa e realista, que amacia e some com a distância, de luz direcional ou pontual."
+    desc-en="After Effects' Shadow Studio 3: a long, realistic shadow that softens and fades with distance, from a directional or point light."
+    category="stylize"
+    tags="shadow studio,shadowstudio,sombra,shadow,long shadow,sombra longa,soft shadow,sombra suave,luz,light,drop shadow,realista,plugin everything,inner shadow,sombra interna">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="medio" src="buffer" scale="0.125" />
+        <texture id="grosso" src="buffer" scale="0.03125" />
+
+        <selector id="lightType" group="Light &amp; Shadow" label="Light Type" default="0" options="Directional|Point" />
+        <slider id="lightDirection" group="Light &amp; Shadow" label="Light Direction" type="angle" default="135.0" min="-360.0" max="360.0" step="1.0" snap="135.0" showIf="lightType=0" />
+        <point id="lightOrigin" group="Light &amp; Shadow" label="Light Origin" defaultX="0.0" defaultY="0.0" showIf="lightType=1" />
+        <slider id="lightSoftness" group="Light &amp; Shadow" label="Light Softness" default="20.0" min="0.0" max="100.0" step="1.0" snap="20.0" />
+        <slider id="lightRadius" group="Light &amp; Shadow" label="Light Radius" default="200.0" min="0.0" max="5000.0" step="1.0" snap="200.0" />
+        <slider id="shadowLength" group="Light &amp; Shadow" label="Shadow Length" default="200.0" min="-4000.0" max="4000.0" step="1.0" snap="200.0" />
+        <switch id="innerShadow" group="Light &amp; Shadow" label="Inner Shadow" default="false" />
+        <switch id="inverseShadow" group="Light &amp; Shadow" label="Inverse Shadow" default="false" />
+
+        <slider id="opacityStart" group="Opacity &amp; Color" label="Opacity Start" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <slider id="opacityEnd" group="Opacity &amp; Color" label="Opacity End" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="easeOpacity" group="Opacity &amp; Color" label="Ease Opacity" default="60.0" min="0.0" max="100.0" step="1.0" snap="60.0" />
+        <color id="color" group="Opacity &amp; Color" label="Color" default="#FF000000" />
+
+        <slider id="alphaThreshold" group="Quality" label="Alpha Threshold" default="0.75" min="0.01" max="1.0" step="0.01" snap="0.75" />
+
+        <slider id="sourceOpacity" group="Compositing" label="Source Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <slider id="shadowOpacity" group="Compositing" label="Shadow Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+    </params>
+
+    <!-- Na vitrine, a amostra ocupa o quadro e a sombra cai fora: a sombra interna. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="innerShadow" value="true" />
+        <set param="shadowLength" value="600.0" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="medio" />    <!-- 0: onde há forma, em blocos de 8 px (R = a forma, G = o lado de fora) -->
+        <pass target="grosso" />   <!-- 1: o mesmo em blocos de 32 px -->
+        <pass />                   <!-- 2: a sombra -->
+    </passes>
+
+    <shader><![CDATA[
+// Medidos no plugin (tools/shadowstudio/benchmark):
+const int DIRECOES = 48;      // o máximo de direções da luz (o tamanho dela) que entram na média
+
+vec2 tamanho() { return vec2(textureSize(inputImg, 0)); }
+
+/** 1 dentro da forma (o alfa passa do Alpha Threshold); com Inner Shadow, quem faz sombra é o lado de FORA. */
+float forma(vec2 px) {
+    vec2 R = tamanho();
+    float a = (px.x < 0.0 || px.y < 0.0 || px.x > R.x || px.y > R.y) ? 0.0 : texture(inputImg, px / R).a;
+    float dentro = step(alphaThreshold, a);
+    return innerShadow ? 1.0 - dentro : dentro;
+}
+
+/**
+ * Os mapas de blocos (passes 0 e 1): "neste bloco há forma?" (R) e "há lado de fora?" (G). É o que
+ * deixa o raio andar de 24 em 24 px numa sombra de milhares de px sem pular um detalhe fino: só onde o
+ * bloco acusa alguma coisa ele desce para o mapa de 8 px, e daí para a imagem.
+ */
+vec4 blocos(vec2 uv, bool daImagem) {
+    vec2 R = tamanho();
+    float temForma = 0.0, temFora = 0.0;
+    if (daImagem) {
+        vec2 pe = R / acResolution;                       // o bloco, em px da imagem
+        for (int j = 0; j < 8; j++) for (int i = 0; i < 8; i++) {
+            vec2 px = uv * R + ((vec2(float(i), float(j)) + 0.5) / 8.0 - 0.5) * pe;
+            float a = (px.x < 0.0 || px.y < 0.0 || px.x > R.x || px.y > R.y) ? 0.0 : texture(inputImg, px / R).a;
+            float d = step(alphaThreshold, a);
+            temForma = max(temForma, d); temFora = max(temFora, 1.0 - d);
+        }
+    } else {
+        vec2 pe = 1.0 / acResolution;                     // o bloco, em UV
+        for (int j = 0; j < 6; j++) for (int i = 0; i < 6; i++) {
+            vec4 m = texture(medio, uv + ((vec2(float(i), float(j)) + 0.5) / 6.0 - 0.5) * pe * 1.2);
+            temForma = max(temForma, m.r); temFora = max(temFora, m.g);
+        }
+    }
+    return vec4(temForma, temFora, 0.0, 1.0);
+}
+
+/** O bloco em volta de `px` pode ter o que faz sombra? (filtro linear: acusa também os blocos vizinhos) */
+bool podeTer(sampler2D mapa, vec2 px) {
+    vec2 R = tamanho();
+    if (px.x < 0.0 || px.y < 0.0 || px.x > R.x || px.y > R.y) return innerShadow;
+    vec4 m = texture(mapa, px / R);
+    return (innerShadow ? m.g : m.r) > 0.002;
+}
+
+/**
+ * A opacidade ao longo da sombra, x = 0 (encostada) a 1 (a ponta). Medido: vai de Opacity Start a
+ * Opacity End por x elevado a (100 − Ease Opacity) / Ease Opacity — com 0 não cai nunca, com 100 já
+ * começa no fim, com 60 (padrão) cai depressa no começo.
+ */
+float opacidade(float x) {
+    float e = clamp(easeOpacity, 0.0, 100.0);
+    float f = e < 0.01 ? 0.0 : e > 99.99 ? 1.0 : pow(x, (100.0 - e) / e);
+    return mix(opacityStart, opacityEnd, f) / 100.0;
+}
+
+/**
+ * A distância (px) do ponto até a forma andando contra a luz (`contra` unitário), até `L`; −1 = não achou.
+ * Três andares: o mapa de 32 px (passo de 24 px ou mais), o de 8 px e a imagem.
+ */
+float ateAForma(vec2 p, vec2 contra, float L) {
+    if (forma(p) > 0.5) return 0.0;
+    float pa = max(24.0, L / 128.0);
+    for (int i = 0; i < 128; i++) {
+        float ta = pa * (float(i) + 0.5);
+        if (ta - 0.5 * pa > L) break;
+        if (!podeTer(grosso, p + contra * ta)) continue;
+        float b0 = max(ta - 0.5 * pa - 4.0, 0.0), b1 = min(ta + 0.5 * pa + 4.0, L);
+        float pb = max(6.0, (b1 - b0) / 24.0);
+        for (int j = 0; j < 24; j++) {
+            float tb = b0 + pb * (float(j) + 0.5);
+            if (tb - 0.5 * pb > b1) break;
+            if (!podeTer(medio, p + contra * tb)) continue;
+            float f0 = max(tb - 0.5 * pb - 2.0, 0.0), f1 = min(tb + 0.5 * pb + 2.0, L);
+            float pf = max(1.5, (f1 - f0) / 10.0);
+            float antes = f0;
+            for (int m = 0; m < 10; m++) {
+                float tf = f0 + pf * (float(m) + 0.5);
+                if (tf - 0.5 * pf > f1) break;
+                if (forma(p + contra * tf) > 0.5) {
+                    // achou: afina entre o último ponto de fora e este
+                    float a = antes, b = tf;
+                    for (int k = 0; k < 4; k++) {
+                        float meio = 0.5 * (a + b);
+                        if (forma(p + contra * meio) > 0.5) b = meio; else a = meio;
+                    }
+                    return 0.5 * (a + b);
+                }
+                antes = tf;
+            }
+        }
+    }
+    return -1.0;
+}
+
+/**
+ * O peso de uma direção: a corda do disco da luz (raio `rho`, visto de uma distância 1) nessa direção.
+ * De fora do disco só as direções que o cortam contam; de dentro, todas.
+ */
+float corda(float rho, float ang, bool dentroDoDisco) {
+    float s = sin(ang), c = cos(ang);
+    float raiz = sqrt(max(rho * rho - s * s, 0.0));
+    if (dentroDoDisco) return max(c + raiz, 0.0);
+    return c > 0.0 ? 2.0 * raiz : 0.0;
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 R = tamanho();
+    vec2 p = uv * R;
+    if (acPass == 0) { fragColor = blocos(uv, true); return; }
+    if (acPass == 1) { fragColor = blocos(uv, false); return; }
+    vec4 orig = texture(inputImg, uv);
+    float esc = acEscalaDePixel;
+
+    // PARA ONDE A SOMBRA VAI. Direcional: 135° = para baixo e para a direita. Pontual: para longe da origem.
+    vec2 vai; float L = abs(shadowLength) * esc;
+    vec2 origem = lightOrigin * R;
+    if (lightType == 0) {
+        float a = radians(lightDirection);
+        vai = vec2(sin(a), -cos(a));
+    } else {
+        vec2 d = p - origem;
+        vai = length(d) > 1e-3 ? normalize(d) : vec2(0.0, 1.0);
+    }
+    float sinal = (shadowLength < 0.0 ? -1.0 : 1.0) * (inverseShadow ? -1.0 : 1.0);
+
+    // A LUZ TEM TAMANHO (medido): a sombra é a MÉDIA de sombras duras para um leque de direções.
+    // Direcional: o leque abre Light Softness × Light Radius / 7200.0 radianos para cada lado e não
+    // depende do comprimento. Pontual: a luz é um disco em volta da origem — perto dela o leque abre
+    // muito, longe quase nada.
+    float tamanho = lightSoftness * lightRadius;
+    float semente = fract(52.9829189 * fract(dot(floor(p), vec2(0.06711056, 0.00583715))));
+    float soma = 0.0, pesos = 0.0;
+    // quanto mais aberto o leque, mais direções (senão a sombra larga sai raiada)
+    float razao = tamanho * 0.07 * esc / max(length(p - origem), 1.0);
+    float abertura = lightType == 0 ? (tamanho / 7200.0 < 0.927 ? tamanho / 7200.0 : 3.1416) : (razao < 0.8 ? asin(razao) : 3.1416);
+    int n = tamanho > 1e-3 ? int(clamp(10.0 + abertura * 24.0, 10.0, float(DIRECOES))) : 1;
+    for (int k = 0; k < DIRECOES; k++) {
+        if (k >= n) break;
+        float u = n == 1 ? 0.0 : (float(k) + semente) / float(n) * 2.0 - 1.0;
+        vec2 dir;
+        float peso = 1.0;
+        if (lightType == 0) {
+            // A luz é um DISCO visto de uma distância 1, e cada direção pesa pela corda do disco nela.
+            // Medido: o disco aparece sob um meio-ângulo de Softness × Radius / 7200.0 radianos. Até
+            // 90° o leque fecha nesse ângulo; passando disso o ponto fica DENTRO do disco e há luz de
+            // todos os lados (mais do lado de onde ela vem), até o teto de 1.6.
+            float teta = min(tamanho / 7200.0, 3.1416);
+            float rho = teta < 1.5708 ? sin(teta) : min(1.0 / max(sin(teta), 1e-3), 1.6);
+            float ang = (rho < 0.8 && teta < 1.5708 ? teta : 3.1416) * u;
+            peso = corda(rho, ang, teta >= 1.5708);
+            dir = vec2(vai.x * cos(ang) - vai.y * sin(ang), vai.x * sin(ang) + vai.y * cos(ang));
+        } else {
+            // a luz pontual é o mesmo disco, de raio Softness × Radius × 0.07 px em volta da origem:
+            // longe dela o leque é fino, perto abre, e DENTRO do disco a sombra sai para todos os lados
+            float rho = min(tamanho * 0.07 * esc / max(length(p - origem), 1.0), 3.0);
+            float ang = (rho < 0.8 ? asin(rho) : 3.1416) * u;
+            peso = corda(rho, ang, rho >= 1.0);
+            dir = vec2(vai.x * cos(ang) - vai.y * sin(ang), vai.x * sin(ang) + vai.y * cos(ang));
+        }
+        if (n == 1) peso = 1.0;                  // luz sem tamanho: uma direção só
+        dir *= sinal;
+        float tau = ateAForma(p, -dir, L);
+        pesos += peso;
+        if (tau >= 0.0) soma += peso * opacidade(clamp(tau / max(L, 1e-3), 0.0, 1.0));
+    }
+    // (medido: Shadow Opacity entra ao quadrado — 50 dá um quarto)
+    float sombra = soma / max(pesos, 1e-4) * (shadowOpacity / 100.0) * (shadowOpacity / 100.0);
+
+    // A COMPOSIÇÃO: a camada por cima da sombra (com Inner Shadow, a sombra por cima e só dentro da camada).
+    vec4 fonte = vec4(orig.rgb, orig.a * sourceOpacity / 100.0);
+    vec4 saida;
+    if (innerShadow) {
+        float s = sombra * color.a;
+        saida = vec4(mix(fonte.rgb, color.rgb, s), fonte.a);
+    } else {
+        float s = sombra * color.a;
+        float a = fonte.a + s * (1.0 - fonte.a);
+        saida = vec4(a > 0.0 ? (fonte.rgb * fonte.a + color.rgb * s * (1.0 - fonte.a)) / a : vec3(0.0), a);
+    }
+    fragColor = saida;
+}
+]]></shader>
+</effect>

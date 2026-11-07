@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand__clipping_mask
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-clipping-mask"
+    name="Rendercommand  Clipping Mask (NV)"
+    name-en="Rendercommand  Clipping Mask (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand__clipping_mask', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand__clipping_mask', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="clip_mask" src="content" empty="transparent" />
+        <slider id="_clipping_channel" type="integer" label="Clipping Channel" default="0" min="0" max="10" step="1" />
+        <slider id="_clipping_invert" type="integer" label="Clipping Invert" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 ImmCB_0[4];
+
+vec4 u_xlat0;
+vec4 u_xlat1;
+int u_xlati1;
+float u_xlat2;
+bool u_xlatb4;
+void main()
+{
+ImmCB_0[0] = vec4(1.0,0.0,0.0,0.0);
+ImmCB_0[1] = vec4(0.0,1.0,0.0,0.0);
+ImmCB_0[2] = vec4(0.0,0.0,1.0,0.0);
+ImmCB_0[3] = vec4(0.0,0.0,0.0,1.0);
+    u_xlat0 = texture(clip_mask, acScreenNorm.xy);
+    u_xlati1 = int(_clipping_channel);
+    u_xlat0.x = dot(u_xlat0, ImmCB_0[u_xlati1]);
+    u_xlat2 = (-u_xlat0.x) + 1.0;
+    u_xlatb4 = int(_clipping_invert)==1;
+    u_xlat0.x = (u_xlatb4) ? u_xlat2 : u_xlat0.x;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    fragColor = u_xlat0.xxxx * u_xlat1;
+    return;
+}
+    ]]></shader>
+</effect>

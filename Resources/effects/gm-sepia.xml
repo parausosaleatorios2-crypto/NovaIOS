@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.sepia" name="Sepia Tone" desc="A proper sepia matrix with a strength and an optional warm/cool bias." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/sepia.png"
+        tags="retro,sepia,mono,vintage" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Sepia" />
+<spinner id="amount" default="0.8" min="0.0" max="1.0" step="0.01" label="Amount" />
+<spinner id="warmth" default="0.5" min="0.0" max="1.0" step="0.01" label="Warmth" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  vec3 warm = vec3(1.07, 0.94, 0.74);
+  vec3 cool = vec3(0.90, 0.93, 1.00);
+  vec3 sep = vec3(l) * mix(cool, warm, warmth);
+  sep.r *= 1.0 + 0.10 * warmth;
+  sep.b *= 1.0 - 0.10 * warmth;
+  vec3 col = mix(c, clamp(sep, 0.0, 1.0), amount * mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

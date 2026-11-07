@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ARTE ASCII
+  ============================================================================
+
+  A imagem virando terminal: o quadro é dividido em células do tamanho de um
+  caractere, cada uma com uma marca mais ou menos densa dependendo de quão
+  claro o conteúdo daquela célula era.
+
+  ============================================================================
+   SEM TEXTURA DE GLIFOS, SEM FONTE EMBUTIDA
+  ============================================================================
+
+  A versão de livro-texto carrega uma textura de glifos (70 caracteres de
+  denso pro esparso) e escolhe um pelo luma. Isso pede um asset, e asset não
+  cabe em 1 passe de shader puro.
+
+  O shader aqui faz o truque sem glifos: cada célula vira uma MARCA — um ponto
+  no centro cujo RAIO cresce com o luma. É o mesmo princípio do PONTILHISMO,
+  mas com o grid alinhado e a ideia visual lida como "fonte" por causa da
+  rigidez da grade.
+
+  Quem quiser fonte de verdade um dia adiciona uma `<texture src="image">` de
+  glifos e troca a função de marca pela leitura desse atlas. Ficam os mesmos
+  parâmetros.
+
+  ============================================================================
+   A COR É DA CÉLULA, A FORMA É DA LUMA
+  ============================================================================
+
+  A marca pode herdar a cor da imagem (modo colorido) ou pintar numa cor fixa
+  (verde fósforo, âmbar — os dois clássicos de monitor antigo). O fundo
+  também, com opacidade própria.
+-->
+<effect
+    id="nova.effect.ascii-art"
+    name="Arte ASCII"
+    name-en="ASCII Art"
+    desc="Imagem reduzida a uma grade de marcas densas (fake ASCII em shader puro)."
+    desc-en="Image reduced to a grid of density marks (shader-pure fake ASCII)."
+    category="stylize"
+    tags="ascii,terminal,arte,grid,retrô,texto,densidade">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="cellSize" label="Tamanho da célula (px)"
+                default="10.0" min="4.0" max="32.0" step="1.0" snap="0.0" />
+        <slider id="levels" label="Níveis de densidade"
+                default="5" min="2" max="8" step="1" type="integer" />
+        <color id="inkColor" label="Cor do traço" default="#00FF66FF" />
+        <color id="bgColor" label="Cor do fundo" default="#001100FF" />
+        <slider id="useImageColor" label="Usar cor da imagem"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, célula menor pra ler como fonte. -->
+    <preview>
+        <set param="cellSize" value="7.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    float lado = max(cellSize, 1.0);
+    vec2 grade = tam / lado;
+
+    vec2 escalado = acScreenNorm * grade;
+    vec2 i = floor(escalado);
+    vec2 f = fract(escalado) - 0.5;
+
+    // Cor e luma do CENTRO da célula (1 lookup por célula).
+    vec2 uvDoCentro = (i + 0.5) / grade;
+    vec3 corDaImagem = texture(inputImg, uvDoCentro).rgb;
+    float L = luma(corDaImagem);
+
+    // Quantiza a luma em `levels` patamares — o que vira a densidade do traço.
+    int n = clamp(int(levels + 0.5), 2, 8);
+    float Lq = floor(L * float(n)) / float(n - 1);
+    Lq = clamp(Lq, 0.0, 1.0);
+
+    // A marca: círculo cujo raio vem do Lq (claro = ponto grande, escuro = ponto pequeno).
+    // Em Lq = 0 o círculo some; em Lq = 1 cobre quase a célula toda.
+    float raio = Lq * 0.5;
+    float d = length(f);
+    float marca = 1.0 - smoothstep(raio - 0.05, raio + 0.05, d);
+
+    vec3 corDoTraco = mix(inkColor.rgb, corDaImagem, useImageColor);
+    vec4 fundo = vec4(bgColor.rgb, bgColor.a);
+    vec4 traco = vec4(corDoTraco, inkColor.a);
+
+    vec4 saida = mix(fundo, traco, marca);
+
+    fragColor = saida;
+}
+
+    ]]></shader>
+</effect>

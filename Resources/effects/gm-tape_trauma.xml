@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.tape_trauma" name="Tape Trauma Pro" desc="Extreme VHS wobble, chroma bleed, tracking tears, row noise and scanline loss for a badly damaged analog master." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/tape_trauma.png"
+        tags="other,retro,pro,strong,vhs,tape,analog,tracking" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Tape Trauma" />
+<spinner id="wobble" default="0.014" min="0.0" max="0.06" step="0.0005" label="Warp Wobble" />
+<spinner id="bleed" default="0.018" min="0.0" max="0.06" step="0.0005" label="Chroma Bleed" />
+<spinner id="noise" default="0.30" min="0.0" max="1.0" step="0.01" label="Tape Noise" />
+<spinner id="tears" default="0.45" min="0.0" max="1.0" step="0.01" label="Tracking Tears" />
+<spinner id="speed" default="6.0" min="0.0" max="30.0" step="0.1" label="Tape Speed" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+void main(){
+  vec2 baseUv = acScreenNorm;
+  vec4 origin = texture2DCv(inputImg.texture, baseUv);
+  float t = floor(acTime * speed);
+  vec2 uv = baseUv;
+  float track = gmHash(vec2(floor(baseUv.y * 18.0), t));
+  float active = step(1.0 - tears, track);
+  uv.x += sin(baseUv.y * 78.0 + acTime * speed) * wobble * mixAmt;
+  uv.x += (gmHash(vec2(floor(baseUv.y * 18.0) * 3.1, t + 8.0)) - 0.5) * 0.13 * tears * active * mixAmt;
+  float r = texture2DCv(inputImg.texture, uv + vec2(bleed, 0.0)).r / max(texture2DCv(inputImg.texture, uv + vec2(bleed, 0.0)).a, 1e-4);
+  vec4 mid = texture2DCv(inputImg.texture, uv);
+  float g = mid.g / max(mid.a, 1e-4);
+  float b = texture2DCv(inputImg.texture, uv - vec2(bleed, 0.0)).b / max(texture2DCv(inputImg.texture, uv - vec2(bleed, 0.0)).a, 1e-4);
+  vec3 c = vec3(r, g, b);
+  float grain = gmHash(floor(baseUv * acScreenSize) + floor(acTime * 60.0));
+  c += (grain - 0.5) * noise * mixAmt;
+  float scan = 1.0 - 0.13 * (0.5 + 0.5 * sin(baseUv.y * acScreenSize.y * 3.1415926));
+  c *= scan;
+  c *= 1.0 - active * 0.34;
+  float l = gmLum(c);
+  c = mix(c, vec3(l), 0.10);
+  vec3 col = mix(origin.rgb / max(origin.a, 1e-4), c, mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * origin.a, origin.a);
+}
+]]></shader>
+</effect>

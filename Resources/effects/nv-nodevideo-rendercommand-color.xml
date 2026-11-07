@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_color
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-color"
+    name="Rendercommand Color (NV)"
+    name-en="Rendercommand Color (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_color', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_color', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="_fill_color" label="Fill Color" default="#FFFFFFFF" />
+        <slider id="_fill_type" type="integer" label="Fill Type" default="0" min="0" max="10" step="1" />
+        <slider id="_gradient_type" type="integer" label="Gradient Type" default="0" min="0" max="10" step="1" />
+        <color id="_gradient_color1" label="Gradient Color1" default="#FFFFFFFF" />
+        <color id="_gradient_color2" label="Gradient Color2" default="#FFFFFFFF" />
+        <slider id="_gradient_axis" type="integer" label="Gradient Axis" default="0" min="0" max="10" step="1" />
+        <slider id="_gradient_start" label="Gradient Start" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <point id="_gradient_offset" label="Gradient Offset" defaultX="0.5" defaultY="0.5" />
+        <slider id="_gradient_rotation" label="Gradient Rotation" default="0.0" min="-180.0" max="180.0" step="1.0" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec4 u_xlat2;
+bool u_xlatb2;
+vec4 u_xlat3;
+vec3 u_xlat4;
+vec2 u_xlat11;
+bool u_xlatb11;
+bool u_xlatb16;
+void main()
+{
+    if(int(_fill_type) == 0) {
+        u_xlat0.xyz = _fill_color.xyz;
+        fragColor.w = _fill_color.w;
+    } else {
+        u_xlatb1 = int(_fill_type)==1;
+        if(u_xlatb1){
+            u_xlat1.xy = _viewport_ratio.yx * vec2(0.5, 0.5);
+            u_xlat1.xy = acScreenNorm.yx * _viewport_ratio.yx + (-u_xlat1.xy);
+            u_xlat2.x = sin(_gradient_rotation);
+            u_xlat3.x = cos(_gradient_rotation);
+            u_xlat11.xy = u_xlat1.xy * u_xlat2.xx;
+            u_xlat2.x = u_xlat1.y * u_xlat3.x + (-u_xlat11.x);
+            u_xlat2.y = u_xlat1.x * u_xlat3.x + u_xlat11.y;
+            u_xlat1.xy = u_xlat2.xy + vec2(_gradient_offset.x, _gradient_offset.y);
+            u_xlat1.z = _gradient_start + -0.5;
+            u_xlat1.w = 0.5;
+            u_xlat2.xyz = (int(_gradient_axis) != 0) ? u_xlat1.zwy : u_xlat1.zwx;
+            u_xlatb11 = int(_gradient_type)==1;
+            u_xlat3.xy = abs(u_xlat1.xy);
+            u_xlat3.z = _gradient_start * 0.5;
+            u_xlat3.w = 0.5;
+            u_xlat3.xyz = (int(_gradient_axis) != 0) ? u_xlat3.zwy : u_xlat3.zwx;
+            u_xlat1.x = dot(u_xlat1.xy, u_xlat1.xy);
+            u_xlat4.z = sqrt(u_xlat1.x);
+            u_xlat4.x = _gradient_start * 0.707106769;
+            u_xlat4.y = 0.707106769;
+            u_xlat1.xyz = (bool(u_xlatb11)) ? u_xlat3.xyz : u_xlat4.xyz;
+            u_xlat1.xyz = (int(_gradient_type) != 0) ? u_xlat1.xyz : u_xlat2.xyz;
+            u_xlatb16 = u_xlat1.z>=u_xlat1.x;
+            u_xlatb2 = u_xlat1.x==u_xlat1.y;
+            u_xlat1.xy = (-u_xlat1.xx) + u_xlat1.zy;
+            u_xlat1.x = u_xlat1.x / u_xlat1.y;
+            u_xlat3 = (-_gradient_color1) + _gradient_color2;
+            u_xlat3 = u_xlat1.xxxx * u_xlat3 + _gradient_color1;
+            u_xlat2 = (bool(u_xlatb2)) ? _gradient_color2 : u_xlat3;
+            u_xlat0 = (bool(u_xlatb16)) ? u_xlat2 : _gradient_color1;
+            fragColor.w = u_xlat0.w;
+        } else {
+            u_xlat0.x = float(0.0);
+            u_xlat0.y = float(0.0);
+            u_xlat0.z = float(0.0);
+            fragColor.w = 0.0;
+        }
+    }
+    u_xlat1.xyz = u_xlat0.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = u_xlat0.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    fragColor.xyz = u_xlat0.xyz * u_xlat1.xyz;
+    return;
+}
+    ]]></shader>
+</effect>

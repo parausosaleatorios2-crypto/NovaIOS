@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BRILHO/CONTRASTE (AM) — o Brightness / Contrast do Alight Motion, conta por conta (0.556.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz o brilho/contraste 100% parecido com o do alight motion", da série "100%
+  iguais ao AM". Mesmos parâmetros, mesmos ids, faixas, passos, marcas e padrões do
+  `com.alightcreative.effects.brightcont2` do AM 5.0.281 (um projeto do AM importado cai direto aqui). O
+  `com.alightcreative.effects.brightcont`, o antigo, escondido no AM (`deprecated`), tem os mesmos parâmetros e a
+  mesma conta, só que em `highp`: quando a importação de projeto do AM existir (`docs/ROADMAP-IMPORTAR-PROJETO-AM.md`),
+  os dois vêm para cá. "(AM)" no nome porque o "Brilho e contraste" do Nova (`brightness-contrast.xml`) já existia.
+  A conta foi LIDA do efeito do AM (`assets/effects/brightness-contrast-2.xml` do APK descompactado) e escrita de novo
+  aqui; o arquivo do AM não entra no repositório. A conferência é `python tools/ambrilho/comparar.py`: o efeito do
+  AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete, na mesma ordem):
+
+  - A cor vai para Y'UV (BT.601, as matrizes do AM, que não são a inversa exata uma da outra) e só o Y muda:
+    Y = (Y − 0,5 · alfa) · (Contraste + 1) + 0,5 · alfa + Brilho · alfa. O U e o V voltam como estavam.
+  - Brilho de −100% a 100% (padrão 0): soma ao Y. Contraste de −100% a 300% (padrão 0): estica o Y em volta do
+    meio; −100% deixa tudo cinza médio (o Y vira 0,5 · alfa + Brilho · alfa).
+  - Tudo na cor PRÉ-MULTIPLICADA (p = cor × alfa), como o AM: o "meio" do contraste é 0,5 × alfa e o brilho
+    entra × alfa — na borda suave a conta acompanha o alfa. O resultado é cortado em 0 e 1 (o buffer de 8 bits do
+    AM) e só então volta para a cor reta do Nova. Com o Brilho alto, a borda de alfa parcial passa do alfa no AM (o
+    pré-multiplicado cabe no buffer) e a cor reta do Nova corta em 1: por cima de branco dá igual; por cima de
+    preto, a borda do AM sai mais clara. A mesma diferença do Colorizar e da Exposição/gama.
+  - A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android), com o
+    k/255 exato da textura (`oitoBits`, do Equilíbrio de cor). A conta é linear: fica fora do `SO_NO_COMECO` da
+    cor junta, como o Deslocar matiz.
+  - A precisão: o `<shader>` do AM não pede `precision`, e aí o AM compila com `precision mediump float` (`ssl/BI`):
+    no celular, meia precisão. As variáveis daqui levam o mesmo `mediump`, uma por uma (um `precision` global
+    vazaria para os efeitos da cor junta). A GPU do PC ignora a precisão; o celular, não.
+  - Os valores em % saem como o AM escreve (`relative-percent` com passo 0,01 → "50%"); as marcas (`ticks`) são as
+    do AM; o `snap` o `<spinner>` do AM não lê (`readSpinnerParam`), então aqui também não há.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-brightness-contrast"
+    name="Brilho/contraste (AM)"
+    name-en="Brightness / Contrast (AM)"
+    desc="Ajusta o brilho e o contraste da camada (o Brightness / Contrast do Alight Motion)."
+    desc-en="Adjusts the brightness and contrast of the layer (Alight Motion's Brightness / Contrast)."
+    category="color"
+    tags="brilho,contraste,brilho/contraste,clarear,escurecer,luminosidade,brightness,contrast,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="brightness" label="Brilho" default="0.0" min="-1.0" max="1.0" step="0.01" ticks="0.0"
+            type="relative-percent" />
+        <spinner id="contrast" label="Contraste" default="0.0" min="-1.0" max="3.0" step="0.01"
+            ticks="-1.0,0.0,1.0,3.0" type="relative-percent" />
+    </params>
+
+    <!-- Na vitrine, com os padrões (0) a camada sai como entrou: a amostra mostra o contraste puxado. -->
+    <preview>
+        <set param="contrast" value="0.6" />
+    </preview>
+
+    <shader><![CDATA[
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve ao AM (ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float alfa = camada.a;
+    // A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android). No
+    // opaco a cor já é o float da textura, bit a bit.
+    vec3 p = camada.rgb;
+    if (alfa < 1.0) {
+        vec3 k = floor(camada.rgb * alfa * 255.0 + 0.5);
+        p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+
+    // A conta do AM, na mesma forma (vetor × matriz, as matrizes dele) e na mesma precisão (`mediump`, o padrão do
+    // AM para shader sem `precision`).
+    mediump mat3 rgbParaYuv = mat3(
+         0.299,     0.587,    0.114,
+        -0.14713,  -0.28886,  0.436,
+         0.615,    -0.51499, -0.10001
+    );
+    mediump mat3 yuvParaRgb = mat3(
+        1.0,  0.0,      1.13983,
+        1.0, -0.39465, -0.58060,
+        1.0,  2.03211,  0.0
+    );
+    mediump vec3 rgb = p;
+    mediump float a = alfa;
+    mediump float brilho = brightness;
+    mediump float contraste = contrast;
+    mediump vec3 yuv = rgb * rgbParaYuv;
+    yuv.x = (yuv.x - 0.5 * a) * (contraste + 1.0) + 0.5 * a + brilho * a;
+    rgb = yuv * yuvParaRgb;
+
+    vec3 saida = clamp(rgb, 0.0, 1.0);                           // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = alfa > 0.0 ? vec4(min(saida / alfa, vec3(1.0)), alfa) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

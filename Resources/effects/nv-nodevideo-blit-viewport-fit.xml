@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/blit_viewport_fit
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-blit-viewport-fit"
+    name="Blit Viewport Fit (NV)"
+    name-en="Blit Viewport Fit (NV)"
+    desc="NodeVideo effect 'NodeVideo/blit_viewport_fit', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/blit_viewport_fit', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+    </params>
+
+    <shader><![CDATA[
+void main()
+{
+    fragColor = texture(inputImg, acScreenNorm.xy);
+    return;
+}
+    ]]></shader>
+</effect>

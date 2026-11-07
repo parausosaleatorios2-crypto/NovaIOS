@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Blur_bubble_blur
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blur-bubble-blur"
+    name="Effect Blur Bubble Blur (NV)"
+    name-en="Effect Blur Bubble Blur (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Blur_bubble_blur', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Blur_bubble_blur', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_radius" label="Radius" default="0.2" min="0" max="1" step="0.01" />
+        <slider id="_inner_cutout" label="Inner Cutout" default="2" min="0" max="2" step="0.01" />
+        <slider id="_intensity" label="Intensity" default="0.5" min="0" max="2" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+int u_xlati5;
+vec2 u_xlat6;
+vec4 u_xlat7;
+vec4 u_xlat8;
+vec4 u_xlat9;
+float u_xlat13;
+float u_xlat15;
+float u_xlat20;
+int u_xlati23;
+int u_xlati25;
+vec2 u_xlat26;
+float u_xlat30;
+float u_xlat33;
+bool u_xlatb33;
+float u_xlat35;
+bool u_xlatb35;
+float u_xlat36;
+void main()
+{
+    u_xlat0.xy = vec2(1.0, 1.0) / _resolution.xy;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat2 = u_xlat1 * u_xlat1;
+    u_xlat20 = _radius * 0.100000001;
+    u_xlat30 = _resolution.y / _resolution.x;
+    u_xlat3.x = _inner_cutout + _inner_cutout;
+    u_xlat4 = u_xlat2;
+    u_xlat13 = float(1.0);
+    for(int u_xlati_loop_1 = int(0) ; u_xlati_loop_1<60 ; u_xlati_loop_1++)
+    {
+        u_xlat33 = float(u_xlati_loop_1);
+        u_xlat33 = u_xlat33 * 0.104719803;
+        u_xlat5.x = cos(u_xlat33);
+        u_xlat5.x = u_xlat20 * u_xlat5.x;
+        u_xlat33 = sin((-u_xlat33));
+        u_xlat6.y = u_xlat20 * u_xlat33;
+        u_xlat6.x = u_xlat30 * u_xlat5.x;
+        u_xlat5.xy = u_xlat6.xy / u_xlat0.xy;
+        u_xlat33 = dot(u_xlat5.xy, u_xlat5.xy);
+        u_xlat33 = sqrt(u_xlat33);
+        u_xlat33 = max(u_xlat33, 1.00999999);
+        u_xlat33 = min(u_xlat33, 100.010002);
+        u_xlati5 = int(u_xlat33);
+        u_xlat33 = trunc(u_xlat33);
+        u_xlat7 = u_xlat4;
+        u_xlat15 = u_xlat13;
+        for(int u_xlati_loop_2 = 0 ; u_xlati_loop_2<u_xlati5 ; u_xlati_loop_2++)
+        {
+            u_xlat35 = float(u_xlati_loop_2);
+            u_xlat35 = u_xlat35 / u_xlat33;
+            u_xlat26.xy = (-u_xlat6.xy) * vec2(u_xlat35) + acScreenNorm.xy;
+            u_xlat8 = texture(inputImg, u_xlat26.xy);
+            u_xlat9 = u_xlat8 * u_xlat8;
+            u_xlat26.x = u_xlat9.y + u_xlat9.x;
+            u_xlat26.x = u_xlat8.z * u_xlat8.z + u_xlat26.x;
+            u_xlat26.x = u_xlat26.x * 0.333333343;
+            u_xlat35 = log2(u_xlat35);
+            u_xlat35 = u_xlat3.x * u_xlat35;
+            u_xlat35 = exp2(u_xlat35);
+            u_xlat26.x = log2(u_xlat26.x);
+            u_xlat26.x = u_xlat26.x * _intensity;
+            u_xlat26.x = exp2(u_xlat26.x);
+            u_xlat36 = u_xlat35 * u_xlat26.x;
+            u_xlat7 = u_xlat9 * vec4(u_xlat36) + u_xlat7;
+            u_xlat15 = u_xlat35 * u_xlat26.x + u_xlat15;
+        }
+        u_xlat4 = u_xlat7;
+        u_xlat13 = u_xlat15;
+    }
+    u_xlat0 = u_xlat4 / vec4(u_xlat13);
+    u_xlat0 = sqrt(u_xlat0);
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

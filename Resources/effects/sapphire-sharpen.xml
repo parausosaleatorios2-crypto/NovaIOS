@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_SHARPEN — o Sharpen do Sapphire (Boris FX), modo Best, lido do plugin (0.437.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "s_sharpen". Onze dos presets de CC dele usam este efeito, todos no
+  Quality "Best". O algoritmo não foi ajustado por medida: a definição do efeito está em texto na
+  sapphire_ae.dll, e o filtro foi lido do código (tools/sapphire, tools/ssharpen/benchmark/LEIAME.md).
+  Um modelo em numpy (modelo.py) bate com o After Effects em 0,006 a 0,012 nível de erro médio.
+
+  O QUE O PLUGIN FAZ (e este shader repete):
+
+      F_k   = filtro(fonte; sigma_k),  sigma_k = (Small Detail Size / 2) · 2^k,  k = 0..3 (tiny, small, medium, large)
+      d_0   = fonte − F_0,   d_k = F_{k−1} − F_k
+      saída = F_3 + Σ tanh(a_k · d_k / 2),   a_k = ((Scale_k − 1) · Sharpen Amp · canal + 1) · 2,125
+
+  - Com Sharpen Amp 0 a imagem NÃO volta igual: tanh(1,0625 · d) amplia o detalhe fino em 6%. É assim lá.
+  - O filtro é o Domain Transform de Gastal e Oliveira com caixas: 3 iterações, raio
+    r_i = 3 · sigma · 2^(2−i) / √63, horizontal e depois vertical, e a iteração só roda se r_i > 1.
+    A distância entre dois pixels vizinhos vale 1 + (sigma / (Edge Threshold · 3)) · Σ|ΔRGB| da FONTE:
+    uma borda mais alta que o limiar afasta os dois lados, e a média não a atravessa.
+  - Uma passada: a média dos pixels a até n = floor(r) + 1 de distância, misturada (pela fração de r)
+    com a média a até n − 1 — que o plugin obtém tirando no máximo UM pixel de cada ponta; para
+    r < 2 a parte de dentro é o próprio pixel.
+
+  NO APP os passes intermediários são RGBA8 (lá, float). Cada um guarda (valor − fonte) com raiz
+  quadrada, em 10 bits por canal (8 no RGB, 2 no alfa): o erro que isso põe na saída fica em
+  ~0,1 nível médio. São 24 passes de filtro e 1 de soma — pesado; cada passe anda até n pixels para
+  cada lado.
+
+  DESEMPENHO (0.660.0). No caminho junto (Luma = Chroma, o padrão) a passada leva UMA janela: até a
+  0.659 levava as duas do caminho separado, que ali andam iguais passo a passo (a distância é uma só, a
+  do RGB) — a contabilidade em dobro. E a iteração que não roda (r ≤ 1: no padrão, 6 dos 24 passes)
+  leva o texel adiante sem desfazer e refazer a conta (guardar(abrir(texel)) é o próprio texel). Na
+  GPU do PC, os mesmos pixels, bit a bit (`tools/escaladatela/antes_depois.py`), e 1,18× mais rápido a
+  1480. Testado e deixado de fora: os níveis em pares, um passe gravando dois (o passe de vários
+  alvos) e andando uma vez pela fonte — deu os mesmos pixels e ficou MAIS lento (0,94×).
+
+  Com Sharpen Luma ≠ Sharpen Chroma o plugin troca de caminho: o brilho (5R + 8G + 3B) / 16 e a cor
+  (fonte − brilho) passam cada um pelo mesmo filtro, com as próprias bordas e o próprio ganho, e
+  somam-se; Sharpen Red/Green/Blue deixam de valer. Aqui é igual — as duas janelas andam no mesmo
+  passe (a cor do verde sai das outras duas, então cabem os três números). Nesse caminho o modelo
+  bate com o AE em 0,04 a 0,08 nível médio (p99 até 1,3).
+
+  QUANTO BATE: o modelo × AE, 0,006 a 0,012 nível médio; este shader × o modelo, 0,25 nível médio
+  (o arredondamento da saída em 8 bits) e p99 de 0,6 a 0,8, nos valores dos 11 presets do snow.
+  O shader não foi comparado direto com o AE (ver tools/ssharpen/benchmark/LEIAME.md).
+
+  O QUE NÃO ENTROU: Quality "Fast" (o sharpen clássico, com Sharpen Width), Matte, Mocha e Opacity.
+  O shader vem de tools/ssharpen/benchmark/sharpen.glsl (gerar.py o põe aqui).
+-->
+<effect
+    id="nova.effect.ssharpen"
+    name="S_Sharpen"
+    name-en="S_Sharpen"
+    desc="O Sharpen do Sapphire (Best): nitidez em quatro tamanhos de detalhe, que não acende as bordas fortes."
+    desc-en="Sapphire's Sharpen (Best): sharpening over four detail sizes that leaves strong edges alone."
+    category="stylize"
+    tags="sharpen,nitidez,detalhe,sapphire,s_sharpen,foco,textura,cc,edge aware">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="t1" src="buffer" />
+        <texture id="t2" src="buffer" />
+        <texture id="f0" src="buffer" />
+        <texture id="f1" src="buffer" />
+        <texture id="f2" src="buffer" />
+        <texture id="f3" src="buffer" />
+
+        <slider id="sharpenAmp" label="Sharpen Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0,0.0" />
+        <slider id="edgeThreshold" label="Edge Threshold" default="0.15" min="0.0" max="1.0" step="0.005" snap="0.15" />
+        <slider id="smallDetailSize" label="Small Detail Size" default="2.4" min="0.0" max="12.0" step="0.1" snap="2.4" />
+
+        <slider id="scaleTiny" group="Detail Levels" label="Scale Tiny Details" default="3.0" min="0.0" max="5.0" step="0.01" snap="3.0,1.0" />
+        <slider id="scaleSmall" group="Detail Levels" label="Scale Small Details" default="1.5" min="0.0" max="5.0" step="0.01" snap="1.5,1.0" />
+        <slider id="scaleMedium" group="Detail Levels" label="Scale Medium Details" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="scaleLarge" group="Detail Levels" label="Scale Large Details" default="2.0" min="0.0" max="5.0" step="0.01" snap="2.0,1.0" />
+
+        <slider id="sharpenLuma" label="Sharpen Luma" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="sharpenChroma" label="Sharpen Chroma" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="sharpenRed" label="Sharpen Red" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="sharpenGreen" label="Sharpen Green" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="sharpenBlue" label="Sharpen Blue" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+    </params>
+
+    <passes>
+        <!-- nível 0 (tiny): três iterações, horizontal e vertical; a última grava o nível -->
+        <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="f0" />
+        <!-- nível 1 (small) -->
+        <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="f1" />
+        <!-- nível 2 (medium) -->
+        <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="f2" />
+        <!-- nível 3 (large) -->
+        <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="t2" /> <pass target="t1" /> <pass target="f3" />
+        <!-- 24: a soma -->
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const int PASSOS_MAX = 80;          // até onde a janela anda para cada lado (raio máximo do nível large)
+const vec3 BRILHO = vec3(5.0, 8.0, 3.0) / 16.0;      // o `monochrome` do Sapphire (medido)
+
+ivec2 TAM;
+bool JUNTO;                         // Sharpen Luma = Sharpen Chroma: o RGB junto; senão, brilho e cor em separado
+
+vec3 fonte(ivec2 p) { return texelFetch(inputImg, clamp(p, ivec2(0), TAM - 1), 0).rgb; }
+
+/**
+ * Os três números com que os passes trabalham. Junto: R, G, B. Separado: o brilho e a cor (fonte −
+ * brilho) do vermelho e do azul — a do verde sai das outras duas, porque 5·Cr + 8·Cg + 3·Cb = 0.
+ */
+vec3 trabalho(vec3 rgb) {
+    if (JUNTO) return rgb;
+    float l = dot(rgb, BRILHO);
+    return vec3(l, rgb.r - l, rgb.b - l);
+}
+
+/** A cor (R, G, B) a partir de (·, Cr, Cb). */
+vec3 corInteira(vec3 t) { return vec3(t.y, -(5.0 * t.y + 3.0 * t.z) / 8.0, t.z); }
+
+/**
+ * Um valor intermediário num texel RGBA8: (valor − fonte), que é pequeno quase sempre, com raiz
+ * quadrada (mais precisão perto de zero) em 10 bits por número — 8 no RGB e os 2 de baixo no alfa.
+ */
+vec4 guardar(vec3 valor, vec3 s) {
+    vec3 x = clamp(valor - s, -1.0, 1.0);
+    ivec3 q = ivec3(floor((sign(x) * sqrt(abs(x)) * 0.5 + 0.5) * 1023.0 + 0.5));
+    return vec4(vec3(q >> 2), float((q.r & 3) | ((q.g & 3) << 2) | ((q.b & 3) << 4))) / 255.0;
+}
+
+vec3 abrir(vec4 t, vec3 s) {
+    ivec4 b = ivec4(t * 255.0 + 0.5);
+    ivec3 q = (b.rgb << 2) | ivec3(b.a & 3, (b.a >> 2) & 3, (b.a >> 4) & 3);
+    vec3 e = vec3(q) / 1023.0 * 2.0 - 1.0;
+    return s + e * abs(e);
+}
+
+/** A imagem que este passe filtra: a fonte no primeiro de cada nível, senão o passe anterior. */
+vec3 atual(ivec2 p, vec3 rgbDaFonte, int j) {
+    vec3 s = trabalho(rgbDaFonte);
+    if (j == 0) return s;
+    ivec2 q = clamp(p, ivec2(0), TAM - 1);
+    return abrir((j & 1) == 1 ? texelFetch(t1, q, 0) : texelFetch(t2, q, 0), s);
+}
+
+/**
+ * Quanto dois pixels vizinhos se afastam no domínio transformado: 1, mais a diferença da FONTE (somada
+ * nos três canais) vezes sigma / (Edge Threshold · 3). x vale para o primeiro número do passe e y para
+ * os outros dois: junto é a mesma distância (a do RGB); separado, a do brilho e a da cor.
+ */
+vec2 afastamento(vec3 a, vec3 b, float k) {
+    if (JUNTO) { vec3 d = abs(a - b); return vec2(1.0 + k * (d.r + d.g + d.b)); }
+    float la = dot(a, BRILHO), lb = dot(b, BRILHO);
+    vec3 d = abs((a - la) - (b - lb));
+    return vec2(1.0 + k * 3.0 * abs(la - lb), 1.0 + k * (d.r + d.g + d.b));
+}
+
+/**
+ * Uma passada no caminho JUNTO (Sharpen Luma = Sharpen Chroma, o padrão). Lá a distância é uma só (a do RGB), então
+ * as duas janelas do caminho separado andariam iguais, passo a passo: aqui anda UMA, com os três números. As mesmas
+ * contas, na mesma ordem (0.660.0: até a 0.659 este caminho levava as duas, com a contabilidade em dobro).
+ */
+vec3 passadaJunta(ivec2 p, vec3 vC, vec3 rgbC, int j, float n, float fracao, float k, ivec2 passo, int limite, int aqui) {
+    vec3 soma = vC;
+    float cont = 1.0;
+    vec3 pontaE = vC, pontaD = vC;
+    float distE = 0.0, distD = 0.0;
+    for (int lado = 0; lado < 2; lado++) {
+        vec3 antes = rgbC;
+        float d = 0.0;
+        for (int i = 1; i <= PASSOS_MAX; i++) {
+            int pos = lado == 0 ? aqui - i : aqui + i;
+            if (pos < 0 || pos >= limite) break;
+            ivec2 q = lado == 0 ? p - passo * i : p + passo * i;
+            vec3 rgbQ = fonte(q);
+            vec3 dif = abs(rgbQ - antes);
+            d += 1.0 + k * (dif.r + dif.g + dif.b);
+            // fica quem está a até n de distância (inclusive); passou, a janela desse lado fecha
+            if (!(d <= n)) break;
+            vec3 v = atual(q, rgbQ, j);
+            soma += v; cont += 1.0;
+            if (lado == 0) { pontaE = v; distE = d; } else { pontaD = v; distD = d; }
+            antes = rgbQ;
+        }
+    }
+    vec3 fora = soma / vec3(cont);
+    // A média de dentro (raio n − 1): o plugin tira no máximo UM pixel de cada ponta. Para n ≤ 2 é o próprio pixel.
+    vec3 dentro = vC;
+    if (n > 2.0) {
+        vec3 s2 = soma; float c2 = cont;
+        if (distE > n - 1.0) { s2 -= pontaE; c2 -= 1.0; }
+        if (distD > n - 1.0) { s2 -= pontaD; c2 -= 1.0; }
+        if (c2 > 0.0) dentro = s2 / vec3(c2);
+    }
+    return dentro + (fora - dentro) * fracao;
+}
+
+void main() {
+    TAM = textureSize(inputImg, 0);
+    JUNTO = sharpenLuma == sharpenChroma;
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(TAM)), vec2(TAM) - 1.0));
+    vec3 rgbC = fonte(p);
+    vec3 sC = trabalho(rgbC);
+    float sigma0 = 0.5 * smallDetailSize * acEscalaDePixel;
+
+    if (acPass < 24) {
+        int nivel = acPass / 6, j = acPass - nivel * 6, iteracao = j / 2;
+        float sigma = sigma0 * exp2(float(nivel));
+        // Lido do plugin: r_i = 3 · sigma · 2^(N−1−i) / √(4^N − 1), N = 3; a iteração só roda se r > 1.
+        float r = 3.0 * sigma * exp2(float(2 - iteracao)) / 7.93725393;
+        if (r <= 1.0) {
+            // A iteração não roda: o passe só leva adiante o que já está gravado, e guardar(abrir(texel)) é o
+            // próprio texel — vai direto (0.660.0). No primeiro passe do nível é a fonte: a diferença zero.
+            fragColor = j == 0 ? guardar(sC, sC) : ((j & 1) == 1 ? texelFetch(t1, p, 0) : texelFetch(t2, p, 0));
+            return;
+        }
+        vec3 vC = atual(p, rgbC, j);
+        float n = floor(r) + 1.0, fracao = r - floor(r);
+        float k = sigma / (max(edgeThreshold, 1e-6) * 3.0);
+        bool vertical = (j & 1) == 1;
+        ivec2 passo = vertical ? ivec2(0, 1) : ivec2(1, 0);
+        int limite = vertical ? TAM.y : TAM.x, aqui = vertical ? p.y : p.x;
+        if (JUNTO) {
+            fragColor = guardar(passadaJunta(p, vC, rgbC, j, n, fracao, k, passo, limite, aqui), sC);
+            return;
+        }
+
+        // O caminho separado: duas janelas andam juntas, a do brilho (x) e a da cor (y).
+        vec3 soma = vC;
+        vec2 cont = vec2(1.0);
+        vec3 pontaE = vC, pontaD = vC;
+        vec2 distE = vec2(0.0), distD = vec2(0.0);
+        for (int lado = 0; lado < 2; lado++) {
+            vec3 antes = rgbC;
+            vec2 d = vec2(0.0);
+            bvec2 vivo = bvec2(true);
+            for (int i = 1; i <= PASSOS_MAX; i++) {
+                int pos = lado == 0 ? aqui - i : aqui + i;
+                if (pos < 0 || pos >= limite) break;
+                ivec2 q = lado == 0 ? p - passo * i : p + passo * i;
+                vec3 rgbQ = fonte(q);
+                d += afastamento(rgbQ, antes, k);
+                // fica quem está a até n de distância (inclusive); passou, a janela desse lado fecha
+                vivo = bvec2(vivo.x && d.x <= n, vivo.y && d.y <= n);
+                if (!vivo.x && !vivo.y) break;
+                vec3 v = atual(q, rgbQ, j);
+                if (vivo.x) {
+                    soma.x += v.x; cont.x += 1.0;
+                    if (lado == 0) { pontaE.x = v.x; distE.x = d.x; } else { pontaD.x = v.x; distD.x = d.x; }
+                }
+                if (vivo.y) {
+                    soma.yz += v.yz; cont.y += 1.0;
+                    if (lado == 0) { pontaE.yz = v.yz; distE.y = d.y; } else { pontaD.yz = v.yz; distD.y = d.y; }
+                }
+                antes = rgbQ;
+            }
+        }
+        vec3 fora = soma / cont.xyy;
+        // A média de dentro (raio n − 1): o plugin tira no máximo UM pixel de cada ponta. Para n ≤ 2 é o próprio pixel.
+        vec3 dentro = vC;
+        if (n > 2.0) {
+            vec3 s2 = soma; vec2 c2 = cont;
+            if (distE.x > n - 1.0) { s2.x -= pontaE.x; c2.x -= 1.0; }
+            if (distD.x > n - 1.0) { s2.x -= pontaD.x; c2.x -= 1.0; }
+            if (distE.y > n - 1.0) { s2.yz -= pontaE.yz; c2.y -= 1.0; }
+            if (distD.y > n - 1.0) { s2.yz -= pontaD.yz; c2.y -= 1.0; }
+            if (c2.x > 0.0) dentro.x = s2.x / c2.x;
+            if (c2.y > 0.0) dentro.yz = s2.yz / c2.y;
+        }
+        fragColor = guardar(dentro + (fora - dentro) * fracao, sC);
+        return;
+    }
+
+    // ---- a soma: a base (F3) mais cada nível de detalhe pela sua curva ----
+    vec3 F0 = abrir(texelFetch(f0, p, 0), sC), F1 = abrir(texelFetch(f1, p, 0), sC);
+    vec3 F2 = abrir(texelFetch(f2, p, 0), sC), F3 = abrir(texelFetch(f3, p, 0), sC);
+    vec3 det[4] = vec3[4](sC - F0, F0 - F1, F1 - F2, F2 - F3);
+    float escala[4] = float[4](scaleTiny, scaleSmall, scaleMedium, scaleLarge);
+    vec3 saida;
+    if (JUNTO) {
+        // Lido do plugin: com Luma = Chroma os dois são ignorados e entram só Amp e Red/Green/Blue.
+        saida = F3;
+        for (int i = 0; i < 4; i++) {
+            vec3 a = ((escala[i] - 1.0) * sharpenAmp * vec3(sharpenRed, sharpenGreen, sharpenBlue) + 1.0) * 2.125;
+            saida += tanh(a * det[i] * 0.5);
+        }
+    } else {
+        // O brilho e a cor, cada um com o seu ganho; somam-se no fim. Red/Green/Blue não entram (como lá).
+        float brilho = F3.x;
+        vec3 cor = corInteira(F3);
+        for (int i = 0; i < 4; i++) {
+            float g = (escala[i] - 1.0) * sharpenAmp;
+            brilho += tanh((g * sharpenLuma + 1.0) * 2.125 * det[i].x * 0.5);
+            cor += tanh((g * sharpenChroma + 1.0) * 2.125 * corInteira(det[i]) * 0.5);
+        }
+        saida = brilho + cor;
+    }
+    fragColor = vec4(clamp(saida, 0.0, 1.0), texelFetch(inputImg, p, 0).a);
+}
+]]></shader>
+</effect>

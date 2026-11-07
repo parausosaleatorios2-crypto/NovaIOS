@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.sharpen"
+    name="Nitidez"
+    name-en="Sharpen"
+    desc="Realça bordas e detalhes. Máscara de desfoque (unsharp mask)."
+    desc-en="Unsharp mask with amount and radius."
+    category="stylize"
+    blend="true"
+    tags="nitidez,detalhe,foco,sharpen">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Até 25: é o Sharpen do After Effects com Amount 400 (Amount / 16; medido, ver o conversor). -->
+        <slider id="amount" label="Intensidade" default="0.6" min="0.0" max="25.0" step="0.05" snap="0.0" />
+        <slider id="radius" label="Raio" default="1.0" min="0.5" max="8.0" step="0.1" />
+    </params>
+
+    <!-- Na vitrine, a nitidez padrão não aparece a 64 dp: forte. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="amount" value="12.0" />
+        <set param="radius" value="3.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+void main() {
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 offset = acTexelSize * (radius * acEscalaDePixel);
+    vec4 center = texture(inputImg, acScreenNorm);
+
+    // Média dos quatro vizinhos = uma versão borrada barata da imagem.
+    vec3 blurred = (
+        texture(inputImg, acScreenNorm + vec2( offset.x, 0.0)).rgb +
+        texture(inputImg, acScreenNorm + vec2(-offset.x, 0.0)).rgb +
+        texture(inputImg, acScreenNorm + vec2(0.0,  offset.y)).rgb +
+        texture(inputImg, acScreenNorm + vec2(0.0, -offset.y)).rgb
+    ) * 0.25;
+
+    // "Unsharp mask": nitidez é a imagem MAIS a diferença entre ela e sua
+    // versão borrada. Onde não há detalhe, a diferença é zero e nada muda —
+    // por isso o efeito realça borda sem tocar em área lisa.
+    vec3 detail = center.rgb - blurred;
+    fragColor = vec4(clamp(center.rgb + detail * amount, 0.0, 1.0), center.a);
+}
+
+    ]]></shader>
+</effect>

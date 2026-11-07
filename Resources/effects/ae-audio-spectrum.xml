@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AUDIO SPECTRUM — o efeito nativo do After Effects, lido do plugin (0.456.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "faz o Audio Spectrum". O "Espectro de áudio" que já existia é um
+  desenho próprio da Nova (faixas em oitavas, com queda lenta); ESTE é o Audio Spectrum do AE,
+  para os presets converterem com os valores deles.
+
+  DE ONDE VEIO (tools/audspect/benchmark + o desmonte do AudSpect.aex):
+
+  - o som lido vai de [agora + Offset + Duration/2] por Duration, a 44,1 kHz, mono, com janela
+    de Hamming. Cada faixa é a transformada na frequência exata dela (linear do Start ao End
+    Frequency), sem normalizar: altura = magnitude / (n/2) · Maximum Height, limitada à altura;
+  - Digital: um risco para os dois lados (A sobe, B desce). Analog Lines: uma linha ligando as
+    faixas — com Side A & B as faixas alternam (par sobe, ímpar desce). Analog Dots: um ponto de
+    cada lado;
+  - Hue Interpolation gira a cor (HSV) faixa a faixa; com Color Symmetry vai até a metade e volta;
+    Dynamic Hue Phase adianta o começo conforme a faixa mais forte. Cor sem saturação vira branco
+    quando há giro (é assim no plugin);
+  - onde dois traços se encontram vale o MAIS PRÓXIMO; com Blend Overlapping Colors cada traço
+    novo entra POR TRÁS dos anteriores;
+  - a régua do traço (espessura, suavidade, dentro → fora) é a mesma do Audio Waveform.
+
+  A análise e as cores são conta do MOTOR (`AudioSpectrumAe.kt`): chegam prontas na textura
+  `faixasImg` (`src="spectrum"`), três texels por faixa, e o shader só desenha.
+
+  FORA: Path e Use Polar Path (a onda no caminho de uma máscara) e a escolha da camada de áudio.
+  Ver tools/audspect/benchmark/LEIAME.md para o quanto bate e o que sobra.
+-->
+<effect
+    id="nova.effect.aeaudiospectrum"
+    name="Audio Spectrum (AE)"
+    name-en="Audio Spectrum (AE)"
+    desc="O Audio Spectrum do After Effects: as frequências do som da composição em barras, linha ou pontos, com giro de cor por faixa."
+    desc-en="After Effects' Audio Spectrum: the frequencies of the composition audio as bars, a line or dots, with per-band hue shift."
+    category="procedural"
+    tags="audio spectrum,spectrum,espectro,frequência,áudio,som,música,after effects,visualizador,barras,digital,analog,hue">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- As faixas do quadro, calculadas pelo motor com os controles abaixo (pelo id). -->
+        <texture id="faixasImg" src="spectrum" />
+
+        <point id="startPoint" label="Start Point" defaultX="0.1" defaultY="0.5" />
+        <point id="endPoint" label="End Point" defaultX="0.9" defaultY="0.5" />
+        <slider id="startFreq" label="Start Frequency" default="20.0" min="1.0" max="22050.0" step="1.0" />
+        <slider id="endFreq" label="End Frequency" default="2000.0" min="1.0" max="22050.0" step="1.0" />
+        <slider id="bands" label="Frequency bands" default="64" min="1" max="4096" step="1" type="integer" />
+        <slider id="maxHeight" label="Maximum Height" default="480.0" min="1.0" max="32000.0" step="1.0" />
+        <slider id="duration" label="Audio Duration (milliseconds)" default="90.0" min="0.0" max="30000.0" step="1.0" />
+        <slider id="offset" label="Audio Offset (milliseconds)" default="0.0" min="-30000.0" max="30000.0" step="1.0" snap="0.0" />
+        <slider id="thickness" label="Thickness" default="3.0" min="0.0" max="400.0" step="0.1" />
+        <slider id="softness" label="Softness" default="50.0" min="0.0" max="100.0" step="1.0" />
+        <color id="insideColor" label="Inside Color" default="#FF00FF" />
+        <color id="outsideColor" label="Outside Color" default="#FF3296" />
+        <switch id="blendColors" label="Blend Overlapping Colors" default="false" />
+        <slider id="hue" label="Hue Interpolation" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" type="angle" />
+        <switch id="dynamicHue" label="Dynamic Hue Phase" default="true" />
+        <switch id="colorSymmetry" label="Color Symmetry" default="true" />
+        <selector id="display" label="Display Options" default="0" options="Digital|Analog Lines|Analog Dots" />
+        <selector id="side" label="Side Options" default="2" options="Side A|Side B|Side A &amp; B" />
+        <switch id="averaging" label="Duration Averaging" default="false" />
+        <switch id="composite" label="Composite On Original" default="false" />
+    </params>
+
+    <preview anda="true" />
+
+    <shader><![CDATA[
+// A largura da textura de faixas (`SpectrumAeTexture.LARGURA`) e quantas faixas, no máximo, um pixel olha.
+const int LARGURA = 256;
+const int VIZINHOS = 48;
+
+vec4 texel(int i) { return floor(texelFetch(faixasImg, ivec2(i % LARGURA, i / LARGURA), 0) * 255.0 + 0.5); }
+
+/** A altura da faixa em px: 24 bits de 0 a 1, vezes Maximum Height. */
+float alturaDa(int b) {
+    vec4 t = texel(1 + 3 * b);
+    return (t.r * 65536.0 + t.g * 256.0 + t.b) / 16777215.0 * maxHeight;
+}
+
+float aoSegmento(vec2 p, vec2 a, vec2 b) {
+    vec2 v = b - a;
+    float l2 = dot(v, v);
+    float t = l2 > 0.0 ? clamp(dot(p - a, v) / l2, 0.0, 1.0) : 0.0;
+    return length(p - a - t * v);
+}
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    return vec4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
+}
+
+// A régua do traço (a do Audio Waveform) e o que já foi desenhado neste pixel.
+float T, macio, meia, m0;
+float jaAlfa = 0.0, jaDistancia = 1.0e9;
+vec3 jaCor = vec3(0.0);
+
+/** Junta ao pixel o traço da faixa `b`, que passa a `d` px dele. */
+void traco(float d, int b) {
+    float a = clamp(0.5 + (0.5 * T - d) / macio, 0.0, 1.0) * min(thickness, 1.0);
+    if (a <= 0.0) return;
+    vec3 c = mix(texel(2 + 3 * b).rgb, texel(3 + 3 * b).rgb, min(m0 + d / meia, 1.0 - m0)) / 255.0;
+    if (blendColors) {
+        // cada traço novo entra POR TRÁS do que já está
+        float novo = jaAlfa + a * (1.0 - jaAlfa);
+        jaCor = (jaCor * jaAlfa + c * a * (1.0 - jaAlfa)) / novo;
+        jaAlfa = novo;
+    } else if (d < jaDistancia) {
+        // vale o traço mais próximo
+        jaDistancia = d; jaAlfa = a; jaCor = c;
+    }
+}
+
+/** Para que lado vai a faixa `b` nos modos Analog: A sobe (−1), B desce (+1); com os dois, alternam. */
+float lado(int b) { return side == 0 ? -1.0 : (side == 1 ? 1.0 : ((b & 1) == 1 ? 1.0 : -1.0)); }
+
+void main() {
+    vec4 fundo = composite ? texture(inputImg, acScreenNorm) : vec4(0.0);
+
+    vec4 cabecalho = texel(0);
+    int quantas = int(cabecalho.r * 256.0 + cabecalho.g + 0.5);
+    if (thickness <= 0.0 || quantas <= 0) { fragColor = fundo; return; }
+
+    // Tudo em px da COMPOSIÇÃO; o AE trata a coordenada do ponto como o CENTRO do pixel (daí o meio px).
+    vec2 tamanho = acResolution / acEscalaDePixel;
+    vec2 inicio = startPoint * tamanho;
+    vec2 caminho = endPoint * tamanho - inicio;
+    float comprimento = length(caminho);
+    vec2 rel = acScreenNorm * tamanho - inicio - 0.5;
+
+    T = max(thickness, 1.0);
+    macio = 1.0 + softness * 0.01 * (T - 1.0);
+    meia = max(0.5 * thickness, 2.0);
+    m0 = (meia - 0.5 * thickness) / (2.0 * meia);
+    float alcance = 0.5 * (T + macio);
+    bool linhas = display == 1;
+
+    bool reta = comprimento > 1.0e-6 && quantas > 1;
+    vec2 ao = reta ? caminho / comprimento : vec2(1.0, 0.0);
+    // altura positiva DESCE quando o caminho vai da esquerda para a direita
+    vec2 normal = comprimento > 1.0e-6 ? vec2(-caminho.y, caminho.x) / comprimento : vec2(0.0);
+    vec2 passo = quantas > 1 ? caminho / float(quantas - 1) : vec2(0.0);
+
+    int k0 = linhas ? 1 : 0;
+    int k1 = quantas - 1;
+    bool perto = true;
+    if (reta) {
+        float a = dot(rel, ao);
+        float espaco = max(comprimento / float(quantas - 1), 1.0e-4);
+        k0 = max(int(clamp(ceil((a - alcance) / espaco), -1.0, 5000.0)), k0);
+        k1 = min(int(clamp(floor((a + alcance) / espaco), -2.0, 5000.0)) + (linhas ? 1 : 0), k1);
+        perto = abs(dot(rel, normal)) <= maxHeight + alcance;
+    }
+
+    if (perto) {
+        // Com milhares de faixas e traço grosso passam de VIZINHOS: aí o pixel olha uma a cada `salto`.
+        int salto = max((k1 - k0 + VIZINHOS) / VIZINHOS, 1);
+        for (int i = 0; i < VIZINHOS; i++) {
+            int b = k0 + i * salto;
+            if (b > k1) break;
+            vec2 base = float(b) * passo;
+            float h = alturaDa(b);
+            if (display == 0) {
+                traco(aoSegmento(rel, base - (side == 1 ? 0.0 : h) * normal, base + (side == 0 ? 0.0 : h) * normal), b);
+            } else if (display == 2) {
+                // com os dois lados, o ponto de baixo é desenhado primeiro
+                if (side != 0) traco(length(rel - base - h * normal), b);
+                if (side != 1) traco(length(rel - base + h * normal), b);
+            } else {
+                float anterior = alturaDa(b - 1);
+                traco(aoSegmento(rel, base - passo + lado(b - 1) * anterior * normal, base + lado(b) * h * normal), b);
+            }
+        }
+        // Uma faixa só, em linha: o AE desenha um ponto.
+        if (linhas && quantas == 1) traco(length(rel - lado(0) * alturaDa(0) * normal), 0);
+    }
+
+    vec4 desenho = vec4(jaCor, jaAlfa);
+    fragColor = composite ? sobre(fundo, desenho) : desenho;
+}
+
+    ]]></shader>
+</effect>

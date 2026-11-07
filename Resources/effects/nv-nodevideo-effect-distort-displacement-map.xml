@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Distort_displacement_map
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-distort-displacement-map"
+    name="Effect Distort Displacement Map (NV)"
+    name-en="Effect Distort Displacement Map (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Distort_displacement_map', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Distort_displacement_map', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="displacement_source" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_max_horizaontal_displacement" label="Max Horizaontal Displacement" default="0.1" min="-1" max="1" step="0.01" />
+        <slider id="_max_vertical_displacement" label="Max Vertical Displacement" default="0.1" min="-1" max="1" step="0.01" />
+        <slider id="_keep_edge" type="integer" label="Keep Edge" default="1" min="0" max="10" step="1" />
+        <slider id="_use_for_horizontal_displacement" type="integer" label="Use For Horizontal Displacement" default="0" min="0" max="7" step="1" />
+        <slider id="_use_for_vertical_displacement" type="integer" label="Use For Vertical Displacement" default="0" min="0" max="7" step="1" />
+        <slider id="_from_center" type="integer" label="From Center" default="0" min="-1" max="2" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec2 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat6;
+float u_xlat7;
+bvec2 u_xlatb7;
+vec2 u_xlat12;
+bvec2 u_xlatb12;
+float u_xlat13;
+bool u_xlatb13;
+vec2 u_xlat14;
+bvec2 u_xlatb14;
+float u_xlat18;
+float u_xlat19;
+void main()
+{
+    u_xlat0 = texture(displacement_source, acScreenNorm.xy).yzwx;
+    u_xlatb1 = int(_keep_edge)==1;
+    if(int(_use_for_horizontal_displacement) == 0) {
+        u_xlat2.x = u_xlat0.w;
+    } else {
+        u_xlatb7.x = int(_use_for_horizontal_displacement)==1;
+        if(u_xlatb7.x){
+            u_xlat2.x = u_xlat0.x;
+        } else {
+            u_xlatb7.x = int(_use_for_horizontal_displacement)==2;
+            if(u_xlatb7.x){
+                u_xlat2.x = u_xlat0.y;
+            } else {
+                u_xlatb7.x = int(_use_for_horizontal_displacement)==3;
+                if(u_xlatb7.x){
+                    u_xlat2.x = u_xlat0.z;
+                } else {
+                    u_xlatb7.x = int(_use_for_horizontal_displacement)==4;
+                    if(u_xlatb7.x){
+                        u_xlat2.x = dot(u_xlat0.wxy, vec3(0.300000012, 0.589999974, 0.109999999));
+                    } else {
+                        u_xlatb7.x = u_xlat0.x>=u_xlat0.y;
+                        u_xlat7 = u_xlatb7.x ? 1.0 : float(0.0);
+                        u_xlat3.xy = u_xlat0.yx;
+                        u_xlat3.z = float(-1.0);
+                        u_xlat3.w = float(0.666666687);
+                        u_xlat4.xy = u_xlat0.xy + (-u_xlat3.xy);
+                        u_xlat4.z = float(1.0);
+                        u_xlat4.w = float(-1.0);
+                        u_xlat3 = vec4(u_xlat7) * u_xlat4 + u_xlat3;
+                        u_xlatb7.x = u_xlat0.w>=u_xlat3.x;
+                        u_xlat7 = u_xlatb7.x ? 1.0 : float(0.0);
+                        u_xlat4.xyz = u_xlat3.xyw;
+                        u_xlat4.w = u_xlat0.w;
+                        u_xlat3.xyw = u_xlat4.wyx;
+                        u_xlat3 = (-u_xlat4) + u_xlat3;
+                        u_xlat3 = vec4(u_xlat7) * u_xlat3 + u_xlat4;
+                        u_xlat7 = min(u_xlat3.y, u_xlat3.w);
+                        u_xlat7 = (-u_xlat7) + u_xlat3.x;
+                        u_xlat13 = (-u_xlat3.y) + u_xlat3.w;
+                        u_xlat19 = u_xlat7 * 6.0 + 1.00000001e-10;
+                        u_xlat13 = u_xlat13 / u_xlat19;
+                        u_xlat13 = u_xlat13 + u_xlat3.z;
+                        u_xlatb14.xy = equal(ivec4(ivec4(int(_use_for_horizontal_displacement), int(_use_for_horizontal_displacement), int(_use_for_horizontal_displacement), int(_use_for_horizontal_displacement))), ivec4(5, 6, 5, 6)).xy;
+                        u_xlat19 = u_xlat3.x + 1.00000001e-10;
+                        u_xlat7 = u_xlat7 / u_xlat19;
+                        u_xlat7 = (u_xlatb14.y) ? u_xlat3.x : u_xlat7;
+                        u_xlat2.x = (u_xlatb14.x) ? abs(u_xlat13) : u_xlat7;
+                    }
+                }
+            }
+        }
+    }
+    u_xlatb7.x = int(_from_center)==1;
+    if(int(_use_for_vertical_displacement) == 0) {
+        u_xlat2.y = u_xlat0.w;
+    } else {
+        u_xlatb13 = int(_use_for_vertical_displacement)==1;
+        if(u_xlatb13){
+            u_xlat2.y = u_xlat0.x;
+        } else {
+            u_xlatb13 = int(_use_for_vertical_displacement)==2;
+            if(u_xlatb13){
+                u_xlat2.y = u_xlat0.y;
+            } else {
+                u_xlatb13 = int(_use_for_vertical_displacement)==3;
+                if(u_xlatb13){
+                    u_xlat2.y = u_xlat0.z;
+                } else {
+                    u_xlatb13 = int(_use_for_vertical_displacement)==4;
+                    if(u_xlatb13){
+                        u_xlat2.y = dot(u_xlat0.wxy, vec3(0.300000012, 0.589999974, 0.109999999));
+                    } else {
+                        u_xlatb13 = u_xlat0.x>=u_xlat0.y;
+                        u_xlat13 = u_xlatb13 ? 1.0 : float(0.0);
+                        u_xlat3.xy = u_xlat0.yx;
+                        u_xlat3.z = float(-1.0);
+                        u_xlat3.w = float(0.666666687);
+                        u_xlat4.xy = u_xlat0.xy + (-u_xlat3.xy);
+                        u_xlat4.z = float(1.0);
+                        u_xlat4.w = float(-1.0);
+                        u_xlat3 = vec4(u_xlat13) * u_xlat4 + u_xlat3;
+                        u_xlatb13 = u_xlat0.w>=u_xlat3.x;
+                        u_xlat13 = u_xlatb13 ? 1.0 : float(0.0);
+                        u_xlat0.xyz = u_xlat3.xyw;
+                        u_xlat3.xyw = u_xlat0.wyx;
+                        u_xlat3 = (-u_xlat0) + u_xlat3;
+                        u_xlat0 = vec4(u_xlat13) * u_xlat3 + u_xlat0;
+                        u_xlat13 = min(u_xlat0.y, u_xlat0.w);
+                        u_xlat13 = u_xlat0.x + (-u_xlat13);
+                        u_xlat6 = (-u_xlat0.y) + u_xlat0.w;
+                        u_xlat18 = u_xlat13 * 6.0 + 1.00000001e-10;
+                        u_xlat6 = u_xlat6 / u_xlat18;
+                        u_xlat6 = u_xlat6 + u_xlat0.z;
+                        u_xlatb12.xy = equal(ivec4(int(_use_for_vertical_displacement)), ivec4(5, 6, 5, 6)).xy;
+                        u_xlat19 = u_xlat0.x + 1.00000001e-10;
+                        u_xlat13 = u_xlat13 / u_xlat19;
+                        u_xlat0.x = (u_xlatb12.y) ? u_xlat0.x : u_xlat13;
+                        u_xlat2.y = (u_xlatb12.x) ? abs(u_xlat6) : u_xlat0.x;
+                    }
+                }
+            }
+        }
+    }
+    u_xlat0.xy = u_xlat2.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = (u_xlatb7.x) ? u_xlat2.xy : u_xlat0.xy;
+    u_xlat0.xy = vec2(_max_horizaontal_displacement, _max_vertical_displacement) * u_xlat0.xy + acScreenNorm.xy;
+    u_xlat12.xy = u_xlat0.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = u_xlat12.xy * vec2(1.00100005, 1.00100005) + vec2(0.5, 0.5);
+    u_xlatb7.xy = lessThan(u_xlat12.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb2.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat12.xyxx).xy;
+    u_xlat14.xy = fract(u_xlat12.xy);
+    u_xlat14.xy = (-u_xlat14.xy) + vec2(1.0, 1.0);
+    u_xlat2.x = (u_xlatb2.x) ? u_xlat14.x : u_xlat12.x;
+    u_xlat2.y = (u_xlatb2.y) ? u_xlat14.y : u_xlat12.y;
+    {
+        vec2 hlslcc_movcTemp = u_xlat12;
+        hlslcc_movcTemp.x = (u_xlatb7.x) ? (-u_xlat12.x) : u_xlat2.x;
+        hlslcc_movcTemp.y = (u_xlatb7.y) ? (-u_xlat12.y) : u_xlat2.y;
+        u_xlat12 = hlslcc_movcTemp;
+    }
+    u_xlat12.xy = u_xlat12.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = u_xlat12.xy * vec2(0.999000967, 0.999000967) + vec2(0.5, 0.5);
+    u_xlat0.xy = (bool(u_xlatb1)) ? u_xlat12.xy : u_xlat0.xy;
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    if(int(_use_inner_mask) != 0) {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

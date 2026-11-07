@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.paint"
+    name="Pintura (Blurrr)"
+    name-en="Paint (Blurrr)"
+    desc="Desfoque que preserva borda — visual de tinta/aquarela."
+    desc-en="Edge-preserving blur — paint / watercolor look."
+    category="blur"
+    tags="blurrr,paint,tinta,aquarela,desfoque,blur,kuwahara">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="radius"   label="Raio" default="4.0" min="1.0" max="12.0" step="1.0" type="integer" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    int R = int(clamp(radius, 1.0, 12.0));
+    vec2 texel = acTexelSize;
+
+    vec3 melhorCor = texture(inputImg, acScreenNorm).rgb;
+    float menorVar = 1e9;
+
+    // Quatro quadrantes relativos ao pixel atual, estilo Kuwahara simplificado.
+    for (int q = 0; q < 4; q++) {
+        int sx = (q == 0 || q == 2) ? -1 : 0;
+        int sy = (q == 0 || q == 1) ? -1 : 0;
+
+        vec3 soma = vec3(0.0);
+        vec3 soma2 = vec3(0.0);
+        float conta = 0.0;
+
+        for (int y = 0; y <= 12; y++) {
+            if (y > R) break;
+            for (int x = 0; x <= 12; x++) {
+                if (x > R) break;
+                vec2 off = vec2(float(sx * x), float(sy * y)) * texel;
+                vec3 c = texture(inputImg, acScreenNorm + off).rgb;
+                soma += c;
+                soma2 += c * c;
+                conta += 1.0;
+            }
+        }
+        vec3 media = soma / conta;
+        vec3 varc  = (soma2 / conta) - media * media;
+        float v = dot(varc, LUMA);
+        if (v < menorVar) {
+            menorVar = v;
+            melhorCor = media;
+        }
+    }
+
+    float a = texture(inputImg, acScreenNorm).a;
+    fragColor = vec4(melhorCor, a);
+}
+    ]]></shader>
+</effect>

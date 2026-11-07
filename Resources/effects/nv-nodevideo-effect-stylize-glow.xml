@@ -1,0 +1,555 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/Stylize/Glow — o Glow do Node Video (classe NodeVideo.AE.AEGlow), portado com os passes do C#
+  (0.916, tools/nodeluzes; antes só o pré-filtro, que saía preto).
+
+  O C# (AEGlow.Render/UpdateRenderBuffers/PrepareScattering, il2cpp) é o bloom do Kino: RTs "_down_sample0..N" a
+  partir da METADE da composição (cada um a metade do anterior) e "_up_sample0..N-1"; N e o _BloomSpread saem do
+  Espalhamento e do tamanho (a conta está no shader, `nvLogh`). Blit(camada → ds0, passe 0: o pré-filtro de 13
+  leituras com o limiar e a cor); ds(i) = passe 1 (descida) de ds(i-1); up(j-1) = passe 2 (subida 3x3 de up(j) ou
+  ds(N), mais ds(j-1) como _HigherMipBloomTex); e Blit(camada → saída, passe 3: a subida de up0 × Intensidade +
+  a camada). O `_preserve_alpha` da definição (esconde-se atrás de um `_mode` que não existe, partida falso) troca o
+  shader pelo GlowOld; com ele desligado, é sempre este.
+
+  AQUI: o passe 0 guarda a camada como o RT do Node (pré-multiplicada em luz linear, sRGB de 8 bits); os RTs do meio
+  são sRGB de 8 bits como os do Node; os 4 programas copiados (gerar.py); o último volta à cor reta do Nova, e o
+  brilho que passa do alfa (fora do recorte) vira alfa. Na tela (`stage="screen"`), como no Node.
+
+  O que fica diferente: N preso a 7 (o motor desce até 1/256; o Node não tem teto — só passa de 7 com Espalhamento
+  acima de ~8 em 1080p); N e o espalhar saem do buffer em que o efeito roda, não da composição (na exportação é o
+  mesmo; na prévia reduzida o brilho cobre a mesma fração da tela); o Node compõe em luz linear e o Nova em gama; a
+  máscara interna do Node fica desligada.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-stylize-glow"
+    name="Effect Stylize Glow (NV)"
+    name-en="Effect Stylize Glow (NV)"
+    desc="Brilho (bloom) nas partes claras, largo e suave (o Glow do Node Video)."
+    desc-en="Brilho (bloom) nas partes claras, largo e suave (o Glow do Node Video)."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store,brilho,bloom,glow"
+    stage="screen"
+>
+
+    <params>
+        <!-- `highp`: os 8 bits da camada chegam exatos à conversão para luz linear. -->
+        <texture id="inputImg" src="content" precision="highp" />
+        <!-- O RT da camada no Node: pré-multiplicada em luz linear, sRGB de 8 bits (o passe 0). -->
+        <texture id="pre" src="buffer" format="srgb" precision="highp" />
+        <!-- Os RTs do C# (_down_sample0..N e _up_sample0..N-1): a metade da composição, e a metade da metade... -->
+        <texture id="ds0" src="buffer" scale="0.5" format="srgb" />
+        <texture id="ds1" src="buffer" scale="0.25" format="srgb" />
+        <texture id="ds2" src="buffer" scale="0.125" format="srgb" />
+        <texture id="ds3" src="buffer" scale="0.0625" format="srgb" />
+        <texture id="ds4" src="buffer" scale="0.03125" format="srgb" />
+        <texture id="ds5" src="buffer" scale="0.015625" format="srgb" />
+        <texture id="ds6" src="buffer" scale="0.0078125" format="srgb" />
+        <texture id="ds7" src="buffer" scale="0.00390625" format="srgb" />
+        <texture id="up0" src="buffer" scale="0.5" format="srgb" />
+        <texture id="up1" src="buffer" scale="0.25" format="srgb" />
+        <texture id="up2" src="buffer" scale="0.125" format="srgb" />
+        <texture id="up3" src="buffer" scale="0.0625" format="srgb" />
+        <texture id="up4" src="buffer" scale="0.03125" format="srgb" />
+        <texture id="up5" src="buffer" scale="0.015625" format="srgb" />
+        <texture id="up6" src="buffer" scale="0.0078125" format="srgb" />
+        <slider id="_BloomScattering" label="Scattering" default="7" min="1" max="10" step="0.01" />
+        <slider id="_BloomThreshold_x" label="Threshold" default="0.3" min="0" max="1" step="0.01" />
+        <slider id="_BloomThreshold_y" label="Threshold Max" default="1" min="0" max="1" step="0.01" />
+        <slider id="_BloomIntensity" label="Intensity" default="1" min="0" max="10" step="0.01" />
+        <color id="_glow_color" label="Glow Color" default="#FFFFFFFF" />
+    </params>
+
+    <passes>
+        <pass target="pre" />
+        <pass target="ds0" />
+        <pass target="ds1" />
+        <pass target="ds2" />
+        <pass target="ds3" />
+        <pass target="ds4" />
+        <pass target="ds5" />
+        <pass target="ds6" />
+        <pass target="ds7" />
+        <pass target="up6" />
+        <pass target="up5" />
+        <pass target="up4" />
+        <pass target="up3" />
+        <pass target="up2" />
+        <pass target="up1" />
+        <pass target="up0" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+
+// ---- a ponte Nova <-> Node (tools/nodeluzes/gerar.py)
+vec2 nvUV;   // o vs_TEXCOORD0 dos programas do Node: o acScreenNorm, ou outro ponto que o passe escolhe
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 nvGama(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+// O passe 0: a camada como o Node a guarda (pre-multiplicada, luz linear; o buffer `pre` e sRGB de 8 bits).
+vec4 nvCor(vec4 c) { return vec4(nvLinear(c.rgb), c.a); }
+vec4 nvEntrada() { vec4 c = texture(inputImg, acScreenNorm); return vec4(nvLinear(c.rgb) * c.a, c.a); }
+// A saída do Node (pre-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz que
+// o Node soma acima do alfa (o brilho fora do recorte) vira alfa: a = max(alfa, r, g, b). NaN (0 x infinito na
+// conta do Node) vira 0, como no RT de 8 bits dele; a escolha pelo bvec não faz conta com o NaN.
+vec4 nvSaida(vec4 p) {
+    p = mix(vec4(0.0), min(p, vec4(1.0)), greaterThanEqual(p, vec4(0.0)));
+    float a = max(p.a, max(p.r, max(p.g, p.b)));
+    return a > 0.0 ? vec4(nvGama(p.rgb / a), a) : vec4(0.0);
+}
+// A máscara interna do Node (o editor de máscara dele) fica desligada, como no padrão.
+#define _use_inner_mask 0
+#define _b_clip_mask 0
+#define _show_inner_mask 0
+// O C# (UpdateRenderBuffers + PrepareScattering): RTs a partir da METADE da composição; com t = max(w/2, h/2),
+// logh = Espalhamento (preso a 1..10) + log2(t) - 10, N = floor(logh) (no mínimo 1) descidas, e _BloomSpread =
+// logh + 0,5 - N (0,5 com logh <= 1). Aqui pelo tamanho do buffer em que o efeito roda (a mesma conta na exportação;
+// na prévia reduzida o brilho fica do mesmo tamanho na tela) e N preso a 7 (o motor desce até 1/256).
+float nvLogh() { vec2 t = floor(vec2(textureSize(pre, 0)) / 2.0); return clamp(_BloomScattering, 1.0, 10.0) + log2(max(t.x, t.y)) - 10.0; }
+int nvN() { return clamp(int(floor(nvLogh())), 1, 7); }
+float nvSpread() { float l = nvLogh(); return l > 1.0 ? l + 0.5 - floor(l) : 0.5; }
+#define _BloomSpread nvSpread()
+// O _BloomThreshold do Node é um Vector2 de faixa (o mínimo e o máximo do brilho que entra).
+#define _BloomThreshold vec2(_BloomThreshold_x, _BloomThreshold_y)
+
+// ---- programa 0 do Node: NodeVideo_Effect_Stylize_Glow_0.glsl
+vec4 p0_x0;
+vec4 p0_x1;
+vec4 p0_x2;
+vec4 p0_x3;
+vec4 p0_x4;
+vec4 p0_x5;
+vec4 p0_x6;
+vec4 p0_x7;
+vec4 p0_x8;
+vec4 p0_x9;
+vec4 p0_x10;
+vec4 p0_x11;
+vec4 p0_x12;
+float p0_x15;
+float p0_x40;
+void p0_main()
+{
+    p0_x0.xy = (-(1.0 / vec2(textureSize(pre, 0))).xy) * vec2(0.0, 0.899999976) + nvUV.xy;
+    p0_x0 = texture(pre, p0_x0.xy);
+    p0_x1 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(-0.899999976, -0.899999976, 0.899999976, -0.899999976) + nvUV.xyxy;
+    p0_x2 = texture(pre, p0_x1.xy);
+    p0_x1 = texture(pre, p0_x1.zw);
+    p0_x3.xy = (-(1.0 / vec2(textureSize(pre, 0))).xy) * vec2(0.899999976, 0.0) + nvUV.xy;
+    p0_x3 = texture(pre, p0_x3.xy);
+    p0_x4 = texture(pre, nvUV.xy);
+    p0_x5 = p0_x3 + p0_x4;
+    p0_x2 = p0_x2 + p0_x5;
+    p0_x2 = p0_x0 + p0_x2;
+    p0_x5 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(0.899999976, 0.899999976, -1.45000005, 0.449999988) + nvUV.xyxy;
+    p0_x6 = texture(pre, p0_x5.xy);
+    p0_x5 = texture(pre, p0_x5.zw);
+    p0_x7 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(-0.899999976, 0.899999976, 0.0, 0.899999976) + nvUV.xyxy;
+    p0_x8 = texture(pre, p0_x7.zw);
+    p0_x7 = texture(pre, p0_x7.xy);
+    p0_x7 = p0_x8 + p0_x7;
+    p0_x6 = p0_x6 + p0_x8;
+    p0_x6 = p0_x4 + p0_x6;
+    p0_x3 = p0_x3 + p0_x7;
+    p0_x3 = p0_x4 + p0_x3;
+    p0_x3 = p0_x3 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004);
+    p0_x7 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(1.45000005, 0.449999988, 0.899999976, 0.0) + nvUV.xyxy;
+    p0_x8 = texture(pre, p0_x7.zw);
+    p0_x7 = texture(pre, p0_x7.xy);
+    p0_x6 = p0_x6 + p0_x8;
+    p0_x4 = p0_x4 + p0_x8;
+    p0_x0 = p0_x0 + p0_x4;
+    p0_x0 = p0_x1 + p0_x0;
+    p0_x1 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(-0.449999988, 0.449999988, 0.449999988, 0.449999988) + nvUV.xyxy;
+    p0_x4 = texture(pre, p0_x1.xy);
+    p0_x1 = texture(pre, p0_x1.zw);
+    p0_x8 = p0_x1 + p0_x4;
+    p0_x9 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(-1.45000005, -0.449999988, -0.449999988, -0.449999988) + nvUV.xyxy;
+    p0_x10 = texture(pre, p0_x9.zw);
+    p0_x9 = texture(pre, p0_x9.xy);
+    p0_x8 = p0_x8 + p0_x10;
+    p0_x11 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(0.449999988, -0.449999988, 1.45000005, -0.449999988) + nvUV.xyxy;
+    p0_x12 = texture(pre, p0_x11.xy);
+    p0_x11 = texture(pre, p0_x11.zw);
+    p0_x8 = p0_x8 + p0_x12;
+    p0_x3 = p0_x8 * vec4(0.0833332986, 0.0833332986, 0.0833332986, 0.0833332986) + p0_x3;
+    p0_x3 = p0_x6 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004) + p0_x3;
+    p0_x2 = p0_x2 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004) + p0_x3;
+    p0_x0 = p0_x0 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004) + p0_x2;
+    p0_x2 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(-1.45000005, 1.45000005, -0.449999988, 1.45000005) + nvUV.xyxy;
+    p0_x3 = texture(pre, p0_x2.xy);
+    p0_x2 = texture(pre, p0_x2.zw);
+    p0_x3 = p0_x2 + p0_x3;
+    p0_x3 = p0_x5 + p0_x3;
+    p0_x5 = p0_x4 + p0_x5;
+    p0_x5 = p0_x9 + p0_x5;
+    p0_x6 = p0_x10 + p0_x9;
+    p0_x5 = p0_x10 + p0_x5;
+    p0_x9 = p0_x10 + p0_x12;
+    p0_x3 = p0_x4 + p0_x3;
+    p0_x0 = p0_x3 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x3 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(0.449999988, 1.45000005, 1.45000005, 1.45000005) + nvUV.xyxy;
+    p0_x10 = texture(pre, p0_x3.xy);
+    p0_x3 = texture(pre, p0_x3.zw);
+    p0_x3 = p0_x3 + p0_x10;
+    p0_x2 = p0_x2 + p0_x10;
+    p0_x2 = p0_x4 + p0_x2;
+    p0_x2 = p0_x1 + p0_x2;
+    p0_x0 = p0_x2 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x2 = p0_x1 + p0_x3;
+    p0_x1 = p0_x7 + p0_x1;
+    p0_x2 = p0_x7 + p0_x2;
+    p0_x0 = p0_x2 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x0 = p0_x5 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x0 = p0_x8 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x1 = p0_x12 + p0_x1;
+    p0_x2 = p0_x11 + p0_x12;
+    p0_x1 = p0_x11 + p0_x1;
+    p0_x0 = p0_x1 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x1 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(-1.45000005, -1.45000005, -0.449999988, -1.45000005) + nvUV.xyxy;
+    p0_x3 = texture(pre, p0_x1.xy);
+    p0_x1 = texture(pre, p0_x1.zw);
+    p0_x3 = p0_x3 + p0_x6;
+    p0_x3 = p0_x1 + p0_x3;
+    p0_x1 = p0_x1 + p0_x9;
+    p0_x0 = p0_x3 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x3 = (1.0 / vec2(textureSize(pre, 0))).xyxy * vec4(0.449999988, -1.45000005, 1.45000005, -1.45000005) + nvUV.xyxy;
+    p0_x4 = texture(pre, p0_x3.xy);
+    p0_x3 = texture(pre, p0_x3.zw);
+    p0_x1 = p0_x1 + p0_x4;
+    p0_x2 = p0_x2 + p0_x4;
+    p0_x2 = p0_x3 + p0_x2;
+    p0_x0 = p0_x1 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x0 = p0_x2 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p0_x0;
+    p0_x1.x = dot(p0_x0.xyz, p0_x0.xyz);
+    p0_x1.x = inversesqrt(p0_x1.x);
+    p0_x1.xyz = p0_x0.xyz * p0_x1.xxx;
+    p0_x1.xyz = p0_x1.xyz * _BloomThreshold.yyy;
+    p0_x2.xyz = max(p0_x0.xyz, vec3(0.0, 0.0, 0.0));
+    p0_x1.xyz = min(p0_x1.xyz, p0_x2.xyz);
+    p0_x1.xyz = p0_x1.xyz * vec3(0.908999979, 0.908999979, 0.908999979);
+    p0_x40 = max(p0_x1.z, p0_x1.y);
+    p0_x40 = max(p0_x40, p0_x1.x);
+    p0_x2.x = p0_x40 + (-_BloomThreshold.x);
+    p0_x40 = max(p0_x40, 9.99999975e-05);
+    p0_x15 = p0_x2.x + 9.99999975e-05;
+    p0_x15 = max(p0_x15, 0.0);
+    p0_x15 = min(p0_x15, 0.000199999995);
+    p0_x15 = p0_x15 * p0_x15;
+    p0_x15 = p0_x15 * 2000.00012;
+    p0_x2.x = max(p0_x2.x, p0_x15);
+    p0_x1.xyz = p0_x1.xyz * p0_x2.xxx;
+    p0_x1.xyz = p0_x1.xyz / vec3(p0_x40);
+    p0_x0.xyz = max(p0_x1.xyz, vec3(0.0, 0.0, 0.0));
+    fragColor = p0_x0 * nvCor(_glow_color);
+    return;
+}
+
+// ---- programa 1 do Node: NodeVideo_Effect_Stylize_Glow_1.glsl
+vec4 p1_x0;
+vec4 p1_x1;
+vec4 p1_x2;
+vec4 p1_x3;
+vec4 p1_x4;
+vec4 p1_x5;
+vec4 p1_x6;
+vec4 p1_x7;
+vec4 p1_x8;
+vec4 p1_x9;
+vec4 p1_x10;
+vec4 p1_x11;
+vec4 p1_x12;
+void p1_main(sampler2D _BloomTex)
+{
+    p1_x0.xy = (-(1.0 / vec2(textureSize(_BloomTex, 0))).xy) * vec2(0.0, 0.899999976) + nvUV.xy;
+    p1_x0 = texture(_BloomTex, p1_x0.xy);
+    p1_x1 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(-0.899999976, -0.899999976, 0.899999976, -0.899999976) + nvUV.xyxy;
+    p1_x2 = texture(_BloomTex, p1_x1.xy);
+    p1_x1 = texture(_BloomTex, p1_x1.zw);
+    p1_x3.xy = (-(1.0 / vec2(textureSize(_BloomTex, 0))).xy) * vec2(0.899999976, 0.0) + nvUV.xy;
+    p1_x3 = texture(_BloomTex, p1_x3.xy);
+    p1_x4 = texture(_BloomTex, nvUV.xy);
+    p1_x5 = p1_x3 + p1_x4;
+    p1_x2 = p1_x2 + p1_x5;
+    p1_x2 = p1_x0 + p1_x2;
+    p1_x5 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(0.899999976, 0.899999976, -1.45000005, 0.449999988) + nvUV.xyxy;
+    p1_x6 = texture(_BloomTex, p1_x5.xy);
+    p1_x5 = texture(_BloomTex, p1_x5.zw);
+    p1_x7 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(-0.899999976, 0.899999976, 0.0, 0.899999976) + nvUV.xyxy;
+    p1_x8 = texture(_BloomTex, p1_x7.zw);
+    p1_x7 = texture(_BloomTex, p1_x7.xy);
+    p1_x7 = p1_x8 + p1_x7;
+    p1_x6 = p1_x6 + p1_x8;
+    p1_x6 = p1_x4 + p1_x6;
+    p1_x3 = p1_x3 + p1_x7;
+    p1_x3 = p1_x4 + p1_x3;
+    p1_x3 = p1_x3 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004);
+    p1_x7 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(1.45000005, 0.449999988, 0.899999976, 0.0) + nvUV.xyxy;
+    p1_x8 = texture(_BloomTex, p1_x7.zw);
+    p1_x7 = texture(_BloomTex, p1_x7.xy);
+    p1_x6 = p1_x6 + p1_x8;
+    p1_x4 = p1_x4 + p1_x8;
+    p1_x0 = p1_x0 + p1_x4;
+    p1_x0 = p1_x1 + p1_x0;
+    p1_x1 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(-0.449999988, 0.449999988, 0.449999988, 0.449999988) + nvUV.xyxy;
+    p1_x4 = texture(_BloomTex, p1_x1.xy);
+    p1_x1 = texture(_BloomTex, p1_x1.zw);
+    p1_x8 = p1_x1 + p1_x4;
+    p1_x9 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(-1.45000005, -0.449999988, -0.449999988, -0.449999988) + nvUV.xyxy;
+    p1_x10 = texture(_BloomTex, p1_x9.zw);
+    p1_x9 = texture(_BloomTex, p1_x9.xy);
+    p1_x8 = p1_x8 + p1_x10;
+    p1_x11 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(0.449999988, -0.449999988, 1.45000005, -0.449999988) + nvUV.xyxy;
+    p1_x12 = texture(_BloomTex, p1_x11.xy);
+    p1_x11 = texture(_BloomTex, p1_x11.zw);
+    p1_x8 = p1_x8 + p1_x12;
+    p1_x3 = p1_x8 * vec4(0.0833332986, 0.0833332986, 0.0833332986, 0.0833332986) + p1_x3;
+    p1_x3 = p1_x6 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004) + p1_x3;
+    p1_x2 = p1_x2 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004) + p1_x3;
+    p1_x0 = p1_x0 * vec4(0.0208333004, 0.0208333004, 0.0208333004, 0.0208333004) + p1_x2;
+    p1_x2 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(-1.45000005, 1.45000005, -0.449999988, 1.45000005) + nvUV.xyxy;
+    p1_x3 = texture(_BloomTex, p1_x2.xy);
+    p1_x2 = texture(_BloomTex, p1_x2.zw);
+    p1_x3 = p1_x2 + p1_x3;
+    p1_x3 = p1_x5 + p1_x3;
+    p1_x5 = p1_x4 + p1_x5;
+    p1_x5 = p1_x9 + p1_x5;
+    p1_x6 = p1_x10 + p1_x9;
+    p1_x5 = p1_x10 + p1_x5;
+    p1_x9 = p1_x10 + p1_x12;
+    p1_x3 = p1_x4 + p1_x3;
+    p1_x0 = p1_x3 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x3 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(0.449999988, 1.45000005, 1.45000005, 1.45000005) + nvUV.xyxy;
+    p1_x10 = texture(_BloomTex, p1_x3.xy);
+    p1_x3 = texture(_BloomTex, p1_x3.zw);
+    p1_x3 = p1_x3 + p1_x10;
+    p1_x2 = p1_x2 + p1_x10;
+    p1_x2 = p1_x4 + p1_x2;
+    p1_x2 = p1_x1 + p1_x2;
+    p1_x0 = p1_x2 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x2 = p1_x1 + p1_x3;
+    p1_x1 = p1_x7 + p1_x1;
+    p1_x2 = p1_x7 + p1_x2;
+    p1_x0 = p1_x2 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x0 = p1_x5 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x0 = p1_x8 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x1 = p1_x12 + p1_x1;
+    p1_x2 = p1_x11 + p1_x12;
+    p1_x1 = p1_x11 + p1_x1;
+    p1_x0 = p1_x1 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x1 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(-1.45000005, -1.45000005, -0.449999988, -1.45000005) + nvUV.xyxy;
+    p1_x3 = texture(_BloomTex, p1_x1.xy);
+    p1_x1 = texture(_BloomTex, p1_x1.zw);
+    p1_x3 = p1_x3 + p1_x6;
+    p1_x3 = p1_x1 + p1_x3;
+    p1_x1 = p1_x1 + p1_x9;
+    p1_x0 = p1_x3 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    p1_x3 = (1.0 / vec2(textureSize(_BloomTex, 0))).xyxy * vec4(0.449999988, -1.45000005, 1.45000005, -1.45000005) + nvUV.xyxy;
+    p1_x4 = texture(_BloomTex, p1_x3.xy);
+    p1_x3 = texture(_BloomTex, p1_x3.zw);
+    p1_x1 = p1_x1 + p1_x4;
+    p1_x2 = p1_x2 + p1_x4;
+    p1_x2 = p1_x3 + p1_x2;
+    p1_x0 = p1_x1 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    fragColor = p1_x2 * vec4(0.00923329964, 0.00923329964, 0.00923329964, 0.00923329964) + p1_x0;
+    return;
+}
+
+// ---- programa 2 do Node: NodeVideo_Effect_Stylize_Glow_2.glsl
+vec4 p2_x0;
+vec4 p2_x1;
+vec4 p2_x2;
+vec4 p2_x3;
+vec4 p2_x4;
+vec4 p2_x5;
+vec2 p2_x14;
+void p2_main(sampler2D _BloomTex, sampler2D _HigherMipBloomTex)
+{
+    p2_x0.xy = (1.0 / vec2(textureSize(_BloomTex, 0))).xy * vec2(vec2(_BloomSpread, _BloomSpread)) + nvUV.xy;
+    p2_x0 = texture(_BloomTex, p2_x0.xy);
+    p2_x1.xy = (-(1.0 / vec2(textureSize(_BloomTex, 0))).xy) * vec2(vec2(_BloomSpread, _BloomSpread)) + nvUV.xy;
+    p2_x1 = texture(_BloomTex, p2_x1.xy);
+    p2_x2 = texture(_BloomTex, nvUV.xy);
+    p2_x3.xy = vec2(vec2(_BloomSpread, _BloomSpread)) * (1.0 / vec2(textureSize(_BloomTex, 0))).xy;
+    p2_x4 = (-p2_x3.xyxy) * vec4(0.0, 1.0, 1.0, 0.0) + nvUV.xyxy;
+    p2_x5 = texture(_BloomTex, p2_x4.xy);
+    p2_x4 = texture(_BloomTex, p2_x4.zw);
+    p2_x5 = p2_x5 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982);
+    p2_x2 = p2_x2 * vec4(0.159999996, 0.159999996, 0.159999996, 0.159999996) + p2_x5;
+    p2_x2 = p2_x4 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + p2_x2;
+    p2_x4 = p2_x3.xyxy * vec4(1.0, 0.0, 0.0, 1.0) + nvUV.xyxy;
+    p2_x5 = texture(_BloomTex, p2_x4.xy);
+    p2_x4 = texture(_BloomTex, p2_x4.zw);
+    p2_x2 = p2_x5 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + p2_x2;
+    p2_x2 = p2_x4 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + p2_x2;
+    p2_x1 = p2_x1 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x2;
+    p2_x2 = p2_x3.xyxy * vec4(1.0, -1.0, -1.0, 1.0) + nvUV.xyxy;
+    p2_x4 = texture(_BloomTex, p2_x2.xy);
+    p2_x2 = texture(_BloomTex, p2_x2.zw);
+    p2_x1 = p2_x4 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x1;
+    p2_x1 = p2_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x1;
+    p2_x0 = p2_x0 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x1;
+    p2_x1 = p2_x3.xyxy * vec4(0.0, 2.0, 2.0, 0.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x0;
+    p2_x1 = p2_x3.xyxy * vec4(0.0, -2.0, -2.0, 0.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p2_x0;
+    p2_x1 = p2_x3.xyxy * vec4(-2.0, 1.0, -1.0, 2.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x1 = p2_x3.xyxy * vec4(1.0, 2.0, 2.0, 1.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x1 = p2_x3.xyxy * vec4(2.0, -1.0, 1.0, -2.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x1 = p2_x3.xyxy * vec4(-1.0, -2.0, -2.0, -1.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p2_x0;
+    p2_x1 = p2_x3.xyxy * vec4(-2.0, 2.0, 2.0, -2.0) + nvUV.xyxy;
+    p2_x2 = texture(_BloomTex, p2_x1.xy);
+    p2_x1 = texture(_BloomTex, p2_x1.zw);
+    p2_x0 = p2_x2 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p2_x0;
+    p2_x2.xy = p2_x3.xy * vec2(2.0, 2.0) + nvUV.xy;
+    p2_x14.xy = p2_x3.xy * vec2(-2.0, -2.0) + nvUV.xy;
+    p2_x3 = texture(_BloomTex, p2_x14.xy);
+    p2_x2 = texture(_BloomTex, p2_x2.xy);
+    p2_x0 = p2_x2 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p2_x0;
+    p2_x0 = p2_x1 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p2_x0;
+    p2_x0 = p2_x3 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p2_x0;
+    p2_x1 = texture(_HigherMipBloomTex, nvUV.xy);
+    fragColor = p2_x0 + p2_x1;
+    return;
+}
+
+// ---- programa 3 do Node: NodeVideo_Effect_Stylize_Glow_3.glsl
+vec4 p3_x0;
+vec4 p3_x1;
+vec4 p3_x2;
+bvec2 p3_xb2;
+vec4 p3_x3;
+vec4 p3_x4;
+vec4 p3_x5;
+vec2 p3_x12;
+void p3_main(sampler2D _BloomTex)
+{
+    p3_x0.xy = vec2(vec2(_BloomSpread, _BloomSpread)) * (1.0 / vec2(textureSize(_BloomTex, 0))).xy;
+    p3_x1 = texture(_BloomTex, nvUV.xy);
+    p3_x2 = (-p3_x0.xyxy) * vec4(0.0, 1.0, 1.0, 0.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x3 = p3_x3 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982);
+    p3_x1 = p3_x1 * vec4(0.159999996, 0.159999996, 0.159999996, 0.159999996) + p3_x3;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(1.0, 0.0, 0.0, 1.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + p3_x1;
+    p3_x12.xy = (-(1.0 / vec2(textureSize(_BloomTex, 0))).xy) * vec2(vec2(_BloomSpread, _BloomSpread)) + nvUV.xy;
+    p3_x2 = texture(_BloomTex, p3_x12.xy);
+    p3_x1 = p3_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(1.0, -1.0, -1.0, 1.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x12.xy = (1.0 / vec2(textureSize(_BloomTex, 0))).xy * vec2(vec2(_BloomSpread, _BloomSpread)) + nvUV.xy;
+    p3_x2 = texture(_BloomTex, p3_x12.xy);
+    p3_x1 = p3_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(0.0, 2.0, 2.0, 0.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(0.0, -2.0, -2.0, 0.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0399999991, 0.0399999991, 0.0399999991, 0.0399999991) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(-2.0, 1.0, -1.0, 2.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(1.0, 2.0, 2.0, 1.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(2.0, -1.0, 1.0, -2.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(-1.0, -2.0, -2.0, -1.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + p3_x1;
+    p3_x2 = p3_x0.xyxy * vec4(-2.0, 2.0, 2.0, -2.0) + nvUV.xyxy;
+    p3_x3 = texture(_BloomTex, p3_x2.xy);
+    p3_x1 = p3_x3 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p3_x1;
+    p3_x12.xy = p3_x0.xy * vec2(2.0, 2.0) + nvUV.xy;
+    p3_x3 = texture(_BloomTex, p3_x12.xy);
+    p3_x1 = p3_x3 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p3_x1;
+    p3_x2 = texture(_BloomTex, p3_x2.zw);
+    p3_x1 = p3_x2 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p3_x1;
+    p3_x0.xy = p3_x0.xy * vec2(-2.0, -2.0) + nvUV.xy;
+    p3_x0 = texture(_BloomTex, p3_x0.xy);
+    p3_x0 = p3_x0 * vec4(0.00999999978, 0.00999999978, 0.00999999978, 0.00999999978) + p3_x1;
+    p3_x1 = texture(pre, nvUV.xy);
+    p3_x0 = p3_x0 * vec4(vec4(_BloomIntensity, _BloomIntensity, _BloomIntensity, _BloomIntensity)) + p3_x1;
+    if(int(_use_inner_mask) != 0) {
+        p3_xb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        p3_x3 = (p3_xb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : p3_x0;
+        p3_x4 = texture(pre, nvUV.xy);
+        p3_x5 = (-p3_x4) + vec4(1.0, 1.0, 1.0, 1.0);
+        p3_x1 = p3_x1 * p3_x5;
+        p3_x1 = p3_x3 * p3_x4 + p3_x1;
+        p3_x2.x = p3_x4.x * p3_x1.w;
+        fragColor.w = (p3_xb2.y) ? p3_x2.x : p3_x1.w;
+        fragColor.xyz = p3_x1.xyz;
+    } else {
+        fragColor = p3_x0;
+    }
+    return;
+}
+
+void main()
+{
+    nvUV = acScreenNorm;
+    if (acPass == 0) { fragColor = nvEntrada(); return; }
+    if (acPass == 1) { p0_main(); return; }
+    if (acPass == 2) { if (1 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds0); return; }
+    if (acPass == 3) { if (2 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds1); return; }
+    if (acPass == 4) { if (3 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds2); return; }
+    if (acPass == 5) { if (4 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds3); return; }
+    if (acPass == 6) { if (5 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds4); return; }
+    if (acPass == 7) { if (6 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds5); return; }
+    if (acPass == 8) { if (7 > nvN()) { fragColor = vec4(0.0); return; } p1_main(ds6); return; }
+    if (acPass == 9) { if (7 > nvN()) { fragColor = vec4(0.0); return; } p2_main(ds7, ds6); return; }
+    if (acPass == 10) { int n = nvN(); if (6 > n) { fragColor = vec4(0.0); return; } if (6 == n) p2_main(ds6, ds5); else p2_main(up6, ds5); return; }
+    if (acPass == 11) { int n = nvN(); if (5 > n) { fragColor = vec4(0.0); return; } if (5 == n) p2_main(ds5, ds4); else p2_main(up5, ds4); return; }
+    if (acPass == 12) { int n = nvN(); if (4 > n) { fragColor = vec4(0.0); return; } if (4 == n) p2_main(ds4, ds3); else p2_main(up4, ds3); return; }
+    if (acPass == 13) { int n = nvN(); if (3 > n) { fragColor = vec4(0.0); return; } if (3 == n) p2_main(ds3, ds2); else p2_main(up3, ds2); return; }
+    if (acPass == 14) { int n = nvN(); if (2 > n) { fragColor = vec4(0.0); return; } if (2 == n) p2_main(ds2, ds1); else p2_main(up2, ds1); return; }
+    if (acPass == 15) { int n = nvN(); if (1 > n) { fragColor = vec4(0.0); return; } if (1 == n) p2_main(ds1, ds0); else p2_main(up1, ds0); return; }
+    if (acPass == 16) { p3_main(up0); fragColor = nvSaida(fragColor); return; }
+    fragColor = vec4(0.0);
+}
+    ]]></shader>
+</effect>

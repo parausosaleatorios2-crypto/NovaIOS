@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Colorista (`csta`, vídeo): a correção de cor completa do Colorista dentro do
+  Looks. O render do host (`0x1803ecc40`, lido em `tools/looks/benchmark/csta.py`) é uma CADEIA de kernels, aqui
+  num passe só (`assets/mblooks/csta.frag`), cada etapa gravando o float16 truncado que o AE grava entre eles:
+    1. as três rodas (Shadows/Midtones/Highlights = lift, gamma, gain por canal) com a exposição — ou, sem rodas,
+       só a exposição;
+    2. Temperature/Tint (RGB → YUV 709, U/V deslocados, volta);
+    3. o HSL das 8 cores (a mesma textura e o mesmo kernel do HSL Colors);
+    4. Hue Rotation; 5. Saturation (luma 709);
+    6. Contrast e 7. as curvas (réguas Contrast/Shadows/Midtones/Highlights + 5 pontos por canal, e as curvas de
+       pontos do Colorista, Bézier pelos vizinhos);
+    8. a saturação pela luma e pela saturação (7 pontos cada); 9. Strength.
+  Conferido contra o After Effects (r5: 117 casos, os 42 blocos distintos da pasta de presets e as etapas
+  isoladas; r6: as etapas em pares e trios): 74 casos idênticos; no resto, 1 nível de 8 bits em até ~1% dos
+  valores — o mesmo que o modelo exato em Python dá, o limite do kernel OpenCL que o AE roda no PC.
+
+  O QUE NÃO ENTROU: o modo log (só liga com a entrada do Look em OCIO; com a do AE, `foot`, é o modo vídeo daqui).
+  As 4 curvas de pontos (124 valores) e os valores que o render não lê ficam guardados, escondidos: chegam pelo
+  importador do AE e entram na conta, mas não têm controle na tela.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.colorista"
+    name="Looks: Colorista"
+    name-en="Looks: Colorista"
+    desc="A ferramenta Colorista do Magic Bullet Looks: exposição, rodas de sombras/meios/altas, temperatura e tint, HSL das 8 cores, rotação de matiz, saturação, contraste, curvas e saturação pela luma."
+    desc-en="Magic Bullet Looks' Colorista tool: exposure, shadows/midtones/highlights wheels, temperature and tint, HSL for 8 colors, hue rotation, saturation, contrast, curves and saturation by luma."
+    category="looks"
+    stage="mblooks"
+    looks="csta"
+    tags="magic bullet,looks,red giant,colorista,correção de cor,color correction,lift,gamma,gain,temperatura,temperature,tint,curvas,curves,saturação,saturation">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="reservado0" label="p0" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="strength" label="Strength" default="100.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="exposure" label="Exposure" default="0.0" min="-5.0" max="5.0" step="0.01" />
+        <slider id="liftRed" group="Shadows (Lift)" label="Shadows Red" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="liftGreen" group="Shadows (Lift)" label="Shadows Green" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="liftBlue" group="Shadows (Lift)" label="Shadows Blue" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="gammaRed" group="Midtones (Gamma)" label="Midtones Red" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="gammaGreen" group="Midtones (Gamma)" label="Midtones Green" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="gammaBlue" group="Midtones (Gamma)" label="Midtones Blue" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="gainRed" group="Highlights (Gain)" label="Highlights Red" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="gainGreen" group="Highlights (Gain)" label="Highlights Green" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="gainBlue" group="Highlights (Gain)" label="Highlights Blue" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="saturation" label="Saturation" default="100.0" min="0.0" max="200.0" step="0.1" />
+        <slider id="hueRed" group="HSL Hue" label="Red Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueOrange" group="HSL Hue" label="Orange Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueYellow" group="HSL Hue" label="Yellow Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueGreen" group="HSL Hue" label="Green Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueCyan" group="HSL Hue" label="Cyan Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueBlue" group="HSL Hue" label="Blue Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="huePurple" group="HSL Hue" label="Purple Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueMagenta" group="HSL Hue" label="Magenta Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satRed" group="HSL Saturation" label="Red Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satOrange" group="HSL Saturation" label="Orange Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satYellow" group="HSL Saturation" label="Yellow Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satGreen" group="HSL Saturation" label="Green Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satCyan" group="HSL Saturation" label="Cyan Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satBlue" group="HSL Saturation" label="Blue Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satPurple" group="HSL Saturation" label="Purple Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satMagenta" group="HSL Saturation" label="Magenta Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumRed" group="HSL Luminance" label="Red Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumOrange" group="HSL Luminance" label="Orange Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumYellow" group="HSL Luminance" label="Yellow Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumGreen" group="HSL Luminance" label="Green Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumCyan" group="HSL Luminance" label="Cyan Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumBlue" group="HSL Luminance" label="Blue Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumPurple" group="HSL Luminance" label="Purple Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumMagenta" group="HSL Luminance" label="Magenta Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="curveMasterContrast" group="Curves: Master" label="Master Contrast" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveMasterShadows" group="Curves: Master" label="Master Shadows" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveMasterMidtones" group="Curves: Master" label="Master Midtones" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveMasterHighlights" group="Curves: Master" label="Master Highlights" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveMasterOffset1" group="Curves: Master" label="Master Point 1" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveMasterOffset2" group="Curves: Master" label="Master Point 2" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveMasterOffset3" group="Curves: Master" label="Master Point 3" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveMasterOffset4" group="Curves: Master" label="Master Point 4" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveMasterOffset5" group="Curves: Master" label="Master Point 5" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveRedContrast" group="Curves: Red" label="Red Contrast" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveRedShadows" group="Curves: Red" label="Red Shadows" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveRedMidtones" group="Curves: Red" label="Red Midtones" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveRedHighlights" group="Curves: Red" label="Red Highlights" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveRedOffset1" group="Curves: Red" label="Red Point 1" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveRedOffset2" group="Curves: Red" label="Red Point 2" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveRedOffset3" group="Curves: Red" label="Red Point 3" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveRedOffset4" group="Curves: Red" label="Red Point 4" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveRedOffset5" group="Curves: Red" label="Red Point 5" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveGreenContrast" group="Curves: Green" label="Green Contrast" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveGreenShadows" group="Curves: Green" label="Green Shadows" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveGreenMidtones" group="Curves: Green" label="Green Midtones" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveGreenHighlights" group="Curves: Green" label="Green Highlights" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveGreenOffset1" group="Curves: Green" label="Green Point 1" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveGreenOffset2" group="Curves: Green" label="Green Point 2" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveGreenOffset3" group="Curves: Green" label="Green Point 3" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveGreenOffset4" group="Curves: Green" label="Green Point 4" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveGreenOffset5" group="Curves: Green" label="Green Point 5" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveBlueContrast" group="Curves: Blue" label="Blue Contrast" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveBlueShadows" group="Curves: Blue" label="Blue Shadows" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveBlueMidtones" group="Curves: Blue" label="Blue Midtones" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveBlueHighlights" group="Curves: Blue" label="Blue Highlights" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="curveBlueOffset1" group="Curves: Blue" label="Blue Point 1" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveBlueOffset2" group="Curves: Blue" label="Blue Point 2" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveBlueOffset3" group="Curves: Blue" label="Blue Point 3" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveBlueOffset4" group="Curves: Blue" label="Blue Point 4" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="curveBlueOffset5" group="Curves: Blue" label="Blue Point 5" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="reservado73" label="p73" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado74" label="p74" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado75" label="p75" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado76" label="p76" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado77" label="p77" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="pointsMasterCount" label="Master Points" default="0.0" min="0.0" max="15.0" step="1.0" hidden="true" />
+        <slider id="pointsMasterX1" label="Master Point 1 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY1" label="Master Point 1 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX2" label="Master Point 2 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY2" label="Master Point 2 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX3" label="Master Point 3 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY3" label="Master Point 3 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX4" label="Master Point 4 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY4" label="Master Point 4 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX5" label="Master Point 5 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY5" label="Master Point 5 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX6" label="Master Point 6 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY6" label="Master Point 6 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX7" label="Master Point 7 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY7" label="Master Point 7 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX8" label="Master Point 8 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY8" label="Master Point 8 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX9" label="Master Point 9 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY9" label="Master Point 9 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX10" label="Master Point 10 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY10" label="Master Point 10 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX11" label="Master Point 11 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY11" label="Master Point 11 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX12" label="Master Point 12 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY12" label="Master Point 12 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX13" label="Master Point 13 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY13" label="Master Point 13 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX14" label="Master Point 14 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY14" label="Master Point 14 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterX15" label="Master Point 15 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsMasterY15" label="Master Point 15 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedCount" label="Red Points" default="0.0" min="0.0" max="15.0" step="1.0" hidden="true" />
+        <slider id="pointsRedX1" label="Red Point 1 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY1" label="Red Point 1 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX2" label="Red Point 2 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY2" label="Red Point 2 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX3" label="Red Point 3 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY3" label="Red Point 3 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX4" label="Red Point 4 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY4" label="Red Point 4 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX5" label="Red Point 5 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY5" label="Red Point 5 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX6" label="Red Point 6 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY6" label="Red Point 6 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX7" label="Red Point 7 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY7" label="Red Point 7 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX8" label="Red Point 8 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY8" label="Red Point 8 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX9" label="Red Point 9 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY9" label="Red Point 9 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX10" label="Red Point 10 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY10" label="Red Point 10 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX11" label="Red Point 11 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY11" label="Red Point 11 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX12" label="Red Point 12 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY12" label="Red Point 12 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX13" label="Red Point 13 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY13" label="Red Point 13 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX14" label="Red Point 14 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY14" label="Red Point 14 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedX15" label="Red Point 15 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsRedY15" label="Red Point 15 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenCount" label="Green Points" default="0.0" min="0.0" max="15.0" step="1.0" hidden="true" />
+        <slider id="pointsGreenX1" label="Green Point 1 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY1" label="Green Point 1 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX2" label="Green Point 2 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY2" label="Green Point 2 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX3" label="Green Point 3 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY3" label="Green Point 3 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX4" label="Green Point 4 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY4" label="Green Point 4 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX5" label="Green Point 5 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY5" label="Green Point 5 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX6" label="Green Point 6 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY6" label="Green Point 6 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX7" label="Green Point 7 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY7" label="Green Point 7 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX8" label="Green Point 8 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY8" label="Green Point 8 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX9" label="Green Point 9 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY9" label="Green Point 9 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX10" label="Green Point 10 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY10" label="Green Point 10 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX11" label="Green Point 11 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY11" label="Green Point 11 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX12" label="Green Point 12 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY12" label="Green Point 12 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX13" label="Green Point 13 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY13" label="Green Point 13 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX14" label="Green Point 14 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY14" label="Green Point 14 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenX15" label="Green Point 15 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsGreenY15" label="Green Point 15 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueCount" label="Blue Points" default="0.0" min="0.0" max="15.0" step="1.0" hidden="true" />
+        <slider id="pointsBlueX1" label="Blue Point 1 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY1" label="Blue Point 1 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX2" label="Blue Point 2 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY2" label="Blue Point 2 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX3" label="Blue Point 3 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY3" label="Blue Point 3 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX4" label="Blue Point 4 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY4" label="Blue Point 4 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX5" label="Blue Point 5 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY5" label="Blue Point 5 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX6" label="Blue Point 6 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY6" label="Blue Point 6 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX7" label="Blue Point 7 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY7" label="Blue Point 7 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX8" label="Blue Point 8 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY8" label="Blue Point 8 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX9" label="Blue Point 9 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY9" label="Blue Point 9 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX10" label="Blue Point 10 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY10" label="Blue Point 10 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX11" label="Blue Point 11 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY11" label="Blue Point 11 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX12" label="Blue Point 12 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY12" label="Blue Point 12 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX13" label="Blue Point 13 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY13" label="Blue Point 13 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX14" label="Blue Point 14 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY14" label="Blue Point 14 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueX15" label="Blue Point 15 X" default="0.0" min="0.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="pointsBlueY15" label="Blue Point 15 Y" default="0.0" min="-1.0" max="1.0" step="0.0001" hidden="true" />
+        <slider id="satByLuma1" group="Saturation by Luma" label="Sat by Luma 1" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satByLuma2" group="Saturation by Luma" label="Sat by Luma 2" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satByLuma3" group="Saturation by Luma" label="Sat by Luma 3" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satByLuma4" group="Saturation by Luma" label="Sat by Luma 4" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satByLuma5" group="Saturation by Luma" label="Sat by Luma 5" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satByLuma6" group="Saturation by Luma" label="Sat by Luma 6" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satByLuma7" group="Saturation by Luma" label="Sat by Luma 7" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat1" group="Saturation by Saturation" label="Sat by Sat 1" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat2" group="Saturation by Saturation" label="Sat by Sat 2" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat3" group="Saturation by Saturation" label="Sat by Sat 3" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat4" group="Saturation by Saturation" label="Sat by Sat 4" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat5" group="Saturation by Saturation" label="Sat by Sat 5" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat6" group="Saturation by Saturation" label="Sat by Sat 6" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="satBySat7" group="Saturation by Saturation" label="Sat by Sat 7" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="temperature" label="Temperature" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="tint" label="Tint" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="contrast" label="Contrast" default="0.0" min="-2.0" max="2.0" step="0.01" />
+        <slider id="reservado219" label="p219" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="hueRotation" label="Hue Rotation" default="0.0" min="-180.0" max="180.0" step="0.1" />
+        <slider id="reservado221" label="p221" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado222" label="p222" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado223" label="p223" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado224" label="p224" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado225" label="p225" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado226" label="p226" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+        <slider id="reservado227" label="p227" default="0.0" min="-1000.0" max="1000.0" step="0.001" hidden="true" />
+    </params>
+
+    <!-- Na vitrine, o padrão não muda a cor: um grade quente e contrastado. -->
+    <preview>
+        <set param="exposure" value="0.2" />
+        <set param="liftBlue" value="1.06" />
+        <set param="gainRed" value="1.08" />
+        <set param="saturation" value="130.0" />
+        <set param="temperature" value="25.0" />
+        <set param="contrast" value="0.6" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

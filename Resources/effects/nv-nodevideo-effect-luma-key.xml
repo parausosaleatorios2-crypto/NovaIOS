@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_luma_key
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-luma-key"
+    name="Effect Luma Key (NV)"
+    name-en="Effect Luma Key (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_luma_key', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_luma_key', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_intensity" label="Intensity" default="30" min="-20" max="30" step="1" />
+        <slider id="_interpolation" label="Interpolation" default="0" min="0" max="1" step="0.01" />
+        <slider id="_show_mask" type="integer" label="Show Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_invert" type="integer" label="Invert" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+float u_xlat3;
+bvec2 u_xlatb5;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1 = vec4(vec4(_interpolation, _interpolation, _interpolation, _interpolation)) * (-u_xlat0) + u_xlat0;
+    u_xlat1.x = dot(u_xlat1, u_xlat1);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat1.x = log2(u_xlat1.x);
+    u_xlat1.x = u_xlat1.x * _intensity;
+    u_xlat1.x = exp2(u_xlat1.x);
+    u_xlat1.x = min(u_xlat1.x, 1.0);
+    u_xlat3 = (-u_xlat1.x) + 1.0;
+    u_xlatb5.xy = equal(ivec4(_invert, _show_mask, _invert, _show_mask), ivec4(1, 1, 1, 1)).xy;
+    u_xlat1.x = (u_xlatb5.x) ? u_xlat3 : u_xlat1.x;
+    u_xlat0 = (u_xlatb5.y) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+    fragColor.w = u_xlat1.x * u_xlat0.w;
+    fragColor.xyz = u_xlat0.xyz;
+    return;
+}
+    ]]></shader>
+</effect>

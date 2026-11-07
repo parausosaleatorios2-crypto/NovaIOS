@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COLOR GRADING (NODE) — o Color Grading do Node Video, conta por conta (0.854.0)
+  ============================================================================
+
+  Pedido do snow (30/10/2026): "efeito cc color grading do node video. 100% igual, principalmente o visual do painel
+  desse efeito". O "CC" é o do painel do Node: as rodas são `_cclift`, `_ccgamma`, `_ccgain`. No Node isto NÃO é um
+  efeito da loja (`AssetEffect`): é a propriedade `DataColorGrading` (menu Correção de cor → Color Grading). Tudo foi
+  LIDO do APK 9.0.2 descompactado (nada do Node entra no repositório; ver `tools/nodegradacao/LEIAME.md`):
+
+  COMO O NODE FAZ (e o Nova repete):
+  - os parâmetros (`DataColorGrading::.ctor`, 9.0.2): `_editor` (a aba do painel: Rodas de cor, Matiz vs Matiz,
+    Matiz vs Saturação, Matiz vs Luminosidade, Saturação vs Saturação, Luminosidade vs Saturação, Saturação vs
+    Luminosidade), `_tone_mapping` (Nenhum/Neutro/ACES — existe no dado mas o `GetUIParams` não o mostra),
+    `_colorwheels` (`_cclift`, `_ccgamma`, `_ccgain`: PColor (1, 1, 1, 0,5) — a cor do disco e, no alfa, o slider),
+    `_whitebalance` (Temperatura, Tingimento: −100..100 presos), `_tone` (Exposição −1..1 solta, Filtro de cor,
+    Deslocamento de matiz −180..180 solto, Saturação −100..100 presa, Contraste −100..100 preso, partida −0,5 — sim,
+    o Node nasce com −0,5), `_channel_mixer` (Canal de saída + as 9 parcelas 0..100) e as curvas HSV
+    (`_curve_points_hh/hs/hl/ss/ls/sl`, dois pontos em y = 0,5);
+  - o `Render` monta uma LUT 3D de 33³ com o compute `Lut3DBaker` (o do Post Processing v2 do Unity, mexido pelo
+    Node: curvas em segmentos de uniform, balanço de branco ÷ 60) — porte em `render/GradacaoDoNode.kt`, enviado como
+    RGBA16F com filtro linear (o `ARGBHalf` bilinear do Node) pelo `<node-grading>`;
+  - e aplica com `NodeVideo/RenderCommand/color_grading` (o passe 1 abaixo, conta por conta): a cor do RT da camada
+    em LogC, a LUT pela GPU, `_blend` = 1, e `Blend SrcAlpha Zero`. A exposição vira `_PostExposure` = 2^exposição,
+    que o shader do Node só multiplica no ALFA (no ramo da LUT interna) — no opaco, exposição > 0 não muda nada e
+    < 0 apaga a camada. É o que o Node faz; está igual de propósito.
+
+  EM LUZ LINEAR, como os outros efeitos do Node (`node-manga.xml`): passe 0 = a camada como o RT dela (cor linear ×
+  alfa num buffer sRGB, de pé), passe 1 = o programa do Node, passe 2 = os bytes de volta ao alfa reto do Nova.
+  O UV do Node cresce para cima; os RTs do meio ficam de pé e só os passes 0 e 2 espelham a linha (`texelDePe`).
+
+  O QUE NÃO ENTROU: a máscara interna do Node (`_use_inner_mask`, a máscara de efeito dele) e o modo de LUT `.cube`
+  própria (`CubeFile`, `_lut_space` = 1), que o painel da 9.0.2 não oferece no Color Grading (é o Custom LUT). As
+  curvas RGB/R/G/B (`_curve_points_rgb/r/g/b`) existem no dado mas o compute da 9.0.2 não as lê: ficam de fora.
+-->
+<effect
+    id="nova.effect.node-color-grading"
+    name="Color Grading (Node)"
+    name-en="Color Grading (Node Video)"
+    desc="Correção de cor do Node Video: rodas Lift, Gamma e Gain, curvas de matiz e saturação, balanço de branco, tom e mixer de canais."
+    desc-en="Node Video's color grading: Lift, Gamma and Gain wheels, hue and saturation curves, white balance, tone and channel mixer."
+    category="color"
+    tags="color grading,gradação,gradacao,correção de cor,correcao de cor,cc,lift,gamma,gain,rodas de cor,color wheels,curvas,matiz,saturação,balanço de branco,temperatura,node video,nodevideo"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+
+        <!-- O painel do Node (abas, rodas e curvas) e a LUT que ele monta. Os outros controles moram nele. -->
+        <node-grading id="gradacao" label="Color grading" />
+
+        <!-- A aba escolhida no painel (o `_editor` do Node: 0 = Rodas de cor). -->
+        <selector id="editor" label="Editor" default="0" hidden="true"
+            options="Rodas de cor|Matiz vs Matiz|Matiz vs Saturação|Matiz vs Luminosidade|Saturação vs Saturação|Luminosidade vs Saturação|Saturação vs Luminosidade" />
+        <selector id="toneMapping" label="Tone mapping" default="0" hidden="true" options="Nenhum|Neutro|ACES" />
+
+        <!-- As rodas: a cor do disco (HSV com V = 1) e, no alfa, o slider de baixo (0,5 = neutro). -->
+        <color id="lift" label="Lift" default="1,1,1,0.5" hidden="true" />
+        <color id="gamma" label="Gamma" default="1,1,1,0.5" hidden="true" />
+        <color id="gain" label="Ganho" default="1,1,1,0.5" hidden="true" />
+
+        <!-- Balanço de branco (Clamp −100..100). -->
+        <slider id="temperature" label="Temperatura" default="0" min="-100" max="100" step="0.1" hidden="true" />
+        <slider id="tint" label="Tingimento" default="0" min="-100" max="100" step="0.1" hidden="true" />
+
+        <!-- Tom. No Node a exposição e a matiz não são presas (a faixa é a régua dele); aqui a régua é a faixa. -->
+        <slider id="exposure" label="Exposição" default="0" min="-1" max="1" step="0.01" hidden="true" />
+        <color id="colorFilter" label="Filtro de cor" default="#FFFFFF" hidden="true" />
+        <slider id="hueShift" label="Deslocamento de matiz" default="0" min="-180" max="180" step="0.1" hidden="true" />
+        <slider id="saturation" label="Saturação" default="0" min="-100" max="100" step="0.1" hidden="true" />
+        <slider id="contrast" label="Contraste" default="-0.5" min="-100" max="100" step="0.1" hidden="true" />
+
+        <!-- Mixer de canais: o canal de saída escolhe quais três aparecem (o `VisibilityDependEnum` do Node). -->
+        <selector id="outputChannel" label="Canal de saída" default="0" hidden="true" options="Vermelho|Verde|Azul" />
+        <slider id="rRed" label="Vermelho" default="100" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="rGreen" label="Verde" default="0" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="rBlue" label="Azul" default="0" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="gRed" label="Vermelho" default="0" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="gGreen" label="Verde" default="100" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="gBlue" label="Azul" default="0" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="bRed" label="Vermelho" default="0" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="bGreen" label="Verde" default="0" min="0" max="100" step="0.1" hidden="true" />
+        <slider id="bBlue" label="Azul" default="100" min="0" max="100" step="0.1" hidden="true" />
+
+        <!-- Os RTs do Node (sRGB de 8 bits, pré-multiplicados em luz linear): a camada e a saída. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="saidaRt" src="buffer" format="srgb" precision="highp" />
+    </params>
+
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="saidaRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// O `_PostExposure` do Node, calculado na CPU como lá (`GradacaoDoNode.posExposicao`).
+uniform float gradacaoPosExposicao;
+
+// k/255 pelo mais perto, montado nos bits do float (ver `node-manga.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+
+// `NodeVideo/RenderCommand/color_grading`, conta por conta (o `_SourceTex` é o `camadaRt`, o `_Lut3D` a `gradacao`).
+// `_lut_space` = 0 (a LUT interna, em LogC), `_Lut3D_Params` = (1/33, 32), `_blend` = 1, sem a máscara interna.
+vec4 colorGrading(vec2 vs_TEXCOORD0) {
+    const float _blend = 1.0;
+    const vec2 _Lut3D_Params = vec2(1.0 / 33.0, 32.0);
+    float _PostExposure = gradacaoPosExposicao;
+    vec4 u_xlat0;
+    vec4 u_xlat1;
+    vec4 u_xlat2;
+    float u_xlat20;
+    u_xlat0 = texture(camadaRt, vs_TEXCOORD0.xy);
+    u_xlat2.xyz = u_xlat0.xyz * vec3(5.55555582, 5.55555582, 5.55555582) + vec3(0.0479959995, 0.0479959995, 0.0479959995);
+    u_xlat2.xyz = log2(u_xlat2.xyz);
+    u_xlat2.yzw = u_xlat2.xyz * vec3(0.0734997839, 0.0734997839, 0.0734997839) + vec3(0.386036009, 0.386036009, 0.386036009);
+    u_xlat2.yzw = clamp(u_xlat2.yzw, 0.0, 1.0);
+    u_xlat2.x = u_xlat0.w * _PostExposure;
+    u_xlat1 = u_xlat2.yzwx;
+    u_xlat2.xyz = u_xlat1.xyz * _Lut3D_Params.yyy;
+    u_xlat20 = _Lut3D_Params.x * 0.5;
+    u_xlat2.xyz = u_xlat2.xyz * _Lut3D_Params.xxx + vec3(u_xlat20);
+    u_xlat2.xyz = texture(gradacao, u_xlat2.xyz).xyz;
+    u_xlat1.xyz = u_xlat2.xyz;
+    u_xlat1 = (-u_xlat0) + u_xlat1;
+    u_xlat1 = vec4(_blend) * u_xlat1 + u_xlat0;
+    return u_xlat1;
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada como o RT dela no Node: a cor em luz linear vezes o alfa, de pé; a GPU guarda em sRGB.
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O RT da camada está de pé: o UV do Node é o da tela, nos dois casos.
+        vec4 o = colorGrading(acScreenNorm);
+        // O alvo de 8 bits prende a saída a 0..1 antes da mistura.
+        o = clamp(o, 0.0, 1.0);
+        // `Blend SrcAlpha Zero` no RT sRGB: a cor vezes o alfa (em linear) e o alfa vezes ele mesmo.
+        fragColor = vec4(o.rgb * o.a, o.a * o.a);
+        return;
+    }
+
+    // Os bytes do RT de saída do Node, de volta à orientação da entrada e ao alfa reto do Nova.
+    vec4 o = texelDePe(saidaRt);
+    vec3 kc = bytesSrgb(o.rgb);
+    float ka = floor(o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

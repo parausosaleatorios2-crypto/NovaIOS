@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ISOLAR UMA COR
+  ============================================================================
+
+  Mantém uma cor da imagem viva e dessatura o resto — o "sin city vermelho",
+  "menina de casaco vermelho na Lista de Schindler". A escolha é um MATIZ (hue)
+  com tolerância, não uma cor exata: todas as variações da cor sobrevivem, não
+  só o pixel exato que o color-picker pegaria.
+
+  ============================================================================
+   POR QUE CIRCULAR, NÃO LINEAR
+  ============================================================================
+
+  O matiz é uma roda de 360°: vermelho é 0° e também 360°. A distância entre
+  350° e 10° é 20°, não 340°. Um `abs(a−b)` ingênuo quebra na emenda da roda.
+  O certo é `min(dif, 360 − dif)` — fica certo nas duas pontas.
+
+  ============================================================================
+   O QUE "DESSATURAR" FAZ COM O RESTO
+  ============================================================================
+
+  A conversão "completa para cinza" é a luma ITU-R BT.709. Pixels longe do
+  matiz-alvo viram essa luma; pixels perto mantêm a cor original. A suavidade
+  entre os dois é um `smoothstep` no distância angular — nada abrupto na
+  fronteira, que é onde um corte de hue sempre feia.
+-->
+<effect
+    id="nova.effect.color-isolation"
+    name="Isolar uma cor"
+    name-en="Color Isolation"
+    desc="Mantém o matiz escolhido vivo e dessatura o resto da imagem."
+    desc-en="Keeps the chosen hue vivid and desaturates the rest."
+    category="color"
+    tags="isolar,cor,hue,matiz,sin city,splash,color splash">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="targetColor" label="Cor a manter" default="#CC2222FF" />
+        <slider id="tolerance" label="Tolerância (°)"
+                default="30.0" min="1.0" max="180.0" step="1.0" snap="0.0" />
+        <slider id="softness" label="Suavidade (°)"
+                default="20.0" min="0.0" max="90.0" step="1.0" snap="0.0" />
+        <slider id="minSat" label="Mínimo de saturação"
+                default="0.15" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="strength" label="Força"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, tolerância menor pra evidenciar o isolamento. -->
+    <preview>
+        <set param="tolerance" value="20.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** RGB → H em [0, 360). Retorna 0 para cinza (não aparece). */
+float matiz(vec3 c) {
+    float mx = max(c.r, max(c.g, c.b));
+    float mn = min(c.r, min(c.g, c.b));
+    float delta = mx - mn;
+    if (delta < 1e-5) return 0.0;
+    float h;
+    if (mx == c.r)      h = mod((c.g - c.b) / delta, 6.0);
+    else if (mx == c.g) h = (c.b - c.r) / delta + 2.0;
+    else                h = (c.r - c.g) / delta + 4.0;
+    return h * 60.0;
+}
+
+/** RGB → S (do HSV): 0 = cinza, 1 = saturado. */
+float saturacao(vec3 c) {
+    float mx = max(c.r, max(c.g, c.b));
+    float mn = min(c.r, min(c.g, c.b));
+    return mx < 1e-5 ? 0.0 : (mx - mn) / mx;
+}
+
+/** Luminância ITU-R BT.709 — o cinza perceptual. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Distância angular na roda de matiz: 170°→190° é 20°, não 340°. */
+float distanciaDeMatiz(float a, float b) {
+    float d = abs(a - b);
+    return min(d, 360.0 - d);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    float hDoPixel = matiz(original.rgb);
+    float hAlvo = matiz(targetColor.rgb);
+    float d = distanciaDeMatiz(hDoPixel, hAlvo);
+
+    // Pixel dentro da tolerância = 1 (mantém); fora = 0 (dessatura); zona = smoothstep.
+    float dentro = 1.0 - smoothstep(tolerance, tolerance + max(softness, 1e-4), d);
+
+    // Pixel pouco saturado (cinza quase) não se "isola" — vira cinza direto.
+    float temCor = smoothstep(minSat, minSat + 0.1, saturacao(original.rgb));
+    dentro *= temCor;
+
+    vec3 cinza = vec3(luma(original.rgb));
+    vec3 pintado = mix(cinza, original.rgb, dentro);
+
+    vec3 cor = mix(original.rgb, pintado, strength);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

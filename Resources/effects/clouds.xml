@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   NUVENS
+  ============================================================================
+
+  Nuvem, fumaça, névoa, fundo abstrato — tudo sai da mesma conta: ruído somado
+  em camadas, cada uma com o dobro da frequência e metade da força.
+
+  ============================================================================
+   POR QUE ISTO NÃO É O "RUÍDO FRACTAL" QUE JÁ EXISTE
+  ============================================================================
+
+  O ruído fractal entrega o ruído cru. Nuvem é o que se faz DEPOIS dele, e são
+  três coisas que ele não tem:
+
+  1. **Cobertura.** Céu não é ruído inteiro — é ruído CORTADO num limiar. O que
+     passa do corte vira nuvem, o resto vira céu. Mexer na cobertura é o que
+     transforma "nublado" em "algumas nuvens".
+  2. **Luz.** A nuvem só parece volume quando a borda que aponta para a luz
+     clareia. Aqui isso sai do GRADIENTE do próprio ruído, que funciona como a
+     inclinação da superfície — o mesmo truque do relevo.
+  3. **Vento.** As camadas de ruído andam em velocidades DIFERENTES. Andando
+     juntas, a nuvem inteira desliza como um adesivo; andando separadas, ela se
+     deforma enquanto anda, que é o que o olho reconhece como nuvem.
+-->
+<effect
+    id="nova.effect.clouds"
+    name="Nuvens"
+    name-en="Clouds"
+    desc="Nuvem, fumaça e névoa a partir de ruído em camadas, com luz e vento."
+    desc-en="Layered noise with lighting and drifting wind. A background from nothing."
+    category="procedural"
+    blend="mode"
+    tags="nuvem,fumaça,névoa,ruído,fundo,céu,gerador">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="coverage" label="Cobertura"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="scale" label="Tamanho"
+                default="2.5" min="0.3" max="12.0" step="0.1" />
+        <slider id="speed" label="Vento"
+                default="0.15" min="0.0" max="2.0" step="0.01" snap="0.0" />
+
+        <!-- ============================= Forma ============================= -->
+        <slider id="layers" group="Forma" label="Camadas de detalhe"
+                default="5" min="1" max="7" step="1" type="integer" />
+        <slider id="softness" group="Forma" label="Maciez da borda"
+                default="0.35" min="0.01" max="1.0" step="0.01" />
+        <slider id="windAngle" group="Forma" label="Direção do vento"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="drift" group="Forma" label="Deformação"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ============================== Luz ============================== -->
+        <color id="cloudColor" group="Luz" label="Cor da nuvem" default="#FFFFFFFF" />
+        <color id="skyColor" group="Luz" label="Cor do fundo" default="#00202A3A" />
+        <slider id="lightAngle" group="Luz" label="Ângulo da luz"
+                default="135.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="relief" group="Luz" label="Volume"
+                default="0.6" min="0.0" max="2.0" step="0.01" snap="0.0" />
+    </params>
+
+    <presets>
+        <!-- A poeira/névoa ao fundo de um campo de estrelas: aplique este preset
+             ANTES do "Campo de estrelas" (`starfield.xml`) na mesma camada — o
+             céu de "Nebulosa quente", lá, nasce quase transparente sozinho
+             exatamente para deixar esta poeira aparecer por trás. -->
+        <preset id="cosmicDust" name="🟤 Poeira cósmica" name-en="🟤 Cosmic Dust">
+            <!-- coverage/softness calibrados contra o alcance real do ruído
+                 de 5 camadas nesta escala (medido em simulação: ele fica entre
+                 0 e ~0,8, não 0 e 1). Um corte alto demais deixaria a poeira
+                 invisível o tempo todo, por mais denso que parecesse no papel. -->
+            <value param="coverage" value="0.4" />
+            <value param="scale" value="1.8" />
+            <value param="speed" value="0.015" />
+            <value param="layers" value="5" />
+            <value param="softness" value="0.22" />
+            <value param="drift" value="0.35" />
+            <value param="cloudColor" value="#60C9814A" />
+            <value param="lightAngle" value="200.0" />
+            <value param="relief" value="0.45" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+float hash(vec2 p) {
+    // Primos grandes e um seno: o gerador de ruído mais usado em shader. O que
+    // importa dele é embaralhar bem pixels vizinhos, e isso ele faz.
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+/** Ruído de valor com interpolação suave — a base de tudo aqui. */
+float ruido(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 s = f * f * (3.0 - 2.0 * f);
+
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+
+    return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
+}
+
+/**
+ * Ruído somado em camadas.
+ *
+ * Cada camada anda numa velocidade própria (`float(i) * 0.37`), e é isso que
+ * faz a nuvem se DEFORMAR enquanto anda em vez de deslizar inteira.
+ */
+float nuvem(vec2 p, vec2 vento, int quantas) {
+    float soma = 0.0;
+    float peso = 0.0;
+    float amplitude = 1.0;
+    float frequencia = 1.0;
+
+    for (int i = 0; i < 7; i++) {
+        if (i >= quantas) break;
+        vec2 deslocada = p * frequencia + vento * (1.0 + float(i) * 0.37 * drift);
+        soma += ruido(deslocada) * amplitude;
+        peso += amplitude;
+        amplitude *= 0.5;
+        frequencia *= 2.0;
+    }
+
+    return soma / max(peso, 1e-4);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y) * scale;
+    float anguloVento = windAngle * PI / 180.0;
+    vec2 vento = vec2(cos(anguloVento), sin(anguloVento)) * acTime * speed;
+
+    int quantas = clamp(int(layers + 0.5), 1, 7);
+    float n = nuvem(p, vento, quantas);
+
+    // A cobertura é um CORTE, não um multiplicador: céu é ruído cortado, e é o
+    // corte que separa "algumas nuvens" de "encoberto".
+    float corte = 1.0 - coverage;
+    float densidade = smoothstep(corte, corte + softness, n);
+
+    // O volume sai do gradiente do próprio ruído: onde ele cresce na direção da
+    // luz, a nuvem clareia. É o mesmo princípio do relevo, e é o que impede a
+    // nuvem de parecer uma mancha chapada.
+    float passo = 0.02 * scale;
+    float dx = nuvem(p + vec2(passo, 0.0), vento, quantas) - n;
+    float dy = nuvem(p + vec2(0.0, passo), vento, quantas) - n;
+
+    float anguloLuz = lightAngle * PI / 180.0;
+    vec2 luz = vec2(cos(anguloLuz), -sin(anguloLuz));
+    float claro = dot(normalize(vec2(dx, dy) + 1e-5), luz) * relief;
+
+    vec3 cor = clamp(cloudColor.rgb * (1.0 + claro), 0.0, 2.0);
+    float alfa = densidade * cloudColor.a;
+
+    // O fundo é opcional: com alfa zero nele, a nuvem sai sobre o que já estava,
+    // que é o caso de fumaça por cima de um vídeo.
+    vec3 comFundo = mix(skyColor.rgb, cor, alfa);
+    float alfaFinal = max(alfa, skyColor.a);
+
+    vec4 desenhado = vec4(comFundo, alfaFinal);
+    float saidaAlfa = desenhado.a + original.a * (1.0 - desenhado.a);
+    vec3 saidaCor = saidaAlfa > 0.0
+        ? (desenhado.rgb * desenhado.a + original.rgb * original.a * (1.0 - desenhado.a)) / saidaAlfa
+        : vec3(0.0);
+
+    fragColor = vec4(saidaCor, saidaAlfa);
+}
+
+    ]]></shader>
+</effect>

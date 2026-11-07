@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_ripple_pro
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-ripple-pro"
+    name="Ripple Pro (NV)"
+    name-en="Ripple Pro (NV)"
+    desc="NodeVideo Asset Store effect 'ripple_pro', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'ripple_pro', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_evolution" label="Evolution" default="1" min="0" max="10" step="0.01" />
+        <slider id="_radius" label="Radius" default="3" min="0" max="3" step="0.01" />
+        <slider id="_height" label="Height" default="1" min="0" max="2" step="0.01" />
+        <slider id="_wave_width" label="Wave Width" default="0.1" min="0" max="1" step="0.01" />
+        <point id="_center" label="Center" defaultX="0.5" defaultY="0.5" min="0" max="2" />
+        <slider id="_inner_cutout" label="Inner Cutout" default="0" min="0" max="1" step="0.01" />
+        <slider id="_feather" label="Feather" default="1" min="0" max="1" step="0.01" />
+        <slider id="_twirl" label="Twirl" default="0" min="0" max="10" step="0.01" />
+        <slider id="_enable_light1" type="integer" label="Enable Light1" default="0" min="0" max="1" step="1" />
+        <slider id="_light_offset1" label="Light Offset1" default="0.1" min="0" max="1" step="0.01" />
+        <slider id="_light_intensity1" label="Light Intensity1" default="1" min="0" max="2" step="0.01" />
+        <slider id="_light_angle1" label="Light Angle1" default="0" min="0" max="360" step="1" />
+        <color id="_light_color1" label="Light Color1" default="#FFFFFFFF" />
+        <slider id="_enable_light2" type="integer" label="Enable Light2" default="0" min="0" max="1" step="1" />
+        <slider id="_light_offset2" label="Light Offset2" default="-0.1" min="-0.1" max="1" step="0.01" />
+        <slider id="_light_intensity2" label="Light Intensity2" default="1" min="0" max="2" step="0.01" />
+        <slider id="_light_angle2" label="Light Angle2" default="0" min="0" max="360" step="1" />
+        <color id="_light_color2" label="Light Color2" default="#FFFFFFFF" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+bool u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+ivec2 u_xlati5;
+bvec2 u_xlatb5;
+vec4 u_xlat6;
+bvec2 u_xlatb6;
+vec3 u_xlat7;
+bvec2 u_xlatb7;
+float u_xlat8;
+float u_xlat9;
+bool u_xlatb11;
+vec2 u_xlat12;
+bool u_xlatb12;
+vec2 u_xlat16;
+bool u_xlatb16;
+float u_xlat17;
+vec2 u_xlat19;
+float u_xlat20;
+vec2 u_xlat22;
+float u_xlat24;
+bool u_xlatb24;
+float u_xlat25;
+bool u_xlatb25;
+float u_xlat26;
+bool u_xlatb26;
+float u_xlat28;
+bool u_xlatb28;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy * _resolution.xy;
+    u_xlat16.xy = _resolution.xy * _center.xy;
+    u_xlat1.xy = acScreenNorm.xy * _resolution.xy + vec2(1.0, 0.0);
+    u_xlat2.yz = (-u_xlat16.yx);
+    u_xlat16.xy = (-_center.xy) * _resolution.xy + u_xlat1.xy;
+    u_xlat1.x = dot(u_xlat16.xy, u_xlat16.xy);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat3 = vec4(_radius, _height, _wave_width, _evolution) * vec4(100.0, 1000.0, 100.0, 5.0);
+    u_xlat9 = float(1.0) / u_xlat3.z;
+    u_xlat17 = _feather + 1.0;
+    u_xlat25 = u_xlat3.x * _inner_cutout;
+    u_xlat4.x = min(abs(u_xlat16.y), abs(u_xlat16.x));
+    u_xlat12.x = max(abs(u_xlat16.y), abs(u_xlat16.x));
+    u_xlat12.x = float(1.0) / u_xlat12.x;
+    u_xlat4.x = u_xlat12.x * u_xlat4.x;
+    u_xlat12.x = u_xlat4.x * u_xlat4.x;
+    u_xlat20 = u_xlat12.x * 0.0208350997 + -0.0851330012;
+    u_xlat20 = u_xlat12.x * u_xlat20 + 0.180141002;
+    u_xlat20 = u_xlat12.x * u_xlat20 + -0.330299497;
+    u_xlat12.x = u_xlat12.x * u_xlat20 + 0.999866009;
+    u_xlat20 = u_xlat12.x * u_xlat4.x;
+    u_xlatb28 = abs(u_xlat16.y)<abs(u_xlat16.x);
+    u_xlat20 = u_xlat20 * -2.0 + 1.57079637;
+    u_xlat20 = u_xlatb28 ? u_xlat20 : float(0.0);
+    u_xlat4.x = u_xlat4.x * u_xlat12.x + u_xlat20;
+    u_xlatb12 = u_xlat16.y<(-u_xlat16.y);
+    u_xlat12.x = u_xlatb12 ? -3.14159274 : float(0.0);
+    u_xlat4.x = u_xlat12.x + u_xlat4.x;
+    u_xlat12.x = min(u_xlat16.y, u_xlat16.x);
+    u_xlat16.x = max(u_xlat16.y, u_xlat16.x);
+    u_xlatb24 = u_xlat12.x<(-u_xlat12.x);
+    u_xlatb16 = u_xlat16.x>=(-u_xlat16.x);
+    u_xlatb16 = u_xlatb16 && u_xlatb24;
+    u_xlat16.x = (u_xlatb16) ? (-u_xlat4.x) : u_xlat4.x;
+    u_xlat24 = (-u_xlat3.x) * u_xlat17 + u_xlat1.x;
+    u_xlat4.x = u_xlat3.x * u_xlat17 + u_xlat1.x;
+    u_xlat4.x = (-u_xlat24) + u_xlat4.x;
+    u_xlat24 = _radius * 100.0 + (-u_xlat24);
+    u_xlat4.x = float(1.0) / u_xlat4.x;
+    u_xlat24 = u_xlat24 * u_xlat4.x;
+    u_xlat24 = clamp(u_xlat24, 0.0, 1.0);
+    u_xlat4.x = u_xlat24 * -2.0 + 3.0;
+    u_xlat24 = u_xlat24 * u_xlat24;
+    u_xlat24 = u_xlat24 * u_xlat4.x;
+    u_xlat25 = u_xlat25 * 0.99000001 + (-u_xlat3.z);
+    u_xlat19.x = _radius * 100.0 + (-u_xlat25);
+    u_xlat4.x = (-u_xlat25) + u_xlat1.x;
+    u_xlat19.x = float(1.0) / u_xlat19.x;
+    u_xlat4.x = u_xlat19.x * u_xlat4.x;
+    u_xlat4.x = clamp(u_xlat4.x, 0.0, 1.0);
+    u_xlat12.x = u_xlat4.x * -2.0 + 3.0;
+    u_xlat4.x = u_xlat4.x * u_xlat4.x;
+    u_xlat4.x = u_xlat4.x * u_xlat12.x;
+    u_xlat1.x = u_xlat9 * u_xlat1.x + (-u_xlat3.w);
+    u_xlat16.x = u_xlat16.x * _twirl + u_xlat1.x;
+    u_xlat16.x = sin(u_xlat16.x);
+    u_xlat16.x = u_xlat3.y * u_xlat16.x;
+    u_xlat16.x = u_xlat24 * u_xlat16.x;
+    u_xlat2.x = float(-0.0);
+    u_xlat2.w = float(-1.0);
+    u_xlat5 = acScreenNorm.xyxy * _resolution.xyxy + u_xlat2.zxxy;
+    u_xlat5 = u_xlat2.wyzw + u_xlat5;
+    u_xlat24 = dot(u_xlat5.xy, u_xlat5.xy);
+    u_xlat24 = sqrt(u_xlat24);
+    u_xlat12.xy = min(abs(u_xlat5.yw), abs(u_xlat5.xz));
+    u_xlat6.xy = max(abs(u_xlat5.yw), abs(u_xlat5.xz));
+    u_xlat6.xy = vec2(1.0, 1.0) / u_xlat6.xy;
+    u_xlat12.xy = u_xlat12.xy * u_xlat6.xy;
+    u_xlat6.xy = u_xlat12.xy * u_xlat12.xy;
+    u_xlat22.xy = u_xlat6.xy * vec2(0.0208350997, 0.0208350997) + vec2(-0.0851330012, -0.0851330012);
+    u_xlat22.xy = u_xlat6.xy * u_xlat22.xy + vec2(0.180141002, 0.180141002);
+    u_xlat22.xy = u_xlat6.xy * u_xlat22.xy + vec2(-0.330299497, -0.330299497);
+    u_xlat6.xy = u_xlat6.xy * u_xlat22.xy + vec2(0.999866009, 0.999866009);
+    u_xlat22.xy = u_xlat12.xy * u_xlat6.xy;
+    u_xlatb7.xy = lessThan(abs(u_xlat5.ywyy), abs(u_xlat5.xzxx)).xy;
+    u_xlat22.xy = u_xlat22.xy * vec2(-2.0, -2.0) + vec2(1.57079637, 1.57079637);
+    u_xlat22.x = u_xlatb7.x ? u_xlat22.x : 0.0;
+    u_xlat22.y = u_xlatb7.y ? u_xlat22.y : 0.0;
+;
+    u_xlat12.xy = u_xlat12.xy * u_xlat6.xy + u_xlat22.xy;
+    u_xlatb6.xy = lessThan(u_xlat5.ywyy, (-u_xlat5.ywyy)).xy;
+    u_xlat6.x = u_xlatb6.x ? float(-3.14159274) : 0.0;
+    u_xlat6.y = u_xlatb6.y ? float(-3.14159274) : 0.0;
+;
+    u_xlat12.xy = u_xlat12.xy + u_xlat6.xy;
+    u_xlat6.xy = min(u_xlat5.yw, u_xlat5.xz);
+    u_xlat5.xy = max(u_xlat5.yw, u_xlat5.xz);
+    u_xlatb6.xy = lessThan(u_xlat6.xyxx, (-u_xlat6.xyxx)).xy;
+    u_xlatb5.xy = greaterThanEqual(u_xlat5.xyxx, (-u_xlat5.xyxx)).xy;
+    u_xlati5.xy = ivec2(uvec2((uint(u_xlatb5.x) * 0xffffffffu) & (uint(u_xlatb6.x) * 0xffffffffu), (uint(u_xlatb5.y) * 0xffffffffu) & (uint(u_xlatb6.y) * 0xffffffffu)));
+    {
+        vec2 hlslcc_movcTemp = u_xlat12;
+        hlslcc_movcTemp.x = (u_xlati5.x != 0) ? (-u_xlat12.x) : u_xlat12.x;
+        hlslcc_movcTemp.y = (u_xlati5.y != 0) ? (-u_xlat12.y) : u_xlat12.y;
+        u_xlat12 = hlslcc_movcTemp;
+    }
+    u_xlat1.x = (-u_xlat3.x) * u_xlat17 + u_xlat24;
+    u_xlat28 = u_xlat3.x * u_xlat17 + u_xlat24;
+    u_xlat28 = (-u_xlat1.x) + u_xlat28;
+    u_xlat1.x = _radius * 100.0 + (-u_xlat1.x);
+    u_xlat28 = float(1.0) / u_xlat28;
+    u_xlat1.x = u_xlat1.x * u_xlat28;
+    u_xlat1.x = clamp(u_xlat1.x, 0.0, 1.0);
+    u_xlat28 = u_xlat1.x * -2.0 + 3.0;
+    u_xlat1.x = u_xlat1.x * u_xlat1.x;
+    u_xlat1.x = u_xlat1.x * u_xlat28;
+    u_xlat28 = (-u_xlat25) + u_xlat24;
+    u_xlat28 = u_xlat19.x * u_xlat28;
+    u_xlat28 = clamp(u_xlat28, 0.0, 1.0);
+    u_xlat5.x = u_xlat28 * -2.0 + 3.0;
+    u_xlat28 = u_xlat28 * u_xlat28;
+    u_xlat28 = u_xlat28 * u_xlat5.x;
+    u_xlat24 = u_xlat9 * u_xlat24 + (-u_xlat3.w);
+    u_xlat24 = u_xlat12.x * _twirl + u_xlat24;
+    u_xlat24 = sin(u_xlat24);
+    u_xlat24 = u_xlat3.y * u_xlat24;
+    u_xlat24 = u_xlat1.x * u_xlat24;
+    u_xlat24 = u_xlat28 * u_xlat24;
+    u_xlat4.x = u_xlat16.x * u_xlat4.x + (-u_xlat24);
+    u_xlat2.x = float(0.0);
+    u_xlat2.w = float(1.0);
+    u_xlat16.xy = acScreenNorm.xy * _resolution.xy + u_xlat2.xy;
+    u_xlat16.xy = u_xlat2.zw + u_xlat16.xy;
+    u_xlat1.x = dot(u_xlat16.xy, u_xlat16.xy);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat2.x = min(abs(u_xlat16.y), abs(u_xlat16.x));
+    u_xlat26 = max(abs(u_xlat16.y), abs(u_xlat16.x));
+    u_xlat26 = float(1.0) / u_xlat26;
+    u_xlat2.x = u_xlat26 * u_xlat2.x;
+    u_xlat26 = u_xlat2.x * u_xlat2.x;
+    u_xlat28 = u_xlat26 * 0.0208350997 + -0.0851330012;
+    u_xlat28 = u_xlat26 * u_xlat28 + 0.180141002;
+    u_xlat28 = u_xlat26 * u_xlat28 + -0.330299497;
+    u_xlat26 = u_xlat26 * u_xlat28 + 0.999866009;
+    u_xlat28 = u_xlat26 * u_xlat2.x;
+    u_xlatb5.x = abs(u_xlat16.y)<abs(u_xlat16.x);
+    u_xlat28 = u_xlat28 * -2.0 + 1.57079637;
+    u_xlat28 = u_xlatb5.x ? u_xlat28 : float(0.0);
+    u_xlat2.x = u_xlat2.x * u_xlat26 + u_xlat28;
+    u_xlatb26 = u_xlat16.y<(-u_xlat16.y);
+    u_xlat26 = u_xlatb26 ? -3.14159274 : float(0.0);
+    u_xlat2.x = u_xlat26 + u_xlat2.x;
+    u_xlat26 = min(u_xlat16.y, u_xlat16.x);
+    u_xlat16.x = max(u_xlat16.y, u_xlat16.x);
+    u_xlatb24 = u_xlat26<(-u_xlat26);
+    u_xlatb16 = u_xlat16.x>=(-u_xlat16.x);
+    u_xlatb16 = u_xlatb16 && u_xlatb24;
+    u_xlat16.x = (u_xlatb16) ? (-u_xlat2.x) : u_xlat2.x;
+    u_xlat24 = (-u_xlat3.x) * u_xlat17 + u_xlat1.x;
+    u_xlat2.x = u_xlat3.x * u_xlat17 + u_xlat1.x;
+    u_xlat2.x = (-u_xlat24) + u_xlat2.x;
+    u_xlat24 = _radius * 100.0 + (-u_xlat24);
+    u_xlat2.x = float(1.0) / u_xlat2.x;
+    u_xlat24 = u_xlat24 * u_xlat2.x;
+    u_xlat24 = clamp(u_xlat24, 0.0, 1.0);
+    u_xlat2.x = u_xlat24 * -2.0 + 3.0;
+    u_xlat24 = u_xlat24 * u_xlat24;
+    u_xlat24 = u_xlat24 * u_xlat2.x;
+    u_xlat2.x = (-u_xlat25) + u_xlat1.x;
+    u_xlat2.x = u_xlat19.x * u_xlat2.x;
+    u_xlat2.x = clamp(u_xlat2.x, 0.0, 1.0);
+    u_xlat26 = u_xlat2.x * -2.0 + 3.0;
+    u_xlat2.x = u_xlat2.x * u_xlat2.x;
+    u_xlat2.x = u_xlat2.x * u_xlat26;
+    u_xlat1.x = u_xlat9 * u_xlat1.x + (-u_xlat3.w);
+    u_xlat16.x = u_xlat16.x * _twirl + u_xlat1.x;
+    u_xlat16.x = sin(u_xlat16.x);
+    u_xlat16.x = u_xlat3.y * u_xlat16.x;
+    u_xlat16.x = u_xlat24 * u_xlat16.x;
+    u_xlat24 = dot(u_xlat5.zw, u_xlat5.zw);
+    u_xlat24 = sqrt(u_xlat24);
+    u_xlat1.x = (-u_xlat3.x) * u_xlat17 + u_xlat24;
+    u_xlat26 = u_xlat3.x * u_xlat17 + u_xlat24;
+    u_xlat26 = (-u_xlat1.x) + u_xlat26;
+    u_xlat1.x = _radius * 100.0 + (-u_xlat1.x);
+    u_xlat26 = float(1.0) / u_xlat26;
+    u_xlat1.x = u_xlat1.x * u_xlat26;
+    u_xlat1.x = clamp(u_xlat1.x, 0.0, 1.0);
+    u_xlat26 = u_xlat1.x * -2.0 + 3.0;
+    u_xlat1.x = u_xlat1.x * u_xlat1.x;
+    u_xlat1.x = u_xlat1.x * u_xlat26;
+    u_xlat25 = (-u_xlat25) + u_xlat24;
+    u_xlat25 = u_xlat19.x * u_xlat25;
+    u_xlat25 = clamp(u_xlat25, 0.0, 1.0);
+    u_xlat26 = u_xlat25 * -2.0 + 3.0;
+    u_xlat25 = u_xlat25 * u_xlat25;
+    u_xlat25 = u_xlat25 * u_xlat26;
+    u_xlat24 = u_xlat9 * u_xlat24 + (-u_xlat3.w);
+    u_xlat24 = u_xlat12.y * _twirl + u_xlat24;
+    u_xlat24 = sin(u_xlat24);
+    u_xlat24 = u_xlat3.y * u_xlat24;
+    u_xlat24 = u_xlat1.x * u_xlat24;
+    u_xlat24 = u_xlat25 * u_xlat24;
+    u_xlat4.y = u_xlat16.x * u_xlat2.x + (-u_xlat24);
+    u_xlat16.xy = u_xlat4.xy * vec2(0.5, 0.5);
+    u_xlat16.xy = u_xlat16.xy / _resolution.xy;
+    u_xlat1.xw = u_xlat16.xy + acScreenNorm.xy;
+    u_xlat4 = texture(inputImg, u_xlat1.xw);
+    u_xlatb16 = int(_enable_light1)==1;
+    if(u_xlatb16){
+        u_xlat5.xyz = acScreenNorm.yxy * _resolution.yxy + u_xlat2.yzy;
+        u_xlat16.x = dot(u_xlat5.yz, u_xlat5.yz);
+        u_xlat16.x = sqrt(u_xlat16.x);
+        u_xlat1.x = min(abs(u_xlat5.z), abs(u_xlat5.y));
+        u_xlat25 = max(abs(u_xlat5.z), abs(u_xlat5.y));
+        u_xlat25 = float(1.0) / u_xlat25;
+        u_xlat1.x = u_xlat25 * u_xlat1.x;
+        u_xlat25 = u_xlat1.x * u_xlat1.x;
+        u_xlat2.x = u_xlat25 * 0.0208350997 + -0.0851330012;
+        u_xlat2.x = u_xlat25 * u_xlat2.x + 0.180141002;
+        u_xlat2.x = u_xlat25 * u_xlat2.x + -0.330299497;
+        u_xlat25 = u_xlat25 * u_xlat2.x + 0.999866009;
+        u_xlat2.x = u_xlat25 * u_xlat1.x;
+        u_xlatb26 = abs(u_xlat5.z)<abs(u_xlat5.y);
+        u_xlat2.x = u_xlat2.x * -2.0 + 1.57079637;
+        u_xlat2.x = u_xlatb26 ? u_xlat2.x : float(0.0);
+        u_xlat1.x = u_xlat1.x * u_xlat25 + u_xlat2.x;
+        u_xlatb25 = u_xlat5.z<(-u_xlat5.x);
+        u_xlat25 = u_xlatb25 ? -3.14159274 : float(0.0);
+        u_xlat1.x = u_xlat25 + u_xlat1.x;
+        u_xlat25 = min(u_xlat5.z, u_xlat5.y);
+        u_xlat2.x = max(u_xlat5.z, u_xlat5.y);
+        u_xlatb25 = u_xlat25<(-u_xlat25);
+        u_xlatb2 = u_xlat2.x>=(-u_xlat2.x);
+        u_xlatb25 = u_xlatb25 && u_xlatb2;
+        u_xlat1.x = (u_xlatb25) ? (-u_xlat1.x) : u_xlat1.x;
+        u_xlat25 = (-u_xlat3.x) * u_xlat17 + u_xlat16.x;
+        u_xlat2.x = u_xlat3.x * u_xlat17 + u_xlat16.x;
+        u_xlat2.x = (-u_xlat25) + u_xlat2.x;
+        u_xlat25 = _radius * 100.0 + (-u_xlat25);
+        u_xlat2.x = float(1.0) / u_xlat2.x;
+        u_xlat25 = u_xlat25 * u_xlat2.x;
+        u_xlat25 = clamp(u_xlat25, 0.0, 1.0);
+        u_xlat2.x = u_xlat25 * -2.0 + 3.0;
+        u_xlat25 = u_xlat25 * u_xlat25;
+        u_xlat25 = u_xlat25 * u_xlat2.x;
+        u_xlat16.x = u_xlat9 * u_xlat16.x + (-u_xlat3.w);
+        u_xlat16.x = u_xlat1.x * _twirl + u_xlat16.x;
+        u_xlat16.x = sin(u_xlat16.x);
+        u_xlat16.x = u_xlat25 * u_xlat16.x;
+        u_xlat22.x = u_xlat16.x * (-u_xlat9);
+        u_xlat22.y = 1.0;
+        u_xlat16.x = dot(u_xlat22.xy, u_xlat22.xy);
+        u_xlat16.x = inversesqrt(u_xlat16.x);
+        u_xlat6.zw = u_xlat16.xx * u_xlat22.xy;
+        u_xlat1.x = dot(u_xlat0.xy, u_xlat0.xy);
+        u_xlat1.x = inversesqrt(u_xlat1.x);
+        u_xlat2.xw = u_xlat0.xy * u_xlat1.xx;
+        u_xlat6.xy = u_xlat2.xw * u_xlat6.zz;
+        u_xlat1.x = _light_angle1 + 90.0;
+        u_xlat1.x = u_xlat1.x * 0.0174532942;
+        u_xlat7.x = sin((-u_xlat1.x));
+        u_xlat7.y = cos(u_xlat1.x);
+        u_xlat1.x = dot(u_xlat7.xy, u_xlat7.xy);
+        u_xlat1.x = inversesqrt(u_xlat1.x);
+        u_xlat2.xw = u_xlat1.xx * u_xlat7.xy;
+        u_xlat2.xw = u_xlat2.xw * vec2(vec2(_light_offset1, _light_offset1));
+        u_xlat5.xy = u_xlat2.xw * _resolution.xy + (-u_xlat5.yz);
+        u_xlat5.z = 200.0;
+        u_xlat1.x = dot(u_xlat5.xyz, u_xlat5.xyz);
+        u_xlat2.x = u_xlat1.x * 1.6e-05;
+        u_xlat1.x = inversesqrt(u_xlat1.x);
+        u_xlat7.xyz = u_xlat1.xxx * u_xlat5.xyz;
+        u_xlat1.x = dot(u_xlat6.xyw, u_xlat7.xyz);
+        u_xlat1.x = u_xlat1.x / u_xlat2.x;
+        u_xlat16.x = u_xlat16.x * -2.0;
+        u_xlat6.xyz = u_xlat6.xyw * (-u_xlat16.xxx) + vec3(0.0, 0.0, -1.0);
+        u_xlat16.x = dot(u_xlat5.xyz, u_xlat6.xyz);
+        u_xlat5.xyz = u_xlat16.xxx * u_xlat6.xyz + (-u_xlat5.xyz);
+        u_xlat16.x = dot(u_xlat5.xyz, u_xlat5.xyz);
+        u_xlat16.x = sqrt(u_xlat16.x);
+        u_xlat16.x = u_xlat16.x + -100.0;
+        u_xlat16.x = u_xlat16.x * -0.0250000004;
+        u_xlat16.x = clamp(u_xlat16.x, 0.0, 1.0);
+        u_xlat2.x = u_xlat16.x * -2.0 + 3.0;
+        u_xlat16.x = u_xlat16.x * u_xlat16.x;
+        u_xlat16.x = u_xlat16.x * u_xlat2.x;
+        u_xlat16.x = u_xlat16.x * _light_intensity1;
+        u_xlat16.x = u_xlat16.y * u_xlat16.x;
+        u_xlat16.x = u_xlat1.x * _light_intensity1 + u_xlat16.x;
+        u_xlat5.xyz = u_xlat16.xxx * _light_color1.xyz;
+        u_xlat5.xyz = vec3(u_xlat25) * u_xlat5.xyz;
+        u_xlat4.xyz = u_xlat5.xyz * vec3(0.5, 0.5, 0.5) + u_xlat4.xyz;
+    }
+    u_xlatb16 = int(_enable_light2)==1;
+    if(u_xlatb16){
+        u_xlat2.xyz = acScreenNorm.yxy * _resolution.yxy + u_xlat2.yzy;
+        u_xlat16.x = dot(u_xlat2.yz, u_xlat2.yz);
+        u_xlat16.x = sqrt(u_xlat16.x);
+        u_xlat1.x = min(abs(u_xlat2.z), abs(u_xlat2.y));
+        u_xlat25 = max(abs(u_xlat2.z), abs(u_xlat2.y));
+        u_xlat25 = float(1.0) / u_xlat25;
+        u_xlat1.x = u_xlat25 * u_xlat1.x;
+        u_xlat25 = u_xlat1.x * u_xlat1.x;
+        u_xlat26 = u_xlat25 * 0.0208350997 + -0.0851330012;
+        u_xlat26 = u_xlat25 * u_xlat26 + 0.180141002;
+        u_xlat26 = u_xlat25 * u_xlat26 + -0.330299497;
+        u_xlat25 = u_xlat25 * u_xlat26 + 0.999866009;
+        u_xlat26 = u_xlat25 * u_xlat1.x;
+        u_xlatb11 = abs(u_xlat2.z)<abs(u_xlat2.y);
+        u_xlat26 = u_xlat26 * -2.0 + 1.57079637;
+        u_xlat26 = u_xlatb11 ? u_xlat26 : float(0.0);
+        u_xlat1.x = u_xlat1.x * u_xlat25 + u_xlat26;
+        u_xlatb25 = u_xlat2.z<(-u_xlat2.x);
+        u_xlat25 = u_xlatb25 ? -3.14159274 : float(0.0);
+        u_xlat1.x = u_xlat25 + u_xlat1.x;
+        u_xlat25 = min(u_xlat2.z, u_xlat2.y);
+        u_xlat2.x = max(u_xlat2.z, u_xlat2.y);
+        u_xlatb25 = u_xlat25<(-u_xlat25);
+        u_xlatb2 = u_xlat2.x>=(-u_xlat2.x);
+        u_xlatb25 = u_xlatb25 && u_xlatb2;
+        u_xlat1.x = (u_xlatb25) ? (-u_xlat1.x) : u_xlat1.x;
+        u_xlat25 = (-u_xlat3.x) * u_xlat17 + u_xlat16.x;
+        u_xlat17 = u_xlat3.x * u_xlat17 + u_xlat16.x;
+        u_xlat17 = (-u_xlat25) + u_xlat17;
+        u_xlat25 = _radius * 100.0 + (-u_xlat25);
+        u_xlat17 = float(1.0) / u_xlat17;
+        u_xlat17 = u_xlat17 * u_xlat25;
+        u_xlat17 = clamp(u_xlat17, 0.0, 1.0);
+        u_xlat25 = u_xlat17 * -2.0 + 3.0;
+        u_xlat17 = u_xlat17 * u_xlat17;
+        u_xlat17 = u_xlat17 * u_xlat25;
+        u_xlat16.x = u_xlat9 * u_xlat16.x + (-u_xlat3.w);
+        u_xlat16.x = u_xlat1.x * _twirl + u_xlat16.x;
+        u_xlat16.x = sin(u_xlat16.x);
+        u_xlat16.x = u_xlat17 * u_xlat16.x;
+        u_xlat19.x = u_xlat16.x * (-u_xlat9);
+        u_xlat19.y = 1.0;
+        u_xlat16.x = dot(u_xlat19.xy, u_xlat19.xy);
+        u_xlat16.x = inversesqrt(u_xlat16.x);
+        u_xlat3.zw = u_xlat16.xx * u_xlat19.xy;
+        u_xlat1.x = dot(u_xlat0.xy, u_xlat0.xy);
+        u_xlat1.x = inversesqrt(u_xlat1.x);
+        u_xlat0.xy = u_xlat0.xy * u_xlat1.xx;
+        u_xlat3.xy = u_xlat0.xy * u_xlat3.zz;
+        u_xlat0.x = _light_angle2 + 90.0;
+        u_xlat0.x = u_xlat0.x * 0.0174532942;
+        u_xlat1.x = sin((-u_xlat0.x));
+        u_xlat1.y = cos(u_xlat0.x);
+        u_xlat0.x = dot(u_xlat1.xy, u_xlat1.xy);
+        u_xlat0.x = inversesqrt(u_xlat0.x);
+        u_xlat0.xy = u_xlat0.xx * u_xlat1.xy;
+        u_xlat0.xy = u_xlat0.xy * vec2(vec2(_light_offset2, _light_offset2));
+        u_xlat2.xy = u_xlat0.xy * _resolution.xy + (-u_xlat2.yz);
+        u_xlat2.z = 200.0;
+        u_xlat0.x = dot(u_xlat2.xyz, u_xlat2.xyz);
+        u_xlat8 = u_xlat0.x * 1.6e-05;
+        u_xlat0.x = inversesqrt(u_xlat0.x);
+        u_xlat1.xyw = u_xlat0.xxx * u_xlat2.xyz;
+        u_xlat0.x = dot(u_xlat3.xyw, u_xlat1.xyw);
+        u_xlat0.x = u_xlat0.x / u_xlat8;
+        u_xlat8 = u_xlat16.x * -2.0;
+        u_xlat1.xyw = u_xlat3.xyw * (-vec3(u_xlat8)) + vec3(0.0, 0.0, -1.0);
+        u_xlat8 = dot(u_xlat2.xyz, u_xlat1.xyw);
+        u_xlat1.xyw = vec3(u_xlat8) * u_xlat1.xyw + (-u_xlat2.xyz);
+        u_xlat8 = dot(u_xlat1.xyw, u_xlat1.xyw);
+        u_xlat8 = sqrt(u_xlat8);
+        u_xlat8 = u_xlat8 + -100.0;
+        u_xlat8 = u_xlat8 * -0.0250000004;
+        u_xlat8 = clamp(u_xlat8, 0.0, 1.0);
+        u_xlat16.x = u_xlat8 * -2.0 + 3.0;
+        u_xlat8 = u_xlat8 * u_xlat8;
+        u_xlat8 = u_xlat8 * u_xlat16.x;
+        u_xlat8 = u_xlat8 * _light_intensity2;
+        u_xlat8 = u_xlat16.y * u_xlat8;
+        u_xlat0.x = u_xlat0.x * _light_intensity2 + u_xlat8;
+        u_xlat0.xyz = u_xlat0.xxx * _light_color2.xyz;
+        u_xlat0.xyz = vec3(u_xlat17) * u_xlat0.xyz;
+        u_xlat4.xyz = u_xlat0.xyz * vec3(0.5, 0.5, 0.5) + u_xlat4.xyz;
+    }
+    if(int(_use_inner_mask) != 0) {
+        u_xlat0 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb1.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat2 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat4;
+        u_xlat3 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat3) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat2 * u_xlat3 + u_xlat0;
+        u_xlat1.x = u_xlat3.x * u_xlat0.w;
+        fragColor.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat4;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

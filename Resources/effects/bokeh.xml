@@ -1,0 +1,512 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BOKEH — o desfoque de lente bonito, com abertura de verdade
+  ============================================================================
+
+  O `lens-blur.xml` já faz bokeh pelo truque separável de 3 direções a 120° —
+  barato, mas o formato dele é sempre HEXÁGONO. Este efeito é o premium: junta
+  amostras dentro da FORMA REAL do diafragma (círculo, polígono de N lâminas,
+  arredondado), em LUZ LINEAR, e com os traços que fazem um bokeh parecer de
+  lente cara:
+
+   - abertura ajustável (lâminas + arredondamento + giro);
+   - perfil do disco (creme no centro ↔ neutro ↔ "bolha de sabão" na borda);
+   - cat-eye (vinheta óptica): nas bordas do quadro os discos viram amêndoa
+     apontando para o centro, como numa lente de verdade;
+   - franja cromática na borda dos discos;
+   - profundidade de campo por mapa (mesma convenção do Depth Lab): plano
+     nítido, faixa e assimetria perto/longe.
+
+  ============================================================================
+   POR QUE GATHER, E NÃO O TRUQUE SEPARÁVEL
+  ============================================================================
+
+  O separável (lens-blur) e o "separável complexo" (o circular DOF da Unreal)
+  são baratos, mas amarram o FORMATO: hexágono no primeiro, círculo fixo no
+  segundo. Aqui cada pixel de saída junta N amostras espalhadas em espiral
+  (ângulo áureo) e remodeladas pela abertura escolhida — é o único jeito de ter
+  lâminas, cat-eye e perfil de borda ao mesmo tempo. O custo (N leituras) é
+  domado por trabalhar em MEIA-RESOLUÇÃO: desfoque grande é indistinguível do
+  cheio a olho e custa 4× menos (ver docs/QUALIDADE-DOS-EFEITOS.md). O export
+  ignora a redução da prévia e sai no máximo.
+
+  O máximo físico seria SCATTER (espalhar um "sprite" da abertura em cada luz),
+  mas isso pede um estágio de motor próprio (como o extrude3d/shatter3d); não
+  cabe num shader de efeito. O gather chega pertíssimo, com controle total.
+
+  ============================================================================
+   POR QUE A LUZ É ELEVADA (LINEAR + REALCE) ANTES DE JUNTAR
+  ============================================================================
+
+  Luz soma em ENERGIA, não no valor guardado no arquivo (que é sRGB, um gama).
+  Média de pixels em sRGB apaga o realce: uma lâmpada vizinha de preto vira
+  cinza em vez de virar uma moeda brilhante. Então o passe 0 decodifica para
+  luz linear e REALÇA só o que já é claro (limiar + ganho); o gather soma nessa
+  luz; e o passe final rola o topo num OMBRO que mantém a COR da luz (um
+  letreiro colorido continua colorido em vez de estourar num disco branco) e só
+  então volta para sRGB.
+
+  ============================================================================
+   OS SETE PASSES
+  ============================================================================
+
+      passe 0  prep  (1/2)  baixa 2×, sRGB→linear, realça as luzes, pré-multiplica
+      passe 1  prep2 (1/4)  pirâmide: baixa `prep` de novo
+      passe 2  prep3 (1/8)  pirâmide: baixa `prep2` de novo
+      passe 3  prep4 (1/16) pirâmide: baixa `prep3` de novo
+      passe 4  coc   (1/2)  o raio (círculo de confusão) por pixel, do mapa de foco
+      passe 5  bokeh (1/2)  junta N amostras na abertura, em energia, lendo a
+                            PIRÂMIDE (ver abaixo), com rejeição por profundidade
+      passe 6  tela (cheia) energia→cor com ombro, franja cromática, e compõe
+                            sobre o NÍTIDO guiado pelo foco (assunto continua limpo)
+
+  Medidas de raio em fração da ALTURA (como o lens-blur): `paraUv` divide o x
+  pela proporção para o disco não virar elipse em tela larga.
+
+  ============================================================================
+   A PIRÂMIDE — E O DEFEITO QUE ELA CONSERTA (relato: "a qualidade não parece
+   tão legal")
+  ============================================================================
+
+  Uma luz de rua à noite tem, na origem, um dois ou três pixels de largura. O
+  gather em espiral (passe 5) junta 24 a 72 amostras espalhadas num disco que,
+  num raio de bokeh comum, cobre centenas ou milhares de pixels — cada amostra
+  é quase um PONTO nessa área. Resultado: de todo pixel de SAÍDA dentro do
+  disco, só uma fração pequena tem a sorte de uma das amostras cair em cima do
+  pixel da luz; os outros saem no nível do fundo. O disco de bokeh, em vez de
+  uma moeda lisa, vira um confete de pontinhos separados por vazio — e foi
+  exatamente isso que a simulação em numpy mostrou (CV — desvio padrão sobre
+  média da luminância dentro do disco — de 1,0 a 1,5; um disco de verdade tem
+  CV perto de zero). Mais amostras (a opção "Máx") melhora pouco: 72 taps ainda
+  deixa CV acima de 1,0 no raio do preset "Cidade".
+
+  O conserto de verdade (o que motores de produção usam: espalhar a luz numa
+  malha de "sprites", como o comentário no topo do arquivo já explica) não cabe
+  num shader de efeito. O que cabe, e o que os passes 1 a 3 fazem, é uma
+  PIRÂMIDE: cada nível baixa a resolução por 2×, o que é o mesmo que fazer uma
+  MÉDIA de área — um pixel de luz que ocupava 1 texel no nível 0 já contribui
+  para 4 texels no nível 1, 16 no nível 2, 64 no nível 3. Uma amostra do gather
+  lendo o nível certo da pirâmide, em vez do nível 0, tem uma chance MUITO maior
+  de pegar alguma fração da luz, porque a luz foi espalhada por uma área maior
+  ANTES do gather rodar — o mesmo princípio de um mapa MIP, montado à mão,
+  porque o pool de framebuffers deste efeito não gera mipmap.
+
+  Qual nível é "o certo" depende de quanto espaço, em texels, uma amostra do
+  gather precisa cobrir para não deixar buraco até a vizinha — e isso cresce
+  com o RAIO do bokeh e ENCOLHE com a contagem de amostras (mais amostras,
+  mais perto uma da outra, menos pirâmide precisa). `nivelDaPiramide` calcula
+  isso uma vez por PIXEL DE SAÍDA (não por amostra — o espaçamento é quase
+  constante nas amostras de uma espiral uniforme em ÁREA) e devolve os quatro
+  pesos (um por nível) que a soma do gather usa em toda amostra.
+
+  Verificado em numpy antes de mexer aqui (`sim_bokeh*.py`, arquivado com o
+  estudo): no raio padrão, CV caiu de 1,51 para 0,07; no raio do preset
+  "Cidade" (o pior caso, disco maior), de 1,25 para 0,03. O custo: três passes
+  a mais (baratos — são buffers pequenos, 1/4 a 1/16 da composição) e 4 leituras
+  de textura por amostra do gather em vez de 1 — mais caro no passe mais caro
+  do efeito, mas ainda em meia-resolução, e o disco agora sai liso.
+
+  ============================================================================
+   AS SOMBRAS EM 8 BITS (relato de 23/10/2026: "Bokeh causando uns bugs na
+   imagem" — manchas pretas nas laterais escuras de um vídeo)
+  ============================================================================
+
+  Os buffers do motor são RGBA8. Guardar LUZ LINEAR num canal de 8 bits apaga as
+  sombras: o cinza sRGB 0,02 vira 0,0015 linear, que arredonda para ZERO; o 0,03
+  pula para 0,05. Um fundo escuro virava degraus de preto puro — e cada nível da
+  pirâmide arredondava de novo, então os degraus saíam como MANCHAS com a forma
+  dos discos. Os buffers de luz agora são `format="srgb"` (o `GL_SRGB8_ALPHA8`
+  da 0.626): a GPU guarda em sRGB (a mesma precisão da imagem de entrada nas
+  sombras), devolve luz linear na leitura e o filtro do `texture()` já mistura
+  em luz linear — o shader não muda nada. O teto continua 1,0 por canal, como
+  antes: o realce das luzes nunca passou disso no buffer.
+-->
+<effect
+    id="nova.effect.bokeh"
+    name="Bokeh"
+    name-en="Bokeh"
+    desc="Desfoque de lente lindo: as luzes viram discos com a forma do diafragma, com cat-eye, franja e profundidade de campo."
+    desc-en="Beautiful lens blur: highlights become aperture-shaped discs, with cat-eye, fringing and depth of field."
+    category="blur"
+    tags="bokeh,lente,desfoque,foco,profundidade,dof,diafragma,abertura,cat-eye,circulo,creme,bolha de sabao,luzes"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Mesma convenção do Depth Lab e do lens-blur: branco = perto, preto =
+             longe. Sem mapa (Força = 0), o raio vale igual em tudo. -->
+        <texture id="focusMap" group="Profundidade de campo" src="layer" label="Mapa de profundidade (branco = perto)" />
+
+        <!-- `format="srgb"` em todo buffer que guarda LUZ — ver o cabeçalho
+             ("AS SOMBRAS EM 8 BITS"). O `coc` guarda um raio, não luz. -->
+        <texture id="prep" src="buffer" scale="0.5" format="srgb" />
+        <!-- A pirâmide de pré-borrão que o gather lê — ver o cabeçalho do
+             arquivo ("A PIRÂMIDE — E O DEFEITO QUE ELA CONSERTA"). -->
+        <texture id="prep2" src="buffer" scale="0.25" format="srgb" />
+        <texture id="prep3" src="buffer" scale="0.125" format="srgb" />
+        <texture id="prep4" src="buffer" scale="0.0625" format="srgb" />
+        <texture id="coc" src="buffer" scale="0.5" />
+        <texture id="bokeh" src="buffer" scale="0.5" format="srgb" />
+
+        <slider id="radius" label="Raio"
+                default="0.04" min="0.0" max="0.25" step="0.002" snap="0.0" />
+
+        <!-- ============================ Abertura =========================== -->
+        <slider id="blades" group="Abertura" label="Lâminas"
+                default="8" min="3" max="9" step="1" type="integer" />
+        <slider id="roundness" group="Abertura" label="Arredondamento"
+                default="0.85" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="rotation" group="Abertura" label="Girar o diafragma"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" snap="0.0" />
+
+        <!-- ============================== Disco ============================ -->
+        <!-- Negativo = creme (centro suave); 0 = neutro; positivo = borda
+             brilhante ("bolha de sabão"), o look de lente espelho/anamórfica. -->
+        <slider id="rim" group="Disco" label="Perfil da borda"
+                default="-0.15" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ============================== Óptica =========================== -->
+        <slider id="cateye" group="Óptica" label="Cat-eye (vinheta óptica)"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="chroma" group="Óptica" label="Franja cromática"
+                default="0.25" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ============================== Luzes ============================ -->
+        <slider id="boost" group="Luzes" label="Realce das luzes"
+                default="1.4" min="0.0" max="6.0" step="0.05" snap="0.0" />
+        <slider id="cut" group="Luzes" label="A partir de que brilho"
+                default="0.7" min="0.0" max="1.0" step="0.01" />
+
+        <!-- ====================== Profundidade de campo ==================== -->
+        <slider id="useMap" group="Profundidade de campo" label="Força do mapa de profundidade"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="focusDistance" showIf="useMap>0" group="Profundidade de campo" label="Plano nítido (foco)"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="nearFar" showIf="useMap>0" group="Profundidade de campo" label="Perto ↔ longe"
+                default="1.0" min="0.0" max="2.0" step="0.05" snap="1.0" />
+
+        <!--
+          Qualidade: ESCONDIDA (pedido do snow, 25/09/2026 — "tira essa função
+          de qualidade dos efeitos, não faz muito sentido, coloca nas
+          configurações"). Sempre no melhor tier agora; quem baixa o custo da
+          prévia é só o ajuste GLOBAL de Desempenho (`PreviewQuality`, na
+          página de Desempenho), que encolhe TODOS os buffers da cena de uma
+          vez — não faz sentido ter um dial de qualidade por efeito além
+          desse. As predefinições que já escolhiam um tier mais baixo (a
+          "Rascunho"/"Bom" abaixo) continuam explícitas, sem mudar.
+        -->
+        <selector id="quality" group="Qualidade" label="Amostras" default="2" hidden="true"
+                  options="Rascunho|Bom|Máx" />
+    </params>
+
+    <passes>
+        <pass target="prep" />   <!-- 0: baixa 2×, linear, realça, pré-multiplica -->
+        <pass target="prep2" />  <!-- 1: pirâmide — 1/4 -->
+        <pass target="prep3" />  <!-- 2: pirâmide — 1/8 -->
+        <pass target="prep4" />  <!-- 3: pirâmide — 1/16 -->
+        <pass target="coc" />    <!-- 4: raio por pixel (mapa de profundidade) -->
+        <pass target="bokeh" />  <!-- 5: gather na abertura, lendo a pirâmide -->
+        <pass />                 <!-- 6: energia→cor, franja, composição pelo foco -->
+    </passes>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+const float ANGULO_AUREO = 2.39996323;   // espiral de girassol: cobertura uniforme com qualquer contagem
+const vec3  LUMA = vec3(0.2126, 0.7152, 0.0722);
+const int   MAX_AMOSTRAS = 72;
+
+// A separação de profundidade (0..1) que já conta como "totalmente fora de foco"
+// — a mesma constante e o mesmo raciocínio do depth-map.xml e do lens-blur.
+const float FAIXA_DE_QUEDA = 0.3;
+
+const vec2 CANTOS[4] = vec2[4](
+    vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(1.0, 1.0)
+);
+
+vec2 paraUv(vec2 v) { return vec2(v.x / max(acAspect, 1e-4), v.y); }
+
+vec3 srgbParaLinear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 linearParaSrgb(vec3 c) {
+    c = max(c, vec3(0.0));
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+/**
+ * O raio (círculo de confusão) naquele ponto, já contando o mapa de profundidade.
+ *
+ * O mapa entra como MULTIPLICADOR: o slider de raio segue sendo o mestre e o mapa
+ * só decide onde ele vale. `profundidade - focusDistance` é o mesmo termo do
+ * depth-map.xml: o plano escolhido fica nítido e quem se afasta dele (para
+ * qualquer lado) desfoca. `nearFar` dá mais desfoque de um lado (frente) que do
+ * outro (fundo) — 1,0 é simétrico.
+ */
+float raioEm(vec2 uv) {
+    if (useMap <= 0.0) return radius;
+    float profundidade = dot(texture(focusMap, uv).rgb, LUMA);
+    float dir = profundidade - focusDistance;                 // >0 = mais perto (branco = perto)
+    float queda = clamp(abs(dir) / FAIXA_DE_QUEDA, 0.0, 1.0);
+    float lado = dir >= 0.0 ? nearFar : (2.0 - nearFar);
+    return radius * mix(1.0, queda * lado, useMap);
+}
+
+/** O raio da abertura no ângulo `a`, para `n` lâminas retas (1 no vértice). */
+float poligono(float a, float n) {
+    float seg = (2.0 * PI) / n;
+    float x = mod(a, seg) - seg * 0.5;
+    return cos(seg * 0.5) / max(cos(x), 1e-3);
+}
+
+/**
+ * Cat-eye (vinheta óptica): perto da borda do quadro, espreme a abertura na
+ * direção RADIAL (a que aponta para o centro), o que deixa o disco em forma de
+ * amêndoa com o eixo longo tangencial — o recorte que uma lente de verdade faz.
+ */
+vec2 catEye(vec2 off, vec2 uv) {
+    if (cateye <= 0.0) return off;
+    vec2 fc = uv - 0.5; fc.x *= acAspect;
+    float dcentro = length(fc);
+    if (dcentro < 1e-4) return off;
+    float rc = clamp(dcentro / 0.72, 0.0, 1.0);               // 0 no centro, ~1 no canto
+    vec2 rad = fc / dcentro;
+    float compR = dot(off, rad);
+    vec2 offR = compR * rad;
+    return (off - offR) + offR * mix(1.0, 1.0 - 0.7 * rc, cateye);
+}
+
+/** O peso de uma amostra pelo raio normalizado no disco (0 centro, 1 borda). */
+float pesoRim(float r) {
+    float borda = smoothstep(0.55, 1.0, r);
+    if (rim >= 0.0) return mix(1.0, 0.15 + 3.0 * borda, rim);     // bolha: borda forte
+    return mix(1.0, 0.5 + 1.2 * (1.0 - r), -rim);                 // creme: centro forte
+}
+
+int amostrasQ() { return quality == 0 ? 24 : (quality == 1 ? 48 : MAX_AMOSTRAS); }
+
+/**
+ * Baixa `tex` 2× por um filtro de caixa de 4 amostras em grade rotacionada — o
+ * mesmo do passe 0 (ver o comentário lá), só que a fonte já está em energia
+ * linear pré-multiplicada, então não há sRGB nem realce para refazer aqui.
+ */
+vec4 caixaDaPiramide(sampler2D tex, vec2 uv) {
+    vec2 d = acTexelSize * 0.25;
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 4; i++) acc += texture(tex, uv + CANTOS[i] * d);
+    return acc * 0.25;
+}
+
+/**
+ * Os quatro pesos da pirâmide para ESTE pixel de saída — ver "A PIRÂMIDE" no
+ * cabeçalho. `espacamento` é quanto uma amostra do gather precisa cobrir para
+ * não deixar buraco até a vizinha (cresce com o raio, encolhe com a
+ * quantidade de amostras); `nivel` converte isso em "quantos níveis de
+ * pirâmide (cada um o dobro do texel do anterior) cobrem essa distância".
+ * `w0..w3` somam sempre 1 e interpolam entre os dois níveis vizinhos — o
+ * mesmo formato de um mip trilinear, montado à mão porque este pool de
+ * buffers não gera mipmap.
+ */
+void pesosDaPiramide(float centroR, int taps, out float w0, out float w1, out float w2, out float w3) {
+    float espacamento = centroR * sqrt(PI / float(taps));
+    float texelBase = max(acTexelSize.y, 1e-6);
+    float nivel = clamp(log2(max(espacamento / texelBase, 1.0)), 0.0, 3.0);
+    // Quatro "tendas" de largura 1 centradas em 0, 1, 2 e 3 — a mesma B-spline
+    // linear por trechos de um mip trilinear. Somam exatamente 1 para
+    // qualquer `nivel` no intervalo (dá pra provar por caso: em 0, 1, 2, 3 e
+    // em qualquer ponto entre dois deles).
+    w0 = clamp(1.0 - nivel, 0.0, 1.0);
+    w1 = clamp(1.0 - abs(nivel - 1.0), 0.0, 1.0);
+    w2 = clamp(1.0 - abs(nivel - 2.0), 0.0, 1.0);
+    w3 = clamp(nivel - 2.0, 0.0, 1.0);
+}
+
+/** Rola o topo mantendo a COR (divide pela maior componente amaciada). */
+float suave(float x) {
+    const float k = 0.8;
+    return x <= k ? x : k + (1.0 - k) * (1.0 - exp(-(x - k) / (1.0 - k)));
+}
+vec3 ombroCor(vec3 c) {
+    float m = max(max(c.r, c.g), c.b);
+    if (m <= 1e-4) return c;
+    return c * (suave(m) / m);
+}
+
+vec3 amostraLin(vec2 uv) {
+    vec4 b = texture(bokeh, uv);
+    return b.rgb / max(b.a, 1e-4);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    // ---- Passe 0: prep (1/2). Baixa 2×, vai para linear, realça as luzes. ----
+    if (acPass == 0) {
+        vec2 d = acTexelSize * 0.25;                          // meio texel do full-res
+        vec4 acc = vec4(0.0);
+        for (int i = 0; i < 4; i++) {
+            vec4 c = texture(inputImg, uv + CANTOS[i] * d);
+            vec3 lin = srgbParaLinear(c.rgb);
+            float luz = dot(c.rgb, LUMA);                     // brilho percebido (sRGB)
+            float alto = smoothstep(cut, min(cut + 0.2, 1.0), luz);
+            lin *= 1.0 + boost * alto;
+            acc += vec4(lin * c.a, c.a);                      // pré-multiplicado
+        }
+        fragColor = acc * 0.25;
+        return;
+    }
+
+    // ---- Passes 1 a 3: a pirâmide de pré-borrão (1/4, 1/8, 1/16). ----
+    if (acPass == 1) { fragColor = caixaDaPiramide(prep, uv); return; }
+    if (acPass == 2) { fragColor = caixaDaPiramide(prep2, uv); return; }
+    if (acPass == 3) { fragColor = caixaDaPiramide(prep3, uv); return; }
+
+    // ---- Passe 4: coc (1/2). O raio por pixel. ----
+    if (acPass == 4) {
+        fragColor = vec4(raioEm(uv), 0.0, 0.0, 1.0);
+        return;
+    }
+
+    // ---- Passe 5: bokeh (1/2). Junta a abertura, em energia, lendo a pirâmide. ----
+    if (acPass == 5) {
+        float centroR = texture(coc, uv).r;
+        if (centroR <= 0.00025) { fragColor = texture(prep, uv); return; }
+
+        int taps = amostrasQ();
+        float rotR = radians(rotation);
+        vec3 somaRGB = vec3(0.0);
+        float somaA = 0.0;
+        float wSum = 0.0;
+
+        // Um peso por pixel de SAÍDA, não por amostra: o espaçamento entre
+        // amostras vizinhas é quase constante numa espiral uniforme em área,
+        // então recalcular por amostra não mudaria o nível escolhido — só
+        // custaria mais. Ver `pesosDaPiramide`.
+        float pw0, pw1, pw2, pw3;
+        pesosDaPiramide(centroR, taps, pw0, pw1, pw2, pw3);
+
+        for (int k = 0; k < MAX_AMOSTRAS; k++) {
+            if (k >= taps) break;
+            float t = (float(k) + 0.5) / float(taps);
+            float rBase = sqrt(t);                            // uniforme em ÁREA
+            float ang = float(k) * ANGULO_AUREO + rotR;
+            vec2 dir = vec2(cos(ang), sin(ang));
+
+            float forma = mix(poligono(ang, blades), 1.0, roundness);
+            vec2 off = catEye(dir * (rBase * forma), uv);
+            vec2 uvT = uv + paraUv(off) * centroR;
+
+            /*
+             * A LEITURA MULTI-NÍVEL. `uvT` é a MESMA coordenada normalizada
+             * (0..1) em qualquer nível — é a textura por trás que muda de
+             * resolução, não a UV — então não há conta de escala aqui, só
+             * quatro leituras (uma por nível) pesadas por `pesosDaPiramide`.
+             * Quatro samplers fixos, e não um array indexado por variável,
+             * de propósito: indexação dinâmica de sampler em GLSL ES é
+             * insegura entre GPUs, e quatro `if` custariam o mesmo em troca
+             * de mais chance de erro.
+             */
+            vec4 s = texture(prep,  uvT) * pw0
+                   + texture(prep2, uvT) * pw1
+                   + texture(prep3, uvT) * pw2
+                   + texture(prep4, uvT) * pw3;
+
+            // Rejeição por profundidade: uma amostra NÍTIDA (raio pequeno) não pode
+            // vazar para cá; só entra quem é borrado o bastante para chegar. Com
+            // desfoque uniforme, tapR = centroR e nada é rejeitado. Lida sempre do
+            // nível 0 (`coc` não tem pirâmide) — borrar um RAIO não faz sentido do
+            // jeito que borrar uma cor faz.
+            float aceita = 1.0;
+            if (useMap > 0.0) {
+                float tapR = texture(coc, uvT).r;
+                float dist = rBase * forma * centroR;
+                aceita = clamp((tapR - dist) / (centroR * 0.15) + 1.0, 0.0, 1.0);
+            }
+            float w = pesoRim(rBase) * aceita;
+            somaRGB += s.rgb * w;
+            somaA   += s.a * w;
+            wSum    += w;
+        }
+
+        wSum = max(wSum, 1e-4);
+        fragColor = vec4(somaRGB / wSum, somaA / wSum);
+        return;
+    }
+
+    // ---- Passe 6: tela (cheia). Energia→cor, franja, composição pelo foco. ----
+    vec4 original = texture(inputImg, uv);
+    float r = texture(coc, uv).r;
+    float mistura = smoothstep(0.0, 0.0015, r);
+    if (mistura <= 0.0) { fragColor = original; return; }
+
+    // Franja cromática: separa os canais radialmente, só onde há desfoque.
+    float amt = chroma * 0.006 * mistura;
+    vec2 dc = uv - 0.5;
+    vec3 lin;
+    lin.r = amostraLin(uv + dc * amt).r;
+    lin.g = amostraLin(uv).g;
+    lin.b = amostraLin(uv - dc * amt).b;
+
+    lin = ombroCor(lin);
+    vec3 cor = linearParaSrgb(lin);
+    float cobertura = texture(bokeh, uv).a;
+
+    fragColor = mix(original, vec4(cor, cobertura), mistura);
+}
+
+    ]]></shader>
+
+    <!--
+      Pontos de partida. O look padrão (sem preset) já é redondo e cremoso; estes
+      levam para outros lugares. O que o preset controla é a APARÊNCIA; onde fica
+      nítido (o mapa de profundidade) é por camada, então os presets deixam o DoF
+      no automático (Força 0 = desfoque uniforme) — ligue o mapa quando quiser.
+    -->
+    <presets>
+        <preset id="retrato" name="🎥 Retrato cremoso" name-en="🎥 Creamy Portrait">
+            <value param="radius" value="0.05" />
+            <value param="blades" value="9" />
+            <value param="roundness" value="1.0" />
+            <value param="rim" value="-0.2" />
+            <value param="cateye" value="0.4" />
+            <value param="chroma" value="0.3" />
+            <value param="boost" value="1.5" />
+            <value param="cut" value="0.7" />
+            <value param="quality" value="1" />
+        </preset>
+        <preset id="hexagonal" name="💠 Hexagonal clássico" name-en="💠 Classic Hexagon">
+            <value param="radius" value="0.045" />
+            <value param="blades" value="6" />
+            <value param="roundness" value="0.1" />
+            <value param="rim" value="0.0" />
+            <value param="cateye" value="0.2" />
+            <value param="chroma" value="0.15" />
+            <value param="boost" value="1.3" />
+            <value param="cut" value="0.7" />
+            <value param="quality" value="1" />
+        </preset>
+        <preset id="bolha" name="🫧 Bolha de sabão" name-en="🫧 Soap Bubble">
+            <value param="radius" value="0.06" />
+            <value param="blades" value="8" />
+            <value param="roundness" value="0.9" />
+            <value param="rim" value="0.85" />
+            <value param="cateye" value="0.7" />
+            <value param="chroma" value="0.5" />
+            <value param="boost" value="2.2" />
+            <value param="cut" value="0.6" />
+            <value param="quality" value="2" />
+        </preset>
+        <preset id="cidade" name="🌃 Luzes da cidade" name-en="🌃 City Lights">
+            <value param="radius" value="0.07" />
+            <value param="blades" value="8" />
+            <value param="roundness" value="0.95" />
+            <value param="rim" value="0.2" />
+            <value param="cateye" value="0.5" />
+            <value param="chroma" value="0.4" />
+            <value param="boost" value="3.0" />
+            <value param="cut" value="0.78" />
+            <value param="quality" value="2" />
+        </preset>
+    </presets>
+</effect>

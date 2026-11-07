@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CAIXA — o Box do Alight Motion, conta por conta (0.564.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz agora caixa 100% igual o alight motion", da série "100% iguais ao AM".
+  Mesmos parâmetros, ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.box` do AM 5.0.281
+  (`assets/effects/s3d-box.xml` do APK descompactado; o arquivo do AM não entra no repositório). Conferido rodando
+  o shader do próprio AM na GPU do PC ao lado deste (`tools/amcaixa`).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Desenha uma caixa 3D por raymarching (a distância até a caixa, passo a passo, até `Precisão` passos) com a
+    camada como a textura de cada face. A câmera fica em (0, 1, −1) olhando para +Z, e a grade dos raios é a
+    coordenada da CAMADA do AM (o retângulo do conteúdo, a proporção dele, ÷ Escala): girar ou mover a camada leva
+    a caixa junto. A caixa pode sair do retângulo da camada (o AM roda o efeito na tela inteira).
+  - Orientação (o quaternion do AM, `<orient>`, girado arrastando na prévia) e Rotação (graus em X, Y e Z) giram
+    a caixa: invOrient = orientação · Rz · Rx · Ry, a mesma ordem do AM. Largura, Altura e Profundidade são as
+    meias-medidas (aparecem × 100), Suavização arredonda as quinas, Posição é o centro (÷ 100).
+  - Sombreamento: Plano, Ponto de Luz (padrão), Luz direcional (difusa + especular com Brilho e
+    Especularidade, Ambiente, Cor, Direção e Elevação da luz), Mapa de profundidade, Mapa normal e os dois juntos.
+  - Mapeamento de Textura: Espelhar, Esticar (a textura pelo tamanho da face), Repetir X/Y, Ângulo, Recortar, Giro
+    e Deslocamento, na ordem do `mapTexture` do AM.
+  - Precisão (`MAX_ITER`): quantos passos o raio dá — o AM recomenda de 30 a 60 (a dica dele está no painel).
+
+  O que é do Nova e não do AM:
+  - `smooth` é palavra reservada no GLSL ES 3.00: o parâmetro chama `smoothing` aqui (o importador traduz).
+  - A matriz `invOrient`: no AM ela sai do shader de VÉRTICE (o mesmo valor nos quatro cantos, interpolado);
+    aqui é calculada no começo do fragmento, com as mesmas funções e a mesma ordem.
+  - A ponte para a tela do Nova (a do Túnel (AM)): a coordenada da camada do AM sai de `acTela` + a volta da
+    `acCamadaParaTela`, com o Y invertido (o do AM cresce para cima); a textura é amostrada à mão, bilinear, sobre
+    a camada PRÉ-multiplicada (como a do AM), e a saída volta reta.
+  - A LUZ ACIMA DO ALFA: o especular do AM (`mix(…, vec3(1.), shine·s)`) cai também onde a camada é transparente,
+    e sai cor pré-multiplicada maior que o alfa (até cor > 0 com alfa 0). A composição do AM
+    (`glBlendFunc(ONE, ONE_MINUS_SRC_ALPHA)`, `GGL/Lt`) SOMA essa luz ao que está atrás: as faces vazias da caixa
+    brilham sobre o fundo. A cor reta do Nova não guarda isso sozinha, então o efeito lê o fundo
+    (`<texture id="comp" src="backdrop">`) e, nesses pixels, escolhe cor e alfa retos que a composição Normal do
+    Nova leva ao mesmo resultado do AM com qualquer opacidade (`paraReta`, a conta do `am-ring.xml`, de onde veio).
+    Só não alcança quando a soma passa de 1 e a camada tem opacidade abaixo da cheia, ou com outro modo de
+    mesclagem, ou sobre fundo transparente.
+  - `overdraw`/`max-overdraw` do AM só alargam a área que o EDITOR dele desenha fora da composição
+    (`SceneRenderingKt.renderWithGpu`); a imagem exportada não muda, e aqui não existe.
+-->
+<effect
+    id="nova.effect.am-box"
+    name="Caixa"
+    name-en="Box"
+    desc="Renderiza uma caixa de faux-3D usando a camada como uma textura de superfície (o Box do Alight Motion)."
+    desc-en="Renders a faux-3D box using the layer as a surface texture (Alight Motion's Box)."
+    category="3d"
+    tags="caixa,cubo,3d,faux 3d,raymarch,luz,sombreamento,textura,profundidade,normal,box,cube,lighting,shading,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+
+        <orient id="orient" label="Orientação" invert="true" />
+        <xyz id="rotate" label="Rotação" default="0,0,0" type="rotate" />
+        <spinner id="width" label="Largura" default="1.0" min="0.01" max="10.0" step="0.001" ticks="1.0" multiplier="100" />
+        <spinner id="height" label="Altura" default="3.0" min="0.01" max="10.0" step="0.001" ticks="1.0" multiplier="100" />
+        <spinner id="depth" label="Profundidade" default="1.0" min="0.01" max="10.0" step="0.001" ticks="1.0" multiplier="100" />
+        <spinner id="smoothing" label="Suavização" default="0.0" min="0.0" max="5.0" step="0.001" multiplier="100" />
+        <xyz id="position" label="Posição" default="0,100,600" />
+        <spinner id="scale" label="Escala" default="1.0" min="0.0" max="10.0" step="0.01" ticks="1.0" />
+
+        <selector id="shadingType" label="Sombreamento" default="1" group="Fonte de luz"
+            options="Plano|Ponto de Luz|Luz direcional|Mapa de profundidade|Mapa normal|Mapa Normal e de Profundidade" />
+        <spinner id="lightIntensity" label="Intensidade" default="1.0" min="0.0" max="2.0" step="0.001" type="percent" group="Fonte de luz" />
+        <spinner id="shine" label="Brilho" default="0.8" min="0.0" max="1.0" step="0.01" ticks="0.5" group="Fonte de luz" />
+        <spinner id="spec" label="Especularidade" default="30.0" min="1.0" max="150.0" step="0.5" ticks="30.0" group="Fonte de luz" />
+        <spinner id="ambient" label="Ambiente" default="0.1" min="0.0" max="1.0" step="0.01" group="Fonte de luz" />
+        <color id="lightColor" label="Cor" default="#FFFFFFFF" alpha="false" group="Fonte de luz" />
+        <point id="lightDir" label="Direção" spinner="true" defaultX="75" defaultY="-75" min="-9999" max="9999" group="Fonte de luz" />
+        <spinner id="lightDepth" label="Elevação" default="100.0" min="-100.0" max="800.0" step="0.5" ticks="1.0,100.0" group="Fonte de luz" />
+
+        <switch id="mirror" label="Espelhar" default="false" group="Mapeamento de Textura" />
+        <switch id="texStretch" label="Esticar" default="false" group="Mapeamento de Textura" />
+        <spinner id="texRepeatX" label="Repetir X" default="1.0" min="0.01" max="20.0" step="0.01" group="Mapeamento de Textura" />
+        <spinner id="texRepeatY" label="Repetir Y" default="1.0" min="0.01" max="20.0" step="0.01" group="Mapeamento de Textura" />
+        <spinner id="texAngle" label="Ângulo" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0" type="angle" group="Mapeamento de Textura" />
+        <spinner id="texCrop" label="Recortar" default="1.0" min="0.01" max="2.0" step="0.001" ticks="1.0" group="Mapeamento de Textura" />
+        <spinner id="texTwirl" label="Giro" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0" type="angle" group="Mapeamento de Textura" />
+        <point id="texOffset" label="Deslocamento" spinner="true" min="-9999" max="9999" group="Mapeamento de Textura" />
+
+        <tip text="Aumente a precisão para obter uma melhor qualidade de borda; diminuir para obter um desempenho mais rápido de pré-visualização. Para obter melhores resultados, recomenda-se uma precisão entre 30 e 60."
+            text-en="Increase precision for better edge quality; decrease for faster preview performance. For best results, an precision between 30 and 60 is recommended." />
+        <slider id="MAX_ITER" label="Precisão" default="60" min="10" max="200" step="1" type="integer"
+            ticks="30,60,100" snap="30,60,100" group="Raio de movimento" />
+    </params>
+
+    <preview>
+        <set param="rotate" x="25.0" y="0.0" z="0.0" ate-y="360.0" volta="true" />
+        <set param="height" value="1.0" />
+        <set param="scale" value="1.8" />
+    </preview>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 q = uv * vec2(T) - 0.5;
+    vec2 i = floor(q);
+    vec2 f = q - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM em cor reta (a mesma conta do `am-ring.xml`, de onde veio). O comum (cor ≤ alfa) é
+// só dividir. Mas o brilho especular do AM cai também onde a camada é transparente: sai cor ACIMA do alfa (até cor
+// > 0 com alfa 0), luz que a composição dele SOMA ao que está atrás (`op·p + fundo·(1 − op·alfa)`), e a cor reta
+// não guarda isso. Aí este pixel leva junto o fundo dele: com o menor alfa `a` em que a cor reta
+// `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1, a composição Normal do Nova, `s·a·op + fundo·(1 − a·op)`, dá o
+// mesmo `op·p + fundo·(1 − op·alfa)` do AM com QUALQUER opacidade da camada. Não cabe só quando a soma passa de 1
+// (`fundo + p − fundo·alfa`): com a opacidade cheia ela vira 1 lá e aqui; com menos, aqui sai um pouco mais escuro.
+vec4 paraReta(vec4 p) {
+    // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
+    vec4 q = floor(p * 255.0 + 0.5) / 255.0;
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return p.a > 0.0 ? vec4(min(p.rgb / p.a, vec3(1.0)), p.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// ------------------------------------------------------------------ a conta do AM, linha por linha
+
+#define OBJECT_CENTER (position/100.)
+
+// O `varying mat4 invOrient` do AM (calculado no vértice): aqui, no começo do main.
+mat4 invOrient;
+
+mat4 rotationAxisAngle( vec3 v, float angle )
+{
+    float s = sin( angle );
+    float c = cos( angle );
+    float ic = 1.0 - c;
+
+    return mat4( v.x*v.x*ic + c,     v.y*v.x*ic - s*v.z, v.z*v.x*ic + s*v.y, 0.0,
+                 v.x*v.y*ic + s*v.z, v.y*v.y*ic + c,     v.z*v.y*ic - s*v.x, 0.0,
+                 v.x*v.z*ic - s*v.y, v.y*v.z*ic + s*v.x, v.z*v.z*ic + c,     0.0,
+                 0.0,                0.0,                0.0,                1.0 );
+}
+
+// O `main` do shader de vértice do AM.
+mat4 orientacaoDoVertice() {
+    vec3 r = rotate * 0.0174533;
+    mat4 rx = rotationAxisAngle(vec3(1.,0.,0.),r.x);
+    mat4 ry = rotationAxisAngle(vec3(0.,1.,0.),r.y);
+    mat4 rz = rotationAxisAngle(vec3(0.,0.,1.),r.z);
+    return orient * rz * rx * ry;
+}
+
+float sdBox( vec3 p, vec3 b )
+{
+  vec3 d = abs(p) - b;
+  return length(max(d,0.0))
+         + min(max(d.x,max(d.y,d.z)),0.0);
+}
+
+float dist(vec3 p) {
+    float d = 100000000.0;
+
+    p = p-OBJECT_CENTER;
+    p = (vec4(p,1.) * invOrient).xyz;
+
+    d = min(d,sdBox(p,vec3(width-smoothing,height-smoothing,depth-smoothing))-smoothing);
+    return d;
+}
+
+float march(vec3 ro, vec3 rd) {
+    float d = 0.0;
+    for( int i=0; i<int(MAX_ITER); i++ ) {
+        vec3 p = ro + rd*d;
+        float dd = dist(p);
+        d += dd;
+        if( dd < 0.00001 || d > 1000.0 ) break;
+    }
+    return d;
+}
+
+mat4 vecToVec( vec3 from, vec3 to ) {
+    vec3 w = cross(normalize(from),normalize(to));
+    vec3 axis = normalize(w);
+    float angle = asin(length(w));
+    return rotationAxisAngle(axis,angle);
+}
+
+vec3 calcNormal(vec3 p) {
+    float d = dist(p);
+    vec2 e = vec2(.01,0.);
+    return normalize(d - vec3(
+        dist(p-e.xyy),
+        dist(p-e.yxy),
+        dist(p-e.yyx)));
+}
+
+float lighting(vec3 p, vec3 n) {
+    vec3 lightPos = vec3(lightDir.x/2.0, -lightDir.y/2.0, -lightDepth*2.0);
+    vec3 l = normalize(lightPos-p);
+    return dot(n,l);
+}
+
+float directionalLighting(vec3 p, vec3 n) {
+    vec3 lightPos = vec3(lightDir.x/2.0, -lightDir.y/2.0, -lightDepth*2.0);
+    vec3 l = normalize(lightPos);
+    return dot(n,l);
+}
+
+vec4 applyShading(vec4 texColor, vec3 p, vec3 n, float d ) {
+    vec4 result = vec4(0.);
+    float a = smoothstep(30.0,9.,d);
+    a *= smoothstep(0.3,0.2,n.z);
+    if( shadingType == 0 ) {                // Flat
+        result = texColor * a;
+    } else if( shadingType == 1 ) {         // Point Light
+        float l = lighting(p,n);
+        vec3 tc = texColor.rgb;
+        vec3 surface = tc * ambient + tc * lightColor.rgb * l * (1.-ambient);
+        surface *= lightIntensity;
+        float s = pow(l,spec);
+        surface = mix(surface*(1.-shine*0.1),vec3(1.),shine*s);
+        result = vec4(surface, texColor.a) * a;
+    } else if( shadingType == 2 ) {         // Directonal Light
+        float l = directionalLighting(p,n);
+        vec3 tc = texColor.rgb;
+        vec3 surface = tc * ambient + tc * lightColor.rgb * l * (1.-ambient);
+        surface *= lightIntensity;
+        float s = pow(l,spec);
+        surface = mix(surface*(1.-shine*0.1),vec3(1.),shine*s);
+        result = vec4(surface, texColor.a) * a;
+    } else if( shadingType == 3 ) {         // Depth Map
+        float ds = max(max(width,height),depth)*2.5;
+        float dd = 1. - ((d - OBJECT_CENTER.z + ds/2.)/ds);
+        result = vec4( dd,dd,dd, 1. ) * a;
+    } else if( shadingType == 4 ) {         // Normal Map
+        result = vec4( (n/2.)+0.5, 1. ) * a;
+    } else if( shadingType == 5 ) {         // Normal * Depth
+        float ds = max(max(width,height),depth)*2.5;
+        float dd = 1. - ((d - OBJECT_CENTER.z + ds/2.)/ds);
+        result = vec4( ((n/2.)+0.5)*dd, 1. ) * a;
+    }
+
+    return result;
+}
+
+vec2 mapTexture( vec2 texCoord ) {
+    float texRad = texAngle * 0.0174533;
+    float texCos = cos(texRad);
+    float texSin = sin(texRad);
+    mat2 texRot = mat2( texCos, -texSin, texSin, texCos );
+
+    float texTwirlRad = texTwirl * 0.0174533;
+    float texTwirlCos = cos(texTwirlRad);
+    float texTwirlSin = sin(texTwirlRad);
+    mat2 texTwirlRot = mat2( texTwirlCos, -texTwirlSin, texTwirlSin, texTwirlCos );
+
+    vec2 texScaleVec = vec2(1./texRepeatX,1./texRepeatY);
+
+    texCoord *= texRot;
+
+    texCoord += texOffset / 1000.0;
+    texCoord /= texScaleVec;
+    if( mirror ) {
+        texCoord = abs(mod(texCoord,2.0)-1.0);
+    } else {
+        texCoord = mod(texCoord, 1.);
+    }
+
+    texCoord -= 0.5;
+    // O `acScreenSize` do AM (a tela em px da cena) é o `acTamanhoDaTela`.
+    texCoord = texCoord * (1.-5./acTamanhoDaTela);
+    texCoord *= texCrop;
+    texCoord *= texTwirlRot;
+    texCoord += 0.5;
+    return texCoord;
+}
+
+void main() {
+    invOrient = orientacaoDoVertice();
+
+    // O `acLayerNorm` do AM: o pixel na tela levado à coordenada da camada (o retângulo do conteúdo de 0 a 1,
+    // com o meio no meio do buffer), com o Y para CIMA como o do AM (a ponte do Túnel (AM)).
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 acLayerNormAm = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+    acLayerNormAm.y = 1.0 - acLayerNormAm.y;
+
+    vec2 st = acLayerNormAm;
+    st -= 0.5;
+    st.x *= acTamanhoDaCamada.x/acTamanhoDaCamada.y;
+
+    st /= scale;
+
+    vec3 ro = vec3(0., 1., -1.);
+    vec3 rd = normalize(vec3(st, 1.));
+
+    float d = march(ro,rd);
+    vec3 p = ro + rd * d;
+
+    vec3 n = calcNormal(p);
+    vec3 nn = n;
+
+    vec4 localCoord = vec4(p-OBJECT_CENTER, 1.);
+    n = (vec4(n,0.) * invOrient).xyz;
+    localCoord *= invOrient;
+    vec4 pp = localCoord;
+
+    if( texStretch ) {
+        pp /= vec4(width,height,depth,1.);
+    }
+
+    vec2 texCoord;
+    float a;
+    if( n.x > 0.5 ) {
+        texCoord = ((pp.zy+1.)/2.);
+        a = height<0.0105 || depth<0.0105 ? 0.0 : 1.0;
+    } else if ( n.x < -0.5 ) {
+        texCoord = ((pp.zy+1.)/2.);
+        texCoord.x = 1.-texCoord.x;
+        a = height<0.0105 || depth<0.0105 ? 0.0 : 1.0;
+    } else if ( n.y > 0.5 ) {
+        texCoord = ((pp.xz+1.)/2.);
+        a = width<0.0105 || depth<0.0105 ? 0.0 : 1.0;
+    } else if ( n.y < -0.5 ) {
+        texCoord = 1.-((pp.xz+1.)/2.);
+        texCoord.x = 1.-texCoord.x;
+        a = width<0.0105 || depth<0.0105 ? 0.0 : 1.0;
+    } else if ( n.z > 0.5 ) {
+        texCoord = (pp.xy+1.)/2.;
+        texCoord.x = 1.-texCoord.x;
+        a = width<0.0105 || height<0.0105 ? 0.0 : 1.0;
+    } else if ( n.z < -0.5 ) {
+        texCoord = (pp.xy+1.)/2.;
+        a = width<0.0105 || height<0.0105 ? 0.0 : 1.0;
+    } else {
+        texCoord = vec2(0.,0.);
+        a = 1.0;
+    }
+
+    texCoord = mapTexture(texCoord);
+
+    // O `texture2DCv(inputImg.texture, (vec4(texCoord,0,1) * acLayerToScreen).xy)` do AM: a coordenada da camada
+    // levada ao buffer (o Y volta para baixo) e, na tela, pela `acCamadaParaTela` (sem a divisão da perspectiva
+    // quando ela é afim, como a matriz do AM); no filho de grupo, a própria UV do buffer.
+    vec2 b = 0.5 + (vec2(texCoord.x, 1.0 - texCoord.y) - 0.5) * conteudo / acTamanhoDaTela;
+    vec2 naTela = b;
+    if (acParaTela == mat3(1.0)) {
+        vec3 c = acCamadaParaTela * vec3(b, 1.0);
+        bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+        naTela = afim ? c.xy : c.xy / c.z;
+    }
+    bool foraDaConta = any(isinf(naTela)) || any(isnan(naTela));
+    vec4 texColor = foraDaConta ? preMultiplicada(texture(inputImg, naTela)) : camadaNoPonto(naTela);
+
+    // A saída do AM é pré-multiplicada, num alvo de 8 bits (que corta abaixo de 0 e acima de 1); aqui ela volta reta,
+    // com a luz acima do alfa levada pelo fundo (`paraReta`).
+    fragColor = paraReta(clamp(applyShading(texColor, p, nn, d) * a, 0.0, 1.0));
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cor seletiva — deixa uma cor viva e apaga o resto (ou o contrário).
+
+  A mesma matemática de faixa de matiz de `hsl-range-selection.xml` (centro
+  + faixa, porque matiz é um círculo e 350° é vizinho de 10°, não o oposto),
+  só que aqui a saída não é uma máscara de alfa — é a própria imagem, com
+  tudo FORA da faixa dessaturado até o cinza (preservando o brilho, pra não
+  escurecer nem clarear o que sobrou). "Aquele vestido vermelho na rua toda
+  cinza" é o uso clássico.
+-->
+<effect
+    id="nova.effect.selectivecolor"
+    name="Cor seletiva"
+    name-en="Selective Color"
+    desc="Mantém uma cor viva e dessatura o resto da imagem."
+    desc-en="Keeps one hue in colour and desaturates everything else."
+    category="color"
+    blend="mode"
+    tags="cor seletiva,selective color,dessaturar,preto e branco,destacar,vestido vermelho">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="hue" label="Matiz (centro)"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="hueRange" label="Faixa de matiz"
+                default="20.0" min="0.0" max="180.0" step="1.0" snap="20.0" />
+        <slider id="softness" label="Suavidade"
+                default="0.06" min="0.0" max="0.5" step="0.01" snap="0.06" />
+
+        <slider id="amount" label="Dessaturar o resto"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+
+        <switch id="invert" label="Inverter (apagar a cor escolhida)" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+// A mesma conversão RGB→HSV de `replace-color.xml`/`hsl-range-selection.xml`
+// — provada ali, repetida aqui porque cada efeito deste catálogo é
+// autocontido (sem import entre arquivos de shader).
+vec3 paraHsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    vec3 hsv = paraHsv(clamp(cor.rgb, 0.0, 1.0));
+
+    float alvoHue = hue / 360.0;
+    float dh = abs(hsv.x - alvoHue);
+    dh = min(dh, 1.0 - dh); // distância circular: 350° e 10° são vizinhos
+
+    float faixaNorm = clamp(hueRange, 0.0, 180.0) / 360.0;
+    float suave = max(softness, 0.001) * 0.5;
+    float selecionado = 1.0 - smoothstep(faixaNorm - suave, faixaNorm + suave, dh);
+
+    // Pixel quase sem saturação não tem matiz de verdade — sem isto, cinzas
+    // e brancos cairiam pra fora da seleção por um motivo que o olho não
+    // enxerga, e ficariam dessaturados por cima de algo que já é neutro.
+    selecionado = mix(1.0, selecionado, smoothstep(0.0, 0.15, hsv.y));
+
+    if (invert) selecionado = 1.0 - selecionado;
+
+    float luma = dot(cor.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 dessaturado = mix(cor.rgb, vec3(luma), amount);
+
+    fragColor = vec4(mix(dessaturado, cor.rgb, selecionado), cor.a);
+}
+
+    ]]></shader>
+</effect>

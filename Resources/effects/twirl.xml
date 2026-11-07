@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Redemoinho: gira a imagem em torno de um ponto, mais forte no centro.
+
+  O decaimento é o que separa um redemoinho de um giro comum. Sem ele, a imagem
+  inteira giraria por igual — o que é só uma rotação. É o giro DIMINUIR com a
+  distância que cria a espiral.
+-->
+<effect
+    id="nova.effect.twirl"
+    name="Redemoinho"
+    name-en="Twirl"
+    desc="Torce a imagem em espiral a partir de um ponto."
+    desc-en="Swirls the image around a centre."
+    category="distort"
+    tags="torcer,espiral,giro,vortice">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="twist" label="Torção"
+                default="180.0" min="-720.0" max="720.0" step="1.0" type="angle"
+                snap="0.0" />
+
+        <slider id="radius" label="Alcance"
+                default="0.5" min="0.05" max="1.5" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec2 offset = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    float dist = length(offset);
+
+    float falloff = 1.0 - smoothstep(0.0, max(radius, 0.001), dist);
+    float angle = atan(offset.y, offset.x) + radians(twist) * falloff;
+
+    vec2 warped = vec2(cos(angle), sin(angle)) * dist;
+    vec2 sampleUv = warped / vec2(acAspect, 1.0) + center;
+
+    fragColor = texture(inputImg, clamp(sampleUv, 0.0, 1.0));
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   OSCILAR — o Oscillate do Alight Motion, conta por conta (0.561.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faça agora 100% igual o efeito oscilar do alight motion", da série "100% iguais ao
+  AM". Mesmos parâmetros, mesmos ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.oscillate3` (o
+  Oscillate atual do AM 5.0.281; um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM
+  (`assets/effects/oscillate3.xml` do APK descompactado) e escrita de novo em `model/Oscilar.kt`; o arquivo do AM não
+  entra no repositório. A conferência é `node tools/amoscilar/referencia.js` → `OscilarDoAmTest`: o script do próprio
+  AM e o Kotlin daqui, número a número.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Move a camada para frente e para trás, em double, a partir dos floats dos parâmetros:
+      a = (90 − Ângulo) · π/180          (0° = para a direita, 90° = para baixo)
+      m = sin((ciclos · 2 + Fase · 2) · 3,14159)              Onda Seno
+      m = triângulo((ciclos · 2 + Fase · 2) / 2 + Fase)       Onda Triângulo (a Fase conta em dobro)
+      Ângulo:        posição += (sin a, cos a) · (Magnitude · m)
+      Profundidade:  z += Magnitude · m
+      Órbita:        o do Ângulo + um z um quarto de ciclo na frente (Fase + 0,25; no Triângulo, + 0,125)
+  - Frequência 2 = dois vaivéns por segundo. Ela é do tipo "hz" do AM: o script recebe os CICLOS ACUMULADOS desde o
+    começo da camada, então com quadro-chave a camada só passa a ir e vir mais depressa, sem pular (a mesma soma do
+    Balanço, do Tamanho do pulso e da Agitação automática). Vai até 0 (parada).
+  - Com a Direção em Profundidade o Ângulo não vale: no painel ele fica APAGADO (a 20%, sem responder), como no AM
+    (`enabled="false"` + `enableTargets` nas escolhas Ângulo e Órbita → `enabledIf` aqui).
+  - Vários Oscilar na mesma camada somam, na ordem da lista.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele MOVE a camada. Quem executa é `model/Oscilar.kt`,
+  dentro de `LayerGeometry.matrizLocal`, por onde passa a posição de toda camada (prévia, exportação, seleção, filhos e
+  o desfoque de movimento). O shader abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage`
+  executá-lo.
+
+  Os dois Oscillate ANTIGOS do AM ("deprecated") são o `am-oscillate2-legacy.xml` e o `am-oscillate-legacy.xml`, fora
+  do catálogo. O Oscilar do Nova de antes da 0.561 (`oscillate.xml`, a mesma conta com outros ids) também saiu do
+  catálogo e continua abrindo os projetos feitos com ele.
+-->
+<effect
+    id="nova.effect.am-oscillate"
+    name="Oscilar"
+    name-en="Oscillate"
+    desc="Move a camada para frente e para trás repetidamente, numa direção, em profundidade ou em órbita (o Oscillate do Alight Motion)."
+    desc-en="Moves the layer back and forth repeatedly, along an angle, in depth or in orbit (Alight Motion's Oscillate)."
+    category="distort"
+    stage="transform"
+    tags="oscilar,oscillate,vaivém,vaivem,balançar,tremer,wiggle,mover,movimento,automático,transformação,órbita,orbita,orbit,profundidade,depth,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="direction" label="Direção" options="Ângulo|Profundidade|Órbita" default="0" />
+        <spinner id="angle" label="Ângulo" default="45.0" min="-3600.0" max="3600.0" step="0.1"
+            ticks="-360.0,-270.0,-180.0,-90.0,-45.0,0.0,45.0,90.0,180.0,270.0,360.0" type="angle"
+            enabledIf="direction=0|2" />
+        <spinner id="freq" label="Frequência" default="2.0" min="0.0" max="16.0" step="0.01"
+            ticks="0.5,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0" type="hz" />
+        <spinner id="mag" label="Magnitude" default="25.0" min="0.0" max="4000.0" step="1.0" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+        <spinner id="phase" label="Fase" default="0.0" min="0.0" max="1000.0" step="0.01" ticks="1.0,2.0,3.0,4.0,5.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/random_ripples — o Random Ripples do Node Video (classe NodeVideo.AE.AERandomRipples), portado do
+  il2cpp (05/11/2026).
+
+  O que o AERandomRipples::Render faz (tools/nodedeslocamento/il2cpp/desmontar.py):
+  - InitBuffer: dois RTs ARGBFloat do tamanho da composição (Config.GetRes), limpos com zero quando nascem
+    (ResetForPlaying os solta: tocar de novo recomeça a simulação);
+  - _frame = quantos quadros o efeito já desenhou desde então (0 no primeiro: o passe 0 multiplica a onda por
+    min(_frame, 1) e zera tudo);
+  - DOIS passos da simulação por quadro (passe 0 do shader, A -> B e B -> A) e o passe 1 desenha a camada refratada
+    pela altura de A, com o brilho especular (a luz fixa do shader) e o _blend com a camada.
+  - O passe 0 é a equação da onda: altura nova = (soma dos 4 vizinhos / 2 - a anterior + a gota) x amortecimento
+    (1 - 0,1 x (1 - _duration)), guardada como 0,5 + 0,5 x altura em .x, e a de agora em .y. Os vizinhos ficam a
+    _scale pixels; as gotas caem quando fract(_cur_time x _amount) < 0,05, num lugar sorteado por _seed.
+
+  No Nova: o motor não tem buffer em ponto flutuante, e as alturas passam de -30 com gotas somadas — 8 bits não
+  servem. Cada altura vai inteira (o float32, floatBitsToUint) aos 4 bytes de um RGBA8: os estados `alt` (o .x do
+  RT A) e `ant` (o .y), e o buffer `meio` (o RT B). As contas dos dois programas do Node vão copiadas; a leitura do
+  RT (o filtro bilinear) é feita à mão sobre os floats. Na exportação, com o buffer do tamanho da composição, os
+  vizinhos caem no centro do texel como no Node; na prévia reduzida eles caem entre texels e a leitura bilinear
+  mistura as raias da simulação (a onda some um pouco mais rápido que no Node).
+-->
+<effect
+    id="nv.effect.nodevideo-effect-random-ripples"
+    name="Random Ripples (NV)"
+    name-en="Random Ripples (NV)"
+    desc="Gotas caindo em lugares sorteados e as ondas que elas fazem na camada, simuladas quadro a quadro (Node Video)."
+    desc-en="Drops falling at random spots and the ripples they make on the layer, simulated frame by frame (Node Video)."
+    category="nodevideo"
+    stage="screen"
+    tags="nodevideo,nv,unity,ondas,ripples,agua,water,gotas,drops,chuva,rain">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="alt" src="state" scale="1.0" filter="nearest" precision="highp" />
+        <texture id="ant" src="state" scale="1.0" filter="nearest" precision="highp" />
+        <texture id="meio" src="buffer" scale="1.0" filter="nearest" precision="highp" />
+        <slider id="_amount" label="Amount" default="5" min="0" max="20" step="0.01" />
+        <slider id="_width" label="Width" default="0.7" min="0" max="2" step="0.01" />
+        <slider id="_height" label="Height" default="3" min="0" max="10" step="0.01" />
+        <slider id="_scale" type="integer" label="Scale" default="3" min="1" max="8" step="1" />
+        <slider id="_duration" label="Duration" default="0.7" min="0" max="0.9" step="0.01" />
+        <slider id="_refraction" label="Refraction" default="0.2" min="0" max="2" step="0.01" />
+        <slider id="_blend" label="Blend" default="1" min="0" max="1" step="0.01" />
+        <slider id="_seed" label="Seed" default="0" min="0" max="1" step="0.01" />
+    </params>
+
+    <passes>
+        <pass target="meio" />   <!-- 0: o 1º passo da onda (o RT B do Node) -->
+        <pass target="alt" />    <!-- 1: o 2º passo (o .x do RT A) -->
+        <pass target="ant" />    <!-- 2: a altura do meio vira a anterior (o .y do RT A) -->
+        <pass />                 <!-- 3: o passe 1 do shader: a camada refratada -->
+    </passes>
+
+    <shader><![CDATA[
+// globais e tempo do Node ligados ao motor (tools/nodevideo/ligar_globais.py, ligar_tempo.py)
+#define _resolution acTamanhoDaTela
+#define _cur_time acTime
+
+// Os RTs do Node: luz linear, cor pré-multiplicada.
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 nvGama(vec3 l) { return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
+vec4 nvNode(vec4 c) { return vec4(nvLinear(c.rgb) * c.a, c.a); }
+vec4 nvNova(vec4 p) {
+    if (p.a <= 0.0) return vec4(0.0);
+    return vec4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
+}
+
+// Um float32 inteiro nos 4 bytes de um texel RGBA8.
+vec4 nvGuardar(float v) {
+    uint u = floatBitsToUint(v);
+    return vec4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
+}
+float nvDecodificar(vec4 c) {
+    uvec4 b = uvec4(floor(c * 255.0 + 0.5));
+    return uintBitsToFloat(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
+}
+
+// O RT limpo com zero (a 1ª vez, ou depois de pular o cursor): o Node recomeça a simulação.
+bool nvNovo() { return acStateFresh == 1; }
+
+float nvTexel(int qual, ivec2 p) {
+    // o `alt` dos passes 0 e 1 é o do quadro anterior (zero se não há); o do passe 3, o deste quadro
+    if (qual == 0) return nvNovo() && acPass <= 1 ? 0.0 : nvDecodificar(texelFetch(alt, p, 0));
+    if (qual == 1) return nvNovo() ? 0.0 : nvDecodificar(texelFetch(ant, p, 0));
+    return nvDecodificar(texelFetch(meio, p, 0));
+}
+
+ivec2 nvTamanho(int qual) {
+    if (qual == 0) return textureSize(alt, 0);
+    if (qual == 1) return textureSize(ant, 0);
+    return textureSize(meio, 0);
+}
+
+// O texture() do Node num RT float (Clamp + Bilinear), em coordenadas de texel (o centro do texel i é i + 0,5);
+// `lim` = o último texel válido.
+float nvLerRT(int qual, vec2 px, ivec2 lim) {
+    vec2 q = px - 0.5;
+    vec2 i = floor(q);
+    vec2 f = q - i;
+    ivec2 a = clamp(ivec2(i), ivec2(0), lim);
+    ivec2 b = clamp(ivec2(i) + 1, ivec2(0), lim);
+    float v00 = nvTexel(qual, a);
+    if (f.x == 0.0 && f.y == 0.0) return v00;
+    float v10 = nvTexel(qual, ivec2(b.x, a.y));
+    float v01 = nvTexel(qual, ivec2(a.x, b.y));
+    float v11 = nvTexel(qual, b);
+    return mix(mix(v00, v10, f.x), mix(v01, v11, f.x), f.y);
+}
+
+// O buffer em pixels (o RT do Node é do tamanho da composição: na exportação, o mesmo).
+vec2 nvPxPorUv() { return vec2(nvTamanho(0)); }
+// As células da simulação (o u_xlat1 do Node): o vizinho fica a _scale pixels da composição.
+vec2 nvCelulas() { return _resolution.xy / vec2(float(int(_scale))); }
+
+/*
+ * Como guardar a simulação.
+ *  - As RAIAS do Node: o RT inteiro, e o vizinho a _scale texels (são _scale x _scale simulações entrelaçadas, cada
+ *    uma com a gota num lugar um pouco diferente). É o Node conta por conta, quando o vizinho cai num número inteiro
+ *    de texels: na exportação, com o buffer do tamanho da composição.
+ *  - A GRADE: uma célula por texel, no canto do estado. Na prévia reduzida o vizinho cairia entre texels, e a leitura
+ *    bilinear borraria a onda a cada passo; a grade faz a mesma onda que uma raia do Node, e a imagem a lê
+ *    interpolada (o que as raias vizinhas do Node dão). Sem lugar para a grade (_scale 1 na prévia reduzida), as
+ *    raias com a leitura bilinear.
+ */
+bool nvGrade() {
+    vec2 d = nvPxPorUv() / nvCelulas();
+    bool inteiro = all(lessThan(abs(d - floor(d + 0.5)), vec2(1e-3))) && all(greaterThan(d, vec2(0.999)));
+    return !inteiro && all(lessThanEqual(ceil(nvCelulas()), nvPxPorUv()));
+}
+ivec2 nvLimite(bool grade) { return grade ? ivec2(ceil(nvCelulas())) - 1 : nvTamanho(0) - 1; }
+
+/*
+ * O passe 0 do shader do Node, conta por conta. `atual` e `anterior` são os dois canais do RT lido (o .x e o .y):
+ * 0 = alt, 1 = ant, 2 = meio. Devolve a altura nova (o .x que o Node escreve).
+ */
+float nvPasso(int atual, int anterior) {
+    bool grade = nvGrade();
+    ivec2 lim = nvLimite(grade);
+    vec2 vs_TEXCOORD0;
+    vec2 px;
+    vec2 d;   // os vizinhos, em texel do estado
+    if (grade) {
+        ivec2 c = ivec2(gl_FragCoord.xy);
+        if (any(greaterThan(c, lim))) return 0.0;   // fora da grade: não é lido
+        px = vec2(c) + 0.5;
+        vs_TEXCOORD0 = px / nvCelulas();
+        d = vec2(1.0);
+    } else {
+        px = gl_FragCoord.xy;
+        vs_TEXCOORD0 = acScreenNorm;
+        d = nvPxPorUv() / nvCelulas();
+    }
+    float u_xlat0;
+    vec2 u_xlat1;
+    vec2 u_xlat4;
+    float u_xlat12;
+    bool u_xlatb12;
+    vec2 u_xlat9;
+    u_xlat0 = _width * 10.0 + -2.5;
+    u_xlat0 = float(1.0) / u_xlat0;
+    u_xlat4.xy = vec2(vec2(_seed, _seed)) + vec2(0.456665009, 0.708617985);
+    u_xlat12 = _cur_time * _amount;
+    u_xlat1.x = floor(u_xlat12);
+    u_xlat12 = fract(u_xlat12);
+    u_xlatb12 = u_xlat12>=0.0500000007;
+    u_xlat4.xy = u_xlat4.xy * u_xlat1.xx;
+    u_xlat4.xy = fract(u_xlat4.xy);
+    u_xlat1.xy = nvCelulas();
+    u_xlat9.xy = u_xlat1.xy * vs_TEXCOORD0.xy;
+    u_xlat4.xy = u_xlat4.xy * u_xlat1.xy + (-u_xlat9.xy);
+    u_xlat4.x = dot(u_xlat4.xy, u_xlat4.xy);
+    u_xlat4.x = sqrt(u_xlat4.x);
+    u_xlat4.x = u_xlat4.x + -2.5;
+    u_xlat0 = u_xlat0 * u_xlat4.x;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat4.x = u_xlat0 * -2.0 + 3.0;
+    u_xlat0 = u_xlat0 * u_xlat0;
+    u_xlat0 = u_xlat0 * u_xlat4.x;
+    u_xlat0 = (u_xlatb12) ? 0.0 : (-u_xlat0);
+    float prev = nvLerRT(anterior, px, lim);
+    u_xlat12 = nvLerRT(atual, px - vec2(0.0, d.y), lim);
+    u_xlat12 = u_xlat12 + nvLerRT(atual, px - vec2(d.x, 0.0), lim);
+    u_xlat12 = u_xlat12 + nvLerRT(atual, px + vec2(d.x, 0.0), lim);
+    u_xlat12 = nvLerRT(atual, px + vec2(0.0, d.y), lim) + u_xlat12;
+    float u_xlat8 = prev + -0.5;
+    float u_xlat4x = u_xlat8 * -2.0 + u_xlat12;
+    u_xlat0 = u_xlat4x + u_xlat0;
+    u_xlat0 = u_xlat0 + -2.0;
+    u_xlat4x = (-_duration) + 1.0;
+    u_xlat4x = (-u_xlat4x) * 0.100000001 + 1.0;
+    u_xlat0 = u_xlat4x * u_xlat0;
+    // _frame: 0 no 1º quadro depois da limpeza
+    u_xlat4x = nvNovo() ? 0.0 : 1.0;
+    u_xlat0 = u_xlat4x * u_xlat0;
+    return u_xlat0 * 0.5 + 0.5;
+}
+
+void main()
+{
+    if (acPass == 0) { fragColor = nvGuardar(nvPasso(0, 1)); return; }   // A(.x = alt, .y = ant) -> B
+    if (acPass == 1) { fragColor = nvGuardar(nvPasso(2, 0)); return; }   // B(.x = meio, .y = o .x de A) -> A.x
+    if (acPass == 2) { fragColor = texelFetch(meio, ivec2(gl_FragCoord.xy), 0); return; }   // A.y = B.x
+
+    // O passe 1 do shader do Node, conta por conta (_channel0 = A, já com os dois passos deste quadro).
+    vec2 vs_TEXCOORD0 = acScreenNorm;
+    bool grade = nvGrade();
+    ivec2 lim = nvLimite(grade);
+    // _height / _resolution em uv: em texel do estado (na grade, a célula)
+    vec2 px = grade ? acScreenNorm * nvCelulas() : gl_FragCoord.xy;
+    vec2 d = vec2(_height) * (grade ? nvCelulas() : nvPxPorUv()) / _resolution.xy;
+    vec4 u_xlat0;
+    vec4 u_xlat1;
+    vec4 u_xlat2;
+    float u_xlat6;
+    float u_xlat18 = nvLerRT(0, px - vec2(0.0, d.y), lim);
+    u_xlat1.x = nvLerRT(0, px - vec2(d.x, 0.0), lim);
+    u_xlat0.x = nvLerRT(0, px + vec2(d.x, 0.0), lim);
+    u_xlat6 = nvLerRT(0, px + vec2(0.0, d.y), lim);
+    u_xlat1.x = (-u_xlat1.x) + u_xlat0.x;
+    u_xlat1.y = (-u_xlat18) + u_xlat6;
+    u_xlat1.z = 1.0;
+    u_xlat0.x = dot(u_xlat1.xyz, u_xlat1.xyz);
+    u_xlat0.x = 1.0 / sqrt(u_xlat0.x);   // o inversesqrt do Node: as PowerVR recusaram (o CC Jaws, 05/11)
+    u_xlat0.xyz = u_xlat0.xxx * u_xlat1.xyz;
+    u_xlat1.xy = u_xlat0.xy * vec2(vec2(_refraction, _refraction)) + vs_TEXCOORD0.xy;
+    u_xlat1 = nvNode(texture(inputImg, u_xlat1.xy));
+    u_xlat0.x = dot(u_xlat0.xyz, vec3(0.226455405, -0.566138506, 0.792593896));
+    u_xlat6 = u_xlat0.x + u_xlat0.x;
+    u_xlat6 = u_xlat0.z * (-u_xlat6) + 0.792593896;
+    u_xlat6 = max((-u_xlat6), 0.0);
+    u_xlat6 = log2(u_xlat6);
+    u_xlat6 = u_xlat6 * 32.0;
+    u_xlat6 = exp2(u_xlat6);
+    u_xlat0.x = max(u_xlat0.x, 0.0);
+    u_xlat0 = u_xlat1 * u_xlat0.xxxx + vec4(u_xlat6);
+    u_xlat1 = nvNode(texture(inputImg, vs_TEXCOORD0.xy));
+    u_xlat2.x = (-_blend) + 1.0;
+    u_xlat2 = u_xlat1 * u_xlat2.xxxx;
+    u_xlat0 = u_xlat0 * vec4(vec4(_blend, _blend, _blend, _blend)) + u_xlat2;
+    fragColor = nvNova(clamp(u_xlat0, 0.0, 1.0));
+}
+    ]]></shader>
+</effect>

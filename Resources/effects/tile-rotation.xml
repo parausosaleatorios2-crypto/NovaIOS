@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ladrilho com rotação: divide a imagem numa grade, e cada célula gira e
+  desloca sozinha, por uma quantia aleatória (mas sempre a MESMA aleatória,
+  porque é uma semente, não sorteio a cada quadro).
+
+  Diferente de `tile.xml` (que já tem deslocamento e espelhamento, mas
+  IGUAIS em todas as células da mesma paridade) e de `motion-tile.xml` (que
+  estende o ladrilho pra fora da borda, mas não gira nada) — aqui cada
+  célula tem seu PRÓPRIO ângulo e deslocamento, tirados de um hash da
+  posição da célula. É o "vidro estilhaçado"/mosaico girado, não o
+  ladrilhamento repetido.
+
+  A amostra pode sair um pouco da própria célula quando gira ou desloca —
+  de propósito: é o vazamento pra célula vizinha que faz o resultado
+  parecer cacos de vidro de verdade, em vez de quadradinhos rodados no
+  lugar exato.
+-->
+<effect
+    id="nova.effect.tilerotation"
+    name="Ladrilho com rotação"
+    name-en="Tile Rotation"
+    desc="Quebra a imagem numa grade onde cada célula gira e desloca por conta própria."
+    desc-en="Splits the image into a grid where each cell rotates and shifts on its own."
+    category="repeat"
+    blend="true"
+    tags="ladrilho,mosaico,rotação,estilhaçado,vidro,grade,quebrado">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="countX" label="Colunas" default="6" min="1" max="24" step="1" type="integer" />
+        <slider id="countY" label="Linhas" default="6" min="1" max="24" step="1" type="integer" />
+
+        <slider id="rotationAmount" label="Rotação aleatória"
+                default="25.0" min="0.0" max="180.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="offsetAmount" label="Deslocamento aleatório"
+                default="0.1" min="0.0" max="0.5" step="0.01" snap="0.0" />
+        <slider id="scaleAmount" label="Variação de escala"
+                default="0.0" min="0.0" max="0.5" step="0.01" snap="0.0" />
+
+        <slider id="seed" label="Semente" default="0" min="0" max="999" step="1" type="integer" />
+    </params>
+
+    <shader><![CDATA[
+
+float hash(vec2 p, float semente) {
+    return fract(sin(dot(p, vec2(127.1, 311.7)) + semente * 43.71) * 43758.5453);
+}
+
+void main() {
+    vec2 counts = vec2(max(countX, 1.0), max(countY, 1.0));
+    vec2 grid = acScreenNorm * counts;
+    vec2 cell = floor(grid);
+    vec2 local = fract(grid) - 0.5; // -0.5..0.5, centralizado na própria célula
+
+    float anguloAleatorio = (hash(cell, seed) - 0.5) * 2.0 * radians(rotationAmount);
+    vec2 deslocAleatorio = vec2(
+        hash(cell + vec2(17.0, 0.0), seed) - 0.5,
+        hash(cell + vec2(0.0, 29.0), seed) - 0.5
+    ) * offsetAmount;
+    float escalaAleatoria = 1.0 + (hash(cell + vec2(41.0, 5.0), seed) - 0.5) * 2.0 * scaleAmount;
+
+    // A volta: desfaz o giro e a escala DESTA célula, pra achar de onde a
+    // amostra deveria vir na imagem original.
+    float c = cos(-anguloAleatorio);
+    float s = sin(-anguloAleatorio);
+    vec2 local2 = mat2(c, -s, s, c) * (local / max(escalaAleatoria, 0.05)) - deslocAleatorio;
+
+    vec2 uv = (cell + local2 + 0.5) / counts;
+
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    fragColor = texture(inputImg, uv);
+}
+
+    ]]></shader>
+</effect>

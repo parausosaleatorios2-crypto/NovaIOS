@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.glitch"
+    name="Desfoque Glitch (Blurrr)"
+    name-en="Glitch Blur (Blurrr)"
+    desc="Fatias deslocadas, RGB separado e rastro — glitch com borrão."
+    desc-en="Sliced offsets, RGB split and motion trail — glitch with a blur."
+    category="blur"
+    tags="blurrr,glitch,rgb,split,fatia,slice,desfoque,blur,aberracao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="sliceAmount" label="Deslocar fatias"
+                default="0.015" min="0.0" max="0.1" step="0.001" />
+        <slider id="sliceCount" label="Número de fatias"
+                default="16.0" min="2.0" max="80.0" step="1.0" />
+        <slider id="rgbSplit" label="Separação RGB"
+                default="0.006" min="0.0" max="0.05" step="0.0005" />
+        <slider id="blurAmount" label="Rastro"
+                default="0.008" min="0.0" max="0.05" step="0.0005" />
+        <slider id="samples" label="Amostras do rastro"
+                default="8" min="2" max="24" step="1" type="integer" />
+        <slider id="seed" label="Semente" group="Aleatório"
+                default="0.0" min="0.0" max="100.0" step="0.1" />
+    </params>
+
+    <passes>
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+float ruido(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+float canalComRastro(vec2 uv, vec2 dir, float raio, int canal, int n) {
+    float soma = 0.0;
+    for (int i = 0; i <= 24; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n) - 0.5;
+        soma += texture(inputImg, uv + dir * raio * t)[canal];
+    }
+    return soma / float(n + 1);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    float linha = floor(acScreenNorm.y * sliceCount);
+    float deslocamento = (ruido(vec2(linha, seed + floor(acTime * 8.0))) - 0.5) * 2.0 * sliceAmount;
+
+    vec2 uv = acScreenNorm + vec2(deslocamento, 0.0);
+    vec2 dirRastro = vec2(sign(deslocamento + 1e-5), 0.0);
+    int n = clamp(int(samples), 2, 24);
+
+    float r = canalComRastro(uv + vec2( rgbSplit, 0.0), dirRastro, blurAmount, 0, n);
+    float g = canalComRastro(uv,                           dirRastro, blurAmount, 1, n);
+    float b = canalComRastro(uv + vec2(-rgbSplit, 0.0), dirRastro, blurAmount, 2, n);
+
+    fragColor = vec4(r, g, b, original.a);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chromatic Aberration (Strong) — aberração radial forte estilo lente barata.
+  Mais agressivo que o uni.Chromatic Aberration e o mblooks-chromatic-aberration: os 3 canais
+  são amostrados em várias passadas radiais com descolamento crescente.
+-->
+<effect
+    id="nova.effect.um-chromatic-aberration-strong"
+    name="Aberração Cromática Forte"
+    name-en="Chromatic Aberration Strong"
+    desc="Aberração cromática radial agressiva com múltiplas amostras."
+    desc-en="Aggressive radial chromatic aberration with multiple samples."
+    category="distort"
+    tags="chromatic,aberration,ca,lens,distort,ultra motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="strength" label="Intensidade" default="0.025" min="0.0" max="0.2" step="0.001" type="relative-percent" />
+        <point  id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <spinner id="samples" label="Suavidade" default="6.0" min="2.0" max="16.0" step="1.0" type="integer" />
+    </params>
+
+    <preview>
+        <set param="strength" value="0.06" />
+    </preview>
+
+    <shader><![CDATA[
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 d = uv - center;
+    float dist = length(d);
+    vec2 dir = dist > 0.0001 ? d / dist : vec2(0.0);
+
+    int N = int(samples);
+    vec3 acc = vec3(0.0);
+    float a = 0.0;
+    for (int i = 0; i < 16; i++) {
+        if (i >= N) break;
+        float t = float(i) / float(N - 1);
+        float offR = strength * dist * (0.6 + 0.4 * t);
+        float offG = strength * dist * 0.5 * t;
+        float offB = -strength * dist * (0.6 + 0.4 * t);
+        vec4 cr = texture(inputImg, uv + dir * offR);
+        vec4 cg = texture(inputImg, uv + dir * offG);
+        vec4 cb = texture(inputImg, uv + dir * offB);
+        acc += vec3(cr.r, cg.g, cb.b);
+        a += cg.a;
+    }
+    fragColor = vec4(acc / float(N), a / float(N));
+}
+    ]]></shader>
+</effect>

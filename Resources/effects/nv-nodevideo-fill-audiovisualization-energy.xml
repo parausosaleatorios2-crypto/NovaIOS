@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Fill_AudioVisualization_energy
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-fill-audiovisualization-energy"
+    name="Fill Audiovisualization Energy (NV)"
+    name-en="Fill Audiovisualization Energy (NV)"
+    desc="NodeVideo effect 'NodeVideo/Fill_AudioVisualization_energy', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Fill_AudioVisualization_energy', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="audio_sampler" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_shift" label="Shift" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_colour" label="Colour" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_power" label="Power" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec3 u_xlatb1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+bool u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat7;
+float u_xlat13;
+float u_xlat18;
+float u_xlat19;
+bool u_xlatb19;
+void main()
+{
+    u_xlat0 = acScreenNorm.xxxy + vec4(-0.75, -0.5, -0.25, -0.5);
+    u_xlat0.xyz = u_xlat0.xyz * vec3(vec3(_colour, _colour, _colour));
+    u_xlatb1.xyz = lessThan(vec4(1.0, 1.0, 1.0, 0.0), abs(u_xlat0.xyzx)).xyz;
+    u_xlat0.xyz = (-u_xlat0.xyz) * u_xlat0.xyz + vec3(1.0, 1.0, 1.0);
+    {
+        vec4 hlslcc_movcTemp = u_xlat0;
+        hlslcc_movcTemp.x = (u_xlatb1.x) ? float(0.0) : u_xlat0.x;
+        hlslcc_movcTemp.y = (u_xlatb1.y) ? float(0.0) : u_xlat0.y;
+        hlslcc_movcTemp.z = (u_xlatb1.z) ? float(0.0) : u_xlat0.z;
+        u_xlat0 = hlslcc_movcTemp;
+    }
+    u_xlat1.xy = (-acScreenNorm.yx) + vec2(0.5, 0.5);
+    u_xlat1.x = 0.00999999978 / abs(u_xlat1.x);
+    u_xlat13 = abs(u_xlat1.y) + _shift;
+    u_xlat13 = u_xlat13 + u_xlat13;
+    u_xlatb19 = u_xlat13>=(-u_xlat13);
+    u_xlat13 = fract(abs(u_xlat13));
+    u_xlat13 = (u_xlatb19) ? u_xlat13 : (-u_xlat13);
+    u_xlat2.x = u_xlat13 * 0.5;
+    u_xlat2.y = 0.0;
+    u_xlat19 = texture(audio_sampler, u_xlat2.xy).x;
+    u_xlat13 = (-u_xlat13) * 0.5 + 0.5;
+    u_xlat13 = dot(vec2(u_xlat13), vec2(u_xlat19));
+    u_xlat18 = -abs(u_xlat0.w) + 0.5;
+    u_xlat18 = u_xlat18 + u_xlat18;
+    u_xlat13 = u_xlat18 * u_xlat13;
+    u_xlat7 = -abs(u_xlat1.y) * 2.0 + 1.0;
+    u_xlat19 = float(1.0) / _power;
+    u_xlat13 = log2(abs(u_xlat13));
+    u_xlat13 = u_xlat13 * u_xlat19;
+    u_xlat13 = exp2(u_xlat13);
+    u_xlat7 = u_xlat13 * 30.0 + u_xlat7;
+    u_xlat1.x = u_xlat7 * u_xlat1.x;
+    u_xlat0.xyz = u_xlat0.xyz * u_xlat1.xxx;
+    u_xlat1.xyz = vec3(u_xlat18) * u_xlat0.xyz;
+    u_xlat2 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb3 = int(_blend_mode)==1;
+    u_xlat1.w = 1.0;
+    u_xlat4 = u_xlat1 * u_xlat2;
+    u_xlat0.xyz = u_xlat0.xyz * vec3(u_xlat18) + u_xlat2.xyz;
+    u_xlat0.w = u_xlat2.w;
+    u_xlat3 = (bool(u_xlatb3)) ? u_xlat4 : u_xlat0;
+    u_xlat0.xyz = u_xlat1.xyz;
+    u_xlat0 = (int(_blend_mode) != 0) ? u_xlat3 : u_xlat0;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb1.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat2 = u_xlat2 * u_xlat5;
+        u_xlat2 = u_xlat3 * u_xlat4 + u_xlat2;
+        u_xlat1.x = u_xlat4.x * u_xlat2.w;
+        fragColor.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat2.w;
+        fragColor.xyz = u_xlat2.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

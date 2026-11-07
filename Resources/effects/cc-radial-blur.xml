@@ -1,0 +1,849 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC RADIAL BLUR (Cycore, nativo do After Effects) — a conta do plugin (0.816.0)
+  ============================================================================
+
+  Da fila da pasta Desktop\Presets (docs/PRESETS-DA-PASTA-DO-SNOW.md, item 6: 27 presets o usam, 25 entram com
+  ele). O algoritmo foi LIDO do RadialBlur.aex (CycoreFXHD; tools/ccradialblur/benchmark/desmontar.py),
+  reescrito em Python com as mesmas contas (modelo.py) e conferido com o After Effects 2023 em 8 bpc: os seis
+  tipos, Amount com sinal e quebrado, Quality, centro fora do meio e fora da camada, ruído com alfa ao acaso,
+  foto e os valores dos presets do snow — 0 pixels diferentes em 16,6 milhões (tools/ccradialblur/LEIAME.md).
+  Este shader, na GPU do PC: 1 pixel a 1 nível nos mesmos 16,6 milhões (ver A PRECISÃO), também com a cena de pé.
+
+  O QUE O PLUGIN FAZ (e este shader repete), em double:
+
+  - amt = (Amount · −½) · 0,01; qq = Quality · 0,01 · a escala da resolução (metade em Draft); ang = −2π·amt.
+  - Os zooms (Straight, Fading, Centered; o Centered usa |amt|): o risco do pixel é d = (p − c)·amt, com
+    N = floor(|d| · qq) + 2 amostras em ponto fixo 16.16 (cortado).
+      Straight — do pixel para fora, passo trunc(d·65536 / N); para quando o risco sai da camada (`corte`).
+      Fading  — idem, cada amostra pesando N, N − 1, …; o alfa sobre N(N + 1)/2.
+      Centered — centrado no pixel, passo trunc(65536/N · d); a amostra fora de [0, (lado − 1)·65536] não conta.
+  - Os giros (Rotate, Scratch, Rotate Fading): N = floor(|p − c| · qq · |ang/π · 2|) + 2 amostras pelo arco,
+    girando o ponto de ang/N por amostra (cosseno e seno da CRT); o Scratch começa girado de −ang/2 (centrado
+    no pixel), o Rotate Fading pesa N, N − 1, … e divide o alfa pela soma dos pesos.
+  - Cada amostra é o subpixel_sample de 8 bits do AE (o do CC Lens, lido do PF.dll; fora da camada é zero).
+    Alfa e cor pesada pelo alfa somados em float32; alfa = trunc(soma / divisor), cor = trunc(soma / alfa).
+
+  A PRECISÃO: o N e o passo dependem do último bit das contas em double (no eixo do centro |d| · qq cai em
+  inteiro exato; com Amount redondo, o passo e o começo do risco também), então o que é do pixel — raio, N, passo,
+  o começo e o fim do risco — sai igual ao double do plugin. Cada grandeza é feita primeiro em DOIS FLOATS (~48
+  bits; somas e produtos exatos de Dekker, com o `um` que impede o fma) e só vale longe da divisa de um inteiro
+  (10⁻⁶ a 10⁻⁴, milhares de vezes o erro); perto dela, aquela grandeza é refeita no double EMULADO com inteiros
+  (dMul, dSoma, dDiv, dSqrt: os do CC Vector Blur; dDivInt, a divisão por N em divisão longa). O giro de cada
+  amostra anda em dois floats, com o cosseno e o seno de ang/N de uma tabela (passe 1: a divisão em double, as
+  séries em dois floats) — o erro fica perto de 10⁻¹² px. A única diferença medida: no Scratch com N par, a
+  amostra do meio volta ao próprio pixel e o double do plugin às vezes a põe EXATAMENTE no inteiro, às vezes um
+  fio abaixo; os dois floats nem sempre caem do mesmo lado (1 pixel a 1 nível em 16,6 milhões). As somas e
+  divisões de float32 são as do plugin. `tools/ccradialblur/benchmark/gpu.py rapido` confere o caminho rápido
+  contra a conta toda em double (0 pixels diferentes em 300 casos sorteados).
+
+  O CUSTO (GPU do PC, foto 1920×1080): Straight/Fading 22,5 com Quality 100, ~46 ms; Scratch 3,3, ~25 ms; Rotate
+  Fading −19, ~120 ms; Rotate 47,5 com Quality 100, ~610 ms (milhares de amostras por pixel, como no AE). No
+  rascunho (play/arraste) o Quality cai à metade — o Draft do próprio plugin — e o N para em 64: até ~70 ms.
+
+  A ORIENTAÇÃO: a conta é na orientação da IMAGEM (a linha 0 é o topo, como no plugin). Numa cena de pé (camada
+  de ajuste, grupo solto) a linha 0 do buffer é a base: o centro chega cru (`pontos="camada"`, como no CC Lens).
+
+  O QUE NÃO ENTROU (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md): 16 e 32 bpc (o app é 8 bits) e pixel não quadrado;
+  na prévia reduzida a conta é nos px do buffer, com o Quality na escala como o AE em resolução reduzida (o export
+  é exato); acima de 4095 amostras por pixel (Amount e Quality no talo numa camada grande) o N para em 4095 — o
+  arco inteiro com menos amostras, para a GPU do celular não travar; com a camada menor que o buffer (folga,
+  mídia encaixada) o centro passa pela fração da composição e pode cair 1/65536 px ao lado do do AE.
+-->
+<effect
+    id="nova.effect.ccradialblur"
+    name="CC Radial Blur"
+    name-en="CC Radial Blur"
+    desc="O CC Radial Blur do After Effects, conta por conta: zoom ou giro em volta de um centro, nos seis tipos do plugin."
+    desc-en="After Effects' CC Radial Blur, step by step: zoom or spin around a centre, in all six of the plugin's types."
+    category="blur"
+    pontos="camada"
+    tags="cc radial blur,radial,blur,desfoque,zoom,giro,spin,scratch,rotate,velocidade,cycore,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="constantes" src="buffer" width="18" height="1" />
+        <texture id="giros" src="buffer" width="1024" height="16" />
+
+        <selector id="tipo" label="Type" default="4" options="Straight|Fading|Centered|Rotate|Scratch|Rotate Fading" />
+        <slider id="amount" label="Amount" default="0.0" min="-250.0" max="250.0" step="0.1" snap="0.0" />
+        <slider id="quality" label="Quality" default="50.0" min="10.0" max="100.0" step="0.1" snap="50.0,100.0" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <passes>
+        <pass target="constantes" />    <!-- 0: amt, qq, ang e |ang/π · 2| em double (e em dois floats); o giro do Scratch -->
+        <pass target="giros" />         <!-- 1: cos e sen de ang/N, N = 0..4095, em dois floats -->
+        <pass />                        <!-- 2: o desfoque -->
+    </passes>
+
+    <!-- O Amount padrão é o do AE (0, o efeito não faz nada): a miniatura usa um que se vê. -->
+    <preview>
+        <set param="amount" value="20.0" />
+    </preview>
+
+    <shader><![CDATA[
+// ============================================================ o float32 do plugin
+// `um` vale 1, mas o compilador não sabe (vem de `acIterationCount`, que é 1 neste efeito). (a·b)·um não se funde
+// com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
+float um;
+int z0;
+float fixa(float x) { return x * um; }
+vec3 fixa3(vec3 x) { return x * um; }
+vec4 fixa4(vec4 x) { return x * um; }
+float mul(float a, float b) { return (a * b) * um; }
+vec3 mul3(float a, vec3 b) { return (a * b) * um; }
+vec4 mul4(vec4 a, float b) { return (a * b) * um; }
+
+/** a·b = p + e, exato (Dekker). */
+vec2 produtoExato(float a, float b) {
+    float p = mul(a, b);
+    float t = mul(4097.0, a);
+    float ah = t - fixa(t - a);
+    float al = a - ah;
+    t = mul(4097.0, b);
+    float bh = t - fixa(t - b);
+    float bl = b - bh;
+    float e = fixa(fixa(fixa(mul(ah, bh) - p) + mul(ah, bl)) + mul(al, bh)) + mul(al, bl);
+    return vec2(p, e);
+}
+
+float restoDaDivisao(float a, float b, float q) {
+    vec2 p = produtoExato(q, b);
+    return fixa(a - p.x) - p.y;
+}
+
+/** a / b arredondado como no IEEE (a ≥ 0, b > 0): a divisão da GPU pode errar o último bit. */
+float divisao(float a, float b) {
+    if (a == 0.0) return 0.0;
+    float q = a / b;
+    float e = restoDaDivisao(a, b, q);
+    for (int i = 0; i < 4; i++) {
+        float q2 = uintBitsToFloat(floatBitsToUint(q) + (e > 0.0 ? 1u : 0xFFFFFFFFu));
+        float e2 = restoDaDivisao(a, b, q2);
+        if (abs(e2) < abs(e)) { q = q2; e = e2; } else break;
+    }
+    return q;
+}
+
+/** O valor do controle em 16.16, como o AE o entrega ao plugin (o do CC Lens): o float32 · 65536, meio para longe
+ *  do zero. O produto é exato (potência de 2); o + 0,5 não seria (acima de 2²³): compara a fração. */
+int fixo(float v) {
+    float m = abs(v) * 65536.0;
+    float i = floor(m);
+    int r = int(i) + (m - i >= 0.5 ? 1 : 0);
+    return v < 0.0 ? -r : r;
+}
+
+// ============================================================ dois floats (~48 bits): o giro de cada amostra
+// v = hi + lo, |lo| ≤ meio ulp de hi. As somas e produtos exatos (Knuth, Dekker) com o `um` entre cada conta.
+vec2 somaExata(float a, float b) {
+    float s = fixa(a + b);
+    float bb = fixa(s - a);
+    return vec2(s, fixa(fixa(a - fixa(s - bb)) + fixa(b - bb)));
+}
+vec2 somaRapida(float a, float b) {
+    float s = fixa(a + b);
+    return vec2(s, fixa(b - fixa(s - a)));
+}
+vec2 dfSoma(vec2 a, vec2 b) {
+    vec2 s = somaExata(a.x, b.x);
+    vec2 t = somaExata(a.y, b.y);
+    s = somaRapida(s.x, fixa(s.y + t.x));
+    return somaRapida(s.x, fixa(s.y + t.y));
+}
+vec2 dfNeg(vec2 a) { return -a; }
+vec2 dfMul(vec2 a, vec2 b) {
+    vec2 p = produtoExato(a.x, b.x);
+    return somaRapida(p.x, fixa(p.y + fixa(mul(a.x, b.y) + mul(a.y, b.x))));
+}
+
+/** a / b (b > 0) e √a em dois floats (~2⁻⁴⁴): a primeira aproximação em float, um passo de correção exato. */
+vec2 dfDiv(vec2 a, vec2 b) {
+    float q1 = a.x / b.x;
+    vec2 r = dfSoma(a, dfNeg(dfMul(vec2(q1, 0.0), b)));
+    return somaRapida(q1, r.x / b.x);
+}
+vec2 dfRaiz(vec2 a) {
+    if (!(a.x > 0.0)) return vec2(0.0);
+    float h = sqrt(a.x);
+    vec2 r = dfSoma(a, dfNeg(produtoExato(h, h)));
+    return somaRapida(h, r.x / (2.0 * h));
+}
+
+/**
+ * O piso de v quando ele está LONGE de um inteiro: com a parte quebrada a menos de `margem` de 0 ou de 1, o erro dos
+ * dois floats poderia trocar o lado da divisa, e `seguro` vira false (a conta volta ao double emulado).
+ */
+int dfPiso(vec2 v, float margem, inout bool seguro) {
+    float f = floor(v.x);
+    vec2 r = dfSoma(v, vec2(-f, 0.0));
+    float q = r.x + r.y;
+    float k = floor(q);
+    q -= k;
+    if (q < margem || q > 1.0 - margem) seguro = false;
+    return int(f) + int(k);
+}
+int dfCorte(vec2 v, float margem, inout bool seguro) { return v.x < 0.0 ? -dfPiso(-v, margem, seguro) : dfPiso(v, margem, seguro); }
+
+/** O inteiro i · k (k potência de 2) em dois floats, exato (|i| < 2³¹). */
+vec2 dfDeInt(int i, float k) {
+    int b = i & 255;
+    return somaRapida(float(i - b) * k, float(b) * k);
+}
+
+/** trunc (para o zero) de um par normalizado, |v| < 2³¹. */
+int dfTrunc(vec2 v) {
+    float t = trunc(v.x);
+    if (t != v.x) return int(t);
+    // hi inteiro: o lo decide (para baixo nos positivos, para cima nos negativos)
+    return int(t) + int(v.x >= 0.0 ? floor(v.y) : ceil(v.y));
+}
+
+// Os coeficientes das séries de sen e cos ((−1)^k/(2k+1)! e (−1)^k/(2k)!) e π/2 em três partes, em dois floats
+// (gerados em Python com frações exatas).
+const vec2 KSEN[10] = vec2[10](
+    vec2(1.0, 0.0), vec2(-0.1666666716337204, 4.967053879312289e-09), vec2(0.008333333767950535, -4.34617203337595e-10),
+    vec2(-0.00019841270113829523, 2.725596874933456e-12), vec2(2.7557318844628753e-06, 3.793571224297229e-14),
+    vec2(-2.5052107943679403e-08, -4.4176230446483665e-16), vec2(1.6059044372074283e-10, -5.352526511562726e-18),
+    vec2(-7.647163609812713e-13, -1.2200710471178288e-20), vec2(2.8114573589663704e-15, -1.0462084739763658e-22),
+    vec2(-8.220635078476521e-18, -1.681478096855898e-25));
+const vec2 KCOS[11] = vec2[11](
+    vec2(1.0, 0.0), vec2(-0.5, 0.0), vec2(0.0416666679084301, -1.2417634698280722e-09),
+    vec2(-0.0013888889225199819, 3.3631094437103215e-11), vec2(2.4801587642286904e-05, -3.40699609366682e-13),
+    vec2(-2.755731998149713e-07, 7.575112209051195e-15), vec2(2.0876755879584152e-09, 1.1082839147459852e-16),
+    vec2(-1.147074536050896e-11, -2.372207689231238e-19), vec2(4.7794772561329454e-14, 7.62544404448643e-22),
+    vec2(-1.5619206814541513e-16, -1.5404471465941993e-24), vec2(4.110317590937049e-19, 3.237511732860265e-27));
+const float PI2_A = 1.5707963705062866, PI2_B = -4.371138828673793e-08, PI2_C = -1.7151245100058819e-15;
+
+/** sen e cos de x (|x| ≤ ~4: o maior passo é 2,5π / 2): o quadrante, depois as séries em |y| ≤ π/4. */
+void senCos(vec2 x, out vec2 s, out vec2 c) {
+    float k = floor(x.x * 0.63661977 + 0.5);
+    vec2 y = dfSoma(x, dfNeg(produtoExato(k, PI2_A)));
+    y = dfSoma(y, dfNeg(produtoExato(k, PI2_B)));
+    y = dfSoma(y, vec2(-mul(k, PI2_C), 0.0));
+    vec2 y2 = dfMul(y, y);
+    vec2 ps = KSEN[9];
+    for (int i = 8; i >= 0; i--) ps = dfSoma(dfMul(ps, y2), KSEN[i]);
+    ps = dfMul(ps, y);
+    vec2 pc = KCOS[10];
+    for (int i = 9; i >= 0; i--) pc = dfSoma(dfMul(pc, y2), KCOS[i]);
+    int q = int(k) & 3;
+    s = q == 0 ? ps : (q == 1 ? pc : (q == 2 ? dfNeg(ps) : dfNeg(pc)));
+    c = q == 0 ? pc : (q == 1 ? dfNeg(ps) : (q == 2 ? dfNeg(pc) : ps));
+}
+
+// ============================================================ o double do plugin, emulado (o do CC Vector Blur)
+// uvec2(alto, baixo) com os bits de um double IEEE-754. Só números normais e zero (é o que a conta usa).
+const uvec2 D_ZERO = uvec2(0u, 0u);
+const uvec2 D_UM = uvec2(0x3FF00000u, 0u);
+const uvec2 D_MEIO = uvec2(0x3FE00000u, 0u);
+const uvec2 D_MENOS_UM = uvec2(0xBFF00000u, 0u);
+const uvec2 D_65536 = uvec2(0x40F00000u, 0u);
+const uvec2 D_CENTESIMO = uvec2(0x3F847AE1u, 0x47AE147Bu);   // 0,01
+const uvec2 D_PI = uvec2(0x400921FBu, 0x54442D18u);
+
+bool dZero(uvec2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
+uint dSinal(uvec2 a) { return a.x >> 31; }
+int dExpo(uvec2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
+uvec2 dMant(uvec2 a) { return uvec2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
+uvec2 dNeg(uvec2 a) { return dZero(a) ? a : uvec2(a.x ^ 0x80000000u, a.y); }
+uvec2 dAbs(uvec2 a) { return uvec2(a.x & 0x7FFFFFFFu, a.y); }
+uvec2 dEscala2(uvec2 a, int k) { return dZero(a) ? a : uvec2(a.x + uint(k << 20), a.y); }
+
+uvec2 soma64(uvec2 a, uvec2 b) { uint lo = a.y + b.y; return uvec2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
+uvec2 sub64(uvec2 a, uvec2 b) { return uvec2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
+bool menor64(uvec2 a, uvec2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
+uvec2 shl64(uvec2 a, int n) {
+    if (n == 0) return a;
+    if (n >= 64) return uvec2(0u);
+    if (n >= 32) return uvec2(a.y << (n - 32), 0u);
+    return uvec2((a.x << n) | (a.y >> (32 - n)), a.y << n);
+}
+uvec2 shr64(uvec2 a, int n) {
+    if (n == 0) return a;
+    if (n >= 64) return uvec2(0u);
+    if (n >= 32) return uvec2(0u, a.x >> (n - 32));
+    return uvec2(a.x >> n, (a.y >> n) | (a.x << (32 - n)));
+}
+
+uvec2 dMontar(uint s, int e, uvec2 m) {
+    return uvec2((s << 31) | (uint(e + 1023) << 20) | (m.x & 0xFFFFFu), m.y);
+}
+
+/** m56 em [2^55, 2^56): 53 bits + guarda + 2 de resto (o último já com o que saiu); ao par. */
+uvec2 dArredondar(uint s, int e, uvec2 m56) {
+    uint extra = m56.y & 7u;
+    uvec2 m = shr64(m56, 3);
+    if (extra > 4u || (extra == 4u && (m.y & 1u) == 1u)) m = soma64(m, uvec2(0u, 1u));
+    if (m.x >= 0x200000u) { m = shr64(m, 1); e += 1; }
+    return dMontar(s, e, m);
+}
+
+/** O produto das mantissas em dígitos de 16 bits (laços de limite fixo: o compilador desenrola). */
+uvec2 dMul(uvec2 a, uvec2 b) {
+    if (dZero(a) || dZero(b)) return uvec2((dSinal(a) ^ dSinal(b)) << 31, 0u);
+    uvec2 ma = dMant(a), mb = dMant(b);
+    uint A[4];
+    uint B[4];
+    uint P[8];
+    A[0] = ma.y & 0xFFFFu; A[1] = ma.y >> 16; A[2] = ma.x & 0xFFFFu; A[3] = ma.x >> 16;
+    B[0] = mb.y & 0xFFFFu; B[1] = mb.y >> 16; B[2] = mb.x & 0xFFFFu; B[3] = mb.x >> 16;
+    for (int i = 0; i < 8; i++) P[i] = 0u;
+    for (int i = 0; i < 4; i++) {
+        uint c = 0u;
+        for (int j = 0; j < 4; j++) {
+            uint t = A[i] * B[j] + P[i + j] + c;
+            P[i + j] = t & 0xFFFFu;
+            c = t >> 16;
+        }
+        P[i + 4] = c;
+    }
+    uvec2 alto = uvec2((P[7] << 16) | P[6], (P[5] << 16) | P[4]);
+    uvec2 baixo = uvec2((P[3] << 16) | P[2], (P[1] << 16) | P[0]);
+    int e = dExpo(a) + dExpo(b);
+    int sh = 49;
+    if ((alto.x & 0x200u) != 0u) { sh = 50; e += 1; }
+    uvec2 m = shl64(alto, 64 - sh) | shr64(baixo, sh);
+    if (shl64(baixo, 64 - sh) != uvec2(0u)) m.y |= 1u;
+    return dArredondar(dSinal(a) ^ dSinal(b), e, m);
+}
+
+uvec2 dSoma(uvec2 a, uvec2 b) {
+    if (dZero(a)) return dZero(b) ? uvec2((dSinal(a) & dSinal(b)) << 31, 0u) : b;
+    if (dZero(b)) return a;
+    if (menor64(uvec2(a.x & 0x7FFFFFFFu, a.y), uvec2(b.x & 0x7FFFFFFFu, b.y))) { uvec2 t = a; a = b; b = t; }
+    int e = dExpo(a);
+    int d = e - dExpo(b);
+    uvec2 ma = shl64(dMant(a), 3), mb = shl64(dMant(b), 3);
+    if (d >= 60) {
+        mb = uvec2(0u, 1u);
+    } else if (d > 0) {
+        uvec2 r = shr64(mb, d);
+        if (shl64(r, d) != mb) r.y |= 1u;
+        mb = r;
+    }
+    uvec2 m;
+    if (dSinal(a) == dSinal(b)) {
+        m = soma64(ma, mb);
+        if (m.x >= 0x1000000u) {
+            uint st = m.y & 1u;
+            m = shr64(m, 1);
+            m.y |= st;
+            e += 1;
+        }
+    } else {
+        m = sub64(ma, mb);
+        if (m == uvec2(0u)) return uvec2(0u);
+        while (m.x < 0x800000u) { m = shl64(m, 1); e -= 1; }
+    }
+    return dArredondar(dSinal(a), e, m);
+}
+
+uvec2 dSub(uvec2 a, uvec2 b) { return dSoma(a, dNeg(b)); }
+
+uvec2 dDiv(uvec2 a, uvec2 b) {
+    uint s = dSinal(a) ^ dSinal(b);
+    if (dZero(a)) return uvec2(s << 31, 0u);
+    uvec2 ma = dMant(a), mb = dMant(b);
+    int e = dExpo(a) - dExpo(b);
+    if (menor64(ma, mb)) { ma = shl64(ma, 1); e -= 1; }
+    uvec2 q = uvec2(0u), resto = ma;
+    for (int i = 0; i < 55 + z0; i++) {
+        q = shl64(q, 1);
+        if (!menor64(resto, mb)) { resto = sub64(resto, mb); q.y |= 1u; }
+        resto = shl64(resto, 1);
+    }
+    q = shl64(q, 1);
+    if (resto != uvec2(0u)) q.y |= 1u;
+    return dArredondar(s, e, q);
+}
+
+/**
+ * a / n em double, para n inteiro de 1 a 4095, com o arredondamento do IEEE: a divisão longa da mantissa em dígitos
+ * de 16 bits (5 divisões de inteiro), no lugar dos 55 passos do dDiv.
+ */
+uvec2 dDivInt(uvec2 a, int n) {
+    if (dZero(a)) return a;
+    uint un = uint(n);
+    int bn = 0;
+    for (uint t = un; t != 0u; t >>= 1) bn++;
+    // D = m · 2^s com s = bits(n) + 3: o quociente cai em [2^55, 2^57)
+    int s = bn + 3;
+    uvec2 m = dMant(a);
+    uvec2 baixo = shl64(m, s);
+    uint dig[5];
+    dig[0] = (m.x >> (32 - s)) & 0xFFFFu;
+    dig[1] = baixo.x >> 16; dig[2] = baixo.x & 0xFFFFu; dig[3] = baixo.y >> 16; dig[4] = baixo.y & 0xFFFFu;
+    uint q[5];
+    uint r = 0u;
+    for (int i = 0; i < 5; i++) {
+        uint c = (r << 16) | dig[i];
+        q[i] = c / un;
+        r = c - q[i] * un;
+    }
+    uvec2 Q = uvec2((q[1] << 16) | q[2], (q[3] << 16) | q[4]);
+    int e = dExpo(a) + 3 - s;
+    if (Q.x >= 0x1000000u) {
+        uint st = Q.y & 1u;
+        Q = shr64(Q, 1);
+        Q.y |= st;
+        e += 1;
+    }
+    if (r != 0u) Q.y |= 1u;
+    return dArredondar(dSinal(a), e, Q);
+}
+
+uvec2 dSqrt(uvec2 a) {
+    if (dZero(a)) return uvec2(0u);
+    uvec2 m = dMant(a);
+    int k = dExpo(a) - 52;
+    if ((k & 1) != 0) { m = shl64(m, 1); k -= 1; }
+    // a raiz inteira de m · 2^58, dois bits por vez: 56 bits
+    uvec2 resto = uvec2(0u), raiz = uvec2(0u);
+    for (int i = 0; i < 56 + z0; i++) {
+        uint par = i < 27 ? (shr64(m, 52 - 2 * i).y & 3u) : 0u;
+        resto = shl64(resto, 2);
+        resto.y |= par;
+        uvec2 tentativa = shl64(raiz, 2);
+        tentativa.y |= 1u;
+        raiz = shl64(raiz, 1);
+        if (!menor64(resto, tentativa)) { resto = sub64(resto, tentativa); raiz.y |= 1u; }
+    }
+    if (resto != uvec2(0u)) raiz.y |= 1u;
+    return dArredondar(0u, k / 2 + 26, raiz);
+}
+
+/** trunc (para o zero), para |a| < 2^31. */
+int dTrunc(uvec2 a) {
+    if (dZero(a)) return 0;
+    int e = dExpo(a);
+    if (e < 0) return 0;
+    if (e > 30) return dSinal(a) == 1u ? -0x7FFFFFFF : 0x7FFFFFFF;
+    int v = int(shr64(dMant(a), 52 - e).y);
+    return dSinal(a) == 1u ? -v : v;
+}
+
+uvec2 dDeInt(int i) {
+    if (i == 0) return uvec2(0u);
+    uint u = uint(abs(i));
+    int e = 31;
+    while ((u & 0x80000000u) == 0u) { u <<= 1; e--; }
+    return dMontar(i < 0 ? 1u : 0u, e, shl64(uvec2(0u, u), 21));
+}
+
+uvec2 dDeFloat(float f) {
+    uint b = floatBitsToUint(f);
+    uint E = (b >> 23) & 0xFFu;
+    if (E == 0u) return uvec2(b & 0x80000000u, 0u);
+    uvec2 m = shl64(uvec2(0u, b & 0x7FFFFFu), 29);
+    return uvec2((b & 0x80000000u) | (uint(int(E) - 127 + 1023) << 20) | m.x, m.y);
+}
+
+/** O double para float32, ao par. */
+float dParaFloat(uvec2 d) {
+    if (dZero(d)) return uintBitsToFloat(d.x & 0x80000000u);
+    uvec2 m = dMant(d);
+    int e = dExpo(d);
+    uint m24 = shr64(m, 29).y;
+    uint resto = m.y & 0x1FFFFFFFu;
+    if (resto > 0x10000000u || (resto == 0x10000000u && (m24 & 1u) == 1u)) m24++;
+    if (m24 == 0x1000000u) { m24 >>= 1; e++; }
+    return uintBitsToFloat((dSinal(d) << 31) | (uint(e + 127) << 23) | (m24 & 0x7FFFFFu));
+}
+
+/** O double em dois floats: hi = o float mais perto, lo = o resto (perde só os 5 últimos bits). */
+vec2 dfDeD(uvec2 d) {
+    float hi = dParaFloat(d);
+    return vec2(hi, dParaFloat(dSub(d, dDeFloat(hi))));
+}
+
+/** a < b */
+bool dMenor(uvec2 a, uvec2 b) {
+    bool za = dZero(a), zb = dZero(b);
+    if (za && zb) return false;
+    if (za) return dSinal(b) == 0u;
+    if (zb) return dSinal(a) == 1u;
+    if (dSinal(a) != dSinal(b)) return dSinal(a) == 1u;
+    uvec2 ma = uvec2(a.x & 0x7FFFFFFFu, a.y), mb = uvec2(b.x & 0x7FFFFFFFu, b.y);
+    return dSinal(a) == 0u ? menor64(ma, mb) : menor64(mb, ma);
+}
+
+/** round(fração · lado · 65536), meio para longe do zero — a conta é exata em double (24 + 13 + 16 bits). */
+int pontoFixo(float fracao, int lado) {
+    uvec2 v = dEscala2(dMul(dDeFloat(abs(fracao)), dDeInt(lado)), 16);
+    int r = dTrunc(dSoma(v, D_MEIO));
+    return fracao < 0.0 ? -r : r;
+}
+
+// ============================================================ a camada e a leitura sub-pixel do AE
+int W, H;                 // a camada do AE (px), dentro do buffer a partir de `inicio`
+ivec2 inicio;
+bool dePe;
+
+/** Um pixel da camada (RGBA 0..255, cor reta) na orientação da IMAGEM (a linha 0 é o topo); fora, transparente. */
+ivec4 daCamada(int x, int y) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return ivec4(0);
+    ivec2 b = inicio + ivec2(x, dePe ? H - 1 - y : y);
+    return ivec4(texelFetch(inputImg, b, 0) * 255.0 + 0.5);
+}
+
+/** O índice inteiro de uma posição 16.16 como o AE: (short)(X >> 16). */
+int indice(int X) { return int(uint(X >> 16) << 16) >> 16; }
+
+/**
+ * O subpixel_sample de 8 bits do AE (PF.dll; o do CC Lens), na ordem da SSE dele. Sem fração: o pixel. Os quatro
+ * iguais: o pixel. Alfas iguais: cada canal (p3·w3 + p2·w2) + (p1·w1 + p0·w0) + 0,5. Senão: a cor pesada pelo alfa,
+ * vezes 1/S, + 0,5; o alfa S + 0,5. Fora da camada conta como zero.
+ */
+ivec4 amostraDoAe(int X, int Y) {
+    int ix = indice(X), iy = indice(Y);
+    int fx = X & 0xFFFF, fy = Y & 0xFFFF;
+    ivec4 p0 = daCamada(ix, iy);
+    if (fx == 0 && fy == 0) return p0;
+    ivec4 p1 = daCamada(ix + 1, iy);
+    ivec4 p2 = daCamada(ix, iy + 1);
+    ivec4 p3 = daCamada(ix + 1, iy + 1);
+    if (p0 == p1 && p1 == p2 && p2 == p3) return p0;
+    float wx = float(fx) * (1.0 / 65536.0);
+    float wy = float(fy) * (1.0 / 65536.0);
+    float w3 = mul(wy, wx);
+    float w1 = fixa(wx - w3);
+    float w2 = fixa(wy - w3);
+    float w0 = fixa(fixa(fixa(1.0 - w1) - w2) - w3);
+    if (p0.a == p1.a && p2.a == p3.a && p0.a == p2.a) {
+        if (p0.a == 0) return ivec4(0);
+        vec4 t = fixa4(mul4(vec4(p3), w3) + mul4(vec4(p2), w2));
+        vec4 u = fixa4(mul4(vec4(p1), w1) + mul4(vec4(p0), w0));
+        ivec4 r = ivec4(floor(fixa4(t + u) + 0.5));
+        r.a = p0.a;
+        return clamp(r, 0, 255);
+    }
+    float a0 = mul(float(p0.a), w0), a1 = mul(float(p1.a), w1), a2 = mul(float(p2.a), w2), a3 = mul(float(p3.a), w3);
+    float S = fixa(fixa(a3 + a2) + fixa(a1 + a0));
+    if (S < 0.5) return ivec4(0);
+    float rcp = divisao(1.0, S);
+    vec3 n = fixa3(fixa3(mul3(a3, vec3(p3.rgb)) + mul3(a2, vec3(p2.rgb))) + fixa3(mul3(a1, vec3(p1.rgb)) + mul3(a0, vec3(p0.rgb))));
+    ivec3 c = ivec3(floor(mul3(rcp, n) + 0.5));
+    return clamp(ivec4(c, int(floor(S + 0.5))), 0, 255);
+}
+
+// ============================================================ a soma das amostras
+const int N_MAXIMO = 4095;   // a tabela dos giros: 1024 × 4 entradas
+vec4 soma;        // (alfa, R·alfa, G·alfa, B·alfa) em float32
+float pesos;      // a soma dos pesos (Rotate Fading)
+
+/** Uma amostra: com `peso` < 0, a soma simples (alfa e cor·alfa); senão, pesada (alfa·peso, cor·alfa·peso). */
+void somar(ivec4 c, float peso) {
+    if (peso < 0.0) {
+        soma = soma + vec4(float(c.a), float(c.r * c.a), float(c.g * c.a), float(c.b * c.a));
+    } else {
+        float wa = mul(float(c.a), peso);
+        soma = soma + vec4(wa, mul(float(c.r), wa), mul(float(c.g), wa), mul(float(c.b), wa));
+    }
+}
+
+/** Alfa = trunc(soma / divisor), cor = trunc(soma da cor / soma do alfa), em float32; sem alfa, nada. */
+vec4 saida(float divisor) {
+    if (soma.x == 0.0) return vec4(0.0);
+    vec4 q = vec4(divisor, soma.x, soma.x, soma.x);
+    ivec4 c;
+    for (int i = 0; i < 4; i++) c[i] = int(trunc(divisao(soma[i], q[i]))) & 255;
+    return vec4(vec3(c.yzw), float(c.x)) / 255.0;
+}
+
+// ============================================================ as constantes do quadro (passe 0) e a tabela dos giros (1)
+uvec2 cAmt, cQQ, cAng, cMeia;
+vec2 cC0, cS0;
+// as mesmas, em dois floats, para o caminho rápido (texels 12..17)
+vec2 fAmt, fQQ, fMeia;
+
+/** 0x180004c20: amt = (Amount · −½) · 0,01; qq = (Quality · 0,01) · a escala da resolução (média de x e y; na prévia,
+ *  a do buffer), metade em Draft — aqui, a prévia em movimento (`acRascunho`), como o Radial Blur do AE; ang = −2π·amt
+ *  (com o amt antes do |·| do Centered); |ang/π · 2|. O Scratch começa girado de −ang/2. */
+void calcularConstantes() {
+    float esc = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+    cAmt = dMul(dNeg(dEscala2(dDeInt(fixo(amount)), -17)), D_CENTESIMO);
+    cQQ = dMul(dMul(dEscala2(dDeInt(fixo(quality)), -16), D_CENTESIMO), dDeFloat(esc));
+    if (acRascunho == 1) cQQ = dEscala2(cQQ, -1);
+    cAng = dMul(dEscala2(dNeg(cAmt), 1), D_PI);
+    cMeia = dAbs(dEscala2(dDiv(cAng, D_PI), 1));
+    senCos(dfDeD(dEscala2(dNeg(cAng), -1)), cS0, cC0);
+    fAmt = dfDeD(cAmt);
+    fQQ = dfDeD(cQQ);
+    fMeia = dfDeD(cMeia);
+}
+
+// Um uint inteiro nos 4 bytes de um texel RGBA8 (o buffer do motor é de 8 bits).
+vec4 guardar(uint b) {
+    return vec4(float(b & 255u), float((b >> 8) & 255u), float((b >> 16) & 255u), float(b >> 24)) / 255.0;
+}
+uint lerUint(sampler2D t, ivec2 p) {
+    uvec4 c = uvec4(texelFetch(t, p, 0) * 255.0 + 0.5);
+    return c.x | (c.y << 8) | (c.z << 16) | (c.w << 24);
+}
+uvec2 lerDouble(int k) { return uvec2(lerUint(constantes, ivec2(2 * k, 0)), lerUint(constantes, ivec2(2 * k + 1, 0))); }
+float lerFloat(sampler2D t, ivec2 p) { return uintBitsToFloat(lerUint(t, p)); }
+vec2 lerPar(int i) { return vec2(lerFloat(constantes, ivec2(i, 0)), lerFloat(constantes, ivec2(i + 1, 0))); }
+
+/** cos e sen de ang/N (a divisão em double, as séries em dois floats): a coluna N % 1024, as linhas 4·(N / 1024) + 0..3. */
+void giroDaTabela(int N, out vec2 cs, out vec2 sn) {
+    ivec2 p = ivec2(N & 1023, (N >> 10) * 4);
+    cs = vec2(lerFloat(giros, p), lerFloat(giros, p + ivec2(0, 1)));
+    sn = vec2(lerFloat(giros, p + ivec2(0, 2)), lerFloat(giros, p + ivec2(0, 3)));
+}
+
+/**
+ * Quantas amostras o Straight e o Fading leem (0x180004300): param quando o risco sai da camada — pelo lado em x,
+ * depois o menor com o lado em y.
+ */
+int corte(int x, int y, uvec2 dX, uvec2 dY, int N) {
+    uvec2 n = dDeInt(N), xd = dDeInt(x), yd = dDeInt(y), Wd = dDeInt(W), Hd = dDeInt(H);
+    int cnt = N;
+    uvec2 fx = dSoma(xd, dX);
+    if (dMenor(Wd, fx)) cnt = dTrunc(dDiv(dMul(dSub(Wd, xd), n), dX)) + 1;
+    else if (dMenor(fx, D_MENOS_UM)) cnt = 1 - dTrunc(dDiv(dMul(n, xd), dX));
+    uvec2 fy = dSoma(yd, dY);
+    bool baixo = dMenor(Hd, fy);
+    if (baixo || dMenor(fy, D_MENOS_UM)) {
+        uvec2 t = baixo ? dSoma(dDiv(dMul(dSub(Hd, yd), n), dY), D_UM) : dSub(D_UM, dDiv(dMul(n, yd), dY));
+        uvec2 c = dDeInt(cnt);
+        cnt = dTrunc(dMenor(c, t) ? c : t);
+    }
+    return cnt;
+}
+
+/** O `corte` em dois floats: cada comparação e cada trunc com margem (perto da divisa, `seguro` = false). */
+int corteRapido(int x, int y, vec2 dX, vec2 dY, int N, inout bool seguro) {
+    float n = float(N);
+    int cnt = N;
+    vec2 ex = dfSoma(dX, vec2(float(x - W), 0.0));        // x + dX − W
+    vec2 ex1 = dfSoma(dX, vec2(float(x + 1), 0.0));       // x + dX + 1
+    if (abs(ex.x) < 1.0e-6 || abs(ex1.x) < 1.0e-6) seguro = false;
+    if (ex.x > 0.0) cnt = dfCorte(dfDiv(vec2(float(W - x) * n, 0.0), dX), 1.0e-6, seguro) + 1;
+    else if (ex1.x < 0.0) cnt = 1 - dfCorte(dfDiv(vec2(n * float(x), 0.0), dX), 1.0e-6, seguro);
+    vec2 ey = dfSoma(dY, vec2(float(y - H), 0.0));
+    vec2 ey1 = dfSoma(dY, vec2(float(y + 1), 0.0));
+    if (abs(ey.x) < 1.0e-6 || abs(ey1.x) < 1.0e-6) seguro = false;
+    bool baixo = ey.x > 0.0;
+    if (baixo || ey1.x < 0.0) {
+        // t perto de inteiro também cobre o empate com cnt (que é inteiro)
+        vec2 t = baixo ? dfSoma(dfDiv(vec2(float(H - y) * n, 0.0), dY), vec2(1.0, 0.0))
+                       : dfSoma(vec2(1.0, 0.0), dfNeg(dfDiv(vec2(n * float(y), 0.0), dY)));
+        int tt = dfCorte(t, 1.0e-6, seguro);
+        if (t.x < float(cnt)) cnt = tt;
+    }
+    return cnt;
+}
+
+// O caminho rápido (dois floats com margem; a conta exata perto das divisas). `false` só para conferir na bancada.
+const bool RAPIDO = true;
+
+// dX = (p − c)·amt e dY em double, calculados só quando alguma grandeza do zoom cai perto de uma divisa.
+uvec2 eX, eY;
+bool temExatos = false;
+void exatos(int x, int y, uvec2 CX, uvec2 CY, uvec2 amt) {
+    if (temExatos) return;
+    eX = dMul(dSub(dDeInt(x), CX), amt);
+    eY = dMul(dSub(dDeInt(y), CY), amt);
+    temExatos = true;
+}
+
+void main() {
+    um = float(min(acIterationCount, 1));
+    z0 = min(acIteration, 0);
+    ivec2 buf = textureSize(inputImg, 0);
+    // A camada do AE dentro do buffer (a mídia encaixada; texto, forma e sólido: a composição inteira): o efeito do AE
+    // roda no tamanho DELA.
+    ivec2 tam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    inicio = (buf - tam) / 2;
+    W = tam.x; H = tam.y;
+    dePe = acEntradaDePe == 1;
+
+    if (acPass == 0) {
+        calcularConstantes();
+        int i = int(gl_FragCoord.x);
+        uvec2 v = i < 2 ? cAmt : i < 4 ? cQQ : i < 6 ? cAng : cMeia;
+        vec2 par = i < 10 ? cC0 : i < 12 ? cS0 : i < 14 ? fAmt : i < 16 ? fQQ : fMeia;
+        fragColor = guardar(i < 8 ? ((i & 1) == 0 ? v.x : v.y) : floatBitsToUint((i & 1) == 0 ? par.x : par.y));
+        return;
+    }
+    if (acPass == 1) {
+        calcularConstantes();
+        ivec2 t = ivec2(gl_FragCoord.xy);
+        int N = (t.y >> 2) * 1024 + t.x;
+        vec2 sn = vec2(0.0), cs = vec2(1.0, 0.0);
+        if (N >= 2) senCos(dfDeD(dDiv(cAng, dDeInt(N))), sn, cs);
+        int c = t.y & 3;
+        float f = c == 0 ? cs.x : c == 1 ? cs.y : c == 2 ? sn.x : sn.y;
+        fragColor = guardar(floatBitsToUint(f));
+        return;
+    }
+
+    // A conta é na orientação da IMAGEM (a linha 0 é o topo, como no plugin). Numa cena de pé a linha 0 do buffer é a
+    // BASE. Fora da camada o efeito não escreve.
+    ivec2 local = ivec2(floor(acScreenNorm * acResolution)) - inicio;
+    if (local.x < 0 || local.y < 0 || local.x >= W || local.y >= H) { fragColor = vec4(0.0); return; }
+    int x = local.x, y = dePe ? H - 1 - local.y : local.y;
+
+    // Amount 0: N = 2 amostras no próprio pixel (passo zero, nos seis tipos) — a soma dividida devolve o pixel.
+    int aF = fixo(amount);
+    if (aF == 0) {
+        ivec4 p = daCamada(x, y);
+        fragColor = p.a == 0 ? vec4(0.0) : vec4(p) / 255.0;
+        return;
+    }
+
+    // O centro como FRAÇÃO da camada em float32 (o AE entrega round(fração · lado · 65536)); cru, como no CC Lens, e
+    // levado ao buffer só quando a camada não o ocupa inteiro.
+    vec2 uv = acPontoNoBuffer(center);
+    vec2 simples = dePe ? vec2(center.x, 1.0 - center.y) : center;
+    vec2 fr;
+    if (tam == buf && all(lessThan(abs(uv - simples), vec2(1.0e-6)))) {
+        fr = center;
+    } else {
+        vec2 cb = vec2(mul(uv.x, float(buf.x)), mul(uv.y, float(buf.y))) - vec2(inicio);
+        if (dePe) cb.y = fixa(float(H) - cb.y);
+        fr = vec2(sign(cb.x) * divisao(abs(cb.x), float(W)), sign(cb.y) * divisao(abs(cb.y), float(H)));
+    }
+    int pcx = pontoFixo(fr.x, W), pcy = pontoFixo(fr.y, H);
+    uvec2 CX = dEscala2(dDeInt(pcx), -16), CY = dEscala2(dDeInt(pcy), -16);
+    // o centro e p − c em dois floats, exatos (16.16 com até 31 bits)
+    vec2 cx = dfDeInt(pcx, 1.0 / 65536.0), cy = dfDeInt(pcy, 1.0 / 65536.0);
+    vec2 px = dfSoma(vec2(float(x), 0.0), dfNeg(cx)), py = dfSoma(vec2(float(y), 0.0), dfNeg(cy));
+
+    // No rascunho, além da metade do Quality (o Draft do plugin), no máximo 64 amostras: como o Low do Radial Blur do AE.
+    int teto = acRascunho == 1 ? 64 : N_MAXIMO;
+    soma = vec4(0.0);
+    pesos = 0.0;
+    bool seguro = RAPIDO;
+
+    if (tipo >= 3) {
+        // ---- os giros: Rotate (0x180005810), Scratch (o mesmo, começando girado) e Rotate Fading (0x180005ed0) ----
+        int N;
+        if (seguro) N = dfPiso(dfMul(dfMul(dfRaiz(dfSoma(dfMul(py, py), dfMul(px, px))), lerPar(14)), lerPar(16)), 1.0e-6, seguro) + 2;
+        if (!seguro) {
+            uvec2 Xd = dSub(dDeInt(x), CX), Yd = dSub(dDeInt(y), CY);
+            uvec2 r = dSqrt(dSoma(dMul(Yd, Yd), dMul(Xd, Xd)));
+            N = dTrunc(dMul(dMul(r, lerDouble(1)), lerDouble(3))) + 2;
+        }
+        N = min(N, teto);
+        vec2 sn, cs;
+        giroDaTabela(N, cs, sn);
+        if (tipo == 4) {
+            vec2 c0 = lerPar(8), s0 = lerPar(10);
+            vec2 nx = dfSoma(dfMul(s0, py), dfMul(c0, px));
+            py = dfSoma(dfMul(c0, py), dfNeg(dfMul(s0, px)));
+            px = nx;
+        }
+        bool desvanecer = tipo == 5;
+        float peso = float(N);
+        for (int k = 0; k < N; k++) {
+            int X = dfTrunc(dfSoma(px, cx) * 65536.0);
+            int Y = dfTrunc(dfSoma(py, cy) * 65536.0);
+            ivec4 c = amostraDoAe(X, Y);
+            vec2 nx = dfSoma(dfMul(px, cs), dfMul(py, sn));
+            py = dfSoma(dfMul(py, cs), dfNeg(dfMul(px, sn)));
+            px = nx;
+            if (desvanecer) {
+                pesos = fixa(pesos + peso);
+                somar(c, peso);
+                peso = peso - 1.0;
+            } else {
+                somar(c, -1.0);
+            }
+        }
+        fragColor = saida(desvanecer ? pesos : float(N));
+        return;
+    }
+
+    // ---- os zooms: Straight (0x180006550), Fading (0x1800071a0), Centered (0x180006b30, com |amt|) ----
+    int N, X0, Y0, DX, DY, cnt;
+    if (seguro) {
+        // Cada grandeza em dois floats; a que cair perto de uma divisa é refeita sozinha em double (os d exatos só
+        // são calculados se alguma precisar). Com Amount redondo isso é comum: no Centered 20, o começo do risco
+        // cai em inteiro a cada 5 colunas.
+        uvec2 amtD = lerDouble(0);
+        vec2 amt = lerPar(12);
+        if (tipo == 2) { amtD = dAbs(amtD); if (amt.x < 0.0) amt = -amt; }
+        vec2 dX = dfMul(px, amt), dY = dfMul(py, amt);
+        bool ok = true;
+        N = dfPiso(dfMul(dfRaiz(dfSoma(dfMul(dY, dY), dfMul(dX, dX))), lerPar(14)), 1.0e-6, ok) + 2;
+        if (!ok) {
+            exatos(x, y, CX, CY, amtD);
+            N = dTrunc(dMul(dSqrt(dSoma(dMul(eY, eY), dMul(eX, eX))), lerDouble(1))) + 2;
+        }
+        N = min(N, teto);
+        vec2 n = vec2(float(N), 0.0);
+        // as posições em 16.16 passam de 10⁷: a margem é de 10⁻⁴ (o erro dos dois floats fica perto de 10⁻⁶)
+        ok = true;
+        DX = dfCorte(dfDiv(dX * 65536.0, n), 1.0e-4, ok);
+        DY = dfCorte(dfDiv(dY * 65536.0, n), 1.0e-4, ok);
+        if (!ok) {
+            exatos(x, y, CX, CY, amtD);
+            if (tipo == 2) {
+                uvec2 u = dDivInt(D_65536, N);
+                DX = dTrunc(dMul(u, eX));
+                DY = dTrunc(dMul(u, eY));
+            } else {
+                DX = dTrunc(dDivInt(dEscala2(eX, 16), N));
+                DY = dTrunc(dDivInt(dEscala2(eY, 16), N));
+            }
+        }
+        ok = true;
+        if (tipo == 2) {
+            X0 = dfCorte(dfSoma(vec2(float(x), 0.0), dfNeg(dX * 0.5)) * 65536.0, 1.0e-4, ok);
+            Y0 = dfCorte(dfSoma(vec2(float(y), 0.0), dfNeg(dY * 0.5)) * 65536.0, 1.0e-4, ok);
+            if (!ok) {
+                exatos(x, y, CX, CY, amtD);
+                X0 = dTrunc(dEscala2(dSub(dDeInt(x), dEscala2(eX, -1)), 16));
+                Y0 = dTrunc(dEscala2(dSub(dDeInt(y), dEscala2(eY, -1)), 16));
+            }
+            cnt = N;
+        } else {
+            X0 = x << 16;
+            Y0 = y << 16;
+            cnt = corteRapido(x, y, dX, dY, N, ok);
+            if (!ok) {
+                exatos(x, y, CX, CY, amtD);
+                cnt = corte(x, y, eX, eY, N);
+            }
+        }
+    } else {
+        // a conta toda em double emulado (só para conferir o caminho rápido na bancada)
+        uvec2 amt = lerDouble(0), qq = lerDouble(1);
+        uvec2 Xd = dSub(dDeInt(x), CX), Yd = dSub(dDeInt(y), CY);
+        if (tipo == 2) amt = dAbs(amt);
+        uvec2 dX = dMul(Xd, amt), dY = dMul(Yd, amt);
+        N = min(dTrunc(dMul(dSqrt(dSoma(dMul(dY, dY), dMul(dX, dX))), qq)) + 2, teto);
+        uvec2 n = dDeInt(N);
+        if (tipo == 2) {
+            uvec2 u = dDiv(D_65536, n);
+            DX = dTrunc(dMul(u, dX));
+            DY = dTrunc(dMul(u, dY));
+            X0 = dTrunc(dEscala2(dSub(dDeInt(x), dEscala2(dX, -1)), 16));
+            Y0 = dTrunc(dEscala2(dSub(dDeInt(y), dEscala2(dY, -1)), 16));
+            cnt = N;
+        } else {
+            DX = dTrunc(dDiv(dEscala2(dX, 16), n));
+            DY = dTrunc(dDiv(dEscala2(dY, 16), n));
+            X0 = x << 16;
+            Y0 = y << 16;
+            cnt = corte(x, y, dX, dY, N);
+        }
+    }
+    bool desvanecer = tipo == 1;
+    int lx = (W << 16) - 0x10000, ly = (H << 16) - 0x10000;
+    float peso = float(N);
+    for (int k = 0; k < cnt; k++) {
+        int X = X0 + k * DX, Y = Y0 + k * DY;
+        // o Centered não lê a amostra fora de [0, (lado − 1)·65536]
+        if (tipo != 2 || (X >= 0 && Y >= 0 && X <= lx && Y <= ly)) somar(amostraDoAe(X, Y), desvanecer ? peso : -1.0);
+        peso = peso - 1.0;
+    }
+    fragColor = saida(desvanecer ? mul(float(N * (N + 1)), 0.5) : float(N));
+}
+
+    ]]></shader>
+</effect>

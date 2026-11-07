@@ -1,0 +1,1663 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RayTracing_glass_sphere
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-raytracing-glass-sphere"
+    name="Raytracing Glass Sphere (NV)"
+    name-en="Raytracing Glass Sphere (NV)"
+    desc="NodeVideo effect 'NodeVideo/RayTracing_glass_sphere', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RayTracing_glass_sphere', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <xyz id="_rotation" label="Rotation" defaultX="0" defaultY="0" defaultZ="0" />
+        <slider id="_zoom" label="Zoom" default="-8" min="-8" max="5" step="0.01" />
+        <xyz id="_color" label="Color" defaultX="1" defaultY="1" defaultZ="1" />
+        <slider id="_intensity" label="Intensity" default="0.1" min="0" max="2" step="0.01" />
+        <slider id="_refraction" label="Refraction" default="1.458" min="0" max="3" step="0.01" />
+        <point id="_tex_scale" label="Tex Scale" defaultX="2" defaultY="2" vetor="true" min="0" max="4" />
+        <point id="_tex_offset" label="Tex Offset" defaultX="0" defaultY="0" vetor="true" min="0" max="2" />
+        <slider id="_wrap_texture" type="integer" label="Wrap Texture" default="1" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+int u_xlati1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+bvec2 u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+int u_xlati5;
+bool u_xlatb5;
+vec4 u_xlat6;
+bvec2 u_xlatb6;
+vec4 u_xlat7;
+bvec2 u_xlatb7;
+vec4 u_xlat8;
+vec4 u_xlat9;
+float u_xlat10;
+vec3 u_xlat11;
+vec3 u_xlat12;
+float u_xlat13;
+bool u_xlatb13;
+bool u_xlatb14;
+vec3 u_xlat15;
+bool u_xlatb15;
+bool u_xlatb16;
+bool u_xlatb17;
+vec2 u_xlat23;
+bvec2 u_xlatb23;
+vec2 u_xlat26;
+vec2 u_xlat27;
+float u_xlat30;
+bool u_xlatb30;
+float u_xlat31;
+bool u_xlatb31;
+float u_xlat32;
+bool u_xlatb32;
+float u_xlat33;
+bool u_xlatb33;
+float u_xlat34;
+bool u_xlatb34;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat1.xyz = _rotation.xyz * vec3(6.28318548, 6.28318548, 6.28318548);
+    u_xlat2.x = sin(u_xlat1.z);
+    u_xlat3.x = cos(u_xlat1.z);
+    u_xlat4.x = (-u_xlat2.x);
+    u_xlat5.x = cos(u_xlat1.x);
+    u_xlat1.x = sin(u_xlat1.x);
+    u_xlat6.y = u_xlat2.x * u_xlat5.x;
+    u_xlat3.y = (-u_xlat1.x) * u_xlat2.x;
+    u_xlat2.y = u_xlat3.x * u_xlat5.x;
+    u_xlat4.y = (-u_xlat1.x) * u_xlat3.x;
+    u_xlat7.x = sin(u_xlat1.y);
+    u_xlat8.x = cos(u_xlat1.y);
+    u_xlat9.x = (-u_xlat7.x);
+    u_xlat9.y = u_xlat8.x;
+    u_xlat6.x = dot(u_xlat3.yx, u_xlat9.xy);
+    u_xlat9.z = u_xlat7.x;
+    u_xlat6.z = dot(u_xlat3.yx, u_xlat9.yz);
+    u_xlat2.x = dot(u_xlat4.yx, u_xlat9.xy);
+    u_xlat2.z = dot(u_xlat4.yx, u_xlat9.yz);
+    u_xlat3.x = u_xlat5.x * u_xlat9.x;
+    u_xlat3.z = u_xlat5.x * u_xlat8.x;
+    u_xlat0.z = 1.0;
+    u_xlat30 = dot(u_xlat0.xyz, u_xlat0.xyz);
+    u_xlat30 = inversesqrt(u_xlat30);
+    u_xlat0.xyz = vec3(u_xlat30) * u_xlat0.xyz;
+    u_xlat4.x = dot(u_xlat6.xyz, u_xlat0.xyz);
+    u_xlat4.y = dot(u_xlat2.xyz, u_xlat0.xyz);
+    u_xlat3.y = u_xlat1.x;
+    u_xlat4.z = dot(u_xlat3.xyz, u_xlat0.xyz);
+    u_xlat0.x = u_xlat6.z * _zoom;
+    u_xlat0.y = u_xlat2.z * _zoom;
+    u_xlat0.z = u_xlat3.z * _zoom;
+    u_xlat30 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+    u_xlat1.x = dot((-u_xlat0.xyz), u_xlat4.xyz);
+    u_xlat11.x = (-u_xlat1.x) * u_xlat1.x + u_xlat30;
+    u_xlat11.x = max(u_xlat11.x, 0.0);
+    u_xlat11.y = uintBitsToFloat((1.99939609>=u_xlat11.x) ? 0xFFFFFFFFu : uint(0));
+    if(uint(floatBitsToUint(u_xlat11.y)) != uint(0)) {
+        u_xlatb30 = u_xlat30>=1.99939609;
+        if(u_xlatb30){
+            u_xlat30 = (-u_xlat11.x) + 1.99939609;
+            u_xlat30 = sqrt(u_xlat30);
+            u_xlat30 = (-u_xlat30) + u_xlat1.x;
+            u_xlati1 = int((u_xlat30>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati1 != 0) {
+                u_xlat0.xyz = u_xlat4.xyz * vec3(u_xlat30) + u_xlat0.xyz;
+                u_xlat11.xyz = u_xlat0.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+            }
+        } else {
+            u_xlati1 = 0;
+        }
+    } else {
+        u_xlati1 = 0;
+    }
+    if(u_xlati1 != 0) {
+        u_xlat30 = float(1.0) / _refraction;
+        u_xlat1.x = dot(u_xlat4.xyz, u_xlat11.xyz);
+        u_xlat2.x = u_xlat30 * u_xlat30;
+        u_xlat12.x = (-u_xlat1.x) * u_xlat1.x + 1.0;
+        u_xlat2.x = (-u_xlat2.x) * u_xlat12.x + 1.0;
+        u_xlat12.x = sqrt(u_xlat2.x);
+        u_xlat12.x = u_xlat30 * u_xlat1.x + u_xlat12.x;
+        u_xlatb2.x = u_xlat2.x>=0.0;
+        u_xlat12.xyz = u_xlat11.xyz * u_xlat12.xxx;
+        u_xlat12.xyz = vec3(u_xlat30) * u_xlat4.xyz + (-u_xlat12.xyz);
+        u_xlat2.xyz = u_xlatb2.x ? u_xlat12.xyz : vec3(0.0, 0.0, 0.0);
+        u_xlat30 = u_xlat1.x + u_xlat1.x;
+        u_xlat11.xyz = u_xlat11.xyz * (-vec3(u_xlat30)) + u_xlat4.xyz;
+        u_xlat30 = dot(u_xlat11.xyz, u_xlat11.xyz);
+        u_xlat30 = inversesqrt(u_xlat30);
+        u_xlat3.xyz = vec3(u_xlat30) * u_xlat11.xyz;
+        u_xlat30 = min(abs(u_xlat3.z), abs(u_xlat3.x));
+        u_xlat31 = max(abs(u_xlat3.z), abs(u_xlat3.x));
+        u_xlat31 = float(1.0) / u_xlat31;
+        u_xlat30 = u_xlat30 * u_xlat31;
+        u_xlat31 = u_xlat30 * u_xlat30;
+        u_xlat32 = u_xlat31 * 0.0208350997 + -0.0851330012;
+        u_xlat32 = u_xlat31 * u_xlat32 + 0.180141002;
+        u_xlat32 = u_xlat31 * u_xlat32 + -0.330299497;
+        u_xlat31 = u_xlat31 * u_xlat32 + 0.999866009;
+        u_xlat32 = u_xlat30 * u_xlat31;
+        u_xlatb33 = abs(u_xlat3.z)<abs(u_xlat3.x);
+        u_xlat32 = u_xlat32 * -2.0 + 1.57079637;
+        u_xlat32 = u_xlatb33 ? u_xlat32 : float(0.0);
+        u_xlat30 = u_xlat30 * u_xlat31 + u_xlat32;
+        u_xlatb31 = u_xlat3.z<(-u_xlat3.z);
+        u_xlat31 = u_xlatb31 ? -3.14159274 : float(0.0);
+        u_xlat30 = u_xlat30 + u_xlat31;
+        u_xlat31 = min(u_xlat3.z, u_xlat3.x);
+        u_xlat32 = max(u_xlat3.z, u_xlat3.x);
+        u_xlatb31 = u_xlat31<(-u_xlat31);
+        u_xlatb32 = u_xlat32>=(-u_xlat32);
+        u_xlatb31 = u_xlatb31 && u_xlatb32;
+        u_xlat30 = (u_xlatb31) ? (-u_xlat30) : u_xlat30;
+        u_xlat4.x = u_xlat30 * 0.159154937 + 0.5;
+        u_xlat4.y = u_xlat3.y * 0.5 + 0.5;
+        u_xlat11.xy = u_xlat11.xy * acScreenNorm.xy;
+        u_xlat11.xy = (int(_wrap_texture) != 0) ? u_xlat4.xy : u_xlat11.xy;
+        u_xlat11.xy = u_xlat11.xy + vec2(-0.5, -0.5);
+        u_xlat11.xy = u_xlat11.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+        u_xlat11.xy = u_xlat11.xy + vec2(0.5, 0.5);
+        u_xlatb3.xy = greaterThanEqual(u_xlat11.xyxx, (-u_xlat11.xyxx)).xy;
+        u_xlat11.xy = fract(abs(u_xlat11.xy));
+        {
+            vec3 hlslcc_movcTemp = u_xlat11;
+            hlslcc_movcTemp.x = (u_xlatb3.x) ? u_xlat11.x : (-u_xlat11.x);
+            hlslcc_movcTemp.y = (u_xlatb3.y) ? u_xlat11.y : (-u_xlat11.y);
+            u_xlat11 = hlslcc_movcTemp;
+        }
+        u_xlatb3.xy = lessThan(u_xlat11.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+        u_xlat23.xy = u_xlat11.xy + vec2(1.0, 1.0);
+        u_xlat3.x = (u_xlatb3.x) ? u_xlat23.x : u_xlat11.x;
+        u_xlat3.y = (u_xlatb3.y) ? u_xlat23.y : u_xlat11.y;
+        u_xlat3.z = (-u_xlat3.y) + 1.0;
+        u_xlat3 = texture(inputImg, u_xlat3.xz);
+        u_xlat30 = -abs(u_xlat1.x) + 1.0;
+        u_xlat1 = vec4(u_xlat30) * u_xlat3;
+        u_xlat30 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+        u_xlat32 = dot((-u_xlat0.xyz), u_xlat2.xyz);
+        u_xlat30 = (-u_xlat32) * u_xlat32 + u_xlat30;
+        u_xlat30 = max(u_xlat30, 0.0);
+        u_xlat3.x = uintBitsToFloat((1.99939609>=u_xlat30) ? 0xFFFFFFFFu : uint(0));
+        if(uint(floatBitsToUint(u_xlat3.x)) != uint(0)) {
+            u_xlat30 = (-u_xlat30) + 1.99939609;
+            u_xlat30 = sqrt(u_xlat30);
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat30) + u_xlat0.xyz;
+            u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+            u_xlat4.xyz = (-u_xlat4.xyz);
+        }
+        u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+        u_xlat33 = _refraction * _refraction;
+        u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+        u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+        u_xlatb5 = u_xlat34>=0.0;
+        if(u_xlatb5){
+            u_xlat34 = sqrt(u_xlat34);
+            u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+            u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+            u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+            u_xlat32 = inversesqrt(u_xlat32);
+            u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+            u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+            u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+            u_xlat34 = float(1.0) / u_xlat34;
+            u_xlat32 = u_xlat32 * u_xlat34;
+            u_xlat34 = u_xlat32 * u_xlat32;
+            u_xlat6.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+            u_xlat6.x = u_xlat34 * u_xlat6.x + 0.180141002;
+            u_xlat6.x = u_xlat34 * u_xlat6.x + -0.330299497;
+            u_xlat34 = u_xlat34 * u_xlat6.x + 0.999866009;
+            u_xlat6.x = u_xlat32 * u_xlat34;
+            u_xlatb16 = abs(u_xlat15.z)<abs(u_xlat15.x);
+            u_xlat6.x = u_xlat6.x * -2.0 + 1.57079637;
+            u_xlat6.x = u_xlatb16 ? u_xlat6.x : float(0.0);
+            u_xlat32 = u_xlat32 * u_xlat34 + u_xlat6.x;
+            u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+            u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+            u_xlat32 = u_xlat32 + u_xlat34;
+            u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+            u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+            u_xlatb34 = u_xlat34<(-u_xlat34);
+            u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+            u_xlatb34 = u_xlatb34 && u_xlatb15;
+            u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+            u_xlat6.x = u_xlat32 * 0.159154937 + 0.5;
+            u_xlat6.y = u_xlat15.y * 0.5 + 0.5;
+            u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+            u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat6.xy : u_xlat15.xy;
+            u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+            u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+            u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+            u_xlatb6.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+            u_xlat15.xy = fract(abs(u_xlat15.xy));
+            {
+                vec3 hlslcc_movcTemp = u_xlat15;
+                hlslcc_movcTemp.x = (u_xlatb6.x) ? u_xlat15.x : (-u_xlat15.x);
+                hlslcc_movcTemp.y = (u_xlatb6.y) ? u_xlat15.y : (-u_xlat15.y);
+                u_xlat15 = hlslcc_movcTemp;
+            }
+            u_xlatb6.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+            u_xlat26.xy = u_xlat15.xy + vec2(1.0, 1.0);
+            u_xlat6.x = (u_xlatb6.x) ? u_xlat26.x : u_xlat15.x;
+            u_xlat6.y = (u_xlatb6.y) ? u_xlat26.y : u_xlat15.y;
+            u_xlat6.z = (-u_xlat6.y) + 1.0;
+            u_xlat6 = texture(inputImg, u_xlat6.xz);
+            u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+            u_xlat7 = vec4(u_xlat32) * u_xlat6;
+            u_xlat34 = u_xlat30 * _intensity;
+            u_xlat34 = u_xlat34 * 0.100000001;
+            u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+            u_xlat8.xyz = _color.xyz;
+            u_xlat8.w = 1.0;
+            u_xlat6 = (-u_xlat6) * vec4(u_xlat32) + u_xlat8;
+            u_xlat6 = vec4(u_xlat34) * u_xlat6 + u_xlat7;
+            u_xlat0.xyz = u_xlat3.xyz;
+        } else {
+            u_xlat6.x = float(0.0);
+            u_xlat6.y = float(0.0);
+            u_xlat6.z = float(0.0);
+            u_xlat6.w = float(0.0);
+        }
+        u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+        u_xlat32 = u_xlat32 + u_xlat32;
+        u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+        u_xlat0.xyz = (bool(u_xlatb5)) ? u_xlat0.xyz : u_xlat3.xyz;
+        u_xlat2.xyz = (bool(u_xlatb5)) ? u_xlat2.xyz : u_xlat4.xyz;
+        if(!u_xlatb5){
+            if(!u_xlatb5){
+                u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+                u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+                u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+                u_xlat32 = max(u_xlat32, 0.0);
+                u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+                if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                    u_xlat32 = (-u_xlat32) + 1.99939609;
+                    u_xlat32 = sqrt(u_xlat32);
+                    u_xlat32 = u_xlat32 + u_xlat3.x;
+                    u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                    u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                    u_xlat4.xyz = (-u_xlat4.xyz);
+                }
+                u_xlat30 = u_xlat30 + u_xlat32;
+                u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+                u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+                u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+                u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+                if(u_xlati5 != 0) {
+                    u_xlat34 = sqrt(u_xlat34);
+                    u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                    u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                    u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                    u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                    u_xlat32 = inversesqrt(u_xlat32);
+                    u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                    u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                    u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                    u_xlat34 = float(1.0) / u_xlat34;
+                    u_xlat32 = u_xlat32 * u_xlat34;
+                    u_xlat34 = u_xlat32 * u_xlat32;
+                    u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                    u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                    u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                    u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                    u_xlat7.x = u_xlat32 * u_xlat34;
+                    u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                    u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                    u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                    u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                    u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                    u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                    u_xlat32 = u_xlat32 + u_xlat34;
+                    u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                    u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                    u_xlatb34 = u_xlat34<(-u_xlat34);
+                    u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                    u_xlatb34 = u_xlatb34 && u_xlatb15;
+                    u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                    u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                    u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                    u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                    u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                    u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                    u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                    u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                    u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                    u_xlat15.xy = fract(abs(u_xlat15.xy));
+                    {
+                        vec3 hlslcc_movcTemp = u_xlat15;
+                        hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                        hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                        u_xlat15 = hlslcc_movcTemp;
+                    }
+                    u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                    u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                    u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                    u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                    u_xlat7.z = (-u_xlat7.y) + 1.0;
+                    u_xlat7 = texture(inputImg, u_xlat7.xz);
+                    u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                    u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                    u_xlat34 = u_xlat30 * _intensity;
+                    u_xlat34 = u_xlat34 * 0.100000001;
+                    u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                    u_xlat9.xyz = _color.xyz;
+                    u_xlat9.w = 1.0;
+                    u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                    u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                    u_xlat0.xyz = u_xlat3.xyz;
+                }
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+                u_xlat32 = u_xlat32 + u_xlat32;
+                u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+                u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+                u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+            } else {
+                u_xlati5 = int(0xFFFFFFFFu);
+            }
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlat3.y = uintBitsToFloat((1.99939609>=u_xlat32) ? 0xFFFFFFFFu : uint(0));
+            if(uint(floatBitsToUint(u_xlat3.y)) != uint(0)) {
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat3.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat4.xyz = u_xlat3.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat4.xyz = (-u_xlat4.xyz);
+            }
+            u_xlat30 = u_xlat30 + u_xlat32;
+            u_xlat32 = dot(u_xlat4.xyz, u_xlat2.xyz);
+            u_xlat34 = (-u_xlat32) * u_xlat32 + 1.0;
+            u_xlat34 = (-u_xlat33) * u_xlat34 + 1.0;
+            u_xlati5 = int((u_xlat34>=0.0) ? 0xFFFFFFFFu : uint(0));
+            if(u_xlati5 != 0) {
+                u_xlat34 = sqrt(u_xlat34);
+                u_xlat32 = _refraction * u_xlat32 + u_xlat34;
+                u_xlat15.xyz = u_xlat4.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat15.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat15.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = max(abs(u_xlat15.z), abs(u_xlat15.x));
+                u_xlat34 = float(1.0) / u_xlat34;
+                u_xlat32 = u_xlat32 * u_xlat34;
+                u_xlat34 = u_xlat32 * u_xlat32;
+                u_xlat7.x = u_xlat34 * 0.0208350997 + -0.0851330012;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + 0.180141002;
+                u_xlat7.x = u_xlat34 * u_xlat7.x + -0.330299497;
+                u_xlat34 = u_xlat34 * u_xlat7.x + 0.999866009;
+                u_xlat7.x = u_xlat32 * u_xlat34;
+                u_xlatb17 = abs(u_xlat15.z)<abs(u_xlat15.x);
+                u_xlat7.x = u_xlat7.x * -2.0 + 1.57079637;
+                u_xlat7.x = u_xlatb17 ? u_xlat7.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat34 + u_xlat7.x;
+                u_xlatb34 = u_xlat15.z<(-u_xlat15.z);
+                u_xlat34 = u_xlatb34 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat34;
+                u_xlat34 = min(u_xlat15.z, u_xlat15.x);
+                u_xlat15.x = max(u_xlat15.z, u_xlat15.x);
+                u_xlatb34 = u_xlat34<(-u_xlat34);
+                u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+                u_xlatb34 = u_xlatb34 && u_xlatb15;
+                u_xlat32 = (u_xlatb34) ? (-u_xlat32) : u_xlat32;
+                u_xlat7.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat7.y = u_xlat15.y * 0.5 + 0.5;
+                u_xlat15.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat15.xy = (int(_wrap_texture) != 0) ? u_xlat7.xy : u_xlat15.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(-0.5, -0.5);
+                u_xlat15.xy = u_xlat15.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat15.xy = u_xlat15.xy + vec2(0.5, 0.5);
+                u_xlatb7.xy = greaterThanEqual(u_xlat15.xyxx, (-u_xlat15.xyxx)).xy;
+                u_xlat15.xy = fract(abs(u_xlat15.xy));
+                {
+                    vec3 hlslcc_movcTemp = u_xlat15;
+                    hlslcc_movcTemp.x = (u_xlatb7.x) ? u_xlat15.x : (-u_xlat15.x);
+                    hlslcc_movcTemp.y = (u_xlatb7.y) ? u_xlat15.y : (-u_xlat15.y);
+                    u_xlat15 = hlslcc_movcTemp;
+                }
+                u_xlatb7.xy = lessThan(u_xlat15.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat27.xy = u_xlat15.xy + vec2(1.0, 1.0);
+                u_xlat7.x = (u_xlatb7.x) ? u_xlat27.x : u_xlat15.x;
+                u_xlat7.y = (u_xlatb7.y) ? u_xlat27.y : u_xlat15.y;
+                u_xlat7.z = (-u_xlat7.y) + 1.0;
+                u_xlat7 = texture(inputImg, u_xlat7.xz);
+                u_xlat32 = dot((-u_xlat2.xyz), u_xlat4.xyz);
+                u_xlat8 = vec4(u_xlat32) * u_xlat7;
+                u_xlat34 = u_xlat30 * _intensity;
+                u_xlat34 = u_xlat34 * 0.100000001;
+                u_xlat34 = clamp(u_xlat34, 0.0, 1.0);
+                u_xlat9.xyz = _color.xyz;
+                u_xlat9.w = 1.0;
+                u_xlat7 = (-u_xlat7) * vec4(u_xlat32) + u_xlat9;
+                u_xlat6 = vec4(u_xlat34) * u_xlat7 + u_xlat8;
+                u_xlat0.xyz = u_xlat3.xyz;
+            }
+            u_xlat32 = dot(u_xlat2.xyz, u_xlat4.xyz);
+            u_xlat32 = u_xlat32 + u_xlat32;
+            u_xlat4.xyz = u_xlat4.xyz * (-vec3(u_xlat32)) + u_xlat2.xyz;
+            u_xlat0.xyz = (int(u_xlati5) != 0) ? u_xlat0.xyz : u_xlat3.xyz;
+            u_xlat2.xyz = (int(u_xlati5) != 0) ? u_xlat2.xyz : u_xlat4.xyz;
+        } else {
+            u_xlati5 = int(0xFFFFFFFFu);
+        }
+        if(u_xlati5 == 0) {
+            u_xlat32 = dot((-u_xlat0.xyz), (-u_xlat0.xyz));
+            u_xlat3.x = dot((-u_xlat0.xyz), u_xlat2.xyz);
+            u_xlat32 = (-u_xlat3.x) * u_xlat3.x + u_xlat32;
+            u_xlat32 = max(u_xlat32, 0.0);
+            u_xlatb13 = 1.99939609>=u_xlat32;
+            if(u_xlatb13){
+                u_xlat32 = (-u_xlat32) + 1.99939609;
+                u_xlat32 = sqrt(u_xlat32);
+                u_xlat32 = u_xlat32 + u_xlat3.x;
+                u_xlat0.xyz = u_xlat2.xyz * vec3(u_xlat32) + u_xlat0.xyz;
+                u_xlat0.xyz = u_xlat0.xyz * vec3(0.707213581, 0.707213581, 0.707213581);
+                u_xlat0.xyz = (-u_xlat0.xyz);
+            }
+            u_xlat3.x = dot(u_xlat0.xyz, u_xlat2.xyz);
+            u_xlat13 = (-u_xlat3.x) * u_xlat3.x + 1.0;
+            u_xlat13 = (-u_xlat33) * u_xlat13 + 1.0;
+            u_xlatb23.x = u_xlat13>=0.0;
+            if(u_xlatb23.x){
+                u_xlat30 = u_xlat30 + u_xlat32;
+                u_xlat32 = sqrt(u_xlat13);
+                u_xlat32 = _refraction * u_xlat3.x + u_xlat32;
+                u_xlat3.xyz = u_xlat0.xyz * vec3(u_xlat32);
+                u_xlat2.xyz = vec3(_refraction) * u_xlat2.xyz + (-u_xlat3.xyz);
+                u_xlat32 = dot(u_xlat2.xyz, u_xlat2.xyz);
+                u_xlat32 = inversesqrt(u_xlat32);
+                u_xlat3.xyz = vec3(u_xlat32) * u_xlat2.xyz;
+                u_xlat32 = min(abs(u_xlat3.z), abs(u_xlat3.x));
+                u_xlat33 = max(abs(u_xlat3.z), abs(u_xlat3.x));
+                u_xlat33 = float(1.0) / u_xlat33;
+                u_xlat32 = u_xlat32 * u_xlat33;
+                u_xlat33 = u_xlat32 * u_xlat32;
+                u_xlat4.x = u_xlat33 * 0.0208350997 + -0.0851330012;
+                u_xlat4.x = u_xlat33 * u_xlat4.x + 0.180141002;
+                u_xlat4.x = u_xlat33 * u_xlat4.x + -0.330299497;
+                u_xlat33 = u_xlat33 * u_xlat4.x + 0.999866009;
+                u_xlat4.x = u_xlat32 * u_xlat33;
+                u_xlatb14 = abs(u_xlat3.z)<abs(u_xlat3.x);
+                u_xlat4.x = u_xlat4.x * -2.0 + 1.57079637;
+                u_xlat4.x = u_xlatb14 ? u_xlat4.x : float(0.0);
+                u_xlat32 = u_xlat32 * u_xlat33 + u_xlat4.x;
+                u_xlatb33 = u_xlat3.z<(-u_xlat3.z);
+                u_xlat33 = u_xlatb33 ? -3.14159274 : float(0.0);
+                u_xlat32 = u_xlat32 + u_xlat33;
+                u_xlat33 = min(u_xlat3.z, u_xlat3.x);
+                u_xlat3.x = max(u_xlat3.z, u_xlat3.x);
+                u_xlatb23.x = u_xlat33<(-u_xlat33);
+                u_xlatb3.x = u_xlat3.x>=(-u_xlat3.x);
+                u_xlatb3.x = u_xlatb3.x && u_xlatb23.x;
+                u_xlat32 = (u_xlatb3.x) ? (-u_xlat32) : u_xlat32;
+                u_xlat4.x = u_xlat32 * 0.159154937 + 0.5;
+                u_xlat4.y = u_xlat3.y * 0.5 + 0.5;
+                u_xlat3.xy = u_xlat2.xy * acScreenNorm.xy;
+                u_xlat3.xy = (int(_wrap_texture) != 0) ? u_xlat4.xy : u_xlat3.xy;
+                u_xlat3.xy = u_xlat3.xy + vec2(-0.5, -0.5);
+                u_xlat3.xy = u_xlat3.xy * vec2(_tex_scale.x, _tex_scale.y) + _tex_offset.xy;
+                u_xlat3.xy = u_xlat3.xy + vec2(0.5, 0.5);
+                u_xlatb23.xy = greaterThanEqual(u_xlat3.xyxy, (-u_xlat3.xyxy)).xy;
+                u_xlat3.xy = fract(abs(u_xlat3.xy));
+                {
+                    vec4 hlslcc_movcTemp = u_xlat3;
+                    hlslcc_movcTemp.x = (u_xlatb23.x) ? u_xlat3.x : (-u_xlat3.x);
+                    hlslcc_movcTemp.y = (u_xlatb23.y) ? u_xlat3.y : (-u_xlat3.y);
+                    u_xlat3 = hlslcc_movcTemp;
+                }
+                u_xlatb23.xy = lessThan(u_xlat3.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+                u_xlat4.xy = u_xlat3.xy + vec2(1.0, 1.0);
+                {
+                    vec4 hlslcc_movcTemp = u_xlat3;
+                    hlslcc_movcTemp.x = (u_xlatb23.x) ? u_xlat4.x : u_xlat3.x;
+                    hlslcc_movcTemp.y = (u_xlatb23.y) ? u_xlat4.y : u_xlat3.y;
+                    u_xlat3 = hlslcc_movcTemp;
+                }
+                u_xlat3.z = (-u_xlat3.y) + 1.0;
+                u_xlat3 = texture(inputImg, u_xlat3.xz);
+                u_xlat0.x = dot((-u_xlat2.xyz), u_xlat0.xyz);
+                u_xlat2 = u_xlat0.xxxx * u_xlat3;
+                u_xlat10 = u_xlat30 * _intensity;
+                u_xlat10 = u_xlat10 * 0.100000001;
+                u_xlat10 = clamp(u_xlat10, 0.0, 1.0);
+                u_xlat4.xyz = _color.xyz;
+                u_xlat4.w = 1.0;
+                u_xlat3 = (-u_xlat3) * u_xlat0.xxxx + u_xlat4;
+                u_xlat6 = vec4(u_xlat10) * u_xlat3 + u_xlat2;
+            }
+        }
+        u_xlat0 = u_xlat1 + u_xlat6;
+    } else {
+        u_xlat0.x = float(0.0);
+        u_xlat0.y = float(0.0);
+        u_xlat0.z = float(0.0);
+        u_xlat0.w = float(0.0);
+    }
+    if(int(_use_inner_mask) != 0) {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

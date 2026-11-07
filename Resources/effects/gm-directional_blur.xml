@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.directional_blur" name="Directional Blur" desc="Smears the image along a single direction. The clean way to fake motion on a still." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/directional_blur.png"
+        tags="blur,directional,motion,smear" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Direction" />
+<spinner id="angle" default="0.0" min="-180.0" max="180.0" step="0.5" label="Angle" type="angle" />
+<spinner id="amount" default="0.04" min="0.0" max="0.4" step="0.001" label="Amount" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 12;
+void main(){
+  vec2 uv = acScreenNorm;
+  float rad = radians(angle);
+  vec2 dir = vec2(cos(rad), sin(rad));
+  vec4 sum = vec4(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float t = (float(i) / float(TAPS - 1) - 0.5) * amount * mixAmt;
+    sum += texture2DCv(inputImg.texture, uv + dir * t);
+  }
+  gl_FragColor = sum / float(TAPS);
+}
+]]></shader>
+</effect>

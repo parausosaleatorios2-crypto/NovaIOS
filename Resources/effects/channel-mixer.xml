@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MISTURADOR DE CANAIS
+  ============================================================================
+
+  Cada canal de saída é uma soma pesada dos três canais de entrada. Nove
+  números, e é a ferramenta mais poderosa e menos usada da correção de cor.
+
+  O que ela destrava, e nada mais faz igual:
+
+   - **preto e branco de verdade**: numa foto, filtrar o vermelho escurece o
+     céu e clareia a pele — é o que fotógrafo fazia com filtro de vidro na
+     frente da lente, e nenhum "dessaturar" reproduz;
+   - **trocar canais**: R↔B conserta material que veio em BGR;
+   - **look de cinema**: vazar um pouco de azul no verde é metade do visual
+     "teal and orange" sem tocar em curva nenhuma.
+
+  ============================================================================
+   O BOTÃO "PRESERVAR BRILHO" NÃO É ENFEITE
+  ============================================================================
+
+  Uma linha da matriz que soma mais que 1 clareia a imagem; menos que 1,
+  escurece. Ajustar isso à mão em três linhas é chato e é o motivo de a
+  ferramenta ter fama de difícil. Ligado, cada linha é normalizada para somar
+  1 — e aí os controles passam a mexer só na COR, que é o que se queria.
+-->
+<effect
+    id="nova.effect.channelmixer"
+    name="Misturador de canais"
+    name-en="Channel Mixer"
+    desc="Cada canal vira uma mistura dos três. Preto e branco com filtro, e looks."
+    desc-en="Build each output channel from the three inputs. Filtered B&amp;W and looks."
+    category="color"
+    blend="true"
+    tags="cor,canais,preto e branco,matriz,look">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+            <slider id="rr" group="Vermelho de saída" label="do vermelho" default="1.0" min="-1.0" max="2.0" step="0.01" snap="1.0" type="relative-percent" />
+            <slider id="rg" group="Vermelho de saída" label="do verde" default="0.0" min="-1.0" max="2.0" step="0.01" snap="0.0" type="relative-percent" />
+            <slider id="rb" group="Vermelho de saída" label="do azul" default="0.0" min="-1.0" max="2.0" step="0.01" snap="0.0" type="relative-percent" />
+
+            <slider id="gr" group="Verde de saída" label="do vermelho" default="0.0" min="-1.0" max="2.0" step="0.01" snap="0.0" type="relative-percent" />
+            <slider id="gg" group="Verde de saída" label="do verde" default="1.0" min="-1.0" max="2.0" step="0.01" snap="1.0" type="relative-percent" />
+            <slider id="gb" group="Verde de saída" label="do azul" default="0.0" min="-1.0" max="2.0" step="0.01" snap="0.0" type="relative-percent" />
+
+            <slider id="br" group="Azul de saída" label="do vermelho" default="0.0" min="-1.0" max="2.0" step="0.01" snap="0.0" type="relative-percent" />
+            <slider id="bg" group="Azul de saída" label="do verde" default="0.0" min="-1.0" max="2.0" step="0.01" snap="0.0" type="relative-percent" />
+            <slider id="bb" group="Azul de saída" label="do azul" default="1.0" min="-1.0" max="2.0" step="0.01" snap="1.0" type="relative-percent" />
+
+        <switch id="monochrome" label="Preto e branco" default="false" />
+        <switch id="preserveLuma" label="Preservar o brilho" default="true" />
+    </params>
+
+    <preview>
+        <set param="monochrome" value="1" />
+        <set param="rr" value="1.4" />
+        <set param="rb" value="-0.4" />
+    </preview>
+
+    <shader><![CDATA[
+
+// Normaliza uma linha da matriz para somar 1. Soma zero (ou negativa) não tem
+// normalização possível — nesse caso a linha passa como está, e o resultado
+// escuro é o que a pessoa pediu.
+vec3 normalizar(vec3 linha, bool ligado) {
+    if (!ligado) return linha;
+    float soma = linha.r + linha.g + linha.b;
+    return soma > 0.001 ? linha / soma : linha;
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+    vec3 c = clamp(color.rgb, 0.0, 1.0);
+
+    vec3 linhaR = normalizar(vec3(rr, rg, rb), preserveLuma);
+
+    if (monochrome) {
+        // No modo preto e branco a PRIMEIRA linha manda em tudo: é ela o
+        // "filtro de vidro". Mexer em nove números para produzir um cinza seria
+        // trabalho sem sentido — e é assim que o Photoshop também faz.
+        float cinza = dot(c, linhaR);
+        fragColor = vec4(vec3(clamp(cinza, 0.0, 1.0)), color.a);
+        return;
+    }
+
+    vec3 linhaG = normalizar(vec3(gr, gg, gb), preserveLuma);
+    vec3 linhaB = normalizar(vec3(br, bg, bb), preserveLuma);
+
+    vec3 saida = vec3(dot(c, linhaR), dot(c, linhaG), dot(c, linhaB));
+    fragColor = vec4(clamp(saida, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

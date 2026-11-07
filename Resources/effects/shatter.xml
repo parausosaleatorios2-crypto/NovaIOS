@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SHATTER — a camada explodida em pedaços 3D (o do After Effects)
+  ============================================================================
+
+  Pedido do snow (22/09/2026). O plano, com o que a documentação pública da
+  Adobe diz de cada controle, está em docs/PLANO-SHATTER.md. Esta é a PRIMEIRA
+  entrega: os padrões, a extrusão, a Force 1, a física inteira, a luz e o
+  material, e o Render (All / Layer / Pieces). A Force 2, o gradiente, o mapa
+  de corte desenhado, as texturas por face, a câmera do efeito, os Corner Pins e
+  o Wireframe vêm na segunda.
+
+  `stage="shatter3d"`: como a Extrusão 3D, o efeito não roda na cadeia de passes
+  (imagem sobre imagem). Quem o executa é o compositor, que monta a malha dos
+  pedaços e desenha com o motor de modelos — ver `SceneRenderer.estilhacar` e
+  `model/Estilhaco.kt`. O `<shader>` daqui é só a cópia da entrada.
+
+  Unidades: Radius, Depth e Extrusion Depth são frações da largura da camada
+  (como no AE, em que Radius 0,40 cobre boa parte dela); as velocidades são
+  escaladas pela resolução, então o mesmo projeto explode igual em 720p e 4K.
+  A física é uma FÓRMULA do tempo: arrastar o cursor para qualquer quadro dá o
+  mesmo que tocar do começo.
+-->
+<effect
+    id="nova.effect.shatter"
+    name="Estilhaçar"
+    name-en="Shatter"
+    desc="A camada explode em pedaços 3D: vidro, tijolos, quebra-cabeça. Força, física, luz e espessura, como no After Effects."
+    desc-en="Explodes the layer into extruded 3D pieces — glass, bricks, puzzle — with forces, physics and lighting."
+    category="stylize"
+    stage="shatter3d"
+    tags="shatter,estilhacar,explodir,explode,vidro,glass,quebrar,break,pedacos,pieces,3d,after effects,transicao,transition">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- ================================= O PRINCIPAL ================================ -->
+        <selector id="render" label="Render" default="0" options="All|Layer|Pieces" />
+        <switch id="reverse" label="Ao contrário (os pedaços voltam)" default="false" />
+
+        <!-- ==================================== SHAPE =================================== -->
+        <selector id="pattern" group="Shape" label="Pattern" default="0"
+                  options="Glass|Impact Glass|Bricks|Squares|Triangles|Hexagons|Puzzle" />
+        <slider id="repetitions" group="Shape" label="Repetitions"
+                default="10.0" min="1.0" max="100.0" step="0.5" snap="10.0" />
+        <slider id="direction" group="Shape" label="Direction" type="angle"
+                default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0" />
+        <point id="origin" group="Shape" label="Origin" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="extrusionDepth" group="Shape" label="Extrusion Depth"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.2" />
+
+        <!-- =================================== FORCE 1 ================================== -->
+        <point id="forcePosition" group="Force 1" label="Position" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="forceDepth" group="Force 1" label="Depth"
+                default="0.1" min="-1.0" max="1.0" step="0.01" snap="0.0,0.1" />
+        <slider id="forceRadius" group="Force 1" label="Radius"
+                default="0.4" min="0.0" max="4.0" step="0.01" snap="0.0,0.4" />
+        <slider id="forceStrength" group="Force 1" label="Strength"
+                default="5.0" min="-20.0" max="20.0" step="0.05" snap="0.0,5.0" />
+
+        <!-- =================================== PHYSICS ================================== -->
+        <slider id="rotationSpeed" group="Physics" label="Rotation Speed"
+                default="0.2" min="0.0" max="2.0" step="0.01" snap="0.2" />
+        <selector id="tumbleAxis" group="Physics" label="Tumble Axis" default="0"
+                  options="Free|None|X|Y|Z|XY|XZ|YZ" />
+        <slider id="randomness" group="Physics" label="Randomness"
+                default="0.1" min="0.0" max="1.0" step="0.01" snap="0.1" />
+        <slider id="viscosity" group="Physics" label="Viscosity"
+                default="0.1" min="0.0" max="2.0" step="0.01" snap="0.1" />
+        <slider id="massVariance" group="Physics" label="Mass Variance" type="relative-percent"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.3" />
+        <slider id="gravity" group="Physics" label="Gravity"
+                default="4.0" min="-20.0" max="20.0" step="0.05" snap="0.0,4.0" />
+        <slider id="gravityDirection" group="Physics" label="Gravity Direction" type="angle"
+                default="180.0" min="-180.0" max="360.0" step="1.0" snap="0.0,90.0,180.0,270.0" />
+        <slider id="gravityInclination" group="Physics" label="Gravity Inclination" type="angle"
+                default="0.0" min="-90.0" max="90.0" step="1.0" snap="0.0" />
+
+        <!-- ================================== LIGHTING ================================== -->
+        <selector id="lightType" group="Lighting" label="Light Type" default="0"
+                  options="Distant Source|First Comp Light" />
+        <slider id="lightIntensity" group="Lighting" label="Light Intensity"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+        <color id="lightColor" group="Lighting" label="Light Color" default="#FFFFFFFF" />
+        <point id="lightPosition" group="Lighting" label="Light Position" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="lightDepth" group="Lighting" label="Light Depth"
+                default="1.5" min="-3.0" max="3.0" step="0.01" snap="1.5" />
+        <slider id="ambientLight" group="Lighting" label="Ambient Light"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.35" />
+
+        <!-- ================================== MATERIAL ================================== -->
+        <slider id="specular" group="Material" label="Specular Reflection"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.3" />
+
+        <!-- ============================ AMBIENT OCCLUSION ============================
+             O AO dos pedaços (ver `PasseDeOclusao`): atenua só a luz ambiente, na
+             escala da espessura (Extrusion Depth). Lidos por nome pelo compositor —
+             `SceneRenderer.ajusteDoManifesto`. -->
+        <switch id="ao" group="Ambient Occlusion" label="Ambient Occlusion" default="false" />
+        <slider id="aoIntensity" group="Ambient Occlusion" label="Intensity" showIf="ao=true"
+                default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="aoRadius" group="Ambient Occlusion" label="Radius" showIf="ao=true"
+                default="0.5" min="0.05" max="2.0" step="0.01" snap="0.5" />
+        <slider id="aoContact" group="Ambient Occlusion" label="Contact AO" showIf="ao=true"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="aoQuality" group="Ambient Occlusion" label="Quality" showIf="ao=true" default="1"
+                  options="Draft|Preview|High|Export" />
+
+        <!-- ==================================== EXTRA =================================== -->
+        <slider id="seed" group="Extra" label="Semente" type="integer"
+                default="0" min="0" max="100" step="1" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

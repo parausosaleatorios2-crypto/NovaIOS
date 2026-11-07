@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   APERTAR (AM) — o Squeeze do Alight Motion, conta por conta (0.557.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz o apertar 100% parecido com o do alight motion", da série "100% iguais ao AM".
+  Mesmo parâmetro, mesmo id, faixa, passo, marcas e padrão do `com.alightcreative.effects.squeeze` (um projeto do
+  AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/squeeze.xml` do APK
+  descompactado) e das matrizes que o motor dele monta (`ssl/BI.Sr`, as mesmas do Ampliar o fundo), e escrita de
+  novo aqui; o arquivo do AM não entra no repositório. A conferência é `python tools/amapertar/comparar.py`: o
+  efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Um número só: Intensidade, de −2 a 2 (padrão 0, passo 0,01, marcas em −1, −0,5, 0, 0,5 e 1). Com 0 a camada
+    sai como entrou.
+  - A conta é na coordenada da CAMADA do AM (`acLayerNorm`): o retângulo do conteúdo (a forma sem o traço, a caixa
+    do texto, a mídia), de −1 a 1 a partir do meio dele, nos eixos da própria camada (girar a camada gira o aperto
+    junto). Com k = Intensidade ÷ 2, cada pixel (x, y) busca a imagem em
+      x ÷ clamp(1 − k·(1 − y²), 0, 2)   e   y ÷ clamp(1 + k·(1 − x²), 0, 2).
+    Intensidade positiva aperta na horizontal e estica na vertical (no meio, até o dobro da altura); negativa, o
+    contrário. O efeito mais forte é no meio; nos cantos do retângulo (x² = y² = 1) não mexe.
+  - O AM roda o efeito NA TELA, depois de mover, girar e escalar a camada: o que estica passa da caixa da camada e
+    aparece até a borda da tela, e a busca é na camada JÁ na tela (filtro linear sobre a cor PRÉ-multiplicada, a
+    textura dele). Aqui é igual: `stage="screen"` (o mesmo corte do Ampliar o fundo — os efeitos de antes rodam na
+    camada, este e os de depois na tela), a ida à camada pela volta da `acCamadaParaTela` e o filtro linear feito à
+    mão nos 4 pixels, sobre a cor pré-multiplicada (o filtro na cor reta escureceria a borda).
+  - Longe da caixa (além de √(1 + 1/|k|) meias-larguras; com Intensidade ±2, também na linha ou coluna do meio), a
+    divisão chega a 0 e a busca vai ao infinito: no AM a
+    coordenada sai infinita ou NaN e a GPU decide o pixel (na prática, a borda da tela, transparente). Aqui a conta
+    segue o mesmo caminho até a GPU (`texture` no ponto infinito, sem a divisão da perspectiva), em vez de inventar
+    uma resposta.
+  - Dentro de grupo (o filho), o corte na tela não existe: o efeito roda no buffer do filho, na coordenada dele.
+-->
+<effect
+    id="nova.effect.am-squeeze"
+    name="Apertar (AM)"
+    name-en="Squeeze (AM)"
+    desc="Distorce a camada comprimindo-a ao longo de um eixo enquanto a expande ao longo do outro (o Squeeze do Alight Motion)."
+    desc-en="Distorts the layer by squeezing it along one axis while expanding it along the other axis (Alight Motion's Squeeze)."
+    category="distort"
+    tags="apertar,espremer,esticar,comprimir,distorcer,squeeze,pinch,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- `<spinner>` como no AM: o `readSpinnerParam` dele lê `ticks` (as marcas claras) e não lê `snap`. -->
+        <spinner id="strength" label="Intensidade" default="0.0" min="-2.0" max="2.0" step="0.01"
+            ticks="-1.0,-0.5,0.0,0.5,1.0" />
+    </params>
+
+    <!-- Na vitrine: com a Intensidade do padrão (0) a camada sai intacta; a amostra mostra 1 e, no laço (0.683.0),
+         aperta e solta até -1. -->
+    <preview>
+        <set param="strength" value="1.0" ate="-1.0" />
+    </preview>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    // O pixel na tela (na tela, a identidade; no filho de grupo, o buffer dele levado à tela do grupo) e, de lá, a
+    // coordenada da camada do AM: o retângulo do conteúdo de 0 a 1, com o meio no meio do buffer (o buffer cobre a
+    // composição, `acTamanhoDaTela`).
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 st = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+
+    // A conta do AM, linha por linha.
+    float str = strength / 2.0;
+    st -= 0.5;
+    st *= 2.0;
+    float xdiv = 1. + (1. - pow(abs(st.y), 2.0)) * -str;
+    float ydiv = 1. + (1. - pow(abs(st.x), 2.0)) * str;
+    xdiv = clamp(xdiv, 0., 2.);
+    ydiv = clamp(ydiv, 0., 2.);
+    st.x /= xdiv;
+    st.y /= ydiv;
+    st /= 2.0;
+    st += 0.5;
+
+    // De volta ao buffer da camada e à imagem de entrada: na tela (a entrada é a camada já na tela), pela
+    // `acCamadaParaTela` sem a divisão da perspectiva quando ela é afim (como o `acLayerToScreen` do AM: o ponto
+    // infinito segue infinito, e não vira NaN na divisão); no filho de grupo, a própria UV do buffer.
+    vec2 b = 0.5 + (st - 0.5) * conteudo / acTamanhoDaTela;
+    vec2 uv = b;
+    if (acParaTela == mat3(1.0)) {
+        vec3 c = acCamadaParaTela * vec3(b, 1.0);
+        bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+        uv = afim ? c.xy : c.xy / c.z;
+    }
+
+    // Ponto infinito ou NaN (longe da caixa, a divisão chegou a 0): a GPU decide, como no AM.
+    bool foraDaConta = any(isinf(uv)) || any(isnan(uv));
+    vec4 c = foraDaConta ? preMultiplicada(texture(inputImg, uv)) : camadaNoPonto(uv);
+    fragColor = c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

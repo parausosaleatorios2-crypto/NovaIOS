@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A CINTILAÇÃO ANTIGA do Alight Motion (`com.alightcreative.effects.flicker`, "deprecated" no AM 5.0.281,
+  `flicker.xml` lá), para os projetos velhos que ainda a trazem (0.576.0). Fora do catálogo.
+
+  A mesma conta da atual (`am-flicker.xml`), com a Frequência do INSTANTE vezes o tempo da camada
+  (`tempo · duração · frequência ÷ 4`, como na Opacidade do pulso antiga): com quadro-chave, o tremido pula. Na base
+  Posição, a Frequência do instante. Quem executa é `model/Cintilacao.kt`.
+-->
+<effect
+    id="nova.effect.am-flicker-legacy"
+    name="Cintilação (antiga)"
+    name-en="Flicker (legacy)"
+    desc="A Cintilação antiga do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Flicker, from projects made before its current version."
+    category="opacity"
+    stage="transform"
+    catalog="false"
+    tags="cintilação,flicker,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="7.0" min="0.05" max="10.0" step="0.01" />
+        <spinner id="mag" label="Intensidade" default="0.75" min="0.0" max="1.0" step="0.01" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="10.0" step="0.1" />
+        <selector id="basis" label="Base" style="radio" options="Tempo|Posição" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

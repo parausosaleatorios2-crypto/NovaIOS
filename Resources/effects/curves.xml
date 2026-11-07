@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CURVAS
+  ============================================================================
+
+  O controle de cor que não dá para imitar com nenhum outro.
+
+  Níveis mexem nas PONTAS (preto, branco, gama). Matiz e saturação mexem no
+  TODO. A curva mexe **numa faixa só**: clarear a sombra sem tocar no céu,
+  derrubar o meio-tom sem apagar o preto, levantar contraste em S sem estourar o
+  realce. É por isso que ela é o primeiro controle que qualquer colorista abre.
+
+  ============================================================================
+   O QUE ELE FAZ POR DENTRO
+  ============================================================================
+
+  Nada. Literalmente: o shader é uma consulta.
+
+  A curva mora no projeto como uma lista de pontos, é avaliada com interpolação
+  monotônica (que impede a curva de desobedecer à ordem dos pontos) e sai como
+  uma TABELA de 256 entradas. O motor manda essa tabela para a GPU como textura,
+  e aqui cada canal faz uma leitura.
+
+  O ganho é grande: a conta do spline acontece uma vez por mudança, e não uma
+  vez por pixel — dois milhões de vezes por quadro para um resultado que só
+  depende do valor de entrada.
+
+  A ordem mestre → canal também já vem assada na tabela. Ver `ColorCurve`.
+-->
+<effect
+    id="nova.effect.curves"
+    name="Curvas"
+    name-en="Curves"
+    desc="A curva por canal: clareia uma faixa de brilho sem mexer nas outras."
+    desc-en="Per-channel curves with a drag-a-point editor."
+    category="color"
+    blend="mode"
+    tags="curva,cor,contraste,tom,rgb,correção">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <curve id="curve" label="Curva" />
+
+        <switch id="keepLuma" label="Manter o brilho original" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+/**
+ * Uma entrada da tabela.
+ *
+ * O `0.5/256` é o centro do texel: sem ele, um valor que caia exatamente na
+ * fronteira entre duas entradas pega a vizinha errada — e no degradê isso
+ * aparece como uma listra deslocada de uma entrada inteira.
+ */
+float consultar(float valor, int canal) {
+    float x = clamp(valor, 0.0, 1.0) * (255.0 / 256.0) + (0.5 / 256.0);
+    vec4 tabela = texture(curve, vec2(x, 0.5));
+    return canal == 0 ? tabela.r : (canal == 1 ? tabela.g : tabela.b);
+}
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+
+    vec3 ajustada = vec3(
+        consultar(cor.r, 0),
+        consultar(cor.g, 1),
+        consultar(cor.b, 2)
+    );
+
+    // Manter o brilho: aplica a curva só no MATIZ, devolvendo a luminância
+    // original. É como se faz correção de cor sem mexer na exposição — muda a
+    // temperatura da imagem sem clarear nem escurecer nada.
+    if (keepLuma) {
+        float antes = dot(cor.rgb, LUMA);
+        float depois = dot(ajustada, LUMA);
+        ajustada *= antes / max(depois, 1e-3);
+    }
+
+    fragColor = vec4(clamp(ajustada, 0.0, 1.0), cor.a);
+}
+
+    ]]></shader>
+</effect>

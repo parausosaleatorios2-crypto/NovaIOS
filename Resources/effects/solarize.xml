@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Solarizar.
+
+  Inverte só o que passa de um limiar, deixando o resto. É um acidente de
+  laboratório fotográfico que virou estética: metade da imagem em negativo,
+  emendando na outra metade num contorno metálico.
+-->
+<effect
+    id="nova.effect.solarize"
+    name="Solarizar"
+    name-en="Solarize"
+    desc="Inverte só as partes claras, com emenda suave. Efeito de laboratório."
+    desc-en="Inverts above a threshold — the darkroom effect."
+    category="color"
+    blend="mode"
+    tags="solarizar,negativo,psicodelico,retro,laboratorio,inverter parcial">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="level" label="Threshold"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="softness" label="Suavidade da emenda"
+                default="0.15" min="0.001" max="0.6" step="0.005" />
+        <selector id="channels" label="Aplicar em"
+                  options="Luminância|Cada canal|Vermelho|Verde|Azul" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+float solarizeChannel(float value) {
+    float folded = 1.0 - abs(value - level) / max(1.0 - level, 0.001);
+    return mix(value, folded, smoothstep(level - softness, level + softness, value));
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+    vec3 result = color.rgb;
+
+    if (channels == 1) {
+        result = vec3(
+            solarizeChannel(color.r),
+            solarizeChannel(color.g),
+            solarizeChannel(color.b)
+        );
+    } else if (channels == 2) {
+        result.r = solarizeChannel(color.r);
+    } else if (channels == 3) {
+        result.g = solarizeChannel(color.g);
+    } else if (channels == 4) {
+        result.b = solarizeChannel(color.b);
+    } else {
+        // Pela luminância: a cor não muda de matiz, só a claridade dobra. Fica
+        // bem menos agressivo que inverter canal por canal.
+        float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        float folded = solarizeChannel(luma);
+        result = color.rgb * (luma > 0.0001 ? folded / luma : 0.0);
+    }
+
+    fragColor = vec4(clamp(result, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

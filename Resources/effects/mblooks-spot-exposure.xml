@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Spot Exposure (`spex`, linear): exposição (em stops, com cor) só dentro de um spot
+  elíptico, com a borda suave. Lido no `MBLooksUI_5_0.dll` (23/10/2026): o render `0x1803fdb40`, o cbuffer
+  `0x18041b260` e o kernel `ColorKernel_SpotMul` (tools/looks/benchmark/spex.py); o host é o
+  `ContasDoLooks.spotExposure`. d = distância ao centro / raio (o x vezes Aspect); t = (1 − d)/Spread; a máscara é
+  uma curva S de t com o meio em Falloff; saída = c + (c·cor·2^Stops − c)·máscara.
+
+  Center X/Y em % a partir do meio da camada (−50 = a borda); Radius em metades da diagonal. O Strength da
+  ferramenta fica guardado e escondido: o render de GPU do Looks não o lê (passa 1,0 no lugar). Padrões: os do motor
+  (slot 9), com a cor branca do bloco mais repetido da pasta (o motor dá 0).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.spotexposure"
+    name="Looks: Spot Exposure"
+    name-en="Looks: Spot Exposure"
+    desc="A ferramenta Spot Exposure do Magic Bullet Looks: clareia ou escurece (em stops, com cor) só dentro de um spot elíptico de borda suave."
+    desc-en="Magic Bullet Looks' Spot Exposure tool: brightens or darkens (in stops, with a color) only inside a soft-edged elliptical spot."
+    category="looks"
+    stage="mblooks"
+    looks="spex"
+    tags="magic bullet,looks,red giant,spot exposure,exposição,spot,luz,vinheta,clarear,escurecer,stops">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="stops" label="Stops" default="0.0" min="-10.0" max="10.0" step="0.01" />
+        <slider id="centerX" label="Center X" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="centerY" label="Center Y" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="radius" label="Radius" default="1.0" min="0.0" max="4.0" step="0.001" />
+        <slider id="spread" label="Spread" default="0.5" min="0.0" max="1.0" step="0.001" />
+        <slider id="falloff" label="Falloff" default="0.5" min="0.0" max="1.0" step="0.001" />
+        <slider id="strength" label="Strength" default="100.0" min="0.0" max="100.0" step="0.1" hidden="true" />
+        <slider id="red" group="Color" label="Red" default="1.0" min="0.0" max="4.0" step="0.001" />
+        <slider id="green" group="Color" label="Green" default="1.0" min="0.0" max="4.0" step="0.001" />
+        <slider id="blue" group="Color" label="Blue" default="1.0" min="0.0" max="4.0" step="0.001" />
+        <slider id="aspect" label="Aspect" default="1.0" min="0.1" max="5.0" step="0.001" />
+        <switch id="invert" label="Invert" default="false" />
+    </params>
+
+    <!-- Na vitrine, o padrão (Stops 0) não muda nada: um spot claro no meio. -->
+    <preview>
+        <set param="stops" value="1.5" />
+        <set param="radius" value="0.6" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

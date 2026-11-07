@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CEL-SHADE (ANIME)
+  ============================================================================
+
+  Transforma qualquer take em desenho animado: áreas chapadas em poucos
+  patamares de cor + contorno preto nas bordas. É o look de Studio Ghibli
+  para live-action, em 1 passe.
+
+  ============================================================================
+   DUAS PARTES, DUAS CONTAS
+  ============================================================================
+
+  Cel-shade é a soma de DUAS operações bem definidas:
+
+   1. POSTERIZE (chapar a cor): quantiza cada canal RGB em N níveis. A imagem
+      perde o degradê e ganha os patamares planos — a assinatura de animação.
+      A quantização é feita em HSV (mantém o matiz, só chapa brilho/saturação)
+      pra evitar o artefato colorido do posterize ingênuo em RGB.
+
+   2. CONTORNO (as linhas pretas): Sobel na luma dá a magnitude da borda; onde
+      é forte, pinta preto por cima. É o MESMO truque do neon-outline; só que
+      a cor é escura e o halo some.
+
+  O parâmetro `smooth` amolece a transição entre patamares (cel-shade com
+  degradê leve, como no estilo "painterly"). Em 0, chapa total; em 1, quase
+  volta pra imagem.
+-->
+<effect
+    id="nova.effect.cel-shade"
+    name="Cel-shade (anime)"
+    name-en="Cel Shading"
+    desc="Cores chapadas em poucos patamares + contorno escuro: look de anime."
+    desc-en="Flat colors in a few steps + dark outline: anime-style shading."
+    category="stylize"
+    tags="cel,anime,cartoon,ghibli,chapado,contorno,quadrinhos,toon">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="levels" label="Níveis de cor"
+                default="4" min="2" max="10" step="1" type="integer" />
+        <slider id="smoothness" label="Suavidade dos patamares"
+                default="0.1" min="0.0" max="1.0" step="0.02" snap="0.0" />
+        <color id="outlineColor" label="Cor do contorno" default="#000000FF" />
+        <slider id="outlineStrength" label="Força do contorno"
+                default="3.0" min="0.0" max="10.0" step="0.1" snap="0.0" />
+        <slider id="outlineThreshold" label="Limiar do contorno"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, patamares bem marcados. -->
+    <preview>
+        <set param="levels" value="3" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** RGB → HSV (padrão IQ). */
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+/** HSV → RGB. */
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+/** Sobel: magnitude do gradiente da luma. */
+float sobelAqui(vec2 uv) {
+    vec2 px = 1.0 / vec2(textureSize(inputImg, 0));
+    float tl = luma(texture(inputImg, uv + vec2(-px.x,  px.y)).rgb);
+    float t  = luma(texture(inputImg, uv + vec2( 0.0,   px.y)).rgb);
+    float tr = luma(texture(inputImg, uv + vec2( px.x,  px.y)).rgb);
+    float l  = luma(texture(inputImg, uv + vec2(-px.x,  0.0 )).rgb);
+    float r  = luma(texture(inputImg, uv + vec2( px.x,  0.0 )).rgb);
+    float bl = luma(texture(inputImg, uv + vec2(-px.x, -px.y)).rgb);
+    float b  = luma(texture(inputImg, uv + vec2( 0.0,  -px.y)).rgb);
+    float br = luma(texture(inputImg, uv + vec2( px.x, -px.y)).rgb);
+    float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+    float gy = -tl - 2.0 * t - tr + bl + 2.0 * b + br;
+    return length(vec2(gx, gy));
+}
+
+/** Quantiza `v` em `n` patamares, com transição `suavidade`. */
+float patamares(float v, int n, float suavidade) {
+    float escalado = v * float(n);
+    float base = floor(escalado);
+    float f = fract(escalado);
+    float s = mix(step(0.5, f), smoothstep(0.5 - suavidade * 0.5, 0.5 + suavidade * 0.5, f), suavidade);
+    return (base + s) / float(n);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    int n = clamp(int(levels + 0.5), 2, 10);
+
+    // Quantiza em HSV (mantém matiz, chapa brilho e saturação).
+    vec3 hsv = rgb2hsv(original.rgb);
+    hsv.y = patamares(hsv.y, n, smoothness);
+    hsv.z = patamares(hsv.z, n, smoothness);
+    vec3 chapada = hsv2rgb(hsv);
+
+    // Contorno: Sobel acima do limiar pinta por cima.
+    float borda = sobelAqui(acScreenNorm) * outlineStrength;
+    float traco = smoothstep(outlineThreshold, outlineThreshold + 0.1, borda);
+
+    vec3 cor = mix(chapada, outlineColor.rgb, traco * outlineColor.a);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

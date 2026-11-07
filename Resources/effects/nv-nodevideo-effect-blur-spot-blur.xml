@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Blur_spot_blur
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blur-spot-blur"
+    name="Effect Blur Spot Blur (NV)"
+    name-en="Effect Blur Spot Blur (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Blur_spot_blur', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Blur_spot_blur', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_intensity" label="Intensity" default="1" min="0" max="3" step="0.01" />
+        <slider id="_highlight" label="Highlight" default="2" min="0" max="6" step="0.01" />
+        <slider id="_radius" label="Radius" default="0.6" min="0" max="2" step="0.01" />
+        <slider id="_quality" label="Quality" default="1" min="0" max="2" step="0.01" />
+        <slider id="_enable" type="integer" label="Enable" default="1" min="0" max="1" step="1" />
+        <slider id="_amount" label="Amount" default="2" min="0" max="4" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+int u_xlati4;
+vec4 u_xlat5;
+vec4 u_xlat6;
+vec4 u_xlat7;
+float u_xlat8;
+float u_xlat12;
+float u_xlat16;
+float u_xlat20;
+float u_xlat24;
+float u_xlat28;
+bool u_xlatb28;
+void main()
+{
+    u_xlat0.x = _radius * 50.0;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1 = u_xlat1 * u_xlat1;
+    u_xlat8 = _quality / _radius;
+    u_xlat8 = u_xlat8 * 0.100000001;
+    u_xlat8 = float(1.0) / u_xlat8;
+    u_xlat16 = float(1.0) / _amount;
+    u_xlat24 = _intensity + 1.0;
+    u_xlat2 = u_xlat1;
+    u_xlat3.x = float(1.0);
+    u_xlat3.y = float(1.0);
+    u_xlat3.z = float(1.0);
+    u_xlat3.w = float(1.0);
+    u_xlati4 = int(_enable);
+    u_xlat12 = u_xlat8;
+    u_xlat20 = 0.799987733;
+    while(true){
+        u_xlatb28 = u_xlat12>=u_xlat0.x;
+        if(u_xlatb28){break;}
+        u_xlat5.x = sin(u_xlat20);
+        u_xlat6.x = cos(u_xlat20);
+        u_xlat6.y = u_xlat5.x;
+        u_xlat5.xy = u_xlat6.xy / _resolution.xy;
+        u_xlat5.xy = u_xlat5.xy * vec2(u_xlat12) + acScreenNorm.xy;
+        u_xlatb28 = 0<u_xlati4;
+        if(u_xlatb28){
+            u_xlat6 = texture(inputImg, u_xlat5.xy);
+        } else {
+            u_xlat5 = texture(inputImg, u_xlat5.xy);
+            u_xlat6 = u_xlat5 * u_xlat5;
+        }
+        u_xlat5 = u_xlat6 * vec4(vec4(_highlight, _highlight, _highlight, _highlight));
+        u_xlat6 = log2(u_xlat5);
+        u_xlat6 = vec4(u_xlat16) * u_xlat6;
+        u_xlat6 = exp2(u_xlat6);
+        u_xlat6 = u_xlat6 * vec4(vec4(_radius, _radius, _radius, _radius));
+        u_xlat7 = u_xlat5 * u_xlat6;
+        u_xlat7 = log2(u_xlat7);
+        u_xlat7 = vec4(u_xlat24) * u_xlat7;
+        u_xlat7 = exp2(u_xlat7);
+        u_xlat7 = u_xlat2 + u_xlat7;
+        u_xlat5 = u_xlat5 * u_xlat6 + u_xlat2;
+        u_xlat2 = (bool(u_xlatb28)) ? u_xlat7 : u_xlat5;
+        u_xlat28 = (u_xlatb28) ? _radius : 1.0;
+        u_xlat3 = u_xlat6 * vec4(u_xlat28) + u_xlat3;
+        u_xlat28 = u_xlat8 / u_xlat12;
+        u_xlat12 = u_xlat28 + u_xlat12;
+        u_xlat20 = u_xlat20 + 2.39996314;
+    }
+    u_xlat0 = u_xlat2 / u_xlat3;
+    fragColor = sqrt(u_xlat0);
+    return;
+}
+    ]]></shader>
+</effect>

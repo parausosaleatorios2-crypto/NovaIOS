@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   RADIAL BLUR (AE) — o Radial Blur nativo do After Effects, conta por conta (0.435.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "agora esse adbe radialblur". Não foi ajustado por medida: o
+  algoritmo foi LIDO do Radial_Blur.aex (tools/radialblur/benchmark/desmontar.py), reescrito em
+  Python com as mesmas contas inteiras (modelo.py) e conferido com o After Effects 2023 em 8 bpc:
+  58 quadros, Spin e Zoom, Low e High, sementes, centros fora do meio, Amount quebrado, 640 e 1280
+  — o Python sai com 100% dos pixels IGUAIS nos 55 opacos (e a 1 nível nos 3 com alfa parcial: o
+  arredondamento de quando o AE desfaz a pré-multiplicação na saída). Este shader, na GPU do PC:
+  Zoom, 100% igual; Spin, 99,93% dos pixels iguais e o resto a 1 nível; com alfa parcial, até 2
+  níveis no que se vê (tools/radialblur/benchmark/resultado.txt).
+
+  O QUE O PLUGIN FAZ (e este shader repete):
+
+  - O centro vira c · (n − 2) / n e é truncado para pixel INTEIRO; o deslocamento do pixel até o
+    centro também é inteiro.
+  - Cada pixel soma N amostras REGULARES sobre o arco (Spin: de −Amount/2 a +Amount/2, com 57 graus
+    por radiano e só a parte INTEIRA do Amount) ou sobre o raio (Zoom: escala de 1 − Amount/400 a
+    1 + Amount/400), numa tabela de 1024 posições percorrida de `1024 / N` em `1024 / N`, a partir
+    de uma FASE sorteada por pixel — é o granulado fino do efeito.
+  - N sai do raio em QUARTOS de pixel (mais um tremor de 0 a 15 quartos): Spin, raio · Amount / 256;
+    Zoom, o comprimento do risco em px (a metade em Low). Entre 4 e 16 (Low) ou 4 e 255 (High).
+  - O sorteio é um gerador 48271 (com uma soma onde o de Park–Miller subtrai): o estado de cada
+    linha nasce do número da linha e da semente, e anda um passo por pixel. Como cada pixel depende
+    de todos os anteriores da linha, o estado é gravado em três níveis (24 bits num texel, 8 no
+    vizinho): o passe 0 o grava de 512 em 512 pixels (de 1024 em 1024 numa camada com mais de 2048
+    de largura), desde o começo da linha; o passe 1, de 128 em 128 a partir dele; o passe 2, de 32
+    em 32 a partir do de 128 — e o passe final anda no máximo 33 passos.
+  - A leitura é bilinear com a fração em 1/32 e arredondamento inteiro a cada mistura; fora da
+    imagem repete a borda, e a leitura para em n − 2 (a última coluna e a última linha nunca são
+    o canto de cima da leitura). A cor é borrada PRÉ-MULTIPLICADA.
+
+  O QUE NÃO É IGUAL: seno e cosseno aqui são os da GPU (lá, uma tabela em double) — a diferença
+  cai abaixo de 1/32 de pixel numa amostra entre dezenas. Em 16 e 32 bpc o AE sorteia a fase em
+  outra ordem (o estado atravessa a imagem inteira em vez de recomeçar a cada linha): este é o de
+  8 bpc. Com a prévia reduzida o granulado é outro (a conta é por pixel do buffer).
+
+  CUSTO: até 255 amostras de 4 leituras por pixel em High com Amount alto — é o que o AE faz.
+
+  DESEMPENHO (0.660.0). Com a parte inteira do Amount em 0 (o projeto pesado do snow tem 9 das 13
+  instâncias assim: o Amount animado que descansa em 0), o giro e o zoom valem 0 na tabela inteira e
+  as n amostras caem TODAS no mesmo ponto, de fração zero — a soma de n leituras iguais dividida por
+  n é a própria leitura. O shader devolve essa leitura direto (sem sorteio, sem fase), e os passes do
+  estado não rodam (`skipIfZero`; com 0 < Amount < 1 eles rodam e saem na hora). E o estado em três
+  níveis: até a 0.659 um passe só gravava o de 32 em 32 refazendo a corrente desde o começo da linha
+  para cada bloco. É uma corrente em fila (cada passo depende do anterior, e o gerador não tem
+  atalho: a soma no lugar da subtração o tira do Park–Miller), então o que custa é a corrente mais
+  longa de cada leva de pixels, não a conta toda. Na GPU do PC, o estado: 6,5 → 3,6 ms a 1080 de
+  largura, 17,5 → 5,9 ms a 1480 (o projeto pesado), 34,8 → 11,2 ms a 1920 e 275 → 60 ms a 3840; os
+  mesmos pixels, bit a bit (`tools/escaladatela/antes_depois.py`).
+-->
+<effect
+    id="nova.effect.aeradialblur"
+    name="Radial Blur (AE)"
+    name-en="Radial Blur (AE)"
+    desc="O Radial Blur do After Effects, igual pixel a pixel: giro (Spin) ou zoom em volta de um centro."
+    desc-en="After Effects' Radial Blur, pixel for pixel: spin or zoom around a centre."
+    category="blur"
+    tags="radial,blur,desfoque,giro,spin,zoom,after effects,adbe,velocidade,rotação"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="estado" src="buffer" />
+        <texture id="estadoLongo" src="buffer" />
+
+        <slider id="amount" label="Amount" default="10.0" min="0.0" max="500.0" step="0.1" snap="10.0,0.0" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <selector id="tipo" label="Type" default="0" options="Spin|Zoom" />
+        <selector id="qualidade" label="Antialiasing (Best Quality)" default="0" options="Low|High" />
+        <slider id="seed" label="Random Seed" default="0.0" min="0.0" max="10000.0" step="1.0" snap="0.0" />
+    </params>
+
+    <passes>
+        <pass target="estado" skipIfZero="amount" />        <!-- 0: o estado do sorteio, de 512 (ou 1024) em 512 px de cada linha -->
+        <pass target="estadoLongo" skipIfZero="amount" />   <!-- 1: o de 128 em 128, a partir do de cima -->
+        <pass target="estado" skipIfZero="amount" />        <!-- 2: o de 32 em 32, a partir do de 128 -->
+        <pass />                                            <!-- 3: o desfoque -->
+    </passes>
+
+    <shader><![CDATA[
+const int BLOCO = 32;
+const int MEIO = 128;    // o nível do meio do estado (passe 1); o de cima (passe 0) é 512 ou 1024
+
+/** O gerador do plugin: 48271 · (x mod 44488) + 3399 · (x div 44488), em 32 bits; zero vira 2³¹ − 1. */
+uint sorteio(uint x) {
+    uint r = (x % 44488u) * 48271u + (x / 44488u) * 3399u;
+    return r == 0u ? 0x7fffffffu : r;
+}
+
+/**
+ * O centro do plugin em ponto fixo 16.16: (c / n, truncado) · (n − 2). Aqui `c` já vem dividido
+ * por n (o ponto do app é de 0 a 1).
+ */
+int centroFixo(float c, int n) {
+    return (c < 0.0 ? -1 : 1) * int(abs(c) * 65536.0) * (n - 2);
+}
+
+/**
+ * O preparo do plugin: 32 sorteios a partir da semente, cada um um tremor de 0 a 15 para o raio. Devolve o
+ * estado depois dos 32 e põe em [tremor] o do sorteio [qual].
+ */
+uint preparo(uint semente, int qual, out int tremor) {
+    tremor = 0;
+    uint st = semente;
+    for (int k = 0; k < 32; k++) {
+        st = sorteio(st);
+        if (k == qual) tremor = int((st >> 18) & 15u);
+    }
+    return st;
+}
+
+/** O estado do gerador antes do primeiro pixel da linha `y`. */
+uint estadoDaLinha(int y, int W, uint depoisDoPreparo) {
+    uint a = sorteio(uint(W * y));
+    uint b = sorteio((a >> 7) & 0x7fffu);
+    return ((b >> 7) & 0x7fffu) * depoisDoPreparo;
+}
+
+/** O estado guardado em (b, y): 24 bits no texel b, 8 no b + 1. */
+uint lerEstado(sampler2D buf, int b, int y) {
+    ivec3 lo = ivec3(texelFetch(buf, ivec2(b, y), 0).rgb * 255.0 + 0.5);
+    int hi = int(texelFetch(buf, ivec2(b + 1, y), 0).r * 255.0 + 0.5);
+    return uint(lo.r) | (uint(lo.g) << 8) | (uint(lo.b) << 16) | (uint(hi) << 24);
+}
+
+/** O texel b (os 24 bits de baixo) ou o b + 1 (os 8 de cima) do estado [e]. */
+vec4 gravarEstado(uint e, bool primeiro) {
+    return primeiro
+        ? vec4(float(e & 255u), float((e >> 8) & 255u), float((e >> 16) & 255u), 255.0) / 255.0
+        : vec4(float(e >> 24), 0.0, 0.0, 255.0) / 255.0;
+}
+
+/** Um texel da fonte em bytes, com a cor PRÉ-MULTIPLICADA (é assim que o AE entrega ao efeito). */
+ivec4 ler(ivec2 p) {
+    ivec4 c = ivec4(texelFetch(inputImg, p, 0) * 255.0 + 0.5);
+    return ivec4((c.rgb * c.a + 127) / 255, c.a);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    int W = T.x, H = T.y;
+    ivec2 px = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    uint semente = uint(clamp(seed, 0.0, 10000.0) + 0.5);
+    int aF = int(floor(amount * 65536.0 + 0.5));
+    int aI = aF >> 16;
+    int tremor;
+
+    if (acPass <= 2) {
+        // O estado antes do pixel `b` de cada linha, em três níveis: o passe 0 desde o começo da linha (b múltiplo de
+        // 512, ou 1024 numa camada larga: a melhor divisão medida), o 1 desde o do 0 (b múltiplo de 128) e o 2 desde
+        // o do 1 (b múltiplo de 32). Com a parte inteira do Amount em 0 ninguém o lê (ver abaixo).
+        int topo = W > 2048 ? 1024 : 512;
+        int lado = acPass == 0 ? topo : acPass == 1 ? MEIO : BLOCO;
+        int b = (px.x / lado) * lado;
+        if (px.x > b + 1 || aI == 0) { fragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+        int acima = acPass == 1 ? topo : MEIO;
+        int de = (b / acima) * acima;
+        uint e;
+        if (acPass > 0 && de + 1 < W) {
+            e = acPass == 1 ? lerEstado(estado, de, px.y) : lerEstado(estadoLongo, de, px.y);
+        } else {
+            e = estadoDaLinha(px.y, W, preparo(semente, -1, tremor));
+            de = 0;
+        }
+        for (int i = de; i < b; i++) e = sorteio(e);
+        fragColor = gravarEstado(e, px.x == b);
+        return;
+    }
+
+    // ---- Amount inteiro 0: o giro (Spin) e o zoom (Zoom) valem 0 em toda a tabela, então as n amostras caem no
+    // próprio pixel (preso à leitura que para em n − 2), de fração zero: a soma de n leituras iguais / n é ela. ----
+    if (aI == 0) {
+        ivec4 r = ler(clamp(px, ivec2(0), max(T - 2, ivec2(0))));
+        fragColor = r.a > 0 ? vec4(min(vec3(r.rgb) / float(r.a), 1.0), float(r.a) / 255.0) : vec4(0.0);
+        return;
+    }
+
+    // O preparo do plugin, com o tremor deste pixel.
+    uint depoisDoPreparo = preparo(semente, (int(semente) + W * px.y + px.x + 1) & 31, tremor);
+
+    // ---- a fase deste pixel: do bloco gravado, mais um passo por pixel ----
+    int b = (px.x / BLOCO) * BLOCO;
+    if (b + 1 >= W && b >= BLOCO) b -= BLOCO;
+    uint e;
+    if (b + 1 < W) {
+        e = lerEstado(estado, b, px.y);
+    } else {
+        e = estadoDaLinha(px.y, W, depoisDoPreparo);
+        b = 0;
+    }
+    for (int i = b; i <= px.x; i++) e = sorteio(e);
+    int fase = int((e >> 7) & 0x3ffu);
+
+    // ---- o centro e o raio ----
+    int cxF = centroFixo(center.x, W), cyF = centroFixo(center.y, H);
+    int cxi = cxF >> 16, cyi = cyF >> 16;
+    float dx = float((cxF - (px.x << 16)) >> 16), dy = float((cyF - (px.y << 16)) >> 16);
+    int limite = int(sqrt(float(W * W + H * H)) * 4.0) - 2;
+    float raio = length(vec2(float((cxF >> 14) - 4 * px.x), float((cyF >> 14) - 4 * px.y)));
+    int idx = min(int(raio + 0.5) + tremor, limite);
+
+    // ---- quantas amostras ----
+    // Na prévia em movimento (`acRascunho`, play/arraste), o Low do próprio plugin: até 16 amostras em vez de 255.
+    bool alta = qualidade == 1 && acRascunho == 0;
+    int n;
+    if (tipo == 0) {
+        n = (idx * aI) >> 8;
+    } else {
+        // |FixMul(idx, 1 + m) − FixMul(idx, 1 − m)|, com m = (Amount / 200) / 2 em ponto fixo
+        uint p = uint(idx) * uint((aF / 200) >> 1);
+        int d = int(p >> 16) + int((p + 65535u) >> 16);
+        n = alta ? d >> 2 : d >> 3;
+    }
+    n = clamp(n, 4, alta ? 255 : 16);
+    int passo = 1024 / n;
+
+    // ---- a soma ----
+    ivec4 soma = ivec4(0);
+    int xMax = (W - 2) << 16, yMax = (H - 2) << 16;
+    for (int k = 0; k < n; k++) {
+        int t = (fase + k * passo) & 1023;
+        float X, Y;
+        if (tipo == 0) {
+            float ang = float(aI * (t - 512)) / -58368.0;
+            float sn = sin(ang), cs = cos(ang);
+            X = (float(cxi) - (cs * dx - sn * dy)) * 65536.0;
+            Y = (float(cyi) - (cs * dy + sn * dx)) * 65536.0;
+        } else {
+            float z = float(aI * (t - 512)) / 204800.0 + 1.0;
+            X = (float(cxi) - z * dx) * 65536.0;
+            Y = (float(cyi) - z * dy) * 65536.0;
+        }
+        int xf = clamp(int(X), 0, max(xMax, 0)), yf = clamp(int(Y), 0, max(yMax, 0));
+        ivec2 i = ivec2(xf >> 16, yf >> 16);
+        int fx = 32 - ((xf & 0xffff) >> 11), fy = 32 - ((yf & 0xffff) >> 11);
+        ivec4 p00 = ler(i), p01 = ler(i + ivec2(1, 0)), p10 = ler(i + ivec2(0, 1)), p11 = ler(i + ivec2(1, 1));
+        ivec4 topo = ((p00 * fx + 16) >> 5) - ((p01 * fx + 16) >> 5) + p01;
+        ivec4 base = ((p10 * fx + 16) >> 5) - ((p11 * fx + 16) >> 5) + p11;
+        soma += ((topo * fy + 16) >> 5) - ((base * fy + 16) >> 5) + base;
+    }
+    ivec4 r = min(soma / n, ivec4(255));
+    // de volta à cor reta
+    fragColor = r.a > 0 ? vec4(min(vec3(r.rgb) / float(r.a), 1.0), float(r.a) / 255.0) : vec4(0.0);
+}
+]]></shader>
+</effect>

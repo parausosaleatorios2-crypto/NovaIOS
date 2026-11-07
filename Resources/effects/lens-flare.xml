@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   REFLEXO DE LENTE
+  ============================================================================
+
+  A fonte de luz com estrela, halo e os fantasmas que aparecem quando a luz bate
+  na lente direto.
+
+  ============================================================================
+   DE ONDE SAEM OS FANTASMAS
+  ============================================================================
+
+  Um reflexo de lente de verdade é a luz que entra, bate numa superfície vítrea
+  e volta — e cada "fantasma" é um elemento da lente real. Como todos os
+  elementos ficam no mesmo eixo óptico, os fantasmas aparecem na LINHA que liga
+  a fonte de luz ao centro do quadro, do outro lado dele em proporções fixas.
+
+  O shader só precisa dessa linha. Para cada fantasma k, pega uma posição em
+  `mix(centro, fonte, offset_k)`, uma cor própria (o vidro tingiria diferente
+  cada reflexo) e um raio — e desenha um disco ali. Nada de traçado óptico.
+
+  ============================================================================
+   ESTRELA E HALO SÃO DUAS CONTAS DIFERENTES
+  ============================================================================
+
+  A ESTRELA (as pontas que atravessam o quadro) é o ângulo do pixel em volta da
+  fonte: `cos(n · θ)` com n = número de pontas dá a rosácea; elevar ao quadrado
+  afina a linha; o alcance cai com a distância, suave.
+
+  O HALO (o bolo de luz em volta) é só uma exponencial da distância. O miolo
+  branco satura (como o raio), a cor fica no meio e o halo dá a queda larga.
+-->
+<effect
+    id="nova.effect.lens-flare"
+    name="Reflexo de lente"
+    name-en="Lens Flare"
+    desc="Fonte de luz com estrela, halo e os fantasmas alinhados no eixo óptico."
+    desc-en="A light source with star, halo and ghost reflections aligned along the optical axis."
+    category="procedural"
+    tags="lente,flare,reflexo,estrela,raios,luz,sol,fantasma">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="sourceAt" label="Fonte da luz" defaultX="0.2" defaultY="0.3" />
+        <slider id="brightness" label="Brilho"
+                default="1.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <color id="flareColor" group="Luz" label="Cor" default="#FFEFC2FF" />
+        <slider id="haloSize" group="Luz" label="Tamanho do halo"
+                default="0.35" min="0.02" max="1.5" step="0.01" snap="0.0" />
+
+        <!-- ============================== Estrela ========================== -->
+        <slider id="starPoints" group="Estrela" label="Pontas"
+                default="6" min="2" max="12" step="1" type="integer" />
+        <slider id="starLength" group="Estrela" label="Comprimento"
+                default="0.8" min="0.0" max="2.0" step="0.05" snap="0.0" />
+        <slider id="starAngle" group="Estrela" label="Ângulo"
+                default="0.0" min="0.0" max="360.0" step="1.0" snap="0.0" />
+
+        <!-- ============================== Fantasmas ======================== -->
+        <slider id="ghostCount" group="Fantasmas" label="Quantidade"
+                default="5" min="0" max="8" step="1" type="integer" />
+        <slider id="ghostSpread" group="Fantasmas" label="Dispersão"
+                default="1.0" min="0.1" max="2.5" step="0.05" snap="0.0" />
+        <slider id="ghostSize" group="Fantasmas" label="Tamanho"
+                default="0.06" min="0.005" max="0.3" step="0.005" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, a estrela fechada do padrão some; o `ate` abre o brilho pra mostrar o flare. -->
+    <preview>
+        <set param="brightness" value="2.5" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAXIMO_DE_FANTASMAS = 8;
+
+/** A paleta tingida de um fantasma k, rotacionando por hash: cada vidro tinge diferente. */
+vec3 corDoFantasma(int k, vec3 base) {
+    float h = fract(sin(float(k) * 12.9898) * 43758.5453);
+    vec3 roda = vec3(
+        sin(h * 6.2831 + 0.0),
+        sin(h * 6.2831 + 2.094),
+        sin(h * 6.2831 + 4.188)
+    ) * 0.5 + 0.5;
+    return mix(base, roda, 0.55);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 centro = vec2(0.5 * acAspect, 0.5);
+    vec2 fonte = vec2(sourceAt.x * acAspect, sourceAt.y);
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+
+    vec3 corAcumulada = vec3(0.0);
+    float alfaAcumulado = 0.0;
+
+    // ================ Halo central: a luz espalhada em volta da fonte ================
+    float d = length(p - fonte);
+    float halo = exp(-d / max(haloSize * 0.3, 1e-4));
+    float miolo = 1.0 - smoothstep(0.0, haloSize * 0.04, d);
+    corAcumulada += flareColor.rgb * halo + vec3(1.0) * miolo;
+    alfaAcumulado = max(alfaAcumulado, max(miolo, halo * 0.8));
+
+    // ================ Estrela: cos(n·θ), afinada e com alcance que cai suave =========
+    if (starLength > 0.0) {
+        vec2 v = p - fonte;
+        float theta = atan(v.y, v.x) + radians(starAngle);
+        int pontas = clamp(int(starPoints + 0.5), 2, 12);
+        float rosa = cos(float(pontas) * theta);
+        rosa = pow(max(rosa, 0.0), 32.0);                 // afina a ponta
+        float queda = exp(-d / max(starLength * 0.35, 1e-4));
+        float raio = rosa * queda * 1.5;
+        corAcumulada += flareColor.rgb * raio;
+        alfaAcumulado = max(alfaAcumulado, raio);
+    }
+
+    // ================ Fantasmas: cópias alinhadas no eixo fonte↔centro ===============
+    int quantos = clamp(int(ghostCount + 0.5), 0, MAXIMO_DE_FANTASMAS);
+    for (int k = 0; k < MAXIMO_DE_FANTASMAS; k++) {
+        if (k >= quantos) break;
+
+        // Offsets negativos levam o fantasma pro outro lado do centro: é onde um reflexo de lente de verdade cai.
+        float offset = -ghostSpread * (float(k) + 1.0) / float(max(quantos, 1));
+        vec2 ponto = mix(centro, fonte, 1.0 - offset);
+
+        float dg = length(p - ponto);
+        float raio = ghostSize * (0.6 + 0.6 * fract(sin(float(k) * 7.31) * 43758.5453));
+        float disco = 1.0 - smoothstep(raio * 0.4, raio, dg);
+        float brilhoDoFantasma = disco * (0.6 - 0.5 * float(k) / float(MAXIMO_DE_FANTASMAS));
+
+        corAcumulada += corDoFantasma(k, flareColor.rgb) * brilhoDoFantasma;
+        alfaAcumulado = max(alfaAcumulado, brilhoDoFantasma * 0.6);
+    }
+
+    corAcumulada *= brightness;
+    float alfa = clamp(alfaAcumulado * brightness, 0.0, 1.0) * flareColor.a;
+
+    vec4 desenhado = vec4(corAcumulada, alfa);
+    float saidaAlfa = desenhado.a + original.a * (1.0 - desenhado.a);
+    vec3 saidaCor = saidaAlfa > 0.0
+        ? (desenhado.rgb * desenhado.a + original.rgb * original.a * (1.0 - desenhado.a)) / saidaAlfa
+        : vec3(0.0);
+
+    fragColor = vec4(saidaCor, saidaAlfa);
+}
+
+    ]]></shader>
+</effect>

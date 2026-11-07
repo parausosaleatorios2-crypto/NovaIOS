@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_PSYKOBLOBS — o Psyko Blobs do Sapphire (Boris FX), lido do plugin
+  ============================================================================
+
+  Pedido do snow (01/11/2026): "quais desses a gente n fez ainda e é facil?" -> "Sim, PsykoBlobs". É o
+  S_PsykoStripes com as listras retas trocadas pelo `noise` do Sapphire (o mesmo do S_TexturePlasma).
+
+  DE ONDE VEIO (tools/spsykoblobs/benchmark): a definição `Psyko_Blobs` (texto na sapphire_ae.dll):
+
+      ph    = Phase Start + (pR, pG, pB) + Phase Speed · tempo da camada (s)
+      nfreq = Noise Freq · (Noise Freq Rel X, 1)
+      bw    = Source Scale · blur(monochrome(Fonte), Source Blur px, 3 caixas, subpixel)
+      pic   = sat_scale(nsin(Freq Colors · (fR, fG, fB) · ((noise(nfreq, Octaves, Shift, Seed) + bw) − ph))
+                        · Brightness · Color, Saturation)
+      saída = interp(pic · interp(1, min(1, bw · Scale By Src Amp), Scale By Source) + Offset, Fonte, Mix With Source)
+
+  O `noise` é o do S_TexturePlasma (a pirâmide de B-spline lida no código, conferida no AE); o resto é o do
+  S_PsykoStripes (nsin, monochrome, as três caixas, sat_scale, os dois Opacity, conferidos no AE).
+  MEDIDO: o modelo (as duas contas juntas, sem ajuste) fica a 0,003–0,06 nível do AE de 16 bpc em média
+  (r1, 49 casos; máximo 1,2 num caso). Este shader na GPU do PC contra o AE de 8 bpc (r2, 27 casos, `comparar.py`):
+  no máximo 1 nível em 26 casos (o `ruido_mix`, 5 oitavas e Rel X 1,7: 3 px a 2), 95,9% dos pixels iguais na média,
+  86% no pior. O que sobra é o `noise`: um desvio liso de ~1e-5 contra o do AE (o mesmo nos três canais), que o seno
+  amplifica (~1700 níveis por unidade de noise no padrão) — o mesmo resíduo do S_TexturePlasma, onde aparece menos.
+
+  COMO É FEITO AQUI (o buffer do motor é RGBA8):
+    0       ruidoEstado  o `noise` de cada pixel (os 32 bits do float). Não muda com o tempo (a fase entra depois):
+                         fica num estado-cache e, enquanto a assinatura dos controles dele (passe 1) é a mesma, é só
+                         copiado — como no S_TexturePlasma.
+    1       assinatura   Noise Freq, Rel X, Octaves, Seed, Shift e o tamanho da camada, para o próximo quadro.
+    2       ga           bw = monochrome(fonte)
+    3..8    gb/ga        as três caixas em x e as três em y (o campo fica em ga)
+    9       as cores, a mistura e o alfa.
+
+  O QUE NÃO ENTROU: Mask from Layer/Path (a camada de máscara, Mask Use, Blur Mask, Invert Mask) e Mocha. O padrão do
+  Source Blur no AE acompanha a largura da camada (0,088 · 0,375 · largura); aqui é o de 640 px. Nada rodou em
+  aparelho.
+-->
+<effect
+    id="nova.effect.spsykoblobs"
+    name="S_PsykoBlobs"
+    name-en="S_PsykoBlobs"
+    desc="O Psyko Blobs do Sapphire: manchas de cor psicodélicas de ruído fractal que andam no tempo e se curvam com o brilho da imagem, igual ao After Effects."
+    desc-en="Sapphire's Psyko Blobs: psychedelic fractal-noise color blobs that move over time and bend with the image's brightness, as in After Effects."
+    category="generate"
+    pontos="camada"
+    tags="s_psykoblobs,psyko blobs,psykoblobs,manchas,blobs,ruido,noise,psicodelico,psychedelic,sapphire,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tabelas" src="image" files="filmdamage/tabelas.png" />
+        <texture id="ruidoEstado" src="state" memory="cache" />
+        <texture id="assinatura" src="state" memory="cache" scale="0.0625" />
+        <texture id="ga" src="buffer" />
+        <texture id="gb" src="buffer" />
+
+        <slider id="noiseFrequency" group="Noise" label="Noise Freq" default="4.0" min="0.01" max="20.0" step="0.01" snap="4.0" />
+        <slider id="noiseFreqRelX" group="Noise" label="Noise Freq Rel X" default="1.0" min="0.01" max="10.0" step="0.01" snap="1.0" />
+        <slider id="noiseOctaves" group="Noise" label="Noise Octaves" default="1.0" min="1.0" max="10.0" step="1.0" />
+        <slider id="noiseSeed" group="Noise" label="Noise Seed" default="0.23" min="0.0" max="10.0" step="0.01" />
+        <point id="shift" group="Noise" label="Noise Shift" defaultX="0.5" defaultY="0.5" />
+        <slider id="sourceBlur" label="Source Blur" default="21.12" min="0.0" max="720.0" step="0.1" snap="0.0" />
+        <slider id="sourceScale" label="Source Scale" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="freqColors" group="Frequency" label="Freq Colors" default="4.0" min="0.0" max="20.0" step="0.01" snap="4.0" />
+        <slider id="freqRed" group="Frequency" label="Freq Red" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="freqGreen" group="Frequency" label="Freq Green" default="1.1" min="0.0" max="5.0" step="0.01" snap="1.1" />
+        <slider id="freqBlue" group="Frequency" label="Freq Blue" default="1.2" min="0.0" max="5.0" step="0.01" snap="1.2" />
+        <slider id="phaseStart" group="Phase" label="Phase Start" default="0.5" min="-1.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="phaseSpeed" group="Phase" label="Phase Speed" default="1.0" min="-10.0" max="10.0" step="0.01" snap="0.0,1.0" />
+        <slider id="phaseRed" group="Phase" label="Phase Red" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="phaseGreen" group="Phase" label="Phase Green" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="phaseBlue" group="Phase" label="Phase Blue" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <slider id="offset" label="Offset" default="0.0" min="-8.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="saturation" label="Saturation" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="scaleBySource" label="Scale By Source" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="scaleBySrcAmp" label="Scale By Src Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="mixWithSource" label="Mix With Source" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="inputOpacity" label="Input Opacity" default="1" options="All Opaque|Normal|As Premult" />
+        <selector id="outputOpacity" label="Output Opacity" default="1" options="All Opaque|Copy From Input" />
+    </params>
+
+    <passes>
+        <pass target="ruidoEstado" />                   <!-- 0: o noise (ou a cópia do quadro anterior) -->
+        <pass target="assinatura" />                    <!-- 1 -->
+        <pass target="ga" />                            <!-- 2: bw = monochrome(fonte) -->
+        <pass target="gb" skipIfZero="sourceBlur" />    <!-- 3..5: as três caixas em x -->
+        <pass target="ga" skipIfZero="sourceBlur" />
+        <pass target="gb" skipIfZero="sourceBlur" />
+        <pass target="ga" skipIfZero="sourceBlur" />    <!-- 6..8: as três caixas em y: o campo fica em ga -->
+        <pass target="gb" skipIfZero="sourceBlur" />
+        <pass target="ga" skipIfZero="sourceBlur" />
+        <pass />                                        <!-- 9: as manchas -->
+    </passes>
+
+    <shader><![CDATA[
+const float LARGURA_MAX = 720.0;
+
+// Os sliders do Sapphire chegam em ponto fixo 16.16: os do `noise` truncados (medido no S_TexturePlasma), os outros
+// arredondados (medido no S_PsykoStripes).
+float q16(float v) { return floor(v * 65536.0) / 65536.0; }
+float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+// 2^k exato (o exp2 da GPU não garante).
+float pot2(int k) { return intBitsToFloat((127 + k) << 23); }
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+float gEscala;     // a prévia reduzida (o Source Blur é em px da composição)
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+}
+
+bool naCamada(ivec2 q) { return q.x >= 0 && q.y >= 0 && q.x < gN.x && q.y < gN.y; }
+
+// ---------------------------------------------------------------------------------------------------------
+// O hash do Sapphire (a tabela de assets/filmdamage/tabelas.png, linha 6: cada número de 32 bits em dois texels
+// da mesma coluna, bytes 0-2 em RGB e o byte 3 no R da linha de baixo).
+// ---------------------------------------------------------------------------------------------------------
+uint ler32(int x, int linha) {
+    uvec3 a = uvec3(floor(texelFetch(tabelas, ivec2(x, linha), 0).rgb * 255.0 + 0.5));
+    uint b = uint(floor(texelFetch(tabelas, ivec2(x, linha + 1), 0).r * 255.0 + 0.5));
+    return a.x | (a.y << 8) | (a.z << 16) | (b << 24);
+}
+
+uint rodadas(uint c) {
+    for (int i = 0; i < 4; i++) c = (c >> 8) + ler32(int(c & 255u), 6);
+    return c;
+}
+
+// O valor da grade: ((hash & 0x1fff) − 4096) / 4096, com a linha negada (o y do código cresce para baixo).
+float valorDaLinha(uint linha, int coluna) {
+    uint h = rodadas(linha + uint(coluna));
+    return float(int(h & 0x1fffu) - 4096) * (1.0 / 4096.0);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// O núcleo de k subdivisões da B-spline cúbica: K_k(d) = B4_n(d + 2(n − 1)) / n³, n = 2^k, B4_n(m) = de quantos
+// jeitos m é a soma de 4 inteiros em 0..n−1 (simétrico em 2(n − 1); na metade de baixo, C(m+3, 3) − 4·C(m−n+3, 3)).
+// ---------------------------------------------------------------------------------------------------------
+float c3(float x) { return x >= 3.0 ? x * (x - 1.0) * (x - 2.0) * (1.0 / 6.0) : 0.0; }
+
+float nucleo(int d, int k) {
+    int n = 1 << k;
+    int m = d + 2 * (n - 1);
+    int topo = 4 * (n - 1);
+    if (m < 0 || m > topo) return 0.0;
+    m = min(m, topo - m);
+    return (c3(float(m + 3)) - 4.0 * c3(float(m - n + 3))) * pot2(-3 * k);
+}
+
+// O laço do código num eixo: quantas subdivisões cabem (enquanto 2n − 3 ≤ lado) e o lo/hi/X0 do último nível.
+struct Eixo { int L; float lo; float hi; int X0; };
+
+Eixo eixo(int lado, float lo, float hi) {
+    int X0 = int(floor(lo)) - 1;
+    int X1 = int(ceil(hi)) + 1;
+    if (X1 - X0 + 1 > lado) X1 = X0 + lado - 1;
+    bool anda = hi - lo > 0.0;
+    int L = 0;
+    for (int k = 0; k < 30; k++) {
+        if (!anda || 2 * (X1 - X0 + 1) - 3 > lado) break;
+        lo += lo; hi += hi;
+        X0 = int(floor(lo)) - 1;
+        X1 = int(ceil(hi)) + 1;
+        L++;
+    }
+    return Eixo(L, lo, hi, X0);
+}
+
+/**
+ * A posição do pixel i (de n) no último nível: pos = ini + i·passo, SOMADA como no código — os pares acumulam
+ * p += 2·passo em float32 e o ímpar é passo + p. Dentro de uma faixa de expoente o passo arredondado é constante
+ * (no empate de meio ulp, o primeiro passo vai ao par e os outros ficam iguais), então dá para pular a faixa
+ * inteira de uma vez. Devolve o ponto da grade (c) e a fração.
+ */
+void posicao(int i, int n, Eixo e, out int c, out float f) {
+    int r = 2 * e.X0 + 1;
+    float ini = (e.lo + e.lo) - float(r);
+    float fim = (e.hi + e.hi) - float(r);
+    float passo = (fim - ini) / float(n);
+    float d = passo * 2.0;
+    float P = ini;
+    int m = i >> 1;
+    const int TOPO = 1 << 24;
+    for (int k = 0; k < 64 && m > 0; k++) {
+        uint bits = floatBitsToUint(P);
+        int ex = int((bits >> 23) & 255u) - 127;
+        int Pu = int((bits & 0x7fffffu) | 0x800000u);
+        float x = d * pot2(23 - ex);
+        float sf = floor(x);
+        float fr = x - sf;
+        int su = int(sf);
+        if (fr == 0.5) {
+            if ((Pu & 1) == 1) {
+                int Pn = Pu + su + ((Pu + su) & 1);
+                if (Pn >= TOPO) { P = P + d; m--; continue; }
+                Pu = Pn; m--;
+                if (m == 0) { P = float(Pu) * pot2(ex - 23); break; }
+            }
+            su += su & 1;
+        } else if (fr > 0.5) su++;
+        su = max(su, 1);
+        int dentro = max(0, (TOPO - Pu + su - 1) / su - 1);
+        if (m <= dentro) { P = float(Pu + m * su) * pot2(ex - 23); m = 0; }
+        else { P = float(Pu + dentro * su) * pot2(ex - 23); m -= dentro; P = P + d; m--; }
+    }
+    float pos = (i & 1) == 0 ? P : passo + P;
+    float fl = floor(pos);
+    c = r + int(fl);
+    f = pos - fl;
+}
+
+// Os 5 pesos (já interpolados entre c e c + 1) da grade do nível F − k, a partir do índice i0.
+void pesos(int c, float f, int k, out int i0, out float w[5]) {
+    int n = 1 << k;
+    i0 = -((2 * (n - 1) - c) >> k);         // ceil((c − 2(n − 1)) / n)
+    for (int u = 0; u < 5; u++) {
+        int b = n * (i0 + u);
+        w[u] = (1.0 - f) * nucleo(c - b, k) + f * nucleo(c + 1 - b, k);
+    }
+}
+
+// O viés de um eixo: os 2⁻¹⁴ postos nos vértices (pontos pares) de cada nível, levados até o fim; os de antes do
+// 0,5·v + 0,5 valem a metade.
+float vies(int c, float f, int L) {
+    int F = L + 1;
+    float tot = 0.0;
+    for (int l = 1; l <= F; l++) {
+        int k = F - l;
+        int n = 1 << k;
+        float s = 0.0;
+        for (int lado = 0; lado < 2; lado++) {
+            int cc = c + lado;
+            int t0 = -((2 * (n - 1) - cc) >> (k + 1));
+            float soma = 0.0;
+            for (int u = 0; u < 3; u++) soma += nucleo(cc - 2 * n * (t0 + u), k);
+            s += (lado == 0 ? 1.0 - f : f) * soma;
+        }
+        tot += s * (l <= L ? 0.5 : 1.0);
+    }
+    return tot * (1.0 / 16384.0);
+}
+
+/** O `noise` do Sapphire (0..1) no pixel p (do canto de cima, na camada de W × H). */
+float ruidoDoSapphire(ivec2 p, int W, int H) {
+    float a = float(H) / float(W);
+    float fx = (q16(noiseFrequency) * q16(noiseFreqRelX)) * 2.0;
+    float fy = q16(noiseFrequency) * 2.0;
+    int semente = int(4096.0 * q16(noiseSeed));
+    int oitavas = int(clamp(floor(noiseOctaves + 0.5), 1.0, 10.0));
+    float Nx = W > 4 ? min(abs(fx), float((W - 4) >> 1)) : 0.0;
+    float Ny = H > 4 ? min(abs(fy), float(H - 4) / (2.0 * a)) : 0.0;
+    // O Shift em unidades do Sapphire (a largura vale 2; y para baixo, como o código usa).
+    float ox = (shift.x - 0.5) * 2.0;
+    float oy = (shift.y - 0.5) * 2.0 * a;
+    Eixo ex = eixo(W, (-1.0 - ox) * Nx, Nx * (1.0 - ox));
+    Eixo ey = eixo(H, -(a + oy) * Ny, Ny * (a - oy));
+    int cx, cy; float tx, ty;
+    posicao(p.x, W, ex, cx, tx);
+    posicao(p.y, H, ey, cy, ty);
+
+    float soma = 0.0;
+    int ultima = min(oitavas - 1, min(ex.L, ey.L));
+    for (int o = 0; o <= ultima; o++) {
+        int ix, iy;
+        float wx[5], wy[5];
+        pesos(cx, tx, ex.L + 1 - o, ix, wx);
+        pesos(cy, ty, ey.L + 1 - o, iy, wy);
+        uint sem = uint(semente ^ o);
+        float s = 0.0;
+        for (int v = 0; v < 5; v++) {
+            if (wy[v] == 0.0) continue;
+            uint linha = rodadas((uint(-(iy + v)) << 4) ^ sem);
+            float sl = 0.0;
+            for (int u = 0; u < 5; u++) {
+                if (wx[u] == 0.0) continue;
+                sl += wx[u] * valorDaLinha(linha, ix + u);
+            }
+            s += wy[v] * sl;
+        }
+        soma += s * pot2(-o);
+    }
+    return 0.5 * soma + 0.5 + vies(cx, tx, ex.L) + vies(cy, ty, ey.L);
+}
+
+// ---- números em buffers de 8 bits ----------------------------------------------------------
+// O float inteiro (os 4 bytes): a ida e a volta pelo RGBA8 são exatas.
+vec4 gravarFloat(float v) {
+    uint u = floatBitsToUint(v);
+    return vec4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
+}
+
+float lerFloat(vec4 c) {
+    uvec4 b = uvec4(floor(c * 255.0 + 0.5));
+    return uintBitsToFloat(b.x | (b.y << 8) | (b.z << 16) | (b.w << 24));
+}
+
+// ---- o ruído guardado entre quadros ----------------------------------------------------------
+// O que muda o `noise`: se tudo isto é igual ao do quadro anterior, ele é copiado.
+const int N_ASSINATURA = 10;
+
+float assinado(int k) {
+    if (k == 0) return noiseFrequency;
+    if (k == 1) return noiseFreqRelX;
+    if (k == 2) return noiseOctaves;
+    if (k == 3) return noiseSeed;
+    if (k == 4) return shift.x;
+    if (k == 5) return shift.y;
+    if (k == 6) return float(gN.x);
+    if (k == 7) return float(gN.y);
+    if (k == 8) return float(acEntradaDePe);
+    return 1.0;                              // 9: há assinatura (o estado novo vem zerado)
+}
+
+// Sem olhar o acStateFresh: os dois estados são `memory="cache"` (o motor entrega o último escrito, com o tempo
+// parado, andando ou pulando), e o estado que nunca foi escrito vem zerado — o 9 da assinatura não bate.
+bool mesmaAssinatura() {
+    for (int k = 0; k < N_ASSINATURA; k++) {
+        if (lerFloat(texelFetch(assinatura, ivec2(k & 7, k >> 3), 0)) != assinado(k)) return false;
+    }
+    return true;
+}
+
+// ---- o desfoque da fonte (o do S_PsykoStripes) ----------------------------------------------
+int espelhar(int i, int n) {
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+ivec2 espelhado(ivec2 q) { return gInicio + ivec2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
+
+// Input Opacity (medido): Normal (1) usa a cor pré-multiplicada; All Opaque (0) e As Premult (2), a reta.
+vec3 entrada(ivec2 p) {
+    vec4 s = texelFetch(inputImg, p, 0);
+    return inputOpacity == 1 ? s.rgb * s.a : s.rgb;
+}
+
+float monochrome(vec3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
+
+// Medido: o Source Blur do AE já é a largura em px (subpixel ligado de fábrica no plugin).
+float larguraPx() { return clamp(fixo(sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
+
+/** Uma das três caixas de um eixo (a conta do S_GlowAura): a que cresce leva as pontas com a fração. */
+float caixa(ivec2 q, bool emX, int qual, bool deA) {
+    float w = larguraPx();
+    int a = int(floor(w));
+    float f = w - float(a);
+    int r = (a + 2 - qual) / 3;
+    bool cresce = f > 0.0 && a - (a / 3) * 3 == qual;
+    float soma = 0.0;
+    for (int d = -r; d <= r; d++) {
+        ivec2 p = espelhado(q + (emX ? ivec2(d, 0) : ivec2(0, d)));
+        soma += lerFloat(deA ? texelFetch(ga, p, 0) : texelFetch(gb, p, 0));
+    }
+    float n = float(2 * r + 1);
+    if (!cresce) return soma / n;
+    ivec2 e = espelhado(q - (emX ? ivec2(r + 1, 0) : ivec2(0, r + 1)));
+    ivec2 g = espelhado(q + (emX ? ivec2(r + 1, 0) : ivec2(0, r + 1)));
+    float pontas = deA ? lerFloat(texelFetch(ga, e, 0)) + lerFloat(texelFetch(ga, g, 0)) : lerFloat(texelFetch(gb, e, 0)) + lerFloat(texelFetch(gb, g, 0));
+    return soma * ((1.0 - f) / n + f / (n + 2.0)) + pontas * (f / (n + 2.0));
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = !naCamada(q);
+    // A linha da camada do AE (linha 0 em cima); a cena guardada de pé tem a linha 0 embaixo.
+    ivec2 p = acEntradaDePe == 1 ? ivec2(q.x, gN.y - 1 - q.y) : q;
+
+    // ---- 0: o noise, ou a cópia do quadro anterior ----
+    if (acPass == 0) {
+        if (fora) { fragColor = vec4(0.0); return; }
+        fragColor = mesmaAssinatura() ? texelFetch(ruidoEstado, t, 0) : gravarFloat(ruidoDoSapphire(p, gN.x, gN.y));
+        return;
+    }
+
+    // ---- 1: a assinatura (num estado pequeno, um número por pixel) ----
+    if (acPass == 1) {
+        ivec2 a = ivec2(floor(acScreenNorm * vec2(textureSize(assinatura, 0))));
+        int k = a.y * 8 + a.x;
+        fragColor = (a.x < 8 && k < N_ASSINATURA) ? gravarFloat(assinado(k)) : vec4(0.0);
+        return;
+    }
+
+    // ---- 2: bw = monochrome(fonte); 3..8: as três caixas em x e em y ----
+    if (acPass == 2) { fragColor = fora ? vec4(0.0) : gravarFloat(monochrome(entrada(t))); return; }
+    if (acPass <= 8) {
+        int k = acPass - 2;
+        float c = fora ? 0.0 : caixa(q, k <= 3, (k - 1) - ((k - 1) / 3) * 3, (k & 1) == 1);
+        fragColor = gravarFloat(c);
+        return;
+    }
+
+    // ---- 9: as manchas (da definição) ----
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora) { fragColor = s; return; }
+
+    float n = lerFloat(texelFetch(ruidoEstado, t, 0));
+    float bw = lerFloat(texelFetch(ga, t, 0)) * fixo(sourceScale);
+    vec3 ph = fixo(phaseStart) + vec3(fixo(phaseRed), fixo(phaseGreen), fixo(phaseBlue)) + fixo(phaseSpeed) * acTime;
+    vec3 fq = fixo(freqColors) * vec3(fixo(freqRed), fixo(freqGreen), fixo(freqBlue));
+    vec3 c = (0.5 + 0.5 * sin(6.2831853 * (fq * ((n + bw) - ph)))) * fixo(brightness) * (floor(color.rgb * 255.0 + 0.5) / 255.0);
+    float lum = monochrome(c);
+    vec3 pic = lum + (c - lum) * fixo(saturation);
+    float k = mix(1.0, min(1.0, bw * fixo(scaleBySrcAmp)), fixo(scaleBySource));
+    vec3 o = pic * k + fixo(offset);
+    o = mix(o, entrada(t), fixo(mixWithSource));
+
+    // Output Opacity (medido): Copy From Input = clip(saída) como cor reta com o alfa da fonte; All Opaque, opaco
+    float a = outputOpacity == 0 ? 1.0 : s.a;
+    fragColor = vec4(floor(clamp(o, 0.0, 1.0) * 255.0 + 0.5) / 255.0, a);
+}
+]]></shader>
+</effect>

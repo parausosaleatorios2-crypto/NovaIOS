@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_BLURMOCURVES — o Blur Motion Curves do Sapphire (0.442.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "s_blurmocurves entao". Transforma a imagem (Z Dist, Rotate, Shift
+  em volta do Center) e borra pelo MOVIMENTO DAS PRÓPRIAS CURVAS: os controles são lidos no abrir
+  e no fechar do obturador, e cada pixel soma a fonte pela reta que liga os dois lugares. Com as
+  curvas paradas não há borrão — só a transformação.
+
+  DE ONDE VEIO (tools/sblurmocurves/benchmark):
+
+  - A conta do efeito está em texto na DLL do Sapphire (`Transform_and_Blur` e
+    `Blur_Motion_Curves_No_Transform`): fonte = giro(tela − centro) · Z Dist + centro − Shift,
+    nos dois instantes; "Blur Only" usa metade da diferença, para cada lado, sem transformar.
+  - As unidades foram medidas no After Effects: Shift em pixels, Rotate em graus no sentido
+    horário, Center em pixels (aqui, um ponto de 0 a 1), o obturador em quadros.
+  - A primitiva do borrão (`blur_warp`, com Subpixel) foi lida do código: a reta é percorrida em
+    passos INTEIROS do eixo em que ela anda mais, com interpolação linear no outro eixo; a primeira
+    e a última coluna pesam pelo pedaço da reta que cai nelas; até 1000 passos.
+  - Exposure Bias: o peso vai em linha reta de uma ponta à outra (0,5 = igual).
+  - Reflect espelha em volta do índice 0 e do índice n; Tile repete; No deixa transparente. No meio
+    do borrão a borda é dobrada uma vez só, numa ponta da reta, e a reta segue dali.
+  - Brightness multiplica a cor E o alfa.
+
+  O modelo em numpy fica a 0,003–0,005 nível (de 255) do AE no miolo da imagem.
+
+  COMO O MOTOR AJUDA: `<shutter frames="true" shift="...">` — ele lê os controles no começo e no
+  fim do obturador e entrega os dois (`id` e `idFim`). Parado, os dois são iguais.
+
+  O QUE NÃO ENTROU: Blur Res (sempre Full), Subpixel (sempre ligado), Opacity (sempre Normal),
+  Mask, Mocha e Crop. Aqui a reta tem no máximo 512 passos (lá, 1000): acima disso as colunas são
+  puladas por igual. Em "Blur Only" o Z Dist e o Rotate "de agora" são a média das duas pontas.
+  Com Wrap em No, o alfa do último pixel da borda difere um pouco durante o borrão.
+-->
+<effect
+    id="nova.effect.sblurmocurves"
+    name="S_BlurMoCurves"
+    name-en="S_BlurMoCurves"
+    desc="O Blur Motion Curves do Sapphire: zoom, giro e deslocamento com o borrão de movimento das próprias curvas."
+    desc-en="Sapphire's Blur Motion Curves: zoom, rotation and shift with motion blur taken from the curves themselves."
+    category="blur"
+    tags="blurmocurves,s_blurmocurves,sapphire,motion blur,borrao,desfoque,movimento,zoom,transicao,fade,shutter,obturador,z dist,shake">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="mode" label="Effect" default="0" options="Transform and Blur|Blur Only" />
+        <point id="center" label="Center XY" defaultX="0.5" defaultY="0.5" />
+        <slider id="zDist" label="Z Dist" default="1.0" min="0.01" max="10.0" step="0.001" snap="1.0" />
+        <slider id="rotate" label="Rotate" default="0.0" min="-720.0" max="720.0" step="0.1" type="angle" snap="0.0" />
+        <slider id="shiftX" label="Shift X" default="0.0" min="-4000.0" max="4000.0" step="0.1" snap="0.0" />
+        <slider id="shiftY" label="Shift Y" default="0.0" min="-4000.0" max="4000.0" step="0.1" snap="0.0" />
+        <slider id="shutterDuration" label="Shutter Duration" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0,0.0" />
+        <slider id="shutterShift" label="Shutter Shift" default="0.0" min="-2.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="exposureBias" label="Exposure Bias" default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <selector id="wrapX" label="Wrap X" default="0" options="No|Tile|Reflect" />
+        <selector id="wrapY" label="Wrap Y" default="0" options="No|Tile|Reflect" />
+    </params>
+
+    <!-- Na vitrine, o padrão não move a camada e não há o que borrar: um giro com zoom. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="rotate" value="25.0" />
+        <set param="zDist" value="1.4" />
+    </preview>
+
+
+
+    <!-- Lidos pelo motor: o obturador em quadros (1 = um quadro) e o deslocamento dele. -->
+    <shutter angle="shutterDuration" frames="true" shift="shutterShift" />
+
+    <shader><![CDATA[
+const int MAX_PASSOS = 512;      // lá, 1000
+const int PASSOS_DO_RASCUNHO = 96;  // na prévia em movimento (`acRascunho`, play/arraste); parado e na exportação, MAX_PASSOS
+
+/** A borda de um índice de pixel: 0 nada, 1 ladrilho, 2 espelho em volta do índice 0 e do índice n (medido). */
+int dobrar(int i, int n, int modo) {
+    // Dentro do quadro, ladrilho e espelho devolvem o próprio índice: sem a divisão inteira (0.569.0)
+    if (i >= 0 && i < n) return i;
+    if (modo == 1) { i = i - (i / n) * n; return i < 0 ? i + n : i; }
+    if (modo == 2) {
+        int p = 2 * n;
+        int m = i - (i / p) * p;
+        if (m < 0) m += p;
+        if (m > n) m = p - m;
+        return min(m, n - 1);
+    }
+    return i;
+}
+
+vec4 pixel(ivec2 i) {
+    // a conta é com a linha 0 no TOPO, como no plugin; numa cena de pé (camada de ajuste) ela é a base do buffer
+    if (acEntradaDePe == 1) i.y = textureSize(inputImg, 0).y - 1 - i.y;
+    vec4 c = texelFetch(inputImg, i, 0);
+    return vec4(c.rgb * c.a, c.a);
+}
+
+/** A fonte no ponto `p` (índices de pixel), bilinear — é o que o efeito faz quando nada se mexe. */
+vec4 parado(vec2 p, ivec2 T) {
+    vec2 b = floor(p), f = p - b;
+    vec4 soma = vec4(0.0);
+    for (int k = 0; k < 4; k++) {
+        ivec2 i = ivec2(b) + ivec2(k & 1, k >> 1);
+        if ((wrapX == 0 && (i.x < 0 || i.x >= T.x)) || (wrapY == 0 && (i.y < 0 || i.y >= T.y))) continue;
+        float w = ((k & 1) == 1 ? f.x : 1.0 - f.x) * ((k >> 1) == 1 ? f.y : 1.0 - f.y);
+        soma += w * pixel(ivec2(dobrar(i.x, T.x, wrapX), dobrar(i.y, T.y, wrapY)));
+    }
+    return soma;
+}
+
+/** Um ponto da reta: `iu` no eixo maior, `it` no menor (já escolhida a linha `tf` ou `tf + 1`). */
+vec4 ponto(bool emx, int iu, int it, int tf, ivec2 T) {
+    int nu = emx ? T.x : T.y, nt = emx ? T.y : T.x;
+    int mu = emx ? wrapX : wrapY, mt = emx ? wrapY : wrapX;
+    // a borda sem Wrap: no eixo maior o ponto tem de cair dentro; no menor, vale de −1 a n − 1, repetindo a borda
+    if (mu == 0 && (iu < 0 || iu >= nu)) return vec4(0.0);
+    if (mt == 0 && (tf < -1 || tf >= nt)) return vec4(0.0);
+    iu = dobrar(iu, nu, mu);
+    it = mt == 0 ? clamp(it, 0, nt - 1) : dobrar(it, nt, mt);
+    return pixel(emx ? ivec2(iu, it) : ivec2(it, iu));
+}
+
+/**
+ * O `blur_warp` do Sapphire com Subpixel (lido do código): a reta de `p0` a `p1` percorrida em passos
+ * inteiros do eixo em que ela anda mais, com interpolação linear no outro.
+ */
+vec4 reta(vec2 p0, vec2 p1, ivec2 T) {
+    vec2 d = p1 - p0;
+    if (d.x == 0.0 && d.y == 0.0) return parado(p0, T);
+    bool emx = abs(d.x) >= abs(d.y);
+    float u0 = emx ? p0.x : p0.y, u1 = emx ? p1.x : p1.y;
+    float t0 = emx ? p0.y : p0.x, t1 = emx ? p1.y : p1.x;
+    bool sobe = u1 > u0;
+    float a = sobe ? floor(u0) : ceil(u0), b = sobe ? ceil(u1) : floor(u1);
+    float fa = abs(u0 - a), fb = abs(b - u1), passo = sobe ? 1.0 : -1.0;
+    int n = min(int(abs(b - a) + 0.5) + 1, 1000);
+    float incl = (t1 - t0) / (u1 - u0);
+    int teto = acRascunho == 1 ? PASSOS_DO_RASCUNHO : MAX_PASSOS;
+    int salto = (n + teto - 1) / teto;
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int j = 0; j < MAX_PASSOS; j++) {
+        int k = j * salto;
+        if (k >= n) break;
+        float u = a + passo * float(k);
+        float t = t0 + (u - u0) * incl;
+        // Exposure Bias (medido): o peso vai em linha reta de uma ponta à outra
+        float w = exposureBias * float(n - k) + (1.0 - exposureBias) * float(k + 1);
+        if (n == 1) w = 1.0;
+        else {
+            if (k == 0) w *= 1.0 - fa;
+            if (k == n - 1) w *= 1.0 - fb;
+        }
+        float tf = floor(t), ft = t - tf;
+        int iu = int(u), it = int(tf);
+        soma += w * mix(ponto(emx, iu, it, it, T), ponto(emx, iu, it + 1, it, T), ft);
+        pesos += w;
+    }
+    return pesos > 0.0 ? soma / pesos : vec4(0.0);
+}
+
+/** A coordenada dobrada para dentro do quadro: 1 ladrilho, 2 espelho (os ladrilhos ímpares, virados). */
+float antes(float c, float n, int modo) {
+    if (modo == 1) return c - floor(c / n) * n;
+    if (modo == 2) {
+        float q = floor(c / n), r = c - q * n;
+        return mod(q, 2.0) == 1.0 ? n - r : r;
+    }
+    return c;
+}
+
+/** `rotate v (graus / −360)` da definição: o giro que o AE mostra como horário. */
+vec2 girar(vec2 v, float graus) {
+    float a = radians(graus), c = cos(a), s = sin(a);
+    return vec2(c * v.x + s * v.y, -s * v.x + c * v.y);
+}
+
+/** Da tela para a fonte (índices de pixel). */
+vec2 paraAFonte(vec2 p, vec2 c, float z, float giro, vec2 desloc) {
+    return girar(p - c, giro) * z + c - desloc;
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 R = vec2(T);
+    vec2 p = min(floor(acScreenNorm * R), R - 1.0);
+    // o Center é um só (não tem "de" e "até"): o do meio do obturador; em índices, o centro do pixel i fica em i
+    vec2 c = mix(center, centerFim, 0.5) * R - 0.5;
+    // Na camada de ajuste (e no grupo solto) a cena chega de pé: a linha 0 do buffer é a BASE. Sem virar, o Shift Y e
+    // o giro saíam ao contrário do mesmo efeito numa camada (relato de 22/10/2026, o mesmo do S_Shake na 0.756).
+    if (acEntradaDePe == 1) {
+        p.y = R.y - 1.0 - p.y;
+        c.y = R.y - 1.0 - c.y;
+    }
+    vec2 s0 = vec2(shiftX, shiftY) * acEscalaDePixel, s1 = vec2(shiftXFim, shiftYFim) * acEscalaDePixel;
+    float z0 = max(zDist, 0.001), z1 = max(zDistFim, 0.001);
+    vec2 p0 = paraAFonte(p, c, z0, rotate, s0);
+    vec2 p1 = paraAFonte(p, c, z1, rotateFim, s1);
+    if (mode == 1) {
+        // Blur Only: metade da diferença para cada lado, sem transformar (o Z e o giro "de agora": o meio das pontas)
+        vec2 dv = girar((p1 - p0) * (0.5 / (0.5 * (z0 + z1))), -0.5 * (rotate + rotateFim));
+        p0 = p - dv;
+        p1 = p + dv;
+    }
+    // A borda no meio do borrão (lido do código e medido): ela é dobrada UMA vez, na ponta do fim do
+    // obturador, e a reta sai dali com a mesma diferença — num ladrilho espelhado ela anda "ao contrário",
+    // como lá. O que ainda cair fora é dobrado ponto a ponto.
+    vec2 q1 = vec2(antes(p1.x, R.x, wrapX), antes(p1.y, R.y, wrapY));
+    p0 = q1 + (p0 - p1);
+    p1 = q1;
+    vec4 soma = reta(p0, p1, T) * brightness;      // medido: o Brightness multiplica o alfa também
+    float alfa = min(soma.a, 1.0);
+    fragColor = alfa > 0.0 ? vec4(min(soma.rgb / alfa, vec3(1.0)), alfa) : vec4(0.0);
+}
+]]></shader>
+</effect>

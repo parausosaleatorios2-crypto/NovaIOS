@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   RAIOS DE LUZ — O CC LIGHT RAYS
+  ============================================================================
+
+  Os mesmos controles e o mesmo objetivo do CC Light Rays do After Effects: uma
+  FONTE de luz no Centro, do tamanho do Raio, e raios saindo dela para todo lado
+  com a cor e o desenho do que está dentro da fonte. É o que faz "o sol atrás do
+  personagem" parecer luz de verdade atravessando a cena.
+
+  Não é o "Raios divinos" (`raios-divinos.xml`, o Godrays do Crate): lá os raios
+  nascem das partes claras da imagem inteira, com limiar. Aqui eles nascem da
+  FONTE — o disco do Raio em volta do Centro —, e o que estiver dentro dele é
+  projetado para fora. Até a versão anterior este arquivo era um borrão radial
+  com limiar, e saía com cara de god rays; projetos salvos com ele abrem com os
+  padrões novos (os controles mudaram de nome e de escala).
+
+  ============================================================================
+   COMO FUNCIONA
+  ============================================================================
+
+  Cada pixel olha para trás, em direção ao Centro, e soma a luz emitida ao longo
+  desse caminho. A imagem INTEIRA emite na medida do próprio brilho, sem limiar
+  (o limiar era o que deixava a versão antiga com cara de god rays: só manchas
+  claras esticadas) — é daí que vêm os fiapos com o desenho da cena. A FONTE, o
+  disco do Raio com a borda da Warp Softness, emite três vezes mais: é o miolo
+  que acende. Como a fração do caminho que passa pela fonte encolhe com a
+  distância, o miolo se apaga sozinho ao se afastar, como luz de verdade.
+
+  Três passes em meia resolução, porque os raios são macios de natureza:
+    0. a EMISSÃO (a imagem pelo brilho, e a fonte reforçada);
+    1. os raios grossos: 64 amostras do Centro até o pixel;
+    2. o alisamento: 16 amostras dentro de UM passo do passe 1, ao longo do raio
+       — 64 × 16 = 1024 amostras efetivas, sem as "cópias" em degrau de um
+       borrão radial comum.
+  e a composição em tamanho cheio (o Transfer Mode).
+
+  Os números: Intensidade 100 é o padrão do AE; o Raio é em pixels da
+  composição (vale igual numa prévia reduzida — ver `acEscalaDePixel`).
+-->
+<effect
+    id="nova.effect.lightrays"
+    name="Raios de luz"
+    name-en="Light Rays"
+    desc="Raios saindo de uma fonte de luz no centro, com a cor e o desenho da própria imagem. O CC Light Rays."
+    desc-en="Rays streaming out of a light source at the center, colored by the image itself. Like CC Light Rays."
+    category="stylize"
+    blend="true"
+    tags="raios,luz,light rays,cc light rays,sol,volumetrico,brilho,feixe,fonte de luz">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="emitBuf" src="buffer" scale="0.5" />
+        <texture id="raysBuf" src="buffer" scale="0.5" />
+        <texture id="smoothBuf" src="buffer" scale="0.5" />
+
+        <slider id="rayIntensity" label="Intensity"
+                default="100.0" min="0.0" max="600.0" step="1.0" snap="100.0" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="radius" label="Radius"
+                default="40.0" min="0.0" max="1000.0" step="1.0" snap="40.0" />
+        <slider id="warpSoftness" label="Warp Softness"
+                default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <selector id="shape" label="Shape" default="0" options="Round|Square" />
+        <slider id="direction" label="Direction" type="angle" showIf="shape=1"
+                default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0,45.0,90.0,-45.0,-90.0" />
+        <switch id="colorFromSource" label="Color from Source" default="true" />
+        <switch id="allowBrightening" label="Allow Brightening" default="true" />
+        <color id="rayColor" label="Color" default="#FFFFFF" showIf="colorFromSource=false" />
+        <selector id="transferMode" label="Transfer Mode" default="0"
+                  options="None|Add|Lighten|Screen" />
+    </params>
+
+    <passes>
+        <pass target="emitBuf" />
+        <pass target="raysBuf" />
+        <pass target="smoothBuf" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+const int AMOSTRAS = 64;
+const int ALISAMENTO = 16;
+
+/** Pixels da camada por unidade de UV, nos dois eixos: é neles que o Raio é medido. */
+vec2 tamanhoDaCamada() {
+    return vec2(textureSize(inputImg, 0));
+}
+
+/**
+ * A distância do ponto ao Centro, em pixels da camada — redonda ou quadrada.
+ * No quadrado, o `Direction` gira o quadrado (só aparece com Shape = Square).
+ */
+float distanciaDaFonte(vec2 uv) {
+    vec2 v = (uv - center) * tamanhoDaCamada();
+    if (shape == 1) {
+        float a = radians(direction);
+        vec2 r = vec2(cos(a) * v.x + sin(a) * v.y, -sin(a) * v.x + cos(a) * v.y);
+        return max(abs(r.x), abs(r.y));
+    }
+    return length(v);
+}
+
+/** 1 dentro da fonte, caindo até 0 na largura da Warp Softness. */
+float mascaraDaFonte(vec2 uv) {
+    float r = max(radius * acEscalaDePixel, 0.5);
+    float borda = max(r * (0.05 + 1.95 * warpSoftness / 100.0), 1.0);
+    return 1.0 - smoothstep(r, r + borda, distanciaDaFonte(uv));
+}
+
+float luma(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+    // 0. A emissão: a imagem inteira emite na medida do próprio brilho (sem
+    //    limiar — é isso que leva o desenho da cena para dentro dos raios), e a
+    //    FONTE, o disco do Raio, emite três vezes mais.
+    if (acPass == 0) {
+        vec4 s = texture(inputImg, acScreenNorm);
+        float l = luma(s.rgb);
+        vec3 cor = colorFromSource ? s.rgb : vec3(l) * rayColor.rgb;
+        float m = mascaraDaFonte(acScreenNorm);
+        fragColor = vec4(cor * l * (1.0 + 2.0 * m) * s.a, 1.0);
+        return;
+    }
+
+    // 1. Os raios: a luz somada do Centro até este pixel, pesando mais o trecho
+    //    perto do pixel — é o que mantém o fiapo nítido em vez de virar névoa.
+    if (acPass == 1) {
+        vec3 soma = vec3(0.0);
+        float pesos = 0.0;
+        for (int i = 0; i < AMOSTRAS; i++) {
+            float t = (float(i) + 0.5) / float(AMOSTRAS);
+            vec2 uv = mix(center, acScreenNorm, t);
+            pesos += t;
+            if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) continue;
+            soma += texture(emitBuf, uv).rgb * t;
+        }
+        fragColor = vec4(soma / pesos, 1.0);
+        return;
+    }
+
+    // 2. O alisamento ao longo do raio, dentro de um passo do passe 1: tira os
+    //    degraus sem borrar para o lado (o que apagaria os fiapos).
+    if (acPass == 2) {
+        vec3 soma = vec3(0.0);
+        for (int j = 0; j < ALISAMENTO; j++) {
+            float t = 1.0 - (float(j) / float(ALISAMENTO)) / float(AMOSTRAS);
+            soma += texture(raysBuf, mix(center, acScreenNorm, t)).rgb;
+        }
+        fragColor = vec4(soma / float(ALISAMENTO), 1.0);
+        return;
+    }
+
+    // 3. A composição.
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // Intensidade 100 = o padrão do AE. O ganho foi acertado simulando o shader
+    // numa cena clara: em 100 o miolo acende e a cena continua legível.
+    vec3 raios = texture(smoothBuf, acScreenNorm).rgb * (rayIntensity / 100.0) * 0.5;
+
+    if (allowBrightening) {
+        // O miolo dos raios estoura para o branco, como luz forte na lente.
+        float l = luma(raios);
+        raios += raios * l * 0.6 + vec3(max(l - 0.8, 0.0) * 0.5);
+    } else {
+        // Sem clarear: os raios nunca passam do brilho da própria fonte.
+        raios = min(raios, vec3(1.0));
+    }
+
+    vec3 o = original.rgb;
+    vec3 resultado;
+    if (transferMode == 1) {
+        resultado = o + raios;                                    // Add
+    } else if (transferMode == 2) {
+        resultado = max(o, raios);                                // Lighten
+    } else if (transferMode == 3) {
+        vec3 r = clamp(raios, 0.0, 1.0);
+        resultado = 1.0 - (1.0 - o) * (1.0 - r);                  // Screen
+    } else {
+        // None: os raios POR CIMA da imagem, cobrindo onde são fortes.
+        float cobre = clamp(luma(raios), 0.0, 1.0);
+        resultado = o * (1.0 - cobre) + raios;
+    }
+
+    // A luz também aparece onde a camada é transparente (é luz no ar), então o
+    // alfa ganha a força dos raios.
+    float alfa = max(original.a, clamp(luma(raios), 0.0, 1.0));
+    fragColor = vec4(clamp(resultado, 0.0, 1.0), alfa);
+}
+
+    ]]></shader>
+</effect>

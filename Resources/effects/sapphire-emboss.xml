@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_EMBOSS — o Emboss do Sapphire (Boris FX), lido do plugin (0.867.0)
+  ============================================================================
+
+  Pedido do snow (01/11/2026): "escolha o mais facil desses" (S_TimeWarpRGB, S_Rays, S_PsykoBlobs, S_PsykoStripes,
+  S_Emboss, S_WarpBubbles) — o S_Emboss: a conta inteira cabe na definição da DLL e a única primitiva compilada é
+  um gradiente. Usado em 3 presets (Ryan's 3D Text Glow v3, Ryan's Textured Text v2 e v5), que ainda esperam o Deep Glow 2 e outros.
+
+  DE ONDE VEIO (tools/semboss): a definição (`Emboss` e `Emboss_Autogen`, texto na sapphire_ae.dll) e a
+  `grad_in_direction` lida no código (vtable 0x181eff828; [53] 0x18103f890 -> 0x180b6fed0 -> o lambda 0x180b721a0):
+
+      dir   = −light_dir · Bumps Scale · (Bumps Smooth + 0,1)          D = 0,05 · W · dir      (W = largura da camada)
+      z     = min(1 − |light_dir|, 1)
+      bumps = máscara · monochrome(Bumps), menos o Bumps Threshold (preso em 0) quando ele não é 0
+      p     = blur(bumps, 0,125 · W · Bumps Smooth, 3 caixas, Subpixel Smooth)
+      g     = (p[x+1] − p[x−1]) · Dx + (p[linha de cima] − p[linha de baixo]) · Dy     borda: um lado só, × 2
+      saída = dissolve(Fonte, Fonte · (g + z) · Light Color · Brightness, máscara)
+
+  `light_dir` é o Light Dir XY (um ponto) visto do centro da camada, no `xy` do Sapphire (−1..1 na largura, y para
+  cima). Bumps vazio = a própria camada. monochrome = (0,3125 R + 0,5 G) + 0,1875 B.
+
+  O QUE NÃO ENTROU: Matte from Path, Mocha e o Crop Input.
+-->
+<effect
+    id="nova.effect.semboss"
+    name="S_Emboss"
+    name-en="S_Emboss"
+    desc="O Emboss do Sapphire: o brilho de uma camada vira relevo iluminado por uma luz de lado, igual ao After Effects."
+    desc-en="Sapphire's Emboss: a layer's brightness becomes a relief lit from the side, as in After Effects."
+    category="stylize"
+    pontos="camada"
+    tags="s_emboss,emboss,relevo,bump,bumps,gravado,luz,sapphire,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="mH" src="buffer" />
+        <texture id="mV" src="buffer" />
+        <texture id="bX" src="buffer" />
+        <texture id="bY" src="buffer" />
+
+        <point id="lightDir" label="Light Dir XY" defaultX="0.25" defaultY="0.25" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <color id="lightColor" label="Light Color" default="#FFFFFF" />
+        <slider id="bumpsScale" label="Bumps Scale" default="1.0" min="0.0" max="20.0" step="0.01" snap="1.0" />
+        <slider id="bumpsThreshold" label="Bumps Threshold" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="bumpsSmooth" label="Bumps Smooth" default="0.0" min="0.0" max="200.0" step="0.1" snap="0.0" />
+        <switch id="subpixelSmooth" label="Subpixel Smooth" default="true" />
+        <selector id="opacity" label="Opacity" default="1" options="All Opaque|Normal|As Premult" />
+
+        <texture id="bumpsImg" src="layer" label="Bumps" empty="transparent" />
+
+        <texture id="maskImg" src="layer" group="Matte" label="Matte from Layer" empty="transparent" />
+        <slider id="blurMask" group="Matte" label="Blur Matte" default="0.0" min="0.0" max="200.0" step="0.1" snap="0.0" />
+        <switch id="invertMask" group="Matte" label="Invert Matte" default="false" />
+        <selector id="maskUse" group="Matte" label="Matte Use" default="0" options="Luma|Alpha" />
+    </params>
+
+    <passes>
+        <pass target="mH" skipIfZero="blurMask" />      <!-- 0: a matte desfocada em x -->
+        <pass target="mV" skipIfZero="blurMask" />      <!-- 1: a matte desfocada (x e y) -->
+        <pass target="bX" skipIfZero="bumpsSmooth" />   <!-- 2: os bumps desfocados em x -->
+        <pass target="bY" skipIfZero="bumpsSmooth" />   <!-- 3: os bumps desfocados (x e y) -->
+        <pass />                                        <!-- 4: o gradiente e a luz -->
+    </passes>
+
+    <shader><![CDATA[
+const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+float gEscala;     // a prévia reduzida (Blur Matte é em px da composição)
+bool gDePe;        // cena de pé (camada de ajuste, grupo solto): a linha 0 do buffer é a base da imagem
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+    gDePe = acEntradaDePe == 1;
+}
+
+/** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
+int espelhar(int i, int n) {
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+ivec2 naCamada(ivec2 q) {
+    return gInicio + ivec2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
+}
+
+// ---- o núcleo das três caixas (o do S_Hotspots e do S_HalfTone) -------------------------------
+// Largura inteira n -> raios r0 ≥ r1 ≥ r2 que somam n ((n + 2 − i) div 3); a soma das três caixas em d, em
+// inteiros (exata), dividida no fim por (2r0 + 1)(2r1 + 1)(2r2 + 1).
+int somaDoTrapezio(int x, int p, int q) {
+    int m = q - p;
+    int M = p + q;
+    x = min(x, M);
+    if (x <= m) return (x + 1) * (2 * p + 1);
+    return (m + 1) * (2 * p + 1) + (x - m) * (M + 1) - (x * (x + 1) - m * (m + 1)) / 2;
+}
+
+int acumulado(int x, int p, int q) {
+    int total = (2 * p + 1) * (2 * q + 1);
+    int meio = (total - (2 * p + 1)) / 2;
+    if (x >= 0) return meio + somaDoTrapezio(x, p, q);
+    return total - (meio + somaDoTrapezio(-x - 1, p, q));
+}
+
+float pesoDasCaixas(int d, int n) {
+    if (n <= 0) return d == 0 ? 1.0 : 0.0;
+    int r0 = (n + 2) / 3;
+    int r1 = (n + 1) / 3;
+    int r2 = n / 3;
+    if (abs(d) > n) return 0.0;
+    int c = acumulado(d + r0, r2, r1) - acumulado(d - r0 - 1, r2, r1);
+    return float(c) / (float(2 * r0 + 1) * float(2 * r1 + 1) * float(2 * r2 + 1));
+}
+
+// Um valor de 0..1 em 24 bits num texel RGBA8.
+vec4 gravar24(float m) {
+    float a = floor(clamp(m, 0.0, 1.0) * 16777215.0 + 0.5);
+    float b0 = floor(a / 65536.0);
+    float r = a - b0 * 65536.0;
+    float b1 = floor(r / 256.0);
+    return vec4(b0, b1, r - b1 * 256.0, 255.0) / 255.0;
+}
+
+float ler24(vec4 v) {
+    vec3 b = floor(v.rgb * 255.0 + 0.5);
+    return (b.x * 65536.0 + b.y * 256.0 + b.z) / 16777215.0;
+}
+
+// ---- a matte ---------------------------------------------------------------------------------
+bool temMascara() { return textureSize(maskImg, 0).x > 1; }
+
+float mascara(ivec2 p) {
+    vec4 m = texture(maskImg, (vec2(p) + 0.5) / vec2(gT));
+    float v = maskUse == 1 ? m.a : dot(m.rgb * m.a, vec3(0.3125, 0.5, 0.1875));
+    return invertMask ? 1.0 - v : v;
+}
+
+int larguraDaMascara() { return int(clamp(floor(blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+
+float mascaraDesfocadaX(ivec2 q) {
+    int n = larguraDaMascara();
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDasCaixas(d, n);
+        if (k != 0.0) soma += k * mascara(naCamada(q + ivec2(d, 0)));
+    }
+    return soma;
+}
+
+float mascaraDesfocadaY(ivec2 q) {
+    int n = larguraDaMascara();
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDasCaixas(d, n);
+        if (k != 0.0) soma += k * ler24(texelFetch(mH, naCamada(q + ivec2(0, d)), 0));
+    }
+    return soma;
+}
+
+/** A matte no pixel p do buffer (1 sem camada de matte). */
+float matte(ivec2 p) {
+    if (!temMascara()) return 1.0;
+    return larguraDaMascara() > 0 ? ler24(texelFetch(mV, p, 0)) : mascara(p);
+}
+
+// ---- os bumps --------------------------------------------------------------------------------
+bool temBumps() { return textureSize(bumpsImg, 0).x > 1; }
+
+// Medido: Normal (1) faz a conta na cor pré-multiplicada; All Opaque (0) e As Premult (2), na cor reta.
+vec3 corDaFonte(vec4 s) { return opacity == 1 ? s.rgb * s.a : s.rgb; }
+
+/** monochrome (0x180f26020) dos Bumps, vezes a matte, menos o limiar. */
+float bumpsCrus(ivec2 p) {
+    vec3 c;
+    if (temBumps()) {
+        vec4 b = texture(bumpsImg, (vec2(p) + 0.5) / vec2(gT));
+        c = b.rgb * b.a;
+    } else {
+        c = corDaFonte(texelFetch(inputImg, p, 0));
+    }
+    float m = (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b;
+    if (bumpsThreshold != 0.0) m = max(0.0, m - bumpsThreshold);
+    return matte(p) * m;
+}
+
+/** O bumps_smooth da definição: o Bumps Smooth do AE chega em px da composição e vira px / (W / 8). */
+float suaveInterno() { return bumpsSmooth * gEscala * 8.0 / float(gN.x); }
+
+/** A largura do blur: 0,125 · W · bumps_smooth, em px do buffer (= o Bumps Smooth em px, na escala da prévia). */
+float larguraDosBumps() {
+    float w = clamp(0.125 * float(gN.x) * suaveInterno(), 0.0, LARGURA_MAX);
+    return subpixelSmooth ? w : floor(w + 0.5);
+}
+
+/** Subpixel: a largura a + f mistura os núcleos de a e a + 1 (a conta do S_GlowAura). */
+float pesoDoBlur(int d, float w) {
+    int a = int(floor(w));
+    float f = w - float(a);
+    float k = pesoDasCaixas(d, a);
+    return f > 0.0 ? k + (pesoDasCaixas(d, a + 1) - k) * f : k;
+}
+
+float bumpsDesfocadosX(ivec2 q) {
+    float w = larguraDosBumps();
+    int n = int(ceil(w));
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDoBlur(d, w);
+        if (k != 0.0) soma += k * bumpsCrus(naCamada(q + ivec2(d, 0)));
+    }
+    return soma;
+}
+
+float bumpsDesfocadosY(ivec2 q) {
+    float w = larguraDosBumps();
+    int n = int(ceil(w));
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDoBlur(d, w);
+        if (k != 0.0) soma += k * ler24(texelFetch(bX, naCamada(q + ivec2(0, d)), 0));
+    }
+    return soma;
+}
+
+/** p na coluna x e na linha (da IMAGEM: 0 é o topo) da camada. */
+float altura(int x, int linha) {
+    int y = gDePe ? gN.y - 1 - linha : linha;
+    ivec2 p = gInicio + ivec2(x, y);
+    return larguraDosBumps() > 0.0 ? ler24(texelFetch(bY, p, 0)) : bumpsCrus(p);
+}
+
+// ---- a luz -----------------------------------------------------------------------------------
+/** O Light Dir XY (fração da camada, y para baixo) visto do centro, no xy do Sapphire: −1..1 na largura, y para cima. */
+vec2 direcaoDaLuz() {
+    return vec2((lightDir.x - 0.5) * 2.0, (0.5 - lightDir.y) * 2.0 * float(gN.y) / float(gN.x));
+}
+
+/** grad_in_direction (o lambda 0x180b721a0): diferença central sem dividir por 2; na borda, um lado só vezes 2. */
+float gradienteNaDirecao(ivec2 q, vec2 D) {
+    int x = q.x;
+    int linha = gDePe ? gN.y - 1 - q.y : q.y;
+    float gx, gy;
+    if (gN.x < 2) gx = 0.0;
+    else if (x == 0) gx = (altura(1, linha) - altura(0, linha)) * 2.0;
+    else if (x == gN.x - 1) gx = (altura(x, linha) - altura(x - 1, linha)) * 2.0;
+    else gx = altura(x + 1, linha) - altura(x - 1, linha);
+    if (gN.y < 2) gy = 0.0;
+    else if (linha == 0) gy = (altura(x, 0) - altura(x, 1)) * 2.0;
+    else if (linha == gN.y - 1) gy = (altura(x, linha - 1) - altura(x, linha)) * 2.0;
+    else gy = altura(x, linha - 1) - altura(x, linha + 1);
+    return gx * D.x + gy * D.y;
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN));
+
+    if (acPass == 0) { fragColor = (fora || !temMascara()) ? vec4(0.0) : gravar24(mascaraDesfocadaX(q)); return; }
+    if (acPass == 1) { fragColor = (fora || !temMascara()) ? vec4(0.0) : gravar24(mascaraDesfocadaY(q)); return; }
+    if (acPass == 2) { fragColor = fora ? vec4(0.0) : gravar24(bumpsDesfocadosX(q)); return; }
+    if (acPass == 3) { fragColor = fora ? vec4(0.0) : gravar24(bumpsDesfocadosY(q)); return; }
+
+    // ---- 4: o gradiente e a luz ----
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora) { fragColor = s; return; }
+
+    vec2 ld = direcaoDaLuz();
+    float z = min(1.0 - length(ld), 1.0);
+    vec2 D = -ld * bumpsScale * (suaveInterno() + 0.1) * 0.05 * float(gN.x);
+    float g = gradienteNaDirecao(q, D);
+    // Medido: as cores valem em 8 bits.
+    vec3 luz = floor(lightColor.rgb * 255.0 + 0.5) / 255.0 * brightness;
+    vec3 cor = corDaFonte(s) * (g + z) * luz;
+
+    // O resultado em pré-multiplicado, com o alfa da saída.
+    float a = s.a;
+    vec3 r;
+    if (opacity == 0) { a = 1.0; r = clamp(cor, 0.0, 1.0); }      // All Opaque: sai opaco
+    else if (opacity == 1) r = clamp(cor, vec3(0.0), vec3(a));     // Normal: a conta já é a pré-multiplicada
+    else r = clamp(cor, 0.0, 1.0) * a;                             // As Premult: a cor reta com o alfa da fonte
+
+    if (temMascara()) {
+        float m = matte(t);
+        vec3 sp = s.rgb * s.a;
+        r = sp + (r - sp) * m;
+        a = s.a;
+    }
+
+    vec3 reta = a > 0.0 ? min(r / a, vec3(1.0)) : vec3(0.0);
+    // a saída em níveis inteiros, arredondada como o AE de 8 bpc (a da GPU não arredonda igual)
+    fragColor = vec4(floor(reta * 255.0 + 0.5) / 255.0, a);
+}
+]]></shader>
+</effect>

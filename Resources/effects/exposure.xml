@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EXPOSIÇÃO
+  ============================================================================
+
+  Parece "brilho" e não é. A diferença está em ONDE a conta acontece.
+
+  Brilho soma um valor ao pixel: tudo sobe junto, o preto deixa de ser preto e
+  a imagem fica lavada. Exposição MULTIPLICA — e multiplica na luz linear, que
+  é como a câmera enxerga. Dobrar a exposição é o que um passo de diafragma
+  faz: o que era escuro continua escuro em proporção, e o que era claro estoura.
+
+  ============================================================================
+   POR QUE LINEARIZAR ANTES
+  ============================================================================
+
+  O pixel que chega aqui está em sRGB, que é uma curva — 0,5 no arquivo não é
+  metade da luz, é cerca de 21% dela. Multiplicar por 2 nessa curva não dobra
+  luz nenhuma: dá uma imagem mais clara e com as cores deslocadas, porque o
+  erro é diferente em cada canal.
+
+  Então: desfaz a curva, multiplica, refaz a curva. Três linhas que separam
+  "clareou" de "um ponto de exposição a mais".
+
+  ============================================================================
+   IGUAL AO EXPOSURE DO AFTER EFFECTS (0.438.0)
+  ============================================================================
+
+  Medido no After Effects 2023 com uma régua de 256 tons (tools/exposure/benchmark):
+
+      saída = ( (entrada ^ 2,4) · 2^Exposure + Offset ) ^ (1 / Gamma Correction) ^ (1 / 2,4)
+
+  A "luz linear" de lá é uma potência 2,4 pura — não é a curva sRGB — e não há compressão das
+  altas. Com "Luz linear" em "Gama 2,4 (After Effects)", "Segurar as altas" desligado e o "Gama"
+  no valor de lá, este efeito repete o do AE com 0,003 nível de erro (a conta, em numpy, contra 26
+  renders). "Direto" é o Bypass Linear Light Conversion. O modo por canal (Individual Channels)
+  não entrou.
+-->
+<effect
+    id="nova.effect.exposure"
+    name="Exposição"
+    name-en="Exposure"
+    desc="Pontos de luz, como no diafragma da câmera — multiplica na luz linear."
+    desc-en="Stops of light, computed in linear space like a camera meter."
+    category="color"
+    blend="true"
+    tags="cor,correção,luz,exposição,stops">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="stops" label="Exposição"
+                default="0.0" min="-4.0" max="4.0" step="0.05"
+                snap="0.0" ticks="-4.0,-2.0,0.0,2.0,4.0" type="number" />
+
+        <!--
+          Deslocamento do preto, aplicado DEPOIS da exposição e ainda na luz
+          linear. É o controle que levanta ou afunda a sombra sem tocar no
+          resto — o "lift" de quem faz correção de cor.
+        -->
+        <slider id="offset" label="Preto"
+                default="0.0" min="-0.2" max="0.2" step="0.005"
+                snap="0.0" ticks="-0.2,0.0,0.2" type="number" />
+
+        <!--
+          Sem isto, +2 pontos vira um quadrado branco chapado. A compressão
+          suave encosta no branco em vez de bater nele, que é o que um filme
+          faz e uma multiplicação crua não faz.
+        -->
+        <switch id="rolloff" label="Segurar as altas" default="true" />
+
+        <!-- Como a luz é linearizada. O padrão (sRGB) é o de sempre deste efeito; os outros dois são os do After Effects. -->
+        <selector id="espaco" label="Luz linear" default="0" options="sRGB|Gama 2,4 (After Effects)|Direto" />
+
+        <!-- O Gamma Correction do After Effects: a saída elevada a 1 / gama, ainda na luz linear. -->
+        <slider id="gama" label="Gama"
+                default="1.0" min="0.1" max="10.0" step="0.01"
+                snap="1.0" type="number" />
+    </params>
+
+    <preview>
+        <set param="stops" value="1.4" />
+    </preview>
+
+    <shader><![CDATA[
+
+// sRGB → luz linear. A parte reta perto do zero não é capricho: sem ela a
+// curva tem derivada infinita na origem e o ruído da sombra explode.
+vec3 paraLinear(vec3 c) {
+    return mix(
+        c / 12.92,
+        pow((c + 0.055) / 1.055, vec3(2.4)),
+        step(0.04045, c)
+    );
+}
+
+vec3 paraSrgb(vec3 c) {
+    return mix(
+        c * 12.92,
+        1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055,
+        step(0.0031308, c)
+    );
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    vec3 cor = clamp(color.rgb, 0.0, 1.0);
+    // Medido no After Effects: a "luz linear" de lá é a cor elevada a 2,4, sem o trecho reto do sRGB.
+    vec3 luz = espaco == 0 ? paraLinear(cor) : espaco == 1 ? pow(cor, vec3(2.4)) : cor;
+
+    // Um ponto de exposição é um FATOR DOIS. É por isso que a conta é uma
+    // potência de dois, e não uma multiplicação direta pelo valor do slider.
+    luz *= pow(2.0, stops);
+    luz += offset;
+    luz = max(luz, 0.0);
+    if (gama != 1.0) luz = pow(luz, vec3(1.0 / max(gama, 0.1)));
+
+    if (rolloff) {
+        // Compressão assintótica: abaixo de ~0,8 quase nada muda; daí para
+        // cima a curva encosta em 1 sem nunca ultrapassar. Preserva a matiz
+        // porque o mesmo fator é aplicado aos três canais, calculado sobre o
+        // canal mais alto — comprimir cada canal por conta própria desbotaria
+        // as cores saturadas.
+        float maior = max(max(luz.r, luz.g), luz.b);
+        if (maior > 0.8) {
+            float excedente = maior - 0.8;
+            float comprimido = 0.8 + excedente / (1.0 + excedente * 1.6);
+            luz *= comprimido / maior;
+        }
+    }
+
+    vec3 saida = espaco == 0 ? paraSrgb(luz) : espaco == 1 ? pow(luz, vec3(1.0 / 2.4)) : luz;
+    fragColor = vec4(clamp(saida, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

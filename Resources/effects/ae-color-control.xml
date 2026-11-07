@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  COLOR CONTROL — o `ADBE Color Control` do After Effects (0.768.0)
+  Expressão lê como `effect("Cor da tinta")("Color")`. Padrão: vermelho (o padrão do AE).
+-->
+<effect
+    id="nova.effect.aecolorcontrol"
+    name="Color Control"
+    name-en="Color Control"
+    desc="O Color Control do After Effects: uma cor que uma expressão da camada pode ler. Não pinta nada."
+    desc-en="After Effects' Color Control: a colour an expression on the layer can read. Draws nothing."
+    category="expressao"
+    tags="expression,expressao,controle,cor,color,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="color" label="Color" default="#FF0000" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    fragColor = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.unsharp" name="Unsharp Mask" desc="Proper sharpen: samples the neighbourhood, builds a blur, and subtracts it from the original. Has a threshold so flat areas stay clean." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/unsharp.png"
+        tags="blur,sharpen,unsharp,detail" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Sharpen" />
+<spinner id="amount" default="0.8" min="0.0" max="4.0" step="0.01" label="Amount" />
+<spinner id="radius" default="0.0035" min="0.0005" max="0.02" step="0.0005" label="Radius" />
+<spinner id="threshold" default="0.02" min="0.0" max="0.3" step="0.005" label="Threshold" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<!-- Nitidez padrao nao muda 1% da amostra: na vitrine, no talo e sem limiar. (05/11/2026) -->
+<preview>
+<set param="amount" value="2.2" />
+<set param="radius" value="0.007" />
+<set param="threshold" value="0.0" />
+</preview>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 8;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  vec4 blur = vec4(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float ang = float(i) * 6.2831853 / float(TAPS);
+    blur += texture2DCv(inputImg.texture, uv + vec2(cos(ang), sin(ang)) * radius);
+  }
+  blur /= float(TAPS);
+  float a = max(src.a, 1e-4);
+  vec3 sc = src.rgb / a;
+  vec3 bc = blur.rgb / max(blur.a, 1e-4);
+  vec3 detail = sc - bc;
+  float m = smoothstep(threshold, threshold + 0.05, length(detail));
+  vec3 g = clamp(sc + detail * amount * m * mixAmt, 0.0, 1.0);
+  gl_FragColor = vec4(g * a, a);
+}
+]]></shader>
+</effect>

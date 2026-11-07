@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Relevo.
+
+  Trata o brilho da imagem como altura e ilumina de lado. Onde o brilho sobe na
+  direção da luz, clareia; onde desce, escurece. O resultado é a imagem parecendo
+  gravada em metal ou estampada em papel.
+
+  É o mesmo princípio do "bump mapping" de 3D, na sua forma mais simples: a
+  diferença entre dois vizinhos aproxima a inclinação da superfície naquele
+  ponto.
+-->
+<effect
+    id="nova.effect.emboss"
+    name="Relevo"
+    name-en="Emboss"
+    desc="Ilumina o brilho da imagem de lado, como gravado em metal."
+    desc-en="Relief from the image gradient."
+    category="stylize"
+    blend="mode"
+    tags="relevo,emboss,gravado,metal,estampa,3d,bump">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="angle" label="Direção da luz"
+                default="135.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,45.0,135.0,-135.0" />
+
+        <slider id="relief" label="Altura"
+                default="2.0" min="0.2" max="20.0" step="0.1" />
+
+        <slider id="contrast" label="Contraste"
+                default="2.0" min="0.1" max="10.0" step="0.1" snap="1.0" />
+
+        <slider id="keepColor" label="Manter a cor"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+    </params>
+
+    <shader><![CDATA[
+
+float lumaAt(vec2 uv) {
+    return dot(texture(inputImg, clamp(uv, 0.0, 1.0)).rgb, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float rad = radians(angle);
+    vec2 axis = vec2(cos(rad), sin(rad)) * relief * acEscalaDePixel * acTexelSize;
+
+    // A diferença entre os dois lados é a inclinação. Positiva = a superfície
+    // sobe na direção da luz, então clareia.
+    float slope = (lumaAt(acScreenNorm + axis) - lumaAt(acScreenNorm - axis)) * contrast;
+
+    // Base cinza médio: é o valor neutro que faz a área plana desaparecer, em
+    // vez de virar preto. Com "manter a cor" em 1 o relevo é somado à imagem.
+    vec3 base = mix(vec3(0.5), color.rgb, keepColor);
+    vec3 carved = clamp(base + slope, 0.0, 1.0);
+
+    fragColor = vec4(carved, color.a);
+}
+
+    ]]></shader>
+</effect>

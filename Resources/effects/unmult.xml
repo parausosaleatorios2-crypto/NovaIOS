@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   UNMULT — O PRETO VIRA TRANSPARENTE
+  ============================================================================
+
+  Explosão, fumaça, faísca, flare, raio, vazamento de luz: esse material é
+  filmado (ou renderizado) sobre PRETO, e o preto não é fundo — é ausência de
+  luz. Jogado por cima de outra camada, ele entra como um retângulo preto com
+  a explosão dentro.
+
+  O truque de sempre é pôr a camada em "Adição" ou "Tela", e funciona; mas aí o
+  brilho depende do modo de mesclagem, e a camada não pode mais ser recortada,
+  mascarada ou ter efeito de borda — porque ela continua opaca. O Unmult resolve
+  na origem: o **alfa passa a vir do próprio brilho**, e a camada vira o que ela
+  sempre foi, uma explosão com fundo transparente, em modo Normal.
+
+  É o Knoll Unmult, da Red Giant — o plugin gratuito mais usado do After Effects
+  e que não tem controle nenhum. Aqui ele tem quatro, e todos nascem no valor
+  que reproduz o comportamento original.
+
+  ============================================================================
+   A CONTA, E POR QUE "CANAL MAIS FORTE" É O PADRÃO
+  ============================================================================
+
+  Duas escolhas possíveis para tirar o alfa do brilho:
+
+  - **Canal mais forte**: alfa = max(R, G, B). Um azul puro (0, 0, 1) fica
+    OPACO, que é o que o olho espera de um raio azul saturado.
+  - **Luminância**: alfa = 0,299·R + 0,587·G + 0,114·B. O mesmo azul puro vira
+    11% de alfa, quase invisível — a luminância mede brilho percebido, não
+    presença de luz.
+
+  Por isso o padrão é o máximo: com ele, a camada sobre um fundo fica
+  exatamente igual ao que "Tela"/"Adição" mostrava, e é esse o resultado que
+  todo mundo conhece por "unmult".
+
+  "Recuperar a cor" completa a conta: ao dividir o RGB pelo alfa, a cor volta à
+  saturação cheia e a composição sobre o fundo dá o mesmo pixel de antes. Sem
+  isso, o material fica com o alfa certo e a cor lavada (pré-multiplicada duas
+  vezes) — que é o clássico "minha fumaça ficou cinza depois de recortar".
+
+  ============================================================================
+   O QUE ISTO NÃO É
+  ============================================================================
+
+  Não é chroma key nem luma key: não existe cor-chave nem tolerância. Tudo que
+  é escuro fica proporcionalmente transparente, o que é perfeito para luz sobre
+  preto e péssimo para recortar um objeto sólido — um casaco preto some junto.
+  Para isso existem "Luma key" e "Chroma key".
+-->
+<effect
+    id="nova.effect.unmult"
+    name="Unmult"
+    name-en="Unmult"
+    desc="Transforma o preto em transparência: o alfa passa a vir do brilho da imagem."
+    desc-en="Turns black into alpha — the classic Knoll Unmult for fire, smoke and flares."
+    category="matte"
+    tags="unmult,knoll,preto transparente,fundo preto,explosao,fumaca,fogo,flare,raio,luz,overlay,screen">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="alphaFrom" label="Alfa a partir de" default="0"
+                  options="Canal mais forte|Luminância|Média dos canais" />
+
+        <slider id="gain" label="Ganho"
+                default="1.0" min="0.0" max="4.0" step="0.05" ticks="0.0,1.0,2.0,4.0" />
+
+        <slider id="blackClip" label="Corte do preto"
+                default="0.0" min="0.0" max="0.95" step="0.01" ticks="0.0,0.2,0.5,0.95" />
+
+        <switch id="recoverColor" label="Recuperar a cor" default="true" />
+        <switch id="keepOriginalAlpha" label="Respeitar o alfa original" default="true" />
+    </params>
+
+    <preview amostra="overlay" mostrar="antes-depois" />
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+
+    // A cor que chega aqui é "reta" (não pré-multiplicada): é assim que o motor
+    // guarda os buffers do encadeamento, e é o que o compositor espera de volta.
+    // Ver a fórmula de composição em `drop-shadow.xml`, que faz a conta à mão.
+    vec3 cor = camada.rgb;
+
+    float brilho;
+    if (alphaFrom == 1) brilho = dot(cor, vec3(0.299, 0.587, 0.114));
+    else if (alphaFrom == 2) brilho = (cor.r + cor.g + cor.b) / 3.0;
+    else brilho = max(max(cor.r, cor.g), cor.b);
+
+    // O corte joga fora o pé escuro da imagem — ruído de sensor, cinza de
+    // compressão — e reescala o resto, para o que sobrou não perder densidade.
+    if (blackClip > 0.0) {
+        brilho = (brilho - blackClip) / max(1.0 - blackClip, 1e-4);
+    }
+
+    float alfa = clamp(brilho * gain, 0.0, 1.0);
+    if (keepOriginalAlpha) alfa *= camada.a;
+
+    if (alfa < 1e-4) {
+        fragColor = vec4(cor, 0.0);
+        return;
+    }
+
+    // Dividir pelo alfa devolve a cor à saturação cheia. É o que faz a conta
+    // fechar: compor `cor/alfa` com esse alfa sobre o fundo dá
+    // `fundo·(1-alfa) + cor`, o mesmo pixel que "Tela"/"Adição" mostrava.
+    // Sem isso, o material fica com o alfa certo e a cor lavada.
+    vec3 saida = recoverColor ? min(cor / alfa, vec3(1.0)) : cor;
+
+    fragColor = vec4(saida, alfa);
+}
+
+    ]]></shader>
+</effect>

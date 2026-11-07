@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.rgbmotionsplit"
+    name="Movimento com RGB Separado (Ultra Motion)"
+    name-en="RGB Motion Split (Ultra Motion)"
+    desc="Cada canal borrado em uma direção — movimento cromático."
+    desc-en="Each channel smeared in its own direction — chromatic motion."
+    category="blur"
+    tags="ultramotion,rgb,chromatic,split,motion,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="len"     label="Comprimento" default="0.03" min="0.0" max="0.2" step="0.001" />
+        <slider id="angle"   label="Ângulo"      default="0.0"  min="-180.0" max="180.0" step="1.0" />
+        <slider id="spread"  label="Abertura RGB" default="30.0" min="0.0" max="90.0" step="1.0" />
+        <slider id="samples" label="Amostras"    default="14"   min="4" max="32" step="1" type="integer" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+float canalDir(vec2 uv, float ang, float l, int n, int ch) {
+    vec2 dir = vec2(cos(ang), sin(ang));
+    dir.x /= acAspect;
+    float soma = 0.0;
+    for (int i = 0; i <= 32; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n) - 0.5;
+        soma += texture(inputImg, uv + dir * l * t)[ch];
+    }
+    return soma / float(n + 1);
+}
+
+void main() {
+    if (len <= 0.0) { fragColor = texture(inputImg, acScreenNorm); return; }
+    int n = clamp(int(samples), 4, 32);
+    float base = radians(angle);
+    float dA = radians(spread);
+    float r = canalDir(acScreenNorm, base - dA, len, n, 0);
+    float g = canalDir(acScreenNorm, base,       len, n, 1);
+    float b = canalDir(acScreenNorm, base + dA, len, n, 2);
+    float a = texture(inputImg, acScreenNorm).a;
+    fragColor = vec4(r, g, b, a);
+}
+    ]]></shader>
+</effect>

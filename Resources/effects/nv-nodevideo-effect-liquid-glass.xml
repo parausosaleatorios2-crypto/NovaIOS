@@ -1,0 +1,564 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/liquid_glass — o Liquid Glass do Node (definição `_LiquidGlass`, Efeitos → Estilizar), portado do C#
+  (0.915.0). O porte automático trazia os uniforms do shader como controles soltos e um `background` vazio.
+
+  O que o `AELiquidGlass::Render` faz (lido no il2cpp):
+  - `_background` = `RenderCommand.DoGaussianBlur` da PRÓPRIA camada com quantidade |Desfoque| (a gaussiana do Node:
+    meio-lado = quantidade × 0,0475 × a diagonal da composição em px da metade, sigma = meio-lado × 0,4660);
+    `_blur_invert` = −1 com Desfoque ≥ 0 (o vidro lê o fundo desfocado, fora fica a camada) e 1 com Desfoque < 0 (o
+    vidro lê a camada nítida, fora fica a desfocada);
+  - `_BoxSize` = Tamanho × 0,5; `_Radii` = (Raio × 0,5) nos 4 cantos (Modo de canto Único) ou (Topo.y, Inferior.y,
+    Topo.x, Inferior.x) × 0,5 (Por canto: x = esquerdo, y = direito); `_CornerCurvature` = Curvatura do canto + 1,001;
+    `_FilletCurvature` = Curvatura do chanfro + 1,001; `_BevelWidth`, `_Elevation`, `_RingThickness` como estão;
+  - preenchimento: `_background_mode` = (int) Modo, `_ForegroundColor` = a Cor (SetGlobalColor: em luz linear no
+    projeto linear do Node), `_ForegroundOpacity`, `_Vibrancy` = Saturação, `_Brightness`, `_Flatten`;
+  - refração: `_refraction_mode` = (int) Modo, `_RefractiveIndex` = Intensidade + 1, `_ChromaticDispersion` e
+    `_RefractiveIndexRatios` = `GetRefractiveIndexRatios(n, D)`: n ≥ 1, D ≥ 0; D = 0 → 1/n nos três; senão a fórmula
+    de Cauchy com λ = 0,63 / 0,532 / 0,467 µm: B = (n − 1)·D ÷ (1,909654 − 0,01708·D), A = n − 2,879567·B,
+    razão = 1 ÷ (A + B/λ²);
+  - brilho da borda: `_enable_edge_glint` = ±1, `_Glint1Dir`/`_Glint2Dir` = (cos, −sin) da Direção em graus,
+    `_Glint1Color`/`_Glint2Color` (em luz linear), `_GlintWrap` = Envolver × 2, `_GlintSharpness` = Nitidez × 150 + 0,1;
+  - um `Blit` de um passe com o programa do shader (copiado conta por conta abaixo, os nomes do Unity).
+  EM LUZ LINEAR, como os RTs do Node (buffers `format="srgb"`): passe 0 = a camada como o RT dela (cor linear × alfa),
+  DE PÉ; passes 1 e 2 = a gaussiana separável na metade do tamanho (o `_background`); passe 3 = o programa do Node no
+  UV dele (Y para cima), de volta ao alfa reto do Nova. No buffer de camada (`acEntradaDePe` = 0) só a cópia e a saída
+  espelham a linha, e o dFdy (a normal do brilho) troca de sinal.
+  O que fica diferente do Node: a gaussiana é direta (até 48 leituras de cada lado, com passo maior que 1 px quando o
+  sigma passa de 16) e não os 4 passes de metade do Node; sem os bytes do RT de 8 bits. O Centro é um lugar da camada
+  (com a alça), o Y para baixo como todo ponto do Nova. A máscara interna do Node não existe neste efeito.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-liquid-glass"
+    name="Vidro líquido (NV)"
+    name-en="Liquid Glass (NV)"
+    desc="Uma placa de vidro com chanfro, refração, dispersão de cor e brilho na borda sobre a camada (o Liquid Glass do Node Video)."
+    desc-en="A glass slab with bevel, refraction, color dispersion and edge glint over the layer (Node Video's Liquid Glass)."
+    category="nodevideo"
+    tags="nodevideo,nv,vidro,vidro líquido,glass,liquid glass,refração,chanfro,ios"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <point id="centro" label="Centro" defaultX="0.5" defaultY="0.5" min="-10.0" max="10.0" />
+        <!-- AboveZero no Node: ≥ 0, sem teto. -->
+        <point id="tamanho" label="Tamanho" vetor="true" spinner="true" defaultX="0.3" defaultY="0.15" min="0.0"
+            max="100.0" step="0.01" />
+        <slider id="rotacao" label="Rotação" default="0" min="0" max="360" step="0.1" />
+        <slider id="desfoque" label="Desfoque" default="0" min="-0.5" max="0.5" step="0.001" />
+
+        <selector id="modoDoCanto" label="Modo de canto" group="Forma" default="0" options="Único|Por canto" />
+        <point id="topo" label="Topo" group="Forma" vetor="true" spinner="true" defaultX="0.2" defaultY="0.2"
+            min="0.0" max="100.0" step="0.01" showIf="modoDoCanto=1" />
+        <point id="inferior" label="Inferior" group="Forma" vetor="true" spinner="true" defaultX="0.2" defaultY="0.2"
+            min="0.0" max="100.0" step="0.01" showIf="modoDoCanto=1" />
+        <slider id="raioDoCanto" label="Raio do canto" group="Forma" default="0.2" min="0" max="1" step="0.001"
+            showIf="modoDoCanto=0" />
+        <slider id="curvaturaDoCanto" label="Curvatura do canto" group="Forma" default="2" min="2" max="10" step="0.01" />
+        <slider id="anel" label="Anel" group="Forma" default="0" min="0" max="0.5" step="0.001" />
+
+        <selector id="modoDoPreenchimento" label="Modo" group="Preenchimento" default="0" options="Normal|Colorido" />
+        <slider id="saturacao" label="Saturação" group="Preenchimento" default="1.2" min="-1" max="2" step="0.01" />
+        <slider id="brilho" label="Brilho" group="Preenchimento" default="0.1" min="-1" max="1" step="0.01" />
+        <color id="corDoPreenchimento" label="Cor" group="Preenchimento" default="#FFFFFFFF" />
+        <slider id="opacidade" label="Opacidade" group="Preenchimento" default="0" min="0" max="1" step="0.01" />
+        <slider id="achatar" label="Achatar" group="Preenchimento" default="0" min="0" max="1" step="0.01" />
+
+        <slider id="larguraDoChanfro" label="Largura" group="Chanfro" default="0.03" min="0.001" max="0.8" step="0.001" />
+        <slider id="curvaturaDoChanfro" label="Curvatura" group="Chanfro" default="1" min="0.5" max="8" step="0.01" />
+        <!-- A partida do Node (60) passa da régua dele (0..50): AboveZero, sem teto. -->
+        <slider id="elevacao" label="Elevação" group="Chanfro" default="60" min="0" max="100" step="0.1" />
+
+        <selector id="modoDaRefracao" label="Modo" group="Refração" default="2" options="Desligado|Ligado|Dispersão" />
+        <slider id="intensidade" label="Intensidade" group="Refração" default="0.5" min="0" max="5" step="0.01"
+            showIf="modoDaRefracao!=0" />
+        <slider id="dispersao" label="Dispersão" group="Refração" default="1" min="0" max="2" step="0.01"
+            showIf="modoDaRefracao=2" />
+
+        <switch id="brilhoDaBorda" label="Ativar" group="Brilho da borda" default="true" />
+        <slider id="direcao1" label="Direção" group="Brilho da borda" default="255" min="0" max="360" step="0.1"
+            enabledIf="brilhoDaBorda=true" />
+        <slider id="direcao2" label="Direção 2" group="Brilho da borda" default="75" min="0" max="360" step="0.1"
+            enabledIf="brilhoDaBorda=true" />
+        <color id="cor1" label="Cor1" group="Brilho da borda" default="#FF939393" enabledIf="brilhoDaBorda=true" />
+        <color id="cor2" label="Cor2" group="Brilho da borda" default="#FF242424" enabledIf="brilhoDaBorda=true" />
+        <slider id="envolver" label="Envolver" group="Brilho da borda" default="1" min="0" max="1" step="0.01"
+            enabledIf="brilhoDaBorda=true" />
+        <slider id="nitidez" label="Nitidez" group="Brilho da borda" default="0.15" min="0" max="1" step="0.01"
+            enabledIf="brilhoDaBorda=true" />
+
+        <!-- Os RTs do Node: a camada (pré-multiplicada em luz linear, de pé) e o desfoque na metade. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="desfoqueH" src="buffer" format="srgb" scale="0.5" precision="highp" />
+        <texture id="fundoRt" src="buffer" format="srgb" scale="0.5" precision="highp" />
+    </params>
+
+    <preview>
+        <set param="tamanho" x="0.42" y="0.3" />
+        <set param="desfoque" value="0.15" />
+    </preview>
+
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="desfoqueH" />
+        <pass target="fundoRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+// O texel de pé (a linha 0 é a base, como nos RTs do Node): no buffer de camada a linha é espelhada.
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+// O DoGaussianBlur do Node na metade do tamanho: sigma = |Desfoque| × 0,0475 × diagonal × 0,4660 (px da metade).
+vec4 gaussiana(highp sampler2D t, vec2 eixo) {
+    float sigma = abs(desfoque) * 0.0475 * length(acTamanhoDaTela) * 0.4660 * acEscalaDePixel;
+    if (abs(desfoque) < 0.0001 || sigma < 0.05) return texture(t, acScreenNorm);
+    vec2 T = vec2(textureSize(t, 0));
+    float passo = max(1.0, sigma * 3.0 / 48.0);
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int i = -48; i <= 48; i++) {
+        float d = float(i) * passo;
+        if (abs(d) > sigma * 3.0 + 0.5) continue;
+        float w = exp(-0.5 * d * d / (sigma * sigma));
+        soma += w * texture(t, clamp(acScreenNorm + eixo * d / T, 0.0, 1.0));
+        pesos += w;
+    }
+    return soma / pesos;
+}
+
+// Os uniforms que o C# do Node monta (ver o cabeçalho), aqui contas dos controles.
+#define _resolution acTamanhoDaTela
+#define _viewport_ratio acProporcaoDoNode
+vec2 vs_TEXCOORD0;
+float sinalDoY;
+vec2 _center;
+vec4 _BoxSize;
+vec4 _Radii;
+float _rotation;
+float _CornerCurvature;
+float _BevelWidth;
+float _FilletCurvature;
+float _RingThickness;
+float _Elevation;
+vec4 _ForegroundColor;
+float _ForegroundOpacity;
+float _Vibrancy;
+float _Brightness;
+float _Flatten;
+float _RefractiveIndex;
+vec4 _RefractiveIndexRatios;
+vec2 _Glint1Dir;
+vec2 _Glint2Dir;
+vec4 _Glint1Color;
+vec4 _Glint2Color;
+float _GlintWrap;
+float _GlintSharpness;
+int _refraction_mode;
+int _background_mode;
+int _enable_edge_glint;
+int _blur_invert;
+
+// AELiquidGlass.GetRefractiveIndexRatios
+vec3 razoes(float n, float D) {
+    n = n < 1.0 ? 1.0 : n;
+    D = D < 0.0 ? 0.0 : D;
+    if (D == 0.0) return vec3(1.0 / n);
+    float B = (n - 1.0) * D / (1.909654 - D * 0.017080);
+    float A = n - 2.8795669 * B;
+    vec3 invL2 = 1.0 / (vec3(0.63, 0.532, 0.467) * vec3(0.63, 0.532, 0.467));
+    return 1.0 / (A + B * invL2);
+}
+
+void ligar() {
+    _center = acEntradaDePe == 1 ? centro : vec2(centro.x, 1.0 - centro.y);
+    _BoxSize = vec4(max(tamanho, 0.0) * 0.5, 0.0, 0.0);
+    if (int(modoDoCanto) == 1) _Radii = vec4(max(topo.y, 0.0), max(inferior.y, 0.0), max(topo.x, 0.0), max(inferior.x, 0.0)) * 0.5;
+    else _Radii = vec4(max(raioDoCanto, 0.0) * 0.5);
+    _rotation = rotacao;
+    _CornerCurvature = max(curvaturaDoCanto, 0.0) + 1.001;
+    _BevelWidth = max(larguraDoChanfro, 0.0);
+    _FilletCurvature = max(curvaturaDoChanfro, 0.0) + 1.001;
+    _RingThickness = max(anel, 0.0);
+    _Elevation = max(elevacao, 0.0);
+    _ForegroundColor = vec4(linear(corDoPreenchimento.rgb), corDoPreenchimento.a);
+    _ForegroundOpacity = clamp(opacidade, 0.0, 1.0);
+    _Vibrancy = clamp(saturacao, -1.0, 2.0);
+    _Brightness = clamp(brilho, -1.0, 1.0);
+    _Flatten = clamp(achatar, 0.0, 1.0);
+    _refraction_mode = int(modoDaRefracao);
+    _RefractiveIndex = max(intensidade, 0.0) + 1.0;
+    _RefractiveIndexRatios = vec4(razoes(_RefractiveIndex, max(dispersao, 0.0)), 0.0);
+    _background_mode = int(modoDoPreenchimento);
+    float a1 = direcao1 * 0.017453292, a2 = direcao2 * 0.017453292;
+    _Glint1Dir = vec2(cos(a1), -sin(a1));
+    _Glint2Dir = vec2(cos(a2), -sin(a2));
+    _Glint1Color = vec4(linear(cor1.rgb), cor1.a);
+    _Glint2Color = vec4(linear(cor2.rgb), cor2.a);
+    _GlintWrap = clamp(envolver, 0.0, 1.0) * 2.0;
+    _GlintSharpness = clamp(nitidez, 0.0, 1.0) * 150.0 + 0.1;
+    _enable_edge_glint = brilhoDaBorda ? 1 : -1;
+    _blur_invert = desfoque >= 0.0 ? -1 : 1;
+}
+
+// ---- O programa do Node (NodeVideo/Effect/liquid_glass), conta por conta: _SourceTex = camadaRt,
+// _background = fundoRt. A única troca: o dFdy × sinalDoY (no buffer de camada a linha cresce para baixo).
+vec4 saidaDoNode;
+vec2 u_xlat0;
+bool u_xlatb0;
+vec4 u_xlat1;
+int u_xlati1;
+bool u_xlatb1;
+vec4 u_xlat2;
+int u_xlati2;
+bool u_xlatb2;
+vec3 u_xlat3;
+vec3 u_xlat4;
+ivec2 u_xlati4;
+vec3 u_xlat5;
+vec2 u_xlat7;
+vec3 u_xlat8;
+vec2 u_xlat11;
+vec2 u_xlat12;
+int u_xlati12;
+bool u_xlatb12;
+vec2 u_xlat13;
+int u_xlati13;
+bool u_xlatb13;
+vec2 u_xlat14;
+ivec2 u_xlati14;
+bvec2 u_xlatb14;
+float u_xlat15;
+float u_xlat18;
+int u_xlati18;
+bool u_xlatb18;
+float u_xlat19;
+int u_xlati19;
+bool u_xlatb19;
+bool u_xlatb20;
+float u_xlat21;
+bool u_xlatb21;
+void programaDoNode()
+{
+    u_xlat0.xy = vs_TEXCOORD0.xy + (-_center.xy);
+    u_xlat0.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat12.x = _rotation * 0.0174532924;
+    u_xlat1.x = sin(u_xlat12.x);
+    u_xlat2.x = cos(u_xlat12.x);
+    u_xlat3.x = sin((-u_xlat12.x));
+    u_xlat3.y = u_xlat2.x;
+    u_xlat2.x = dot(u_xlat3.yx, u_xlat0.xy);
+    u_xlat3.z = u_xlat1.x;
+    u_xlat2.y = dot(u_xlat3.zy, u_xlat0.xy);
+    u_xlat0.xy = vs_TEXCOORD0.xy * _resolution.xy;
+    u_xlat12.xy = (-vec2(vec2(_RingThickness, _RingThickness))) * vec2(0.5, 0.5) + _BoxSize.xy;
+    u_xlat1 = (-vec4(vec4(_RingThickness, _RingThickness, _RingThickness, _RingThickness))) * vec4(0.5, 0.5, 0.5, 0.5) + _Radii;
+    u_xlatb14.xy = lessThan(vec4(0.0, 0.0, 0.0, 0.0), u_xlat2.xyxy).xy;
+    u_xlat1.xy = (u_xlatb14.x) ? u_xlat1.xy : u_xlat1.zw;
+    u_xlat1.x = (u_xlatb14.y) ? u_xlat1.x : u_xlat1.y;
+    u_xlat12.xy = (-u_xlat12.xy) + abs(u_xlat2.xy);
+    u_xlat12.xy = u_xlat1.xx + u_xlat12.xy;
+    u_xlat7.xy = max(u_xlat12.xy, vec2(0.0, 0.0));
+    u_xlat19 = max(u_xlat7.y, u_xlat7.x);
+    u_xlat14.x = min(u_xlat7.y, u_xlat7.x);
+    u_xlatb20 = u_xlat19!=0.0;
+    u_xlat19 = log2(u_xlat19);
+    u_xlat14.x = log2(u_xlat14.x);
+    u_xlat3.x = u_xlat19 * _CornerCurvature;
+    u_xlat14.x = u_xlat14.x * _CornerCurvature + (-u_xlat3.x);
+    u_xlat14.x = exp2(u_xlat14.x);
+    u_xlat14.x = u_xlat14.x + 1.0;
+    u_xlat14.x = log2(u_xlat14.x);
+    u_xlat19 = u_xlat19 * _CornerCurvature + u_xlat14.x;
+    u_xlat19 = u_xlat19 / _CornerCurvature;
+    u_xlat19 = exp2(u_xlat19);
+    u_xlat19 = u_xlatb20 ? u_xlat19 : float(0.0);
+    u_xlat14.x = max(u_xlat12.y, u_xlat12.x);
+    u_xlat14.x = min(u_xlat14.x, 0.0);
+    u_xlat14.x = u_xlat19 + u_xlat14.x;
+    u_xlat3.x = (-u_xlat1.x) + u_xlat14.x;
+    u_xlati14.xy = ivec2(uvec2(lessThan(vec4(0.0, 0.0, 0.0, 0.0), u_xlat2.xyxy).xy) * 0xFFFFFFFFu);
+    u_xlati4.xy = ivec2(uvec2(lessThan(u_xlat2.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy) * 0xFFFFFFFFu);
+    u_xlati14.xy = (-u_xlati14.xy) + u_xlati4.xy;
+    u_xlat14.xy = vec2(u_xlati14.xy);
+    u_xlatb1 = 0.0<u_xlat19;
+    u_xlat7.xy = u_xlat7.xy / vec2(u_xlat19);
+    u_xlat4.xy = vec2(_CornerCurvature, _FilletCurvature) + vec2(-1.0, -1.0);
+    u_xlat7.xy = log2(u_xlat7.xy);
+    u_xlat7.xy = u_xlat7.xy * u_xlat4.xx;
+    u_xlat7.xy = exp2(u_xlat7.xy);
+    u_xlat1.xy = bool(u_xlatb1) ? u_xlat7.xy : vec2(0.0, 0.0);
+    u_xlatb13 = u_xlat12.x>=u_xlat12.y;
+    u_xlat4.xz = uintBitsToFloat(uvec2(lessThan(u_xlat12.xxyx, vec4(0.0, 0.0, 0.0, 0.0)).xz) * 0xFFFFFFFFu);
+    u_xlati13 = u_xlatb13 ? floatBitsToInt(u_xlat4.x) : int(0);
+    u_xlati13 = int(uint(uint(u_xlati13) & 1u));
+    u_xlatb12 = u_xlat12.x<u_xlat12.y;
+    u_xlati12 = u_xlatb12 ? floatBitsToInt(u_xlat4.z) : int(0);
+    u_xlati12 = int(uint(uint(u_xlati12) & 1u));
+    u_xlat11.x = float(u_xlati13);
+    u_xlat11.y = float(u_xlati12);
+    u_xlat12.xy = u_xlat1.xy + u_xlat11.xy;
+    u_xlat3.yz = u_xlat14.xy * u_xlat12.xy;
+    u_xlatb12 = 0.0<_RingThickness;
+    u_xlati18 = int((0.0<u_xlat3.x) ? 0xFFFFFFFFu : uint(0));
+    u_xlati1 = int((u_xlat3.x<0.0) ? 0xFFFFFFFFu : uint(0));
+    u_xlati18 = (-u_xlati18) + u_xlati1;
+    u_xlat18 = float(u_xlati18);
+    u_xlat1.yz = vec2(u_xlat18) * u_xlat3.yz;
+    u_xlat1.x = (-_RingThickness) * 0.5 + abs(u_xlat3.x);
+    u_xlat1.xyz = (bool(u_xlatb12)) ? u_xlat1.xyz : u_xlat3.xyz;
+    u_xlat12.x = (-u_xlat1.x) / _BevelWidth;
+    u_xlat12.x = clamp(u_xlat12.x, 0.0, 1.0);
+    u_xlat12.x = (-u_xlat12.x) + 1.0;
+    u_xlat12.x = log2(u_xlat12.x);
+    u_xlat18 = u_xlat12.x * _FilletCurvature;
+    u_xlat18 = exp2(u_xlat18);
+    u_xlat18 = (-u_xlat18) + 1.0;
+    u_xlat19 = float(1.0) / _FilletCurvature;
+    u_xlat18 = log2(u_xlat18);
+    u_xlat12.x = u_xlat12.x * u_xlat4.y;
+    u_xlat3.x = exp2(u_xlat12.x);
+    u_xlat12.x = (-u_xlat19) + 1.0;
+    u_xlat12.x = u_xlat18 * u_xlat12.x;
+    u_xlat3.y = exp2(u_xlat12.x);
+    u_xlat12.x = dot(u_xlat3.xy, u_xlat3.xy);
+    u_xlat12.x = inversesqrt(u_xlat12.x);
+    u_xlat14.xy = u_xlat12.xx * u_xlat3.xy;
+    u_xlat3.xy = dFdy(u_xlat2.xy) * sinalDoY;
+    u_xlat3.y = dot(u_xlat1.yz, u_xlat3.xy);
+    u_xlat2.xy = dFdx(u_xlat2.xy);
+    u_xlat3.x = dot(u_xlat1.yz, u_xlat2.xy);
+    u_xlat12.x = dot(u_xlat3.xy, u_xlat3.xy);
+    u_xlat12.x = max(u_xlat12.x, 9.99999994e-09);
+    u_xlat12.x = inversesqrt(u_xlat12.x);
+    u_xlat7.xy = u_xlat12.xx * u_xlat3.xy;
+    u_xlat3.xy = u_xlat14.xx * u_xlat7.xy;
+    u_xlat12.x = u_xlat12.x * (-u_xlat1.x);
+    u_xlat12.x = u_xlat12.x * 0.707106769;
+    u_xlat12.x = clamp(u_xlat12.x, 0.0, 1.0);
+    if(_refraction_mode == 0) {
+        u_xlatb1 = 0<_blur_invert;
+        if(u_xlatb1){
+            u_xlat4.xyz = texture(camadaRt, vs_TEXCOORD0.xy).xyz;
+        }
+        if(!u_xlatb1){
+            u_xlat4.xyz = texture(fundoRt, vs_TEXCOORD0.xy).xyz;
+        }
+    } else {
+        u_xlat18 = u_xlat18 * u_xlat19;
+        u_xlat18 = exp2(u_xlat18);
+        u_xlat3.z = (-u_xlat14.y);
+        u_xlat18 = u_xlat18 * _BevelWidth + _Elevation;
+        u_xlatb1 = _refraction_mode==1;
+        if(u_xlatb1){
+            u_xlat1.z = float(1.0) / _RefractiveIndex;
+            u_xlat19 = u_xlat1.z * u_xlat1.z;
+            u_xlat2.x = (-u_xlat14.y) * u_xlat14.y + 1.0;
+            u_xlat19 = (-u_xlat19) * u_xlat2.x + 1.0;
+            u_xlat19 = sqrt(u_xlat19);
+            u_xlat19 = u_xlat1.z * u_xlat3.z + u_xlat19;
+            u_xlat1.x = float(0.0);
+            u_xlat1.y = float(0.0);
+            u_xlat1.xyz = (-vec3(u_xlat19)) * u_xlat3.xyz + u_xlat1.xyz;
+            u_xlat1.xy = vec2(u_xlat18) * u_xlat1.xy;
+            u_xlat13.xy = u_xlat1.zz * _resolution.xy;
+            u_xlat1.xy = u_xlat1.xy / u_xlat13.xy;
+            u_xlat1.xy = u_xlat1.xy + vs_TEXCOORD0.xy;
+            u_xlatb13 = 0<_blur_invert;
+            if(u_xlatb13){
+                u_xlat4.xyz = texture(camadaRt, u_xlat1.xy).xyz;
+            }
+            if(!u_xlatb13){
+                u_xlat4.xyz = texture(fundoRt, u_xlat1.xy).xyz;
+            }
+        } else {
+            u_xlatb1 = _refraction_mode==2;
+            if(u_xlatb1){
+                u_xlat1.xyz = _RefractiveIndexRatios.xyz * _RefractiveIndexRatios.xyz;
+                u_xlat19 = (-u_xlat14.y) * u_xlat14.y + 1.0;
+                u_xlat1.xyz = (-u_xlat1.xyz) * vec3(u_xlat19) + vec3(1.0, 1.0, 1.0);
+                u_xlat1.xyz = sqrt(u_xlat1.xyz);
+                u_xlat1.xyz = _RefractiveIndexRatios.xyz * u_xlat3.zzz + u_xlat1.xyz;
+                u_xlat5.x = 0.0;
+                u_xlat5.z = _RefractiveIndexRatios.x;
+                u_xlat2.xyw = (-u_xlat1.xxx) * u_xlat3.xyz + u_xlat5.xxz;
+                u_xlat1.xw = vec2(u_xlat18) * u_xlat2.xy;
+                u_xlat2.xy = u_xlat2.ww * _resolution.xy;
+                u_xlat1.xw = u_xlat1.xw / u_xlat2.xy;
+                u_xlat1.xw = u_xlat1.xw + vs_TEXCOORD0.xy;
+                u_xlatb2 = 0<_blur_invert;
+                if(u_xlatb2){
+                    u_xlat4.x = texture(camadaRt, u_xlat1.xw).x;
+                }
+                if(!u_xlatb2){
+                    u_xlat4.x = texture(fundoRt, u_xlat1.xw).x;
+                }
+                u_xlat5.x = 0.0;
+                u_xlat5.z = _RefractiveIndexRatios.y;
+                u_xlat1.xyw = (-u_xlat1.yyy) * u_xlat3.xyz + u_xlat5.xxz;
+                u_xlat1.xy = vec2(u_xlat18) * u_xlat1.xy;
+                u_xlat8.xz = u_xlat1.ww * _resolution.xy;
+                u_xlat1.xy = u_xlat1.xy / u_xlat8.xz;
+                u_xlat1.xy = u_xlat1.xy + vs_TEXCOORD0.xy;
+                if(u_xlatb2){
+                    u_xlat4.y = texture(camadaRt, u_xlat1.xy).y;
+                }
+                if(!u_xlatb2){
+                    u_xlat4.y = texture(fundoRt, u_xlat1.xy).y;
+                }
+                u_xlat5.x = 0.0;
+                u_xlat5.z = _RefractiveIndexRatios.z;
+                u_xlat1.xyz = (-u_xlat1.zzz) * u_xlat3.xyz + u_xlat5.xxz;
+                u_xlat1.xy = vec2(u_xlat18) * u_xlat1.xy;
+                u_xlat13.xy = u_xlat1.zz * _resolution.xy;
+                u_xlat1.xy = u_xlat1.xy / u_xlat13.xy;
+                u_xlat1.xy = u_xlat1.xy + vs_TEXCOORD0.xy;
+                if(u_xlatb2){
+                    u_xlat4.z = texture(camadaRt, u_xlat1.xy).z;
+                }
+                if(!u_xlatb2){
+                    u_xlat4.z = texture(fundoRt, u_xlat1.xy).z;
+                }
+            }
+        }
+    }
+    if(_background_mode == 0) {
+        u_xlat1.xyz = (-u_xlat4.xyz) + vec3(0.5, 0.5, 0.5);
+        u_xlat1.xyz = u_xlat1.xyz * vec3(vec3(_Flatten, _Flatten, _Flatten)) + u_xlat4.xyz;
+        u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+        u_xlat18 = dot(u_xlat1.xyz, vec3(0.212672904, 0.715152204, 0.0721750036));
+        u_xlat1.xyz = (-vec3(u_xlat18)) + u_xlat1.xyz;
+        u_xlat1.xyz = vec3(vec3(_Vibrancy, _Vibrancy, _Vibrancy)) * u_xlat1.xyz + vec3(u_xlat18);
+        u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+        u_xlat18 = _Brightness * _Brightness;
+        u_xlati19 = int((0.0<_Brightness) ? 0xFFFFFFFFu : uint(0));
+        u_xlati2 = int((_Brightness<0.0) ? 0xFFFFFFFFu : uint(0));
+        u_xlati19 = (-u_xlati19) + u_xlati2;
+        u_xlat19 = float(u_xlati19);
+        u_xlat1.xyz = vec3(u_xlat18) * vec3(u_xlat19) + u_xlat1.xyz;
+        u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+        u_xlat2.xyw = (-u_xlat1.xyz) + _ForegroundColor.xyz;
+        u_xlat1.xyz = vec3(_ForegroundOpacity) * u_xlat2.xyw + u_xlat1.xyz;
+    } else {
+        u_xlat18 = _Brightness * 0.5 + 0.5;
+        u_xlat19 = dot(u_xlat4.xyz, vec3(0.212672904, 0.715152204, 0.0721750036));
+        u_xlat2.xyw = (-vec3(u_xlat19)) + u_xlat4.xyz;
+        u_xlat2.xyw = vec3(vec3(_Vibrancy, _Vibrancy, _Vibrancy)) * u_xlat2.xyw + vec3(u_xlat19);
+        u_xlat4.xyz = vec3(u_xlat18) * vec3(u_xlat18) + (-u_xlat2.xyw);
+        u_xlat2.xyw = u_xlat4.xyz * vec3(vec3(_Flatten, _Flatten, _Flatten)) + u_xlat2.xyw;
+        u_xlat19 = dot(u_xlat2.xyw, vec3(0.212672904, 0.715152204, 0.0721750036));
+        u_xlat18 = u_xlat18 * u_xlat18 + (-u_xlat19);
+        u_xlat4.xyz = vec3(u_xlat18) + u_xlat2.xyw;
+        u_xlat18 = dot(u_xlat4.xyz, vec3(0.212672904, 0.715152204, 0.0721750036));
+        u_xlat19 = min(u_xlat4.y, u_xlat4.x);
+        u_xlat19 = min(u_xlat4.z, u_xlat19);
+        u_xlat15 = max(u_xlat4.y, u_xlat4.x);
+        u_xlat15 = max(u_xlat4.z, u_xlat15);
+        u_xlatb21 = u_xlat19<0.0;
+        u_xlat5.xyz = (-vec3(u_xlat18)) + u_xlat4.xyz;
+        u_xlat5.xyz = vec3(u_xlat18) * u_xlat5.xyz;
+        u_xlat19 = u_xlat18 + (-u_xlat19);
+        u_xlat5.xyz = u_xlat5.xyz / vec3(u_xlat19);
+        u_xlat5.xyz = vec3(u_xlat18) + u_xlat5.xyz;
+        u_xlat4.xyz = (bool(u_xlatb21)) ? u_xlat5.xyz : u_xlat4.xyz;
+        u_xlatb19 = 1.0<u_xlat15;
+        u_xlat5.xyz = (-vec3(u_xlat18)) + u_xlat4.xyz;
+        u_xlat21 = (-u_xlat18) + 1.0;
+        u_xlat5.xyz = vec3(u_xlat21) * u_xlat5.xyz;
+        u_xlat15 = (-u_xlat18) + u_xlat15;
+        u_xlat5.xyz = u_xlat5.xyz / vec3(u_xlat15);
+        u_xlat5.xyz = vec3(u_xlat18) + u_xlat5.xyz;
+        u_xlat4.xyz = (bool(u_xlatb19)) ? u_xlat5.xyz : u_xlat4.xyz;
+        u_xlat4.xyz = (-u_xlat2.xyw) + u_xlat4.xyz;
+        u_xlat2.xyw = vec3(_ForegroundOpacity) * u_xlat4.xyz + u_xlat2.xyw;
+        u_xlat4.xyz = u_xlat2.xyw * _ForegroundColor.xyz;
+        u_xlat18 = dot(u_xlat4.xyz, vec3(0.212672904, 0.715152204, 0.0721750036));
+        u_xlat19 = min(u_xlat4.y, u_xlat4.x);
+        u_xlat19 = min(u_xlat4.z, u_xlat19);
+        u_xlat15 = max(u_xlat4.y, u_xlat4.x);
+        u_xlat15 = max(u_xlat4.z, u_xlat15);
+        u_xlatb21 = u_xlat19<0.0;
+        u_xlat2.xyw = u_xlat2.xyw * _ForegroundColor.xyz + (-vec3(u_xlat18));
+        u_xlat2.xyw = vec3(u_xlat18) * u_xlat2.xyw;
+        u_xlat19 = u_xlat18 + (-u_xlat19);
+        u_xlat2.xyw = u_xlat2.xyw / vec3(u_xlat19);
+        u_xlat2.xyw = vec3(u_xlat18) + u_xlat2.xyw;
+        u_xlat2.xyw = (bool(u_xlatb21)) ? u_xlat2.xyw : u_xlat4.xyz;
+        u_xlatb19 = 1.0<u_xlat15;
+        u_xlat4.xyz = (-vec3(u_xlat18)) + u_xlat2.xyw;
+        u_xlat21 = (-u_xlat18) + 1.0;
+        u_xlat4.xyz = vec3(u_xlat21) * u_xlat4.xyz;
+        u_xlat15 = (-u_xlat18) + u_xlat15;
+        u_xlat4.xyz = u_xlat4.xyz / vec3(u_xlat15);
+        u_xlat4.xyz = vec3(u_xlat18) + u_xlat4.xyz;
+        u_xlat1.xyz = (bool(u_xlatb19)) ? u_xlat4.xyz : u_xlat2.xyw;
+    }
+    u_xlatb18 = 0<_enable_edge_glint;
+    u_xlat19 = dot(u_xlat3.xy, _Glint1Dir.xy);
+    u_xlat19 = max(u_xlat19, 0.0);
+    u_xlat2.x = (-_GlintSharpness) + _GlintWrap;
+    u_xlat2.x = u_xlat14.x * u_xlat2.x + _GlintSharpness;
+    u_xlat19 = log2(u_xlat19);
+    u_xlat19 = u_xlat19 * u_xlat2.x;
+    u_xlat1.w = exp2(u_xlat19);
+    u_xlat8.x = dot(u_xlat3.xy, vec2(_Glint2Dir.x, _Glint2Dir.y));
+    u_xlat8.x = max(u_xlat8.x, 0.0);
+    u_xlat8.x = log2(u_xlat8.x);
+    u_xlat2.x = u_xlat8.x * u_xlat2.x;
+    u_xlat2.x = exp2(u_xlat2.x);
+    u_xlat8.xyz = u_xlat1.www * _Glint1Color.xyz + u_xlat1.xyz;
+    u_xlat2.xyz = u_xlat2.xxx * _Glint2Color.xyz + u_xlat8.xyz;
+    u_xlat2.xyz = clamp(u_xlat2.xyz, 0.0, 1.0);
+    u_xlat1.xyz = (bool(u_xlatb18)) ? u_xlat2.xyz : u_xlat1.xyz;
+    u_xlat2.w = u_xlat12.x * _ForegroundColor.w;
+    u_xlat0.x = dot(u_xlat0.xy, vec2(0.0671105608, 0.00583714992));
+    u_xlat0.x = fract(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * 52.9829178;
+    u_xlat0.x = fract(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x + -0.5;
+    u_xlat0.x = u_xlat0.x * 0.00392156886;
+    u_xlat2.xyz = u_xlat1.xyz * u_xlat2.www + u_xlat0.xxx;
+    u_xlatb0 = 0<_blur_invert;
+    if(u_xlatb0){
+        u_xlat1 = texture(fundoRt, vs_TEXCOORD0.xy);
+    }
+    if(!u_xlatb0){
+        u_xlat1 = texture(camadaRt, vs_TEXCOORD0.xy);
+    }
+    u_xlat1.xyz = u_xlat1.www * u_xlat1.xyz;
+    u_xlat2 = (-u_xlat1) + u_xlat2;
+    saidaDoNode = u_xlat12.xxxx * u_xlat2 + u_xlat1;
+    return;
+}
+void main()
+{
+    if (acPass == 0) {
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) { fragColor = gaussiana(camadaRt, vec2(1.0, 0.0)); return; }
+    if (acPass == 2) { fragColor = gaussiana(desfoqueH, vec2(0.0, 1.0)); return; }
+    ligar();
+    // O UV do Node (Y para cima): os RTs do meio estão de pé.
+    vs_TEXCOORD0 = acEntradaDePe == 1 ? acScreenNorm : vec2(acScreenNorm.x, 1.0 - acScreenNorm.y);
+    sinalDoY = acEntradaDePe == 1 ? 1.0 : -1.0;
+    programaDoNode();
+    // o RT do Node prende em 0..1; o Nova guarda a cor reta em sRGB
+    vec4 o = clamp(saidaDoNode, 0.0, 1.0);
+    fragColor = o.a > 1e-5 ? vec4(srgb(o.rgb / o.a), o.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

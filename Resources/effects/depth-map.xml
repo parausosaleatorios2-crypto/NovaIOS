@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MAPA DE PROFUNDIDADE — PARALLAX 2.5D
+  ============================================================================
+
+  Recebe um MAPA DE PROFUNDIDADE (uma imagem em escala de cinza — branco =
+  mais perto, preto = mais longe) e usa ele para empurrar cada pixel da
+  camada por uma quantia proporcional à sua distância: o que está perto anda
+  mais, o que está longe anda menos. É o mesmo princípio óptico de olhar pela
+  janela de um carro em movimento — o poste ao lado voa, a montanha ao fundo
+  quase não se mexe.
+
+  ============================================================================
+   O QUE ESTE EFEITO NÃO FAZ — E POR QUÊ ISSO É HONESTO, NÃO PREGUIÇA
+  ============================================================================
+
+  Ele NÃO estima profundidade a partir de uma foto comum. Gerar um mapa de
+  profundidade de verdade a partir de uma imagem 2D é trabalho de uma rede
+  neural (monocular depth estimation — Depth Anything, MiDaS, etc.), rodando
+  inferência de verdade: pesos de modelo de dezenas de MB, um runtime nativo
+  (ONNX Runtime, NCNN, Core ML) e uma pipeline de pré/pós-processamento. Isso
+  é um SUBSISTEMA inteiro — não um efeito GLSL — e não é algo que dá para
+  fazer com confiança sem um aparelho de verdade para medir tempo de
+  inferência, memória e temperatura, nem sem decidir licença de modelo
+  (Depth Anything V2 Small é Apache-2.0; as variantes maiores não são).
+
+  O que ESTE arquivo entrega é a metade que dá para fazer aqui, com o mesmo
+  rigor do resto do catálogo: a CAMADA DE COMPOSIÇÃO que usa um mapa de
+  profundidade já pronto — gerado em outro app, ou desenhado à mão — para
+  produzir o efeito visual de verdade (Parallax 2.5D). O mapa entra como
+  CAMADA DA COMPOSIÇÃO (`src="layer"`, o mesmo mecanismo de `displace.xml` e
+  `lens-blur.xml`): importa a imagem em escala de cinza como uma camada,
+  esconde ela, e escolhe ela aqui.
+
+  ============================================================================
+   O DESFOQUE AQUI DENTRO, E O DESFOQUE DE LENTE — OS DOIS, DE PROPÓSITO
+  ============================================================================
+
+  Este arquivo TAMBÉM tem um desfoque embutido (grupo "Desfoque" abaixo,
+  desligado por padrão) — pedido explícito: "para uma fácil utilização queria
+  que no próprio efeito do depth já tivesse a opção de dar blur no fundo".
+  Ele usa o MESMO plano de foco da paralaxe (`focusDepth`) — o que já é o
+  correto fisicamente: numa câmera de verdade, o plano que fica nítido é O
+  MESMO que fica parado numa paralaxe por deslocamento de câmera — então um
+  controle só resolve as duas coisas. É um desfoque BARATO (poucas amostras
+  num círculo, um passe só), pensado para "ligar e já ficar bom", não para
+  bokeh de qualidade de estúdio.
+
+  Para bokeh de verdade — luzes viram hexágonos, forma de diafragma, mais
+  amostras — o "Desfoque de lente" (`lens-blur.xml`) continua existindo, com
+  o mesmo mecanismo de mapa de outra camada (`focusMap`, `src="layer"`).
+  Aponte o MESMO mapa de profundidade nos dois efeitos, empilhados, e desligue
+  o desfoque embutido daqui (`blurStrength = 0`) para não desfocar duas vezes.
+
+  ============================================================================
+   O PLANO DE PARALAXE ZERO
+  ============================================================================
+
+  Empurrar TODO pixel proporcional à profundidade crua moveria a imagem
+  inteira junto — um PAN, não um parallax. Um parallax de verdade precisa de
+  um plano que fica PARADO (o "foco"), com tudo mais perto andando de um
+  jeito e tudo mais longe andando do OUTRO. Por isso o deslocamento usa
+  `profundidade − foco`, não `profundidade` sozinha: em `foco`, o termo é
+  zero e nada se move ali; mais perto que o foco, o sinal é um; mais longe, é
+  o outro.
+-->
+<effect
+    id="nova.effect.depthmap"
+    name="Mapa de profundidade"
+    name-en="Depth Map"
+    desc="Parallax 2.5D a partir de um mapa de profundidade (outra camada): o que está perto anda mais que o que está longe."
+    desc-en="2.5D parallax driven by a depth map layer: closer pixels shift more than distant ones."
+    category="distort"
+    tags="profundidade,depth,map,parallax,2.5d,camera,paralaxe,mapa,perspectiva">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <texture id="depthMap" src="layer" label="Mapa de profundidade (branco = perto)" />
+
+        <selector id="channel" label="Canal do mapa"
+                  options="Luminância|Vermelho|Verde|Azul" default="0" />
+
+        <switch id="invertDepth" label="Inverter (branco = longe)" default="false" />
+
+        <!-- =========================== Câmera =========================== -->
+        <slider id="cameraX" group="Câmera" label="Câmera X (px)"
+                default="0.0" min="-300.0" max="300.0" step="1.0" snap="0.0" />
+        <slider id="cameraY" group="Câmera" label="Câmera Y (px)"
+                default="0.0" min="-300.0" max="300.0" step="1.0" snap="0.0" />
+        <slider id="strength" group="Câmera" label="Força da profundidade"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+        <slider id="focusDepth" group="Câmera" label="Plano parado (foco)"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+
+        <selector id="edges" group="Câmera" label="Borda revelada"
+                  options="Transparente|Repetir|Espelhar|Esticar" default="3" />
+
+        <!--
+          =========================== Desfoque ===========================
+
+          Desligado por padrão (0) — ligar é escolha de quem edita, não
+          suposição do efeito. Usa o MESMO `focusDepth` da paralaxe: o plano
+          que fica parado também é o que fica nítido. Ver a nota do
+          cabeçalho sobre por que isto não compete com "Desfoque de lente".
+        -->
+        <slider id="blurStrength" group="Desfoque" label="Desfoque pela distância do foco (px)"
+                default="0.0" min="0.0" max="20.0" step="0.5" snap="0.0" />
+
+        <!-- ============================ Névoa ============================ -->
+        <slider id="fogAmount" group="Névoa" label="Quantidade"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="fogColor" group="Névoa" label="Cor da névoa" default="#B0C4DE" />
+
+        <switch id="showDepth" label="Ver o mapa em vez do resultado" default="false" />
+    </params>
+
+    <!-- Na vitrine, a profundidade vem do mapa de vitrine, com a câmera de lado. (vitrine, 0.668.0) -->
+    <preview mapa="true">
+        <set param="cameraX" value="60.0" />
+        <set param="strength" value="2.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/**
+ * A profundidade naquele ponto, 0 (longe) a 1 (perto) — já com canal e
+ * inversão resolvidos.
+ */
+float profundidadeEm(vec2 uv) {
+    vec4 texel = texture(depthMap, uv);
+
+    float valor;
+    if (channel == 1) {
+        valor = texel.r;
+    } else if (channel == 2) {
+        valor = texel.g;
+    } else if (channel == 3) {
+        valor = texel.b;
+    } else {
+        valor = dot(texel.rgb, vec3(0.299, 0.587, 0.114));
+    }
+
+    return invertDepth ? 1.0 - valor : valor;
+}
+
+/** Onde buscar, respeitando o comportamento de borda escolhido — mesma regra de `displace.xml`. */
+vec2 wrapUv(vec2 uv) {
+    if (edges == 1) {
+        return fract(uv);
+    }
+    if (edges == 2) {
+        return abs(fract(uv * 0.5) * 2.0 - 1.0);
+    }
+    if (edges == 3) {
+        return clamp(uv, 0.0, 1.0);
+    }
+    return uv;
+}
+
+vec4 fetch(vec2 uv) {
+    if (edges == 0 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
+        return vec4(0.0);
+    }
+    return texture(inputImg, wrapUv(uv));
+}
+
+void main() {
+    float profundidade = profundidadeEm(acScreenNorm);
+
+    if (showDepth) {
+        fragColor = vec4(vec3(profundidade), 1.0);
+        return;
+    }
+
+    // O plano do foco fica parado; mais perto anda de um jeito, mais longe do
+    // outro — ver a nota do cabeçalho sobre por que não é a profundidade crua.
+    float relativo = profundidade - focusDepth;
+
+    // Busca no sentido CONTRÁRIO ao da câmera: se a câmera anda para a
+    // direita, o que está mais perto do que o foco precisa aparecer mais
+    // para a ESQUERDA na tela (é assim que a paralaxe de verdade se
+    // comporta — o poste ao lado do carro "fica pra trás" quando o carro
+    // anda para a frente). Mesma convenção de sinal de `displace.xml`.
+    vec2 uv = acScreenNorm - vec2(cameraX, cameraY) * acTexelSize * strength * acEscalaDePixel * relativo;
+
+    vec4 cor = fetch(uv);
+
+    /*
+     * DESFOQUE EMBUTIDO — barato de propósito, ver a nota do cabeçalho.
+     *
+     * O raio cresce com a DISTÂNCIA do plano de foco (`relativo`, o mesmo
+     * termo que já move a paralaxe): perto do foco, quase nada; longe dele,
+     * o raio cheio. Um círculo de 8 amostras não tem a forma de diafragma
+     * do "Desfoque de lente" — é uma média simples —, mas custa um passe só
+     * e já resolve "desfoca o fundo" sem precisar empilhar outro efeito.
+     */
+    if (blurStrength > 0.0) {
+        /*
+         * `relativo` é uma DIFERENÇA DE PROFUNDIDADE NORMALIZADA (0..1), não
+         * uma distância física — na prática ela raramente passa de ~0,3 a
+         * ~0,5 mesmo entre o assunto e o fundo bem separados. Multiplicar
+         * `blurStrength` direto por `abs(relativo)` (como era antes) fazia o
+         * slider no MÁXIMO (20 px) só chegar perto de 20 px numa separação
+         * de profundidade EXTREMA — no caso comum, o raio de verdade ficava
+         * em 3-6 px, imperceptível. `FAIXA_DE_QUEDA` é a separação que já
+         * conta como "totalmente fora de foco": a partir dali o raio é o
+         * valor CHEIO do slider, e o slider passa a significar o que o
+         * rótulo promete.
+         */
+        const float FAIXA_DE_QUEDA = 0.3;
+        float queda = clamp(abs(relativo) / FAIXA_DE_QUEDA, 0.0, 1.0);
+        float raio = blurStrength * queda;
+        if (raio > 0.2) {
+            const int AMOSTRAS = 8;
+            // Cor pré-multiplicada por alfa ao somar, e dividida de volta no
+            // fim — mesma regra de `lens-blur.xml`: um pixel transparente
+            // não tem cor que signifique nada, e somar sem isso puxaria a
+            // borda para preto.
+            vec3 soma = cor.rgb * cor.a;
+            float peso = cor.a;
+            for (int i = 0; i < AMOSTRAS; i++) {
+                float angulo = (6.28318530718 / float(AMOSTRAS)) * float(i);
+                vec2 passo = vec2(cos(angulo), sin(angulo)) * raio * acEscalaDePixel * acTexelSize;
+                vec4 amostra = fetch(uv + passo);
+                soma += amostra.rgb * amostra.a;
+                peso += amostra.a;
+            }
+            cor = vec4(soma / max(peso, 1e-4), peso / float(AMOSTRAS + 1));
+        }
+    }
+
+    // Névoa: proporcional ao INVERSO da profundidade — o que está mais longe
+    // (profundidade baixa) pega mais névoa, como neblina de verdade.
+    if (fogAmount > 0.0) {
+        float neblina = clamp(fogAmount * (1.0 - profundidade), 0.0, 1.0);
+        cor.rgb = mix(cor.rgb, fogColor.rgb, neblina);
+    }
+
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

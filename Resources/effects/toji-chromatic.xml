@@ -1,0 +1,54 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="com.alightcreative.effects.chromaticdisplacementsearch"
+        name="Chromatic Displacement"
+        desc="A scanning beam that displaces RGB channels inside its area, creating a chromatic distortion search effect."
+        category="distort"
+        thumb="thumb/SKEXNXX/chromatic.webp"
+        experimental="false">
+
+    <params>
+        <texture id="inputImg" srcType="content" />
+
+        <!-- Beam Controls -->
+        <point id="beamCenter" default="0.5,0.5" min="0.0,0.0" max="1.0,1.0" label="Beam Center" step="0.01,0.01" />
+        <spinner id="beamWidth" default="0.3" min="0.0" max="1.0" label="Beam Width" step="0.01" />
+        <spinner id="beamFeather" default="0.15" min="0.0" max="0.5" label="Beam Feather" step="0.01" />
+
+        <!-- Displacement Controls -->
+        <spinner id="dispDist" default="0.02" min="0.0" max="0.2" label="Displacement Distance" step="0.001" />
+        <spinner id="angle" default="0.0" min="0.0" max="6.28318" label="Angle (radians)" step="0.01" />
+        <spinner id="beamIntensity" default="1.0" min="0.0" max="1.0" label="Beam Intensity" step="0.01" />
+    </params>
+
+    <shader type="fragment" precision="high"><![CDATA[
+        // Chromatic Displacement Search
+        // Single-pass RGB displacement with soft-edged scanning beam
+
+        void main() {
+            vec2 uv = acScreenNorm;
+
+            // Beam mask (horizontal band by default)
+            vec2 d = uv - beamCenter;
+            float halfW = beamWidth * 0.5;
+            float mask = smoothstep(halfW + beamFeather, halfW - beamFeather, abs(d.x));
+            float weight = mask * beamIntensity;
+
+            // Displacement vector
+            vec2 offset = vec2(cos(angle), sin(angle)) * dispDist * weight;
+
+            // Sample shifted channels
+            vec4 colR = texture2DCv(inputImg.texture, uv + offset);
+            vec4 colG = texture2DCv(inputImg.texture, uv);
+            vec4 colB = texture2DCv(inputImg.texture, uv - offset);
+
+            // Assemble RGB from displaced samples
+            vec4 displaced = vec4(colR.r, colG.g, colB.b, colG.a);
+
+            // Original sample
+            vec4 original = texture2DCv(inputImg.texture, uv);
+
+            // Blend original and displaced inside the beam
+            gl_FragColor = mix(original, displaced, weight);
+        }
+    ]]></shader>
+</effect>

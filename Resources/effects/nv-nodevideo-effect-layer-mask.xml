@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_layer_mask
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-layer-mask"
+    name="Effect Layer Mask (NV)"
+    name-en="Effect Layer Mask (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_layer_mask', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_layer_mask', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="source" src="content" empty="transparent" />
+        <slider id="_channel" type="integer" label="Channel" default="0" min="0" max="4" step="1" />
+        <slider id="_invert" type="integer" label="Invert" default="0" min="0" max="10" step="1" />
+        <slider id="_show_mask" type="integer" label="Show Mask" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec4 u_xlatb2;
+float u_xlat3;
+bool u_xlatb3;
+float u_xlat6;
+float u_xlat9;
+void main()
+{
+    u_xlat0 = texture(source, acScreenNorm.xy);
+    u_xlat1.x = dot(u_xlat0.xyz, vec3(0.300000012, 0.589999974, 0.109999999));
+    u_xlatb2 = equal(ivec4(int(_channel), int(_channel), int(_channel), int(_invert)), ivec4(1, 2, 3, 1));
+    u_xlat9 = (u_xlatb2.z) ? u_xlat0.w : u_xlat1.x;
+    u_xlat6 = (u_xlatb2.y) ? u_xlat0.z : u_xlat9;
+    u_xlat3 = (u_xlatb2.x) ? u_xlat0.y : u_xlat6;
+    u_xlat0.x = (int(_channel) != 0) ? u_xlat3 : u_xlat0.x;
+    u_xlat3 = (-u_xlat0.x) + 1.0;
+    u_xlat0.x = (u_xlatb2.w) ? u_xlat3 : u_xlat0.x;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb3 = int(_show_mask)==1;
+    u_xlat1 = (bool(u_xlatb3)) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+    u_xlat0.x = u_xlat0.x * u_xlat1.w;
+    fragColor.xyz = u_xlat0.xxx * u_xlat1.xyz;
+    fragColor.w = u_xlat0.x;
+    return;
+}
+    ]]></shader>
+</effect>

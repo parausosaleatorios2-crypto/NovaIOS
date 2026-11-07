@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   4-COLOR GRADIENT — o efeito nativo do After Effects, medido (0.448.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "4-Color Gradient". O "Gradiente de 4 cores" que já existia é um
+  desenho próprio da Nova (peso 1/distância^potência, sem Blend em px, sem Opacity nem modos);
+  ESTE é a conta do efeito do AE, para os presets converterem com os valores deles.
+
+  MEDIDO NO AFTER EFFECTS (tools/fourcolor/benchmark, 137 renders em 16 bpc):
+
+  - o peso de cada ponto é 1 / (distância² + Blend²), com a distância em px medida do canto do
+    pixel; a cor é a média das quatro com esses pesos. As cores valem em 8 bits;
+  - Jitter é um ruído uniforme de ± Jitter/100 níveis (de 255) em cada canal;
+  - o gradiente é uma camada com o alfa da fonte · Opacity, posta sobre a fonte com o Blending
+    Mode. Em "None" ela SUBSTITUI a fonte (com Opacity baixa a camada fica transparente). A Opacity
+    anda em passos de 1/256;
+  - matiz, saturação, cor e luminosidade usam os pesos 0,299 / 0,587 / 0,114;
+  - Add, Color Dodge e Difference fazem a conta nas cores pré-multiplicadas (a Opacity entra na cor
+    do gradiente); no Color Burn a Opacity clareia o gradiente antes da conta.
+
+  O modelo em numpy fica a 0,004 nível (de 255) do AE com Opacity 100 e a 0,05–0,25 com Opacity
+  menor (o AE arredonda a mistura).
+
+  APROXIMADO: com fonte MEIO TRANSPARENTE, Color Burn e os quatro modos de matiz/cor não fecham
+  (erro médio de 0,1 a 5 níveis, concentrado onde o alfa é baixo). O ruído do Jitter tem a mesma
+  força, mas não o mesmo desenho pixel a pixel.
+-->
+<effect
+    id="nova.effect.ae4colorgradient"
+    name="4-Color Gradient (AE)"
+    name-en="4-Color Gradient (AE)"
+    desc="O 4-Color Gradient do After Effects: quatro pontos de cor, com Blend em px, Opacity e Blending Mode."
+    desc-en="After Effects' 4-Color Gradient: four colour points, with Blend in px, Opacity and Blending Mode."
+    category="procedural"
+    tags="4-color gradient,4 color gradient,gradiente,4 cores,quatro cores,degrade,after effects,cc,soft light,hue,color">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="point1" label="Point 1" defaultX="0.1" defaultY="0.1" />
+        <color id="color1" label="Color 1" default="#FFFF00" />
+        <point id="point2" label="Point 2" defaultX="0.9" defaultY="0.1" />
+        <color id="color2" label="Color 2" default="#00FF00" />
+        <point id="point3" label="Point 3" defaultX="0.1" defaultY="0.9" />
+        <color id="color3" label="Color 3" default="#FF00FF" />
+        <point id="point4" label="Point 4" defaultX="0.9" defaultY="0.9" />
+        <color id="color4" label="Color 4" default="#0000FF" />
+
+        <slider id="blend" label="Blend" default="100.0" min="5.0" max="2000.0" step="1.0" snap="100.0" />
+        <slider id="jitter" label="Jitter" default="0.0" min="0.0" max="500.0" step="1.0" snap="0.0" />
+        <slider id="opacity" label="Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <selector id="blendingMode" label="Blending Mode" default="0"
+                  options="None|Normal|Add|Multiply|Screen|Overlay|Soft Light|Hard Light|Color Dodge|Color Burn|Darken|Lighten|Difference|Exclusion|Hue|Saturation|Color|Luminosity" />
+    </params>
+
+    <shader><![CDATA[
+float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }      // medido (0,30 / 0,59 / 0,11 erra 0,3 nível)
+
+vec3 prenderCor(vec3 c) {
+    float l = lum(c), n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
+    if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-9);
+    if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-9);
+    return c;
+}
+
+vec3 comLum(vec3 c, float l) { return prenderCor(c + (l - lum(c))); }
+
+float sat(vec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+
+vec3 comSat(vec3 c, float s) {
+    float n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
+    return x > n ? (c - n) * s / (x - n) : vec3(0.0);
+}
+
+vec3 luzSuave(vec3 b, vec3 s) {
+    vec3 d = mix(sqrt(b), ((16.0 * b - 12.0) * b + 4.0) * b, vec3(lessThanEqual(b, vec3(0.25))));
+    return mix(b + (2.0 * s - 1.0) * (d - b), b - (1.0 - 2.0 * s) * b * (1.0 - b), vec3(lessThanEqual(s, vec3(0.5))));
+}
+
+vec3 subexpor(vec3 b, vec3 s) {          // Color Dodge
+    return mix(min(vec3(1.0), b / max(1.0 - s, vec3(1e-9))), vec3(1.0), vec3(greaterThanEqual(s, vec3(1.0))));
+}
+
+vec3 superexpor(vec3 b, vec3 s) {        // Color Burn
+    return mix(1.0 - min(vec3(1.0), (1.0 - b) / max(s, vec3(1e-9))), vec3(0.0), vec3(lessThanEqual(s, vec3(0.0))));
+}
+
+/** O resultado do modo `m` com as duas cores retas (b: a fonte, s: o gradiente). */
+vec3 misturar(int m, vec3 b, vec3 s) {
+    if (m == 3) return b * s;
+    if (m == 4) return 1.0 - (1.0 - b) * (1.0 - s);
+    if (m == 5) return mix(1.0 - 2.0 * (1.0 - b) * (1.0 - s), 2.0 * b * s, vec3(lessThan(b, vec3(0.5))));
+    if (m == 6) return luzSuave(b, s);
+    if (m == 7) return mix(1.0 - 2.0 * (1.0 - b) * (1.0 - s), 2.0 * b * s, vec3(lessThan(s, vec3(0.5))));
+    if (m == 10) return min(b, s);
+    if (m == 11) return max(b, s);
+    if (m == 13) return b + s - 2.0 * b * s;
+    if (m == 14) return comLum(comSat(s, sat(b)), lum(b));
+    if (m == 15) return comLum(comSat(b, sat(s)), lum(b));
+    if (m == 16) return comLum(s, lum(b));
+    if (m == 17) return comLum(b, lum(s));
+    return s;
+}
+
+float sorteio(vec2 p, float k) {
+    vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973) + k);
+    q += dot(q, q.yzx + 33.33);
+    return fract((q.x + q.y) * q.z);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 pi = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    vec4 fonte = texelFetch(inputImg, pi, 0);
+
+    // Medido: peso = 1 / (distância² + Blend²), em px da composição, do canto do pixel.
+    vec2 p = vec2(pi) / acEscalaDePixel;
+    vec2 lado = vec2(T) / acEscalaDePixel;
+    float b2 = blend * blend;
+    vec2 d1 = p - point1 * lado, d2 = p - point2 * lado, d3 = p - point3 * lado, d4 = p - point4 * lado;
+    float w1 = 1.0 / (dot(d1, d1) + b2), w2 = 1.0 / (dot(d2, d2) + b2), w3 = 1.0 / (dot(d3, d3) + b2), w4 = 1.0 / (dot(d4, d4) + b2);
+    vec3 g = (color1.rgb * w1 + color2.rgb * w2 + color3.rgb * w3 + color4.rgb * w4) / (w1 + w2 + w3 + w4);
+
+    // Medido: ruído uniforme de ± Jitter/100 níveis em cada canal.
+    if (jitter > 0.0) {
+        vec3 r = vec3(sorteio(vec2(pi), 0.11), sorteio(vec2(pi), 0.37), sorteio(vec2(pi), 0.73)) * 2.0 - 1.0;
+        g = clamp(g + r * (jitter / 100.0) / 255.0, 0.0, 1.0);
+    }
+
+    // O gradiente é uma camada com o alfa da fonte · Opacity (em passos de 1/256), posta sobre a fonte.
+    float q = floor(clamp(opacity, 0.0, 100.0) * 2.56 + 1e-4) / 256.0;
+    float ab = fonte.a, ag = ab * q;
+    vec3 cb = fonte.rgb, pb = cb * ab, ps = g * ag;
+    float uni = ab + ag - ab * ag;
+    int m = blendingMode;
+
+    vec3 cor;
+    float alfa = uni;
+    if (m == 0) { cor = ps; alfa = ag; }                                             // None: substitui a fonte
+    else if (m == 2) cor = min(pb + ps, vec3(uni));                                  // Add, Color Dodge e Difference: nas pré-multiplicadas
+    else if (m == 8) cor = min(subexpor(pb, ps), vec3(uni));
+    else if (m == 12) cor = abs(pb - ps);
+    else if (m == 9) cor = ab * superexpor(cb, 1.0 - (1.0 - g) * q) + (1.0 - ab) * ps;   // Color Burn: a Opacity clareia o gradiente
+    else cor = (1.0 - ag) * pb + (1.0 - ab) * ps + ab * ag * clamp(misturar(m, cb, g), 0.0, 1.0);
+
+    fragColor = alfa > 0.0 ? vec4(clamp(cor / alfa, 0.0, 1.0), alfa) : vec4(0.0);
+}
+]]></shader>
+</effect>

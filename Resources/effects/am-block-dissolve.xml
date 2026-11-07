@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DISSOLVER O BLOCO — o Block Dissolve do Alight Motion, conta por conta (0.560.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz agora 100% igual o efeito dissolver o bloco igual o alight motion", da série
+  "100% iguais ao AM". Mesmos parâmetros, mesmos ids, faixas, passos e padrões do
+  `com.alightcreative.effects.checkerdissolve2` (um projeto do AM importado cai direto aqui; o antigo
+  `checkerdissolve`, "deprecated" lá, é o `am-block-dissolve-legacy.xml`). A conta foi LIDA do efeito do AM 5.0.281
+  (`assets/effects/checkerdissolve2.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no
+  repositório. A conferência é `python tools/amdissolverbloco/comparar.py`: o efeito do AM rodado na GPU do PC ao
+  lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A grade é medida NA TELA, em pixels da composição, a partir do `location` da camada (o `acLayerCenter` do AM:
+    a Posição do Nova menos a Âncora, sem giro nem escala) e com a régua do conteúdo SEM a escala (a forma sem o
+    traço, a caixa do texto, a mídia: `acLayerSize`). Girar a camada não gira os blocos; escalar não os escala.
+    Por isso este roda NA TELA (`stage="screen"`, como o Ampliar o fundo e o Apertar): a camada vai para a tela e
+    cada pixel da tela faz a conta, na MESMA grade de pixels do AM.
+  - O pixel é arredondado para baixo (em px da tela, Y para baixo) antes de tudo; depois, dividido pelo conteúdo,
+    corrigido pela proporção, menos Deslocamento ÷ 1000, vezes o lado menor ÷ Tamanho, dividido pelo Esticar e
+    arredondado para baixo de novo: é o bloco. Com a camada mais larga que alta, o bloco tem Tamanho px de lado.
+  - Cada bloco sorteia um número com o `rand` do AM (seno de um produto escalar, as mesmas constantes, módulo
+    3,14), pela Semente (× 3197,3791, módulo 2,8, + 2,7). O bloco some quando o número fica abaixo da Intensidade,
+    com a borda suave de Desaparecer (o smoothstep do AM com a faixa alargada de 1 + 2 × Desaparecer em volta
+    de 0,5; Desaparecer 0 vira 0,00001).
+  - O bloco que fica sai como estava; o que some vira transparente — a camada pré-multiplicada vezes o número,
+    como o AM (aqui, o alfa reto vezes o número: a mesma cor).
+
+  O sorteio é um hash: um bit de diferença no ponto vira outro número. Então a conta está na MESMA ordem do AM,
+  operação por operação, em `highp` (o AM pede `precision="high"`), e com os mesmos números de entrada: o mesmo
+  celular calcula o mesmo bloco nos dois apps.
+
+  O Esticar e o Deslocamento são pontos do AM (`<point spinner="true">`): dois números crus que o AM manda
+  direto ao shader, sem alça na prévia — no painel, X e Y na mesma régua, como o `effect_setting_pos` dele.
+  Dentro de grupo (o filho), o corte na tela não existe: o efeito roda no buffer do filho (não conferido).
+-->
+<effect
+    id="nova.effect.am-block-dissolve"
+    name="Dissolver o bloco"
+    name-en="Block Dissolve"
+    desc="Remove aleatoriamente pedaços retangulares da camada alinhados a uma grade, deixando-os transparentes. Anime a Intensidade para sumir com mais e mais blocos ao longo do tempo (o Block Dissolve do Alight Motion)."
+    desc-en="Randomly removes grid-aligned rectangular pieces from the layer by making them transparent. Keyframe the Strength to remove more and more blocks over time (Alight Motion's Block Dissolve)."
+    category="matte"
+    tags="dissolver,bloco,blocos,xadrez,transição,sumir,aleatório,block dissolve,checker dissolve,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="amount" label="Intensidade" default="0.75" min="0.0" max="1.0" step="0.005" />
+        <spinner id="size" label="Tamanho" default="10.0" min="1.0" max="500.0" step="1.0" />
+        <!-- `<point>` do AM: valor cru, X e Y. Faixa e passo os dele (`min="0.01,0.01" max="10, 10"`). -->
+        <point id="stretch" label="Esticar" spinner="true" defaultX="1.0" defaultY="1.0" min="0.01" max="10.0"
+            step="0.01" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="5.0" step="0.01" />
+        <spinner id="fade" label="Desaparecer" default="0.0" min="0.0" max="0.5" step="0.01" />
+        <!-- Sem padrão, faixa nem passo no AM: (0, 0), ±9999 e 1 (`readPointParam`). -->
+        <point id="offset" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+    </params>
+
+    <preview amostra="personagem">
+        <set param="amount" value="0.6" ate="0.05" />
+        <set param="size" value="16.0" />
+    </preview>
+
+    <shader><![CDATA[
+// O `rand` do AM, letra por letra (as constantes em variáveis, como lá).
+float rand(vec2 co)
+{
+    float a = 719.310;
+    float b = 178.233;
+    float c = 33758.5453;
+    float dt= dot(co.xy ,vec2(a,b));
+    float sn= mod(dt,3.14);
+    return fract(sin(sn) * c);
+}
+
+// UV → UV da tela com Y para baixo (o do AM). Na tela (`stage="screen"`) a entrada já é a tela, de pé (t = 0
+// EMBAIXO); no filho de grupo, o `acTela` leva o buffer à tela do grupo. Nos dois casos, inverter o t — a mesma
+// operação do AM (`1.0 - acScreenNorm.y`).
+vec2 naTela(vec2 uv) {
+    vec2 t = acEntradaDePe == 1 ? uv : acTela(uv);
+    return vec2(t.x, 1.0 - t.y);
+}
+
+void main() {
+    vec4 texColor = texture(inputImg, acScreenNorm);   // alfa reto
+    // Os uniforms do AM com os nomes do Nova: a tela (px da composição), o `location` da camada (px do canto, Y para
+    // baixo — o MESMO float do AM: com a camada no meio de uma composição de largura ímpar ele é ,5, e o pixel menos
+    // ele cai em cima do inteiro; vindo de uma UV, o último bit mudaria o `floor`) e o conteúdo sem a escala.
+    vec2 acScreenSize = acTamanhoDaTela;
+    vec2 acLayerCenter = acCentroDaCamadaPx;
+    vec2 acLayerSize = acTamanhoDaCamada;
+
+    // Daqui até o `smoothstep`, a conta do AM na mesma ordem.
+    vec2 st = floor((naTela(acScreenNorm)*acScreenSize)-acLayerCenter)/acLayerSize;
+    float t = seed*3197.3791;
+    t = mod(t,2.8)+2.7;
+    float tileSize = min(acLayerSize.x, acLayerSize.y)/size;
+    st.x *= acLayerSize.x/acLayerSize.y;
+    st -= offset/1000.0;
+    st *= tileSize;
+    st.x /= stretch.x;
+    st.y /= stretch.y;
+    st = floor(st);
+
+    float r = rand( st*t );
+    float adjFade = max(fade,0.00001);
+    float adjAmount = amount;
+    adjAmount -= 0.5;
+    adjAmount *= 1.0+(adjFade*2.0);
+    adjAmount += 0.5;
+    r = smoothstep(adjAmount-adjFade, adjAmount+adjFade, r);
+
+    // O AM multiplica a cor PRÉ-multiplicada por r: a cor reta fica, o alfa é que muda.
+    fragColor = vec4(texColor.rgb, texColor.a * r);
+}
+    ]]></shader>
+</effect>

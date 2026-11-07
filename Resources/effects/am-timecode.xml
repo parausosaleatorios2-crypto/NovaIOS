@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CÓDIGO TEMPORAL — o Timecode do Alight Motion, conta por conta (0.562.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faça agora 100% igual o efeito codigo temporal do alight motion", da série
+  "100% iguais ao AM". Mesmos parâmetros, mesmos ids e padrões do `com.alightcreative.effects.timecode` do AM
+  5.0.281 (um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM
+  (`assets/effects/timecode.xml` do APK descompactado), junto com o `env` que o bytecode entrega a ele, e escrita
+  de novo em `model/CodigoTemporal.kt`; o arquivo do AM não entra no repositório. A conferência é
+  `node tools/amtimecode/referencia.js` → `CodigoTemporalAmTest`: o script do próprio AM e o Kotlin daqui, texto a
+  texto (7409 ambientes × as 4 combinações das chaves).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Troca o texto da camada pelo tempo correndo: `MM:SS:QQ` (Quadros ligado, o padrão: o número do quadro
+    dentro do segundo) ou `MM:SS.cc` (centésimos). Passando de uma hora, `HH:` na frente.
+  - Relativo desligado (o padrão): o tempo da CENA (no modo Quadros, o próprio número do quadro da cena).
+    Ligado: o tempo da CAMADA, zero no começo dela — mais o que já foi aparado do começo (dividir a camada
+    deixa a metade da direita continuando a conta).
+  - O tempo passa por float como no AM: o instante é o começo do quadro em ms inteiros, e o tempo da camada é
+    a fração em float — por isso a 30 fps, com Relativo e Quadros, o quadro 1 ainda mostra "00:00:00" (33 ms
+    × 30 = 0,99 quadro), e 1,23 s numa camada de 3 s mostra ".22". É do AM e fica igual.
+  - Antes ou depois de Randomizadores de texto na mesma camada, na ordem da lista: um Randomizador depois dele
+    embaralha os números; um antes, o Código temporal apaga.
+
+  `stage="text"`: como no AM, o efeito não desenha pixel — ele muda o TEXTO antes de a camada virar desenho
+  (`RandomizadorDeTexto.textoDesenhado`, perguntado por quem desenha e por quem mede o texto). O shader abaixo
+  só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-timecode"
+    name="Código temporal"
+    name-en="Timecode"
+    desc="Substitui o texto na camada por um código de tempo em execução (o Timecode do Alight Motion)."
+    desc-en="Replaces the text in the layer with a running timecode (Alight Motion's Timecode)."
+    category="text"
+    layer="text"
+    stage="text"
+    tags="código temporal,codigo temporal,timecode,tempo,relógio,relogio,cronômetro,cronometro,contador,quadros,frames,minutos,segundos,texto,text,time,clock,counter,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <switch id="rel" label="Relativo" default="false" />
+        <switch id="frames" label="Quadros" default="true" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

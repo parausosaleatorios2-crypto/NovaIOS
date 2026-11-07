@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   APPLY COLOR LUT — o efeito nativo do After Effects (0.612.0)
+  ============================================================================
+
+  Pedido do snow (17/10/2026): "faz o Apply Color LUT do AE no app e importa os 5 presets CCs/CC 1-5 (Full)
+  com o .cube de cada um". No AE o efeito tem um controle só, o LUT. Ele não guarda o caminho do .cube:
+  converte o LUT num perfil ICC e o leva DENTRO do preset — o importador o lê de lá (aeimport/LutDoIcc.kt),
+  e o app guarda o LUT dentro do efeito, no projeto. Aqui também dá para escolher um .cube do aparelho.
+
+  O QUE AINDA NÃO FOI CONFERIDO NO AE (docs/PENDENCIAS-DOS-EFEITOS-AE.md, Apply Color LUT): a interpolação
+  entre os pontos da grade (aqui tetraédrica; o motor de cor da Adobe pode usar outra) e o que acontece com
+  cores fora de 0..1 (aqui presas na faixa antes do LUT).
+-->
+<effect
+    id="nova.effect.aeapplycolorlut"
+    name="Apply Color LUT"
+    name-en="Apply Color LUT"
+    desc="O Apply Color LUT do After Effects: aplica um LUT .cube à camada. Os presets do AE trazem o LUT dentro deles."
+    desc-en="After Effects' Apply Color LUT: applies a .cube LUT to the layer. AE presets carry the LUT inside them."
+    category="color"
+    tags="lut,cube,apply color lut,aplicar lut,color grading,correção de cor,after effects"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <lut id="lut" label="LUT" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 fonte = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+    fragColor = vec4(clamp(lutAplicar(fonte.rgb, true), 0.0, 1.0), fonte.a);
+}
+]]></shader>
+</effect>

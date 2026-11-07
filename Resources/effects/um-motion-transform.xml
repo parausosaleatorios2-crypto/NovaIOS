@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.motiontransform"
+    name="Transformação em Movimento (Ultra Motion)"
+    name-en="Motion Transform (Ultra Motion)"
+    desc="Translação + escala + giro, borrando o caminho — ladrilho em movimento."
+    desc-en="Translate, scale and rotate while blurring the path — moving tile."
+    category="transform"
+    tags="ultramotion,transform,tile,motion,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="dx"     label="Deslocar X" default="0.04" min="-0.3" max="0.3" step="0.002" />
+        <slider id="dy"     label="Deslocar Y" default="0.0"  min="-0.3" max="0.3" step="0.002" />
+        <slider id="scale"  label="Escala"     default="0.0"  min="-0.5" max="0.5" step="0.005" />
+        <slider id="rotate" label="Giro"       default="0.0"  min="-90.0" max="90.0" step="0.5" />
+        <slider id="samples" label="Amostras"  default="18"   min="4" max="48" step="1" type="integer" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    int n = clamp(int(samples), 4, 48);
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i <= 48; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n) - 0.5;
+        float ang = radians(rotate) * t;
+        float c = cos(ang), s = sin(ang);
+        vec2 p = acScreenNorm - vec2(0.5);
+        p.x *= acAspect;
+        p = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+        p *= (1.0 + scale * t);
+        p.x /= acAspect;
+        vec2 u = p + vec2(0.5) + vec2(dx, dy) * t;
+        soma += texture(inputImg, u);
+    }
+    fragColor = soma / float(n + 1);
+}
+    ]]></shader>
+</effect>

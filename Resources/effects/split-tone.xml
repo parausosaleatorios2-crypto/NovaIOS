@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TINGIR SOMBRAS E LUZES (SPLIT-TONE)
+  ============================================================================
+
+  Correção de cor clássica de colorista: tingir SOMBRAS de uma cor (geralmente
+  um azul/turquesa) e LUZES de outra (geralmente um laranja). É a assinatura de
+  "look de cinema contemporâneo" — e o que o teal/orange virou a partir da década
+  de 2000.
+
+  ============================================================================
+   SOMBRAS, MEIOS-TONS, LUZES
+  ============================================================================
+
+  Em vez de aplicar uma cor sobre a imagem inteira (que seria um `mix`
+  cega), split-tone tinge SÓ onde a luz está certa:
+
+   - Pixel com luma BAIXA (sombras): recebe uma pitada da cor de sombra.
+   - Pixel com luma ALTA (luzes): recebe uma pitada da cor de luz.
+   - Meio-tom: fica intacto.
+
+  As duas curvas se encontram no meio e o meio-tom respira — é por isso que o
+  look parece grading, não overlay.
+
+  ============================================================================
+   UMA FÓRMULA, DUAS PONTAS
+  ============================================================================
+
+  Para cada pixel, `smoothstep(0, 0.5, L)` é a FORÇA da cor de sombra (alta em
+  luma baixa, zero em cima); `smoothstep(0.5, 1, L)` é a da luz. A mistura
+  é por SOFT-LIGHT para preservar contraste — não por normal, que empobrece.
+-->
+<effect
+    id="nova.effect.split-tone"
+    name="Tingir sombras e luzes"
+    name-en="Split-tone"
+    desc="Tinge sombras de uma cor e luzes de outra, preservando meio-tom."
+    desc-en="Tints shadows with one color and highlights with another."
+    category="color"
+    tags="tingir,split,tone,teal,orange,grading,cor,cinema">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="shadowColor" label="Cor das sombras" default="#2A5A7AFF" />
+        <color id="highlightColor" label="Cor das luzes" default="#E0A060FF" />
+        <slider id="shadowAmount" label="Força nas sombras"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="highlightAmount" label="Força nas luzes"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="balance" label="Equilíbrio"
+                default="0.5" min="0.1" max="0.9" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais força nas duas pontas pra ler o split. -->
+    <preview>
+        <set param="shadowAmount" value="0.7" />
+        <set param="highlightAmount" value="0.7" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Soft-light (CSS/SVG definition): preserva contraste melhor que mix normal. */
+vec3 softLight(vec3 baixa, vec3 alta) {
+    vec3 d = mix(sqrt(baixa) * (2.0 * alta - 1.0) + 2.0 * baixa * (1.0 - alta),
+                 2.0 * baixa * alta + baixa * baixa * (1.0 - 2.0 * alta),
+                 step(alta, vec3(0.5)));
+    return d;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    float L = luma(original.rgb);
+
+    // Forças: alta em sombras pra cor de sombra, alta em luzes pra cor de luz.
+    float forcaSombra = (1.0 - smoothstep(0.0, balance, L)) * shadowAmount;
+    float forcaLuz = smoothstep(balance, 1.0, L) * highlightAmount;
+
+    // Cada ponta pinta por soft-light; a mistura entre elas é por força.
+    vec3 comSombra = softLight(original.rgb, shadowColor.rgb);
+    vec3 comLuz = softLight(original.rgb, highlightColor.rgb);
+
+    vec3 cor = original.rgb;
+    cor = mix(cor, comSombra, forcaSombra * shadowColor.a);
+    cor = mix(cor, comLuz, forcaLuz * highlightColor.a);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

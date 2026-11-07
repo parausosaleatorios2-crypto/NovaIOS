@@ -1,0 +1,188 @@
+// S_Sharpen (Sapphire, Best) num compute shader (0.900.0) — `render/PasseDoSSharpen`.
+//
+// As MESMAS contas do `<shader>` de `effects/sapphire-sharpen.xml` (que vem de tools/ssharpen/benchmark/sharpen.glsl),
+// na mesma ordem e com o mesmo texel RGBA8 entre os passes: a saída é igual bit a bit (conferido na GPU do PC com
+// tools/ssharpen/benchmark/comp_ab.py). A diferença é de onde se lê: o passe do XML andava a janela de cada pixel
+// lendo duas texturas por passo (a fonte e o passe anterior), e um pixel era relido por dezenas de vizinhos. Aqui o
+// grupo carrega o trecho da linha (ou da coluna), com a margem que a janela alcança, na memória compartilhada UMA vez,
+// já com o valor do passe anterior aberto, e cada pixel anda a janela por lá.
+//
+// A soma do fim (o passe 24 do XML) é o `soma.frag`, de fragmento como lá: o `tanh` do compute da GPU do PC sai
+// diferente do de fragmento no último bit, e 4% dos pixels mudavam 1 nível.
+//
+// Montagem (o Kotlin põe antes): `#version 310 es`.
+
+precision highp float;
+precision highp int;
+precision mediump sampler2D;
+
+layout(local_size_x = 128) in;
+
+const int GRUPO = 128;
+const int PASSOS_MAX = 80;          // até onde a janela anda para cada lado (raio máximo do nível large)
+const vec3 BRILHO = vec3(5.0, 8.0, 3.0) / 16.0;
+
+uniform sampler2D uFonte;           // a camada (inputImg do XML)
+uniform ivec2 uTam;
+uniform bool uJunto;                // Sharpen Luma = Sharpen Chroma
+
+layout(rgba8, binding = 0) writeonly uniform highp image2D uSaida;
+
+vec3 fonte(ivec2 p) { return texelFetch(uFonte, clamp(p, ivec2(0), uTam - 1), 0).rgb; }
+
+vec3 trabalho(vec3 rgb) {
+    if (uJunto) return rgb;
+    float l = dot(rgb, BRILHO);
+    return vec3(l, rgb.r - l, rgb.b - l);
+}
+
+vec3 corInteira(vec3 t) { return vec3(t.y, -(5.0 * t.y + 3.0 * t.z) / 8.0, t.z); }
+
+vec4 guardar(vec3 valor, vec3 s) {
+    vec3 x = clamp(valor - s, -1.0, 1.0);
+    ivec3 q = ivec3(floor((sign(x) * sqrt(abs(x)) * 0.5 + 0.5) * 1023.0 + 0.5));
+    return vec4(vec3(q >> 2), float((q.r & 3) | ((q.g & 3) << 2) | ((q.b & 3) << 4))) / 255.0;
+}
+
+vec3 abrir(vec4 t, vec3 s) {
+    ivec4 b = ivec4(t * 255.0 + 0.5);
+    ivec3 q = (b.rgb << 2) | ivec3(b.a & 3, (b.a >> 2) & 3, (b.a >> 4) & 3);
+    vec3 e = vec3(q) / 1023.0 * 2.0 - 1.0;
+    return s + e * abs(e);
+}
+
+uniform sampler2D uAnterior;        // o passe anterior do nível (t1/t2 do XML); não lido no 1º (uJ = 0)
+uniform int uNivel;                 // 0..3 (tiny, small, medium, large)
+uniform int uJ;                     // o passe dentro do nível: 0..5 (iteração = uJ / 2; ímpar = vertical)
+uniform float uSmallDetail;         // Small Detail Size
+uniform float uEdgeThreshold;
+uniform float uEscalaDePixel;       // o acEscalaDePixel do XML
+// Quanto a janela pode andar para cada lado: o Kotlin manda min(PASSOS_MAX, int(n) + 1) — cada passo soma 1 ou mais
+// à distância, então a janela nunca passa de n; o +1 cobre o n da CPU sair um abaixo do daqui (o mesmo float32, mas
+// a divisão da GPU não é obrigada a arredondar igual).
+uniform int uMargem;
+
+shared vec3 sRgb[GRUPO + 2 * PASSOS_MAX];
+shared vec3 sV[GRUPO + 2 * PASSOS_MAX];
+
+/** Quanto dois vizinhos se afastam (o caminho separado; o junto faz a conta direto no laço). */
+vec2 afastamento(vec3 a, vec3 b, float k) {
+    float la = dot(a, BRILHO), lb = dot(b, BRILHO);
+    vec3 d = abs((a - la) - (b - lb));
+    return vec2(1.0 + k * 3.0 * abs(la - lb), 1.0 + k * (d.r + d.g + d.b));
+}
+
+void main() {
+    bool vertical = (uJ & 1) == 1;
+    int limite = vertical ? uTam.y : uTam.x;
+    int linha = int(gl_WorkGroupID.y);
+    int inicio = int(gl_WorkGroupID.x) * GRUPO;
+    int local = int(gl_LocalInvocationID.x);
+    int aqui = inicio + local;
+    // as contas do XML, aqui mesmo (e não na CPU), para sair o mesmo float
+    float sigma0 = 0.5 * uSmallDetail * uEscalaDePixel;
+    float sigma = sigma0 * exp2(float(uNivel));
+    float r = 3.0 * sigma * exp2(float(2 - uJ / 2)) / 7.93725393;
+    bool copia = r <= 1.0;          // a iteração não roda: o passe leva adiante o que já está gravado
+    int m = copia ? 0 : uMargem;
+    // o trecho [inicio − m, inicio + GRUPO + m), cada valor aberto uma vez
+    for (int i = local; i < GRUPO + 2 * m; i += GRUPO) {
+        int pos = inicio - m + i;
+        if (pos < 0 || pos >= limite) continue;
+        ivec2 q = vertical ? ivec2(linha, pos) : ivec2(pos, linha);
+        vec3 rgb = fonte(q);
+        sRgb[i] = rgb;
+        vec3 s = trabalho(rgb);
+        sV[i] = uJ == 0 ? s : abrir(texelFetch(uAnterior, q, 0), s);
+    }
+    barrier();
+    if (aqui >= limite || linha >= (vertical ? uTam.x : uTam.y)) return;
+    ivec2 p = vertical ? ivec2(linha, aqui) : ivec2(aqui, linha);
+    int c = local + m;
+    vec3 rgbC = sRgb[c];
+    vec3 sC = trabalho(rgbC);
+    if (copia) {
+        // no 1º passe do nível, a diferença zero (o `guardar(sC, sC)` do XML); nos outros, o texel de antes (o
+        // Kotlin nem despacha estes quando a conta dele já diz r < 1)
+        imageStore(uSaida, p, uJ == 0 ? guardar(sC, sC) : texelFetch(uAnterior, p, 0));
+        return;
+    }
+    vec3 vC = sV[c];
+    float n = floor(r) + 1.0, fracao = r - floor(r);
+    float k = sigma / (max(uEdgeThreshold, 1e-6) * 3.0);
+    if (uJunto) {
+        vec3 soma = vC;
+        float cont = 1.0;
+        vec3 pontaE = vC, pontaD = vC;
+        float distE = 0.0, distD = 0.0;
+        for (int lado = 0; lado < 2; lado++) {
+            vec3 antes = rgbC;
+            float d = 0.0;
+            for (int i = 1; i <= PASSOS_MAX; i++) {
+                int pos = lado == 0 ? aqui - i : aqui + i;
+                if (pos < 0 || pos >= limite) break;
+                int qi = lado == 0 ? c - i : c + i;
+                vec3 rgbQ = sRgb[qi];
+                vec3 dif = abs(rgbQ - antes);
+                d += 1.0 + k * (dif.r + dif.g + dif.b);
+                if (!(d <= n)) break;
+                vec3 v = sV[qi];
+                soma += v; cont += 1.0;
+                if (lado == 0) { pontaE = v; distE = d; } else { pontaD = v; distD = d; }
+                antes = rgbQ;
+            }
+        }
+        vec3 fora = soma / vec3(cont);
+        vec3 dentro = vC;
+        if (n > 2.0) {
+            vec3 s2 = soma; float c2 = cont;
+            if (distE > n - 1.0) { s2 -= pontaE; c2 -= 1.0; }
+            if (distD > n - 1.0) { s2 -= pontaD; c2 -= 1.0; }
+            if (c2 > 0.0) dentro = s2 / vec3(c2);
+        }
+        imageStore(uSaida, p, guardar(dentro + (fora - dentro) * fracao, sC));
+        return;
+    }
+
+    vec3 soma = vC;
+    vec2 cont = vec2(1.0);
+    vec3 pontaE = vC, pontaD = vC;
+    vec2 distE = vec2(0.0), distD = vec2(0.0);
+    for (int lado = 0; lado < 2; lado++) {
+        vec3 antes = rgbC;
+        vec2 d = vec2(0.0);
+        bvec2 vivo = bvec2(true);
+        for (int i = 1; i <= PASSOS_MAX; i++) {
+            int pos = lado == 0 ? aqui - i : aqui + i;
+            if (pos < 0 || pos >= limite) break;
+            int qi = lado == 0 ? c - i : c + i;
+            vec3 rgbQ = sRgb[qi];
+            d += afastamento(rgbQ, antes, k);
+            vivo = bvec2(vivo.x && d.x <= n, vivo.y && d.y <= n);
+            if (!vivo.x && !vivo.y) break;
+            vec3 v = sV[qi];
+            if (vivo.x) {
+                soma.x += v.x; cont.x += 1.0;
+                if (lado == 0) { pontaE.x = v.x; distE.x = d.x; } else { pontaD.x = v.x; distD.x = d.x; }
+            }
+            if (vivo.y) {
+                soma.yz += v.yz; cont.y += 1.0;
+                if (lado == 0) { pontaE.yz = v.yz; distE.y = d.y; } else { pontaD.yz = v.yz; distD.y = d.y; }
+            }
+            antes = rgbQ;
+        }
+    }
+    vec3 fora = soma / cont.xyy;
+    vec3 dentro = vC;
+    if (n > 2.0) {
+        vec3 s2 = soma; vec2 c2 = cont;
+        if (distE.x > n - 1.0) { s2.x -= pontaE.x; c2.x -= 1.0; }
+        if (distD.x > n - 1.0) { s2.x -= pontaD.x; c2.x -= 1.0; }
+        if (distE.y > n - 1.0) { s2.yz -= pontaE.yz; c2.y -= 1.0; }
+        if (distD.y > n - 1.0) { s2.yz -= pontaD.yz; c2.y -= 1.0; }
+        if (c2.x > 0.0) dentro.x = s2.x / c2.x;
+        if (c2.y > 0.0) dentro.yz = s2.yz / c2.y;
+    }
+    imageStore(uSaida, p, guardar(dentro + (fora - dentro) * fracao, sC));
+}
+

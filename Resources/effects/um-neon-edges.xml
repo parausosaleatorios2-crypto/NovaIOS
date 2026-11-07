@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.neonedges"
+    name="Bordas Neon (Ultra Motion)"
+    name-en="Neon Edges (Ultra Motion)"
+    desc="Sobel colorido com brilho — contornos fluorescentes."
+    desc-en="Colored Sobel with glow — fluorescent outlines."
+    category="stylize"
+    tags="ultramotion,neon,edge,sobel,glow,stylize">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="sens"      label="Sensibilidade" default="4.0" min="0.5" max="12.0" step="0.1" />
+        <slider id="thickness" label="Espessura"     default="1.0" min="0.5" max="4.0" step="0.1" />
+        <color  id="inner"     label="Núcleo"        default="#ffffffff" />
+        <color  id="outer"     label="Halo"          default="#ff2898ff" />
+        <switch id="dark"      label="Fundo escuro"  default="true" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    vec2 t = acTexelSize * thickness;
+    float tl = dot(texture(inputImg, acScreenNorm + vec2(-t.x,-t.y)).rgb, LUMA);
+    float tc = dot(texture(inputImg, acScreenNorm + vec2( 0.0,-t.y)).rgb, LUMA);
+    float tr = dot(texture(inputImg, acScreenNorm + vec2( t.x,-t.y)).rgb, LUMA);
+    float ml = dot(texture(inputImg, acScreenNorm + vec2(-t.x, 0.0)).rgb, LUMA);
+    float mr = dot(texture(inputImg, acScreenNorm + vec2( t.x, 0.0)).rgb, LUMA);
+    float bl = dot(texture(inputImg, acScreenNorm + vec2(-t.x, t.y)).rgb, LUMA);
+    float bc = dot(texture(inputImg, acScreenNorm + vec2( 0.0, t.y)).rgb, LUMA);
+    float br = dot(texture(inputImg, acScreenNorm + vec2( t.x, t.y)).rgb, LUMA);
+    float gx = -tl - 2.0*ml - bl + tr + 2.0*mr + br;
+    float gy = -tl - 2.0*tc - tr + bl + 2.0*bc + br;
+    float g = clamp(sqrt(gx*gx + gy*gy) * sens, 0.0, 1.0);
+    float halo = clamp(sqrt(gx*gx + gy*gy) * sens * 0.4, 0.0, 1.0);
+
+    vec4 orig = texture(inputImg, acScreenNorm);
+    vec3 fundo = dark ? vec3(0.0) : orig.rgb;
+    vec3 cor = fundo + outer.rgb * outer.a * halo + inner.rgb * inner.a * g;
+    fragColor = vec4(cor, orig.a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DISSOLVER O BLOCO (ANTIGO) — o Block Dissolve antigo do Alight Motion (0.560.0), FORA DO CATÁLOGO
+  ============================================================================
+
+  O `com.alightcreative.effects.checkerdissolve` do AM 5.0.281: marcado "deprecated" lá (não aparece mais na lista
+  de efeitos), mas os projetos antigos ainda o trazem — existe aqui para a importação cair num efeito com a MESMA
+  conta. O de hoje é o `am-block-dissolve.xml` (o `checkerdissolve2`); leia o comentário dele.
+
+  A única diferença para o de hoje: o Esticar é UM número, de −2000 a 2000 (padrão 0, marca no 0). Negativo
+  alarga o bloco (a coluna é dividida por 1 − Esticar), positivo o deixa mais alto (a linha é dividida por
+  1 + Esticar). Conferido junto com o de hoje em `tools/amdissolverbloco`.
+-->
+<effect
+    id="nova.effect.am-block-dissolve-legacy"
+    name="Dissolver o bloco (antigo)"
+    name-en="Block Dissolve (legacy)"
+    desc="O Dissolver o bloco antigo do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Block Dissolve, from projects made before its current version."
+    category="matte"
+    stage="screen"
+    screen-scale="safe"
+    catalog="false"
+    tags="dissolver,bloco,block dissolve,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="amount" label="Intensidade" default="0.75" min="0.0" max="1.0" step="0.005" />
+        <spinner id="size" label="Tamanho" default="10.0" min="1.0" max="500.0" step="1.0" />
+        <spinner id="stretch" label="Esticar" default="0.0" min="-2000.0" max="2000.0" step="0.1" ticks="0.0" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="5.0" step="0.01" />
+        <spinner id="fade" label="Desaparecer" default="0.0" min="0.0" max="0.5" step="0.01" />
+        <point id="offset" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+    </params>
+
+    <shader><![CDATA[
+// O `rand` do AM, letra por letra.
+float rand(vec2 co)
+{
+    float a = 719.310;
+    float b = 178.233;
+    float c = 33758.5453;
+    float dt= dot(co.xy ,vec2(a,b));
+    float sn= mod(dt,3.14);
+    return fract(sin(sn) * c);
+}
+
+// Ver `am-block-dissolve.xml`.
+vec2 naTela(vec2 uv) {
+    vec2 t = acEntradaDePe == 1 ? uv : acTela(uv);
+    return vec2(t.x, 1.0 - t.y);
+}
+
+void main() {
+    vec4 texColor = texture(inputImg, acScreenNorm);   // alfa reto
+    vec2 acScreenSize = acTamanhoDaTela;
+    vec2 acLayerCenter = acCentroDaCamadaPx;
+    vec2 acLayerSize = acTamanhoDaCamada;
+
+    vec2 st = floor((naTela(acScreenNorm)*acScreenSize)-acLayerCenter)/acLayerSize;
+    float t = seed*3197.3791;
+    t = mod(t,2.8)+2.7;
+    float tileSize = min(acLayerSize.x, acLayerSize.y)/size;
+    st.x *= acLayerSize.x/acLayerSize.y;
+    st -= offset/1000.0;
+    st *= tileSize;
+    if( stretch < 0.0 ) {
+        st.x /= 1.0-stretch;
+    } else {
+        st.y /= 1.0+stretch;
+    }
+    st = floor(st);
+
+    float r = rand( st*t );
+    float adjFade = max(fade,0.00001);
+    float adjAmount = amount;
+    adjAmount -= 0.5;
+    adjAmount *= 1.0+(adjFade*2.0);
+    adjAmount += 0.5;
+    r = smoothstep(adjAmount-adjFade, adjAmount+adjFade, r);
+
+    fragColor = vec4(texColor.rgb, texColor.a * r);
+}
+    ]]></shader>
+</effect>

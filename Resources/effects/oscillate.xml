@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   OSCILAR — O "OSCILLATE" DO ALIGHT MOTION, CONTA POR CONTA
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "o efeito oscilar queria 100% igual o do
+  alightmotion... faça uns benchmarks". Os controles, as faixas, os passos e os
+  padrões são os do Oscillate atual do AM 5.0.281:
+
+    Direção     Ângulo | Profundidade | Órbita, padrão Ângulo
+    Ângulo      -3600° a 3600°   padrão 45°   (horário: 0° horizontal, 90° para baixo;
+                                               não vale na Profundidade)
+    Frequência  0 a 16 Hz        padrão 2     (com quadro-chave, o que conta são os
+                                               ciclos ACUMULADOS, como no AM)
+    Magnitude   0 a 4000 px      padrão 25
+    Onda        Senoidal | Triangular, padrão Senoidal
+    Fase        0 a 1000         padrão 0     (em ciclos: 1 = uma volta inteira; na
+                                               Triangular o AM conta em dobro)
+
+  A conta está em `model/Oscilar.kt` e é conferida contra o script do próprio AM:
+  `tools/oscilar/benchmark/referencia.js` → `OscilarAmTest` (848 casos).
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele MOVE a
+  camada. Quem executa é `model/Oscilar.kt`, dentro de
+  `LayerGeometry.matrizLocal`, o lugar por onde passa a posição de toda camada
+  (prévia, exportação, seleção, filhos e o desfoque de movimento). O shader
+  abaixo só copia a entrada, para o caso de algum caminho que não conhece
+  `stage` executá-lo.
+
+  (Até a 0.424 a Fase era em centésimos de ciclo — 100 = uma volta. Um projeto
+  antigo com Fase 25 passa a ler 25 voltas inteiras, que é fase zero.)
+
+  DESDE A 0.561.0 FORA DO CATÁLOGO: o Oscilar do catálogo é o `am-oscillate.xml`,
+  a mesma conta com os ids do AM (`freq`, `mag`, `type`), o painel no jeito do AM
+  e o Ângulo apagado na Profundidade. Este fica para os projetos feitos com ele
+  (`model/Oscilar.kt` lê os dois).
+-->
+<effect
+    id="nova.effect.oscillate"
+    name="Oscilar (Nova, até a 0.560)"
+    name-en="Oscillate (Nova, up to 0.560)"
+    desc="Faz a camada ir e voltar numa direção, em profundidade ou em órbita — igual ao Oscillate do Alight Motion."
+    desc-en="Moves the layer back and forth along an angle, in depth or in orbit — same as Alight Motion's Oscillate."
+    category="distort"
+    stage="transform"
+    catalog="false"
+    tags="oscilar,oscillate,vaivem,balançar,tremer,wiggle,mover,movimento,alight motion,orbita,órbita,orbit,profundidade,depth">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="direction" label="Direção" options="Ângulo|Profundidade|Órbita" default="0" />
+
+        <slider id="angle" label="Ângulo" showIf="direction!=1"
+                default="45.0" min="-3600.0" max="3600.0" step="0.1"
+                snap="-360.0,-270.0,-180.0,-90.0,-45.0,0.0,45.0,90.0,180.0,270.0,360.0" type="angle" />
+
+        <slider id="frequency" label="Frequência"
+                default="2.0" min="0.0" max="16.0" step="0.01" snap="0.5,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0" />
+
+        <slider id="magnitude" label="Magnitude"
+                default="25.0" min="0.0" max="4000.0" step="1.0" snap="25.0" />
+
+        <selector id="wave" label="Onda" options="Senoidal|Triangular" default="0" />
+
+        <slider id="phase" label="Fase"
+                default="0.0" min="0.0" max="1000.0" step="0.01" snap="0.0,1.0,2.0,3.0,4.0,5.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

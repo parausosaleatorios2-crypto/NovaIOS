@@ -1,0 +1,206 @@
+{
+    "id": "zoom-soco",
+    "nome": "Zoom soco",
+    "nomeEn": "Zoom punch",
+    "descricao": "Camada de ajuste: a imagem dá um soco de zoom na batida e assenta; para marcar o ritmo sem cortar.",
+    "descricaoEn": "Adjustment layer: the picture punches in on the beat and settles; to mark the rhythm without cutting.",
+    "categoria": "impacto",
+    "tags": [
+        "zoom",
+        "soco",
+        "punch",
+        "batida",
+        "beat",
+        "impacto",
+        "ritmo"
+    ],
+    "estilos": [
+        "amv",
+        "velocity",
+        "phonk"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 450000,
+    "duracaoMinUs": 200000,
+    "duracaoMaxUs": 1500000,
+    "impactoUs": 0,
+    "campos": [
+        {
+            "id": "intensidade",
+            "tipo": "numero",
+            "rotulo": "Intensidade",
+            "rotuloEn": "Intensity",
+            "padrao": "1",
+            "min": 0.0,
+            "max": 2.0,
+            "alvos": [
+                {
+                    "camada": "zoom",
+                    "propriedade": "efeito:zoom:scaleHeight",
+                    "modo": "escala"
+                },
+                {
+                    "camada": "zoom",
+                    "propriedade": "efeito:zoom:scaleWidth",
+                    "modo": "escala"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "zoom",
+            "name": "Zoom soco",
+            "content": {
+                "kind": "adjustment"
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "zoom",
+                    "manifestId": "nova.effect.transform",
+                    "enabled": true,
+                    "values": {
+                        "scaleHeight": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                1.18
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        1.18
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease Out"
+                                    },
+                                    "id": "8e13d20c-afdf-4798-9c1b-cda88541c845"
+                                },
+                                {
+                                    "timeUs": 450000,
+                                    "value": [
+                                        1.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "e286fe5a-f6a6-4def-97ce-4696c63aa690"
+                                }
+                            ]
+                        },
+                        "scaleWidth": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                1.18
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        1.18
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease Out"
+                                    },
+                                    "id": "55e8582d-2a6c-4f5c-960b-74b89969a1c8"
+                                },
+                                {
+                                    "timeUs": 450000,
+                                    "value": [
+                                        1.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "de843f15-8f23-44c1-9c31-fbdd50fd86e1"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 450000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RGB Split — separa os três canais em direções diferentes.
+  Equivalente ao "RGB Split 1/2" do Blurrr e "Distort RGB" do Ultra.
+-->
+<effect
+    id="nova.effect.um-rgb-split"
+    name="Separação RGB"
+    name-en="RGB Split"
+    desc="Separa os canais R, G e B em direções diferentes."
+    desc-en="Splits the R, G, and B channels in different directions."
+    category="distort"
+    tags="rgb,split,chroma,aberration,glitch,distort,ultra motion,blurrr">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="amount" label="Intensidade" default="10.0" min="0.0" max="100.0" step="0.5" />
+        <spinner id="angle" label="Ângulo" default="0.0" min="-180.0" max="180.0" step="1.0" />
+        <spinner id="spread" label="Espalhamento" default="0.5" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+    </params>
+
+    <preview>
+        <set param="amount" value="25.0" />
+    </preview>
+
+    <shader><![CDATA[
+void main() {
+    vec2 uv = acScreenNorm;
+    float rad = radians(angle);
+    vec2 dir = vec2(cos(rad), sin(rad));
+    vec2 passo = dir * amount / acResolution;
+
+    vec2 uvR = uv - passo * (1.0 + spread);
+    vec2 uvG = uv;
+    vec2 uvB = uv + passo * (1.0 + spread);
+
+    float r = texture(inputImg, uvR).r;
+    vec4 g = texture(inputImg, uvG);
+    float b = texture(inputImg, uvB).b;
+
+    fragColor = vec4(r, g.g, b, g.a);
+}
+    ]]></shader>
+</effect>

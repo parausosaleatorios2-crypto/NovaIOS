@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PREENCHER ATRÁS — o Fill Behind do Alight Motion, conta por conta (0.675.0)
+  ============================================================================
+
+  Da série "100% iguais ao AM" (pedido do snow de 14/10/2026; "proximo efeito 100% igual do alight motion", 20/10):
+  o próximo da fila pela contagem nas cenas reais (7 usos). Mesmos parâmetros, ids, faixas, passos, marcas, tipos e
+  padrões do `com.alightcreative.effects.fillbehind` do AM 5.0.281 (`assets/effects/fillbehind.xml` do APK
+  descompactado, e o `gaussianblur.xml` que ele chama por dentro; os arquivos do AM não entram no repositório): um
+  projeto do AM importado cai direto aqui. Conferido rodando o efeito do próprio AM na GPU do PC ao lado deste
+  (`tools/amfillbehind/comparar.py`).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  1. A camada, pré-multiplicada em 8 bits, passa pelo Desfoque gaussiano do PRÓPRIO AM, que roda por dentro com o MESMO
+     mapa de parâmetros: a Intensidade (`strength`) é a dele (a conta do `am-gaussian-blur.xml`; o script dele não roda
+     por dentro, então com 0 o desfoque é só a descida à metade e a volta).
+  2. O FUNDO: esse desfoque ampliado em volta do meio da camada (o `location`, Posição − Âncora) até a camada inteira,
+     encolhida por 1 + Intensidade, cobrir a tela — a escala é o maior lado das quatro diagonais da camada na tela
+     (`acLayerToScreen`), então girar ou escalar a camada muda o zoom, mas não gira o fundo. Escala BG e BG Offset
+     (÷ 500 da tela, Y para baixo) mexem nele em volta do meio da tela.
+  3. A cor do fundo: tirada do pré-multiplicado, em YUV (BT.601) a Saturação multiplica U e V e a Tonalidade os puxa
+     para os da Cor; Gama (1 ÷ Gama na potência) e Brilho (somado), cortado em 0..1, de volta × alfa; as Linhas de
+     Varredura escurecem e clareiam por cos(t da tela × Contagem) (t = 0 embaixo) e o BG Alpha multiplica tudo.
+  4. Na frente: a camada (Escala FG e FG Offset em volta do meio da tela, nada fora do retângulo da tela), com a Pena
+     (smoothstep do alfa do desfoque de 0,4999 até 0,5 + min(0,999; Pena ÷ Intensidade) ÷ 2; Pena < 0,0005 = sem
+     pena), sobre a Cor da Borda × alfa do desfoque × 2 × Força da Borda, tudo × FG Alpha, sobre o fundo.
+
+  NA TELA (`stage="screen"`), como no AM: ele roda os efeitos depois de mover, girar e escalar a camada, na imagem do
+  tamanho da tela; o desfoque é fração da diagonal dessa imagem e o fundo cobre a tela inteira, fora da camada. A
+  prévia parada fica na resolução cheia (`screen-scale="full"`, como o Desfoque gaussiano (AM)): a descida à metade é
+  um desfoque de 2 px da resolução em que o efeito roda.
+
+  O que é do Nova e não do AM:
+  - O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. O passe 0 guarda a camada pré-multiplicada,
+    arredondada pelo mais perto como o premul do Android (`oitoBits`); o desfoque grava cada passo em 8 bits como o AM;
+    a conta do AM vai para o `preenchido`, em 8 bits como o alvo dele; só a saída volta para o alfa reto. A camada da
+    frente e o fundo são buscados no `pre` e no `blurBuf` pelo filtro linear da GPU: o mesmo filtro, nas mesmas imagens
+    de 8 bits que o AM busca.
+  - A diagonal da camada na tela sai da `acCamadaParaTela` (a do AM é a inversa da matriz da tela para a camada, em
+    float): o último bit da escala do fundo pode mudar, o que mexe a busca do fundo bem menos que um texel.
+  - O meio da camada é o `acCentroDaCamadaNorm` (0.675.0): o location ÷ a tela dividido na CPU, em float, como o
+    `ssl/W.render` do AM divide no Java. Dividido no shader (como no Pinçar/saliências), a GPU erra o último bit e o
+    fundo ampliado muda 1 nível em alguns pixels.
+  - A LUZ ACIMA DO ALFA: as Linhas de Varredura multiplicam a cor (até 2 ×) e não o alfa; num fundo semitransparente a
+    cor pré-multiplicada passa do alfa e a composição do AM soma essa luz ao fundo. Só nesses pixels a saída leva junto
+    a cena atrás dela (`src="backdrop"`), com o menor alfa que reproduz a mesma soma na composição Normal — o `paraReta`
+    do Anel, do Sharpen e da Máscara Nitidez (AM).
+  - Onde o fundo tem alfa 0 a conta do AM divide 0 por 0; aqui a conta segue o mesmo caminho e a GPU decide, como lá.
+  - FG Offset e BG Offset são `<point>` do AM sem atributos: (0, 0), ±9999, passo 1, número cru (÷ 500 no shader).
+  - `logscale`/`snap` do Gama e o `snap` da Saturação e do Brilho não existem no leitor de spinner do AM
+    (`readSpinnerParam`): ficaram fora. BG Alpha e FG Alpha não têm `step` no AM: o passo dele é 0,01.
+  - Dentro de grupo (o filho), o corte na tela não existe: o efeito roda no buffer do filho, com a conta na tela do
+    grupo pelo `acTela` e de volta, e o fundo só vai até onde o buffer do filho vai.
+  - Os passes (AM → aqui): o downImg, o hblur e o vblur do Gaussian de dentro são os passes 1, 2 e 3 (`downImg`,
+    `blurH`, `blurV`); a volta dele ao tamanho cheio no `blurBuf`, 4; a conta do Fill Behind, 5 (`preenchido`); a
+    saída, 6.
+-->
+<effect
+    id="nova.effect.am-fill-behind"
+    name="Preencher Atrás"
+    name-en="Fill Behind"
+    desc="Preenche a área atrás da camada com uma cópia modificada, com ajustes opcionais como desfoque, saturação, matiz e brilho, para adaptar rapidamente uma foto ou vídeo a um projeto com outra proporção ou orientação (o Fill Behind do Alight Motion)."
+    desc-en="Fills the area behind the layer with a modified copy of the layer, with optional adjustments such as blur, saturation, tint and brightness, to quickly adapt a photo or video to a project with a different aspect ratio or orientation (Alight Motion's Fill Behind)."
+    category="stylize"
+    tags="preencher,atrás,fundo,desfocado,borrado,vertical,horizontal,proporção,stories,reels,tiktok,linhas de varredura,fill,behind,background,blur,alight motion"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena atrás da camada: só lida onde a cor passa do alfa (`paraReta`). -->
+        <texture id="comp" src="backdrop" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- Os buffers do Gaussian de dentro: a metade, o horizontal e o vertical. -->
+        <texture id="downImg" src="buffer" scale="0.5" />
+        <texture id="blurH" src="buffer" scale="0.5" />
+        <texture id="blurV" src="buffer" scale="0.5" />
+        <!-- O desfoque de volta ao tamanho cheio: o `blurBuf` do AM. -->
+        <texture id="blurBuf" src="buffer" />
+        <!-- A saída do AM, em 8 bits como o alvo dele (pré-multiplicada, cor podendo passar do alfa). -->
+        <texture id="preenchido" src="buffer" />
+
+        <spinner id="strength" label="Intensidade" default="0.3" min="0.0" max="2.0" step="0.01" />
+        <spinner id="feather" label="Pena" default="0.05" min="0.0" max="1.0" step="0.001" />
+        <spinner id="saturation" label="Saturação" default="0.0" min="-1.0" max="1.0" step="0.005" ticks="0.0"
+            type="relative-percent" />
+        <spinner id="brightness" label="Brilho" default="0.0" min="-1.0" max="1.0" step="0.01" ticks="0.0"
+            type="relative-percent" />
+        <spinner id="gamma" label="Gama" default="1.0" min="0.01" max="9.99" step="0.005" ticks="0.5,1.0,2.0" />
+        <spinner id="alpha" label="BG Alpha" default="1.0" min="0.0" max="1.0" step="0.01" type="percent" />
+        <spinner id="fgAlpha" label="FG Alpha" default="1.0" min="0.0" max="1.0" step="0.01" type="percent" />
+        <color id="tintColor" label="Tonalidade" default="#FFFF5566" alpha="false" />
+        <spinner id="tintStrength" label="Tonalidade" default="0.0" min="0.0" max="1.0" step="0.001" type="percent" />
+        <color id="edgeColor" label="Cor da Borda" default="#FF000000" alpha="false" />
+        <spinner id="edgeStrength" label="Força da Borda" default="0.0" min="0.0" max="1.0" step="0.001"
+            type="percent" />
+        <spinner id="scanLines" label="Força da Linha de Varredura" default="0.0" min="0.0" max="1.0" step="0.001"
+            type="percent" />
+        <spinner id="scanLineCount" label="Contagem de Linha de Varredura" default="720.0" min="100.0" max="2160.0"
+            step="1.0" />
+        <!-- `<point>` do AM sem atributos: (0, 0), ±9999 e passo 1 (`readPointParam`), número cru. -->
+        <point id="fgOffset" label="FG Offset" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <spinner id="fgScale" label="Escala FG" default="1.0" min="0.01" max="100.0" step="0.01" />
+        <point id="bgOffset" label="BG Offset" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <spinner id="bgScale" label="Escala BG" default="1.0" min="0.01" max="100.0" step="0.01" />
+    </params>
+
+    <!-- Na vitrine (0.683.0): na amostra que cobre o quadro não há atrás para preencher; a figura solta, com a frente
+         menor, mostra o fundo desfocado em volta dela. -->
+    <preview amostra="figura">
+        <set param="fgScale" value="0.75" />
+    </preview>
+
+    <passes>
+        <pass target="pre" />
+        <pass target="downImg" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass target="blurBuf" />
+        <pass target="preenchido" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+
+// O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
+// num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
+// do `am-gaussian-blur.xml`): os pesos tirados um do outro por multiplicação e duas amostras juntas numa leitura.
+vec4 desfocar(sampler2D img, vec2 passo, vec2 st, float lado) {
+    if (strength <= 0.0) return vec4(0.0);
+    float sigma = lado / 2.14596602;
+    highp vec3 g;
+    g.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    g.y = exp(-0.5 / (sigma * sigma));
+    g.z = g.y * g.y;
+    vec4 soma = vec4(0.0);
+    highp float total = 0.0;
+    soma += texture(img, st) * g.x;
+    total += g.x;
+    for (float i = 1.0; i <= lado; i += 2.0) {
+        float d0 = i;
+        float d1 = i + 1.0;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p0 = g.x;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p1 = g.x;
+        float par = p0 + p1;
+        float d = (d0 * p0 + d1 * p1) / par;
+        vec2 stL = st - d * passo;
+        vec2 stR = st + d * passo;
+        soma += texture(img, stL) * par;
+        soma += texture(img, stR) * par;
+    }
+    return soma / total;
+}
+
+// O meio-lado: Intensidade ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `acPreviewSize` do AM).
+float ladoDoDesfoque() {
+    return strength / 2.0 * 1.14 / 4.0 / 3.0 * length(vec2(textureSize(pre, 0)));
+}
+
+// A volta do `acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
+vec2 daTela(vec2 t) {
+    vec3 c = inverse(acParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// Um ponto da tela do AM (`acScreenNorm`, t = 0 embaixo) no buffer em que o efeito roda.
+vec2 noBuffer(vec2 st) {
+    return acEntradaDePe == 1 ? st : daTela(st);
+}
+
+// O `acLayerToScreen` do AM aplicado a um VETOR da camada (w = 0): o retângulo do conteúdo de 0 a 1 → a fração da
+// tela. A fração do conteúdo vira fração do buffer da camada (que cobre `acTamanhoDaTela`) e vai pela parte linear da
+// `acCamadaParaTela`. O sinal do Y (o buffer do Nova cresce para baixo, a camada do AM para cima) some no `abs`.
+vec2 camadaParaTelaVetor(vec2 v) {
+    return (acCamadaParaTela * vec3(v * acTamanhoDaCamada / acTamanhoDaTela, 0.0)).xy;
+}
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta; onde a cor passa do alfa, com o fundo (o `paraReta`
+// do Anel e do Sharpen: o menor alfa que dá a mesma soma na composição Normal com qualquer opacidade).
+vec4 paraReta(vec4 q) {
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return q.a > 0.0 ? vec4(q.rgb / q.a, q.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+// --- o Fill Behind do AM, como ele escreve ---
+
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+vec4 composite( vec4 a, vec4 b) {
+    return a * (1. - b.a) + b;
+}
+
+highp mat3 rgb2yuv = mat3(
+     0.299,     0.587,    0.114,
+    -0.14713,  -0.28886,  0.436,
+     0.615,    -0.51499, -0.10001
+);
+highp mat3 yuv2rgb = mat3(
+    1.0,  0.0,      1.13983,
+    1.0, -0.39465, -0.58060,
+    1.0,  2.03211,  0.0
+);
+
+float maxComponent( vec2 v ) {
+    return max(v.x,v.y);
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada do AM chega pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android); no opaco a cor já é o
+        // float da textura, bit a bit.
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 p = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        fragColor = vec4(p, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = texture(pre, acScreenNorm);
+        return;
+    }
+    if (acPass == 2) {
+        vec2 passo = vec2(1.0 / vec2(textureSize(downImg, 0)).x, 0.0);
+        fragColor = desfocar(downImg, passo, acScreenNorm, ladoDoDesfoque());
+        return;
+    }
+    if (acPass == 3) {
+        // Na tela a entrada chega de pé (t = 0 embaixo, como no AM): o passo aponta para CIMA e a soma do par fica na
+        // mesma ordem da dele (o de baixo primeiro). Deitada, o passo vira para baixo.
+        float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+        vec2 passo = vec2(0.0, cima / vec2(textureSize(blurH, 0)).y);
+        vec4 r = desfocar(blurH, passo, acScreenNorm, ladoDoDesfoque());
+        // Intensidade 0: o Gaussian do AM lê a própria camada aqui (na meia resolução: a média de 2 × 2).
+        fragColor = strength <= 0.0 ? texture(pre, acScreenNorm) : r;
+        return;
+    }
+    if (acPass == 4) {
+        fragColor = texture(blurV, acScreenNorm);
+        return;
+    }
+    if (acPass == 5) {
+        // O `main` do Fill Behind do AM, na mesma ordem. `UV` é o `acScreenNorm` dele (a tela, t = 0 embaixo); as
+        // buscas voltam ao buffer pelo `noBuffer` (na tela, a identidade).
+        vec2 UV = acEntradaDePe == 1 ? acScreenNorm : acTela(acScreenNorm);
+        vec2 acScreenSize = acTamanhoDaTela;
+        // O `acLayerCenterNorm` do AM (`ssl/W.render`): o location ÷ a tela, Y para cima, dividido na CPU como lá.
+        vec2 acLayerCenterNorm = acCentroDaCamadaNorm;
+
+        vec2 stretchToScreenA = (1.+strength) / (abs(camadaParaTelaVetor(vec2(1., 1.))));
+        vec2 stretchToScreenB = (1.+strength) / (abs(camadaParaTelaVetor(vec2(-1., -1.))));
+        vec2 stretchToScreenC = (1.+strength) / (abs(camadaParaTelaVetor(vec2(1., -1.))));
+        vec2 stretchToScreenD = (1.+strength) / (abs(camadaParaTelaVetor(vec2(-1., 1.))));
+        float fillScreenScale = max(max(maxComponent(stretchToScreenA),maxComponent(stretchToScreenB)), max(maxComponent(stretchToScreenC),maxComponent(stretchToScreenD)));
+
+        vec2 stFG = (UV - 0.5) / fgScale + 0.5 - fgOffset/500.*vec2(1.,-1.);
+        vec2 stBG = (UV - 0.5) / bgScale + 0.5 - bgOffset/500.*vec2(1.,-1.);
+
+        float insideFG = step(0.,stFG.x) * step(stFG.x,1.) * step(0.,stFG.y) * step(stFG.y,1.);
+
+        vec4 texColor = texture(pre, noBuffer(stFG)) * insideFG;
+        float blurAlpha = texture(blurBuf, noBuffer(stFG)).a;
+        vec4 blurTexColor = texture(blurBuf, noBuffer((stBG-0.5)/fillScreenScale + acLayerCenterNorm));
+
+        vec3 tintYuv = tintColor.rgb * rgb2yuv;
+
+        vec3 rgb = blurTexColor.rgb / blurTexColor.a;
+        vec3 yuv = rgb * rgb2yuv;
+        yuv.yz = yuv.yz * (saturation+1.0);
+        yuv.yz = mix(yuv.yz,tintYuv.yz,tintStrength);
+        rgb = yuv * yuv2rgb;
+        rgb = clamp(pow(rgb,vec3(1.0/gamma)) + vec3(brightness),0.,1.);
+        vec4 adjBlurColor = vec4(rgb,1.) * blurTexColor.a;
+
+        adjBlurColor.rgb *= 1. - (scanLines * cos(UV.y*scanLineCount));
+
+        float fa = feather < 0.0005 ? 1.0 : smoothstep(0.4999,0.5+min(0.999,feather/strength)*0.5,blurAlpha);
+
+        // O corte em 0..1 é o do alvo de 8 bits; escrito para o projeto de 32 bits sair igual.
+        fragColor = clamp(composite(adjBlurColor*alpha,composite(edgeColor*blurAlpha*2.*edgeStrength,texColor*fa)*fgAlpha), 0.0, 1.0);
+        return;
+    }
+
+    fragColor = paraReta(texture(preenchido, acScreenNorm));
+}
+    ]]></shader>
+</effect>

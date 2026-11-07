@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.luma_curve" name="Luma Curve" desc="Exposure, contrast, gamma, lift and gain in one pass. The precise tonal control effect." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/luma_curve.png"
+        tags="color,levels,curves,exposure,tonal" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Tone" />
+<spinner id="exposure" default="0.0" min="-2.0" max="2.0" step="0.01" label="Exposure" />
+<spinner id="contrast" default="1.0" min="0.2" max="3.0" step="0.01" label="Contrast" />
+<spinner id="gamma" default="1.0" min="0.2" max="3.0" step="0.01" label="Gamma" />
+<spinner id="lift" default="0.0" min="0.0" max="0.4" step="0.01" label="Lift (Blacks)" />
+<spinner id="gain" default="1.0" min="0.0" max="2.0" step="0.01" label="Gain (Whites)" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<!-- Os padroes sao neutros (curva reta): na vitrine, uma correcao que se ve. (05/11/2026) -->
+<preview>
+<set param="exposure" value="0.45" />
+<set param="contrast" value="1.8" />
+<set param="lift" value="0.1" />
+</preview>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 g = c * pow(2.0, exposure);
+  g = clamp((g - 0.5) * contrast + 0.5, 0.0, 1.0);
+  g = pow(g, vec3(1.0 / max(gamma, 0.05)));
+  g = g * gain;
+  g = lift + g * (1.0 - lift);
+  vec3 col = mix(c, clamp(g, 0.0, 1.0), mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

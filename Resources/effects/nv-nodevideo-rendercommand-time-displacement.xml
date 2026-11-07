@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand__time_displacement
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- Fora do catálogo (0.910.0): o shader precisa de a pilha de quadros anteriores, que o Node mandava pelo C# e o conversor
+     não trouxe. Não compila em GPU nenhuma; para voltar, portar essa parte. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-rendercommand-time-displacement"
+    name="Rendercommand  Time Displacement (NV)"
+    name-en="Rendercommand  Time Displacement (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand__time_displacement', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand__time_displacement', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tex_array" src="content" empty="transparent" />
+        <slider id="_tex_array_count" type="integer" label="Tex Array Count" default="4" min="1" max="32" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+float u_xlat1;
+int u_xlati1;
+void main()
+{
+    u_xlat0.xyz = texture(inputImg, acScreenNorm.xy).xyz;
+    u_xlat0.x = u_xlat0.y + u_xlat0.x;
+    u_xlat0.x = u_xlat0.z + u_xlat0.x;
+    u_xlat0.x = u_xlat0.x * 0.333333343;
+    u_xlati1 = _tex_array_count + int(0xFFFFFFFFu);
+    u_xlat1 = float(u_xlati1);
+    u_xlat0.z = u_xlat1 * u_xlat0.x;
+    u_xlat0.xy = acScreenNorm.xy;
+    fragColor = texture(tex_array, u_xlat0.xyz);
+    return;
+}
+    ]]></shader>
+</effect>

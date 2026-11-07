@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pixelizar. O exemplo de <selector>: uma lista de opções que vira `uniform int`
+  e um `if` no shader.
+-->
+<effect
+    id="nova.effect.pixelate"
+    name="Pixelizar"
+    name-en="Pixelate"
+    desc="Reduz a imagem a blocos. Modo mosaico, círculos ou losangos."
+    desc-en="Blocks of colour — the classic mosaic."
+    category="stylize"
+    blend="true"
+    tags="pixel,mosaico,retrô,estilizar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="size" label="Tamanho do bloco"
+                default="24.0" min="2.0" max="200.0" step="1.0" type="integer" />
+
+        <selector id="mode" label="Formato" default="0"
+                  options="Quadrado|Círculo|Losango" />
+
+        <slider id="gap" label="Espaçamento"
+                default="0.0" min="0.0" max="0.5" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    // Tamanho do bloco em coordenada normalizada. Dividir a resolução pelo
+    // tamanho e arredondar garante blocos de tamanho igual, sem uma fileira
+    // torta na borda.
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 blocks = max(floor(acResolution / (size * acEscalaDePixel)), vec2(1.0));
+    vec2 blockSize = 1.0 / blocks;
+
+    vec2 blockIndex = floor(acScreenNorm * blocks);
+    vec2 blockCenter = (blockIndex + 0.5) * blockSize;
+
+    // Amostrar no CENTRO do bloco, não no canto: amostrar no canto desloca a
+    // imagem inteira meio bloco para cima e para a esquerda.
+    vec4 color = texture(inputImg, blockCenter);
+
+    // Posição dentro do bloco, de -1 a 1, para desenhar a forma.
+    vec2 local = (fract(acScreenNorm * blocks) - 0.5) * 2.0;
+
+    float mask = 1.0;
+    float limit = 1.0 - gap;
+
+    if (mode == 1) {
+        mask = 1.0 - smoothstep(limit - 0.15, limit, length(local));
+    } else if (mode == 2) {
+        mask = 1.0 - smoothstep(limit - 0.15, limit, abs(local.x) + abs(local.y));
+    } else if (gap > 0.0) {
+        mask = 1.0 - smoothstep(limit - 0.05, limit, max(abs(local.x), abs(local.y)));
+    }
+
+    fragColor = vec4(color.rgb, color.a * mask);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,106 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<effect thumb="thumb/flare1.webp" thumb-laco="thumb/laco/flare1.webp" thumb-laco-ms="67" id="com.alightcreative.effects.flare_shadertoy"
+        name="Flare "
+        desc="Flare accumulation adapted from Shadertoy"
+        category="light"
+        tags="flare,glow,streaks">
+
+  <params>
+    <texture id="inputImg" srcType="content" />
+
+    <section text="Controls" />
+    <slider id="level" default="0.25" min="0.0" max="1.0" step="0.001" label="Level" />
+    <spinner id="iterations" default="60" min="1" max="1024" step="1" label="Iterations" />
+    <slider id="radiusScale" default="0.75" min="0.1" max="2.0" step="0.01" label="Radius Scale" />
+    <slider id="basePower" default="8.0" min="1.0" max="16.0" step="0.1" label="Base Power" />
+    <spinner id="peakPower" default="64" min="1" max="256" step="1" label="Peak Power" />
+    <slider id="falloffExp" default="1.8" min="0.5" max="4.0" step="0.01" label="Falloff Exponent" />
+    <slider id="strength" default="0.05" min="0.0" max="1.0" step="0.001" label="Strength" />
+    <slider id="gamma" default="1.333" min="0.5" max="3.0" step="0.001" label="Gamma" />
+    
+    <section text="Color Bloom" />
+    <color id="tintColor" default="#FFFFFF" label="Tint Color" />
+    <slider id="bloomThreshold" default="0.8" min="0.0" max="1.0" step="0.001" label="Bloom Threshold" />
+    <slider id="bloomRadius" default="2.0" min="0.0" max="20.0" step="0.1" label="Bloom Radius (px)" />
+    <slider id="bloomStrength" default="0.5" min="0.0" max="2.0" step="0.001" label="Bloom Strength" />
+
+    <section text="Blend" />
+    <selector id="blendMode" style="dropdown" default="2" label="Blend Mode">
+      <choice label="Effect Only" value="1" />
+      <choice label="Add" value="2" />
+      <choice label="Screen" value="3" />
+      <choice label="Behind Source" value="4" />
+    </selector>
+    <slider id="mixAmount" default="1.0" min="0.0" max="1.0" step="0.01" label="Mix" />
+  </params>
+
+  <shader type="fragment" precision="high"><![CDATA[
+    vec4 src(vec2 uv){ return texture2DCv(inputImg.texture, uv); }
+
+    void main(){
+      vec2 uv = acScreenNorm;
+      vec4 srcCol = src(uv);
+      vec3 hdr = srcCol.rgb;
+      vec3 accum = vec3(floor(level + pow(hdr.r, basePower)));
+
+      float c = float(max(iterations, 1.0));
+      vec2 r = acScreenSize * max(radiusScale, 1e-3);
+      int samples = int(iterations);
+
+      for(int i=0;i<2048;i++){
+        if(i>=samples) break;
+        float it = float(i);
+        float w = (1.0 - it / c);
+
+        float texL = src(uv + vec2(it / r.x, 0.0)).r;
+        float texR = src(uv - vec2(it / r.x, 0.0)).r;
+        accum += floor(level + pow(max(texL, texR), float(peakPower))) * w;
+
+        float texU = src(uv + vec2(0.0, it / r.y)).r;
+        float texD = src(uv - vec2(0.0, it / r.y)).r;
+        accum += floor(level + pow(max(texU, texD), float(peakPower))) * w;
+
+        float ring = smoothstep(0.5, 0.75, length(vec2(it / r.x, it / r.y))) / c;
+        accum += pow(ring, 1.0 / max(falloffExp, 1e-3));
+      }
+
+      vec3 effectRGB = pow(accum * strength, vec3(1.0 / max(gamma, 1e-6)));
+      effectRGB *= tintColor.rgb;
+
+      vec3 luma = vec3(0.299, 0.587, 0.114);
+      float lum = dot(srcCol.rgb, luma);
+      float gate = smoothstep(bloomThreshold, 1.0, lum);
+      vec3 b0 = srcCol.rgb * gate;
+      vec2 texel = vec2(bloomRadius) / max(acScreenSize, vec2(1.0));
+      vec3 b = b0;
+      vec3 s1 = src(uv + texel * vec2( 1.0,  0.0)).rgb; b += s1 * smoothstep(bloomThreshold, 1.0, dot(s1, luma));
+      vec3 s2 = src(uv + texel * vec2(-1.0,  0.0)).rgb; b += s2 * smoothstep(bloomThreshold, 1.0, dot(s2, luma));
+      vec3 s3 = src(uv + texel * vec2( 0.0,  1.0)).rgb; b += s3 * smoothstep(bloomThreshold, 1.0, dot(s3, luma));
+      vec3 s4 = src(uv + texel * vec2( 0.0, -1.0)).rgb; b += s4 * smoothstep(bloomThreshold, 1.0, dot(s4, luma));
+      vec3 s5 = src(uv + texel * vec2( 1.0,  1.0)).rgb; b += s5 * smoothstep(bloomThreshold, 1.0, dot(s5, luma));
+      vec3 s6 = src(uv + texel * vec2(-1.0,  1.0)).rgb; b += s6 * smoothstep(bloomThreshold, 1.0, dot(s6, luma));
+      vec3 s7 = src(uv + texel * vec2( 1.0, -1.0)).rgb; b += s7 * smoothstep(bloomThreshold, 1.0, dot(s7, luma));
+      vec3 s8 = src(uv + texel * vec2(-1.0, -1.0)).rgb; b += s8 * smoothstep(bloomThreshold, 1.0, dot(s8, luma));
+      b *= (1.0/9.0);
+      vec3 bloom = b * bloomStrength;
+
+      int bm = int(blendMode);
+      vec3 outRGB;
+      if(bm==1){
+        outRGB = effectRGB;
+      } else if(bm==2){
+        outRGB = srcCol.rgb + effectRGB;
+      } else if(bm==3){
+        outRGB = 1.0 - (1.0 - srcCol.rgb) * (1.0 - effectRGB);
+      } else {
+        outRGB = mix(effectRGB, srcCol.rgb, srcCol.a);
+      }
+
+      outRGB += bloom;
+
+      vec3 mixed = mix(srcCol.rgb, outRGB, clamp(mixAmount, 0.0, 1.0));
+      gl_FragColor = vec4(mixed, srcCol.a);
+    }
+  ]]></shader>
+
+</effect>

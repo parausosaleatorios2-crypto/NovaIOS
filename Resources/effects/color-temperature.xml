@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TEMPERATURA DE COR
+  ============================================================================
+
+  O ajuste que conserta "a foto ficou azulada" e "a luz da sala deixou tudo
+  amarelo" — e o mesmo que dá clima quente ou frio de propósito.
+
+  São DOIS eixos, e eles não são intercambiáveis:
+
+    - **temperatura**: âmbar ↔ azul. É o eixo da luz do dia contra a lâmpada;
+    - **matiz (tint)**: verde ↔ magenta. É o eixo da lâmpada fluorescente.
+
+  Toda câmera tem os dois pelo mesmo motivo: uma fonte de luz real não erra só
+  numa direção. Ter só a temperatura deixa sem conserto justamente o caso mais
+  chato, que é o verde de luz fluorescente e de LED barato.
+
+  ============================================================================
+   POR QUE MULTIPLICAR, E NA LUZ LINEAR
+  ============================================================================
+
+  Balanço de branco é ganho por canal: a câmera multiplica R, G e B por
+  números diferentes até o branco ficar branco. Somar um tom por cima (o jeito
+  fácil) mancha as sombras de cor e deixa o preto colorido — o erro que se
+  reconhece de longe numa foto "esquentada" no aplicativo errado.
+
+  E a multiplicação acontece na luz linear pelo mesmo motivo da exposição: em
+  sRGB, o mesmo ganho muda a matiz conforme o brilho do pixel.
+-->
+<effect
+    id="nova.effect.colortemp"
+    name="Temperatura de cor"
+    name-en="Color Temperature"
+    desc="Esquenta ou esfria a imagem, com o eixo verde–magenta junto."
+    desc-en="Warm or cool the image, with the green–magenta axis alongside."
+    category="color"
+    blend="true"
+    tags="cor,correção,branco,temperatura,clima">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="temperature" label="Temperatura"
+                default="0.0" min="-1.0" max="1.0" step="0.01"
+                snap="0.0" ticks="-1.0,0.0,1.0" type="relative-percent" />
+
+        <slider id="tint" label="Matiz (verde ↔ magenta)"
+                default="0.0" min="-1.0" max="1.0" step="0.01"
+                snap="0.0" ticks="-1.0,0.0,1.0" type="relative-percent" />
+
+        <!--
+          Preservar o brilho é o que separa "corrigir a cor" de "escurecer a
+          imagem". Sem isto, esfriar sempre escurece (porque o azul pesa pouco
+          na luminância) e esquentar sempre clareia.
+        -->
+        <switch id="keepLuma" label="Manter o brilho" default="true" />
+    </params>
+
+    <preview>
+        <set param="temperature" value="0.6" />
+    </preview>
+
+    <shader><![CDATA[
+
+vec3 paraLinear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+}
+
+vec3 paraSrgb(vec3 c) {
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+
+// Rec. 709: os pesos com que o olho soma os três canais.
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+    vec3 luz = paraLinear(clamp(color.rgb, 0.0, 1.0));
+
+    /*
+     * Quente sobe o vermelho e baixa o azul; frio faz o contrário. O verde
+     * fica de fora deste eixo — é ele o eixo do `tint`.
+     *
+     * Os multiplicadores eram 0,4/0,3 — pensados como CORREÇÃO de balanço de
+     * branco (o uso mais comum: uma foto levemente amarelada). No máximo do
+     * controle (±100%) isso dava um empurrão de só ±40% no ganho — fraco
+     * demais para quem quer um visual de propósito, não um conserto sutil.
+     * Relato do snow (25/09/2026): "eu jogo tudo pro lado pra ficar azul, e
+     * ele fica um azul fraquinho, e aquele é o limite máximo". Com 1,4/1,0 o
+     * canal oposto ao extremo escolhido chega a ZERO (`max(ganho, 0.0)` logo
+     * abaixo já cobria esse caso) — um visual saturado de verdade no máximo,
+     * e ainda proporcional para valores pequenos (a correção sutil de sempre
+     * continua sutil perto de 0).
+     */
+    float t = clamp(temperature, -1.0, 1.0) * 1.4;
+    float m = clamp(tint, -1.0, 1.0) * 1.0;
+
+    vec3 ganho = vec3(
+        1.0 + t,
+        1.0 - m,
+        1.0 - t
+    );
+    // O magenta é a ausência de verde: subir os dois extremos junto com a
+    // queda do verde é o que mantém o resultado neutro em brilho.
+    ganho.r += m * 0.5;
+    ganho.b += m * 0.5;
+
+    vec3 antes = luz;
+    luz *= max(ganho, vec3(0.0));
+
+    if (keepLuma) {
+        float l0 = luma(antes);
+        float l1 = luma(luz);
+        if (l1 > 0.0001) luz *= l0 / l1;
+    }
+
+    fragColor = vec4(clamp(paraSrgb(max(luz, 0.0)), 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

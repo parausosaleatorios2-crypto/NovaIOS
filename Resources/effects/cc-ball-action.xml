@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC BALL ACTION — o BallAction.aex do CycoreFX HD 1.8.5 (o que vem com o After Effects 2023)
+  ============================================================================
+
+  Pedido do snow (28/10/2026): "cc ball action 100% igual after effects".
+
+  DE ONDE VEIO (tools/ccballaction): o plugin descompilado (Ghidra + o assembly, capstone) e portado na ordem das
+  contas do caminho de 8 bpc (FUN_1800045d0): a grade de bolas amostrada com o area_sample do AE (o do PF.dll, já
+  conferido no CC Particle World), a tabela de 362 rotações da torção, o Scatter e a Instability State pelo sorteio do
+  plugin, a câmera padrão (22,5° de meio campo) ou a CÂMERA 3D DA COMP, e o desenho das esferas com buffer de
+  profundidade (miolo + borda suave na qualidade alta, uma passada no rascunho). O seno e o cosseno são os do ucrtbase
+  (o caminho FMA3, model/ccballaction/TrigDoUcrt.kt), porque o AE passa os dele ao plugin.
+
+  O ORÁCULO é o BallAction.aex chamado fora do AE (tools/ccballaction/leitura/host.py). Contra ele, 98 de 98 casos
+  saem com 0 bytes diferentes (padrão, grade, tamanho, os 9 eixos, as 13 Twist Property, Scatter, Instability,
+  rascunho, câmera da comp, prévia 1/2 e 24 combinações sorteadas em 640×360).
+
+  Roda na CPU (PasseDoBallAction; a conta em model/ccballaction/), como o plugin. Sem estado entre quadros: só a
+  câmera da comp muda no tempo.
+
+  O QUE NÃO ENTROU: o caminho de 16 bpc do plugin (o app compõe em 8 bpc); a câmera ortográfica da comp.
+-->
+<effect
+    id="nova.effect.ccballaction"
+    name="CC Ball Action"
+    name-en="CC Ball Action"
+    desc="Transforma a camada numa grade de bolas 3D que giram, se torcem e se espalham (CycoreFX), com o mesmo resultado do After Effects."
+    desc-en="Turns the layer into a grid of 3D balls that rotate, twist and scatter (CycoreFX), matching After Effects."
+    category="stylize"
+    stage="ballaction"
+    tags="cc ball action,ball action,bolas,balls,esferas,spheres,grade,grid,pontos,dots,3d,cycore,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="scatter" label="Scatter" default="0.0" min="-1024.0" max="1024.0" step="0.1" />
+        <selector id="rotationAxis" label="Rotation Axis" default="1"
+            options="X Axis|Y Axis|Z Axis|XY Axis|XZ Axis|YZ Axis|XYZ Axis|X15Z Axis|XY15Z Axis"
+            values="1|2|3|4|5|6|7|8|9" />
+        <slider id="rotation" label="Rotation" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" />
+        <selector id="twistProperty" label="Twist Property" default="1"
+            options="X Axis|Y Axis|Center X|Center Y|Radius|Random|Red|Green|Blue|Brightness|Diamond|Rectangular|Fast Top"
+            values="1|2|3|4|5|6|7|8|9|10|11|12|13" />
+        <slider id="twistAngle" label="Twist Angle" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" />
+        <slider id="gridSpacing" label="Grid Spacing" default="5" min="0" max="50" step="1" type="integer" />
+        <slider id="ballSize" label="Ball Size" default="100.0" min="0.0" max="2000.0" step="0.1" />
+        <slider id="instabilityState" label="Instability State" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoBallAction` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+]]></shader>
+</effect>

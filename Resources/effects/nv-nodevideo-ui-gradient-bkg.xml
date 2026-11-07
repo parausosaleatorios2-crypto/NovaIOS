@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/UI_gradient_bkg
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-ui-gradient-bkg"
+    name="Ui Gradient Bkg (NV)"
+    name-en="Ui Gradient Bkg (NV)"
+    desc="NodeVideo effect 'NodeVideo/UI_gradient_bkg', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/UI_gradient_bkg', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_point_count" type="integer" label="Point Count" default="4" min="1" max="32" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+int u_xlati0;
+bool u_xlatb0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bool u_xlatb3;
+vec4 u_xlat4;
+int u_xlati5;
+bool u_xlatb5;
+float u_xlat8;
+bool u_xlatb8;
+int u_xlati10;
+float u_xlat13;
+int u_xlati15;
+bool u_xlatb15;
+void main()
+{
+    u_xlatb0 = 1<_point_count;
+    if(u_xlatb0){
+        u_xlatb0 = _color_pos[0]<acScreenNorm.x;
+        if(u_xlatb0){
+            u_xlati0 = _point_count + int(0xFFFFFFFFu);
+            u_xlatb5 = acScreenNorm.x>=_color_pos[u_xlati0];
+            if(u_xlatb5){
+                u_xlat1 = _colors[u_xlati0];
+            } else {
+                u_xlat1 = _colors[0];
+            }
+            if(!u_xlatb5){
+                u_xlat2 = u_xlat1;
+                u_xlati5 = int(0);
+                u_xlati10 = int(0);
+                while(true){
+                    u_xlatb15 = u_xlati5>=u_xlati0;
+                    u_xlati10 = 0;
+                    if(u_xlatb15){break;}
+                    u_xlati15 = u_xlati5 + 1;
+                    u_xlatb3 = acScreenNorm.x>=_color_pos[u_xlati5];
+                    u_xlatb8 = _color_pos[u_xlati15]>=acScreenNorm.x;
+                    u_xlatb3 = u_xlatb8 && u_xlatb3;
+                    if(u_xlatb3){
+                        u_xlat8 = acScreenNorm.x + (-_color_pos[u_xlati5]);
+                        u_xlat13 = (-_color_pos[u_xlati5]) + _color_pos[u_xlati15];
+                        u_xlat8 = u_xlat8 / u_xlat13;
+                        u_xlat4 = (-_colors[u_xlati5]) + _colors[u_xlati15];
+                        u_xlat4 = vec4(u_xlat8) * u_xlat4 + _colors[u_xlati5];
+                        u_xlati10 = int(0xFFFFFFFFu);
+                        u_xlat2 = u_xlat4;
+                        break;
+                    }
+                    u_xlati5 = u_xlati15;
+                    u_xlati10 = int(u_xlatb3);
+                }
+                u_xlat1 = uintBitsToFloat(uvec4(uint(floatBitsToUint(u_xlat2.x)) & uint(u_xlati10), uint(floatBitsToUint(u_xlat2.y)) & uint(u_xlati10), uint(floatBitsToUint(u_xlat2.z)) & uint(u_xlati10), uint(floatBitsToUint(u_xlat2.w)) & uint(u_xlati10)));
+            }
+        } else {
+            u_xlat1 = _colors[0];
+        }
+    } else {
+        u_xlat1 = _colors[0];
+    }
+    u_xlat0.xyz = u_xlat1.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat0.xyz = u_xlat1.xyz * u_xlat0.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat1.xyz = u_xlat0.xyz * u_xlat1.xyz;
+    fragColor = u_xlat1;
+    return;
+}
+    ]]></shader>
+</effect>

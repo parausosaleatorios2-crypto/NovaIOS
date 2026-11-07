@@ -1,0 +1,184 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="com.alightcreative.effects.polytrace_sampler"
+        name="Polytrace Sampler"
+        desc="Grid-based centroid sampler with jittered points; no Shadertoy code"
+        category="distort"
+        tags="polytrace,voronoi,triangulation,sampler,stylize"
+        thumb="thumb/polytrace.webp">
+
+  <params>
+    <texture id="inputImg" srcType="content" />
+
+    <section text="Sampling Grid" />
+    <spinner id="cellSize" default="32.0" min="4.0" max="128.0" step="0.1" label="Cell Size (px)" />
+    <slider id="neighborRange" default="1" min="1" max="2" step="1" label="Neighbor Range" type="integer" />
+    <switch id="safeMode" default="true" label="Safe Mode (Fast)" />
+
+    <section text="Sampling Model" />
+    <spinner id="gradPull" default="1.0" min="0.0" max="2.0" step="0.01" label="Gradient Pull" />
+
+    <section text="Randomization" />
+    <spinner id="jitter" default="0.10" min="0.0" max="1.0" step="0.005" label="Point Jitter" />
+    <spinner id="seed" default="0.0" min="-10.0" max="10.0" step="0.01" label="Seed" />
+
+    <section text="Output" />
+    <spinner id="alpha" default="1.0" min="0.0" max="1.0" step="0.01" label="Alpha" type="percent" />
+  </params>
+
+  <shader type="fragment" precision="high"><![CDATA[
+    // Polytrace Sampler (original, no Shadertoy code)
+    // Two modes:
+    //  - Safe Mode: 3 fixed neighbor cells, centroid sample
+    //  - Standard: Gradient-pulled jittered points; choose triangle containing the pixel
+
+    // Limits
+    const int MaxNeighbor = 2;  // compile-time bound; gated by neighborRange
+    const int MaxPoints   = 12; // candidate set size (keep small for mobile)
+
+    // Lightweight hash
+    float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)) + seed*53.0) * 43758.5453); }
+    vec2 hash22(vec2 p){ return vec2(hash21(p), hash21(p*1.37+19.7)); }
+
+    // Pixel->UV mapping (normalized by screen size)
+    vec4 fetchColorPx(vec2 posPx){
+      vec2 uv = clamp(posPx / max(acScreenSize, vec2(1.0)), 0.0, 1.0);
+      return texture2DCv(inputImg.texture, uv);
+    }
+
+    // Value used for gradient (simple modified luminance for contrast guidance)
+    float computeValue(vec2 posPx){
+      vec4 c = fetchColorPx(posPx);
+      // Slight non-linear mix to enhance midtones without copying any external code
+      float lum = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      float e = dot(c, vec4(-1.0, 2.0, -1.0, 0.0));
+      float m = clamp(0.5 + 0.5 * e, 0.0, 1.0);
+      return mix(lum, lum * (0.8 + 0.4*m), 0.6);
+    }
+
+    // Central-difference gradient in pixel space
+    vec2 computeGradientPx(vec2 posPx, float eps){
+      float he = max(eps*0.5, 0.5);
+      vec2 dx = vec2(he, 0.0);
+      vec2 dy = vec2(0.0, he);
+      float gx = computeValue(posPx + dx) - computeValue(posPx - dx);
+      float gy = computeValue(posPx + dy) - computeValue(posPx - dy);
+      return vec2(gx, gy) / max(eps, 1.0);
+    }
+
+    // Generate one candidate point for a given grid cell (x,y)
+    vec2 generatePoint(ivec2 cell, float tileSize){
+      vec2 cellF = vec2(cell);
+      vec2 rnd = hash22(cellF);
+      // Hex-like offset pattern, plus jitter
+      vec2 base = cellF + vec2(1.0, 0.0) * (mod(float(cell.y), 2.0) - 0.5) * 0.5
+                        + (rnd - 0.5) * jitter;
+      vec2 p = base * tileSize;
+      // Gradient pullback to align with local structure
+      if(gradPull > 0.0){
+        vec2 g = computeGradientPx(p, tileSize);
+        float gl = length(g);
+        vec2 ng = (gl < 1e-4) ? (rnd - 0.5) * 0.1 : normalize(g);
+        float lenPx = min(0.005 / max(gl, 1e-4), 1.0) * tileSize * gradPull;
+        p -= ng * lenPx;
+      }
+      return p;
+    }
+
+    // Helpers for triangle selection (kept local/global for GLES friendliness)
+    bool pointInTri(vec2 p, vec2 a, vec2 b, vec2 c){
+      vec2 v0=b-a, v1=c-a, v2=p-a;
+      float d00=dot(v0,v0), d01=dot(v0,v1), d02=dot(v0,v2);
+      float d11=dot(v1,v1), d12=dot(v1,v2);
+      float inv=1.0/max(d00*d11 - d01*d01, 1e-6);
+      float u=(d11*d02 - d01*d12)*inv;
+      float v=(d00*d12 - d01*d02)*inv;
+      return (u>=0.0)&&(v>=0.0)&&((u+v)<1.0);
+    }
+
+    vec2 isectLines(vec2 p1, vec2 d1, vec2 p2, vec2 d2){
+      float det = d1.x*d2.y - d1.y*d2.x;
+      vec2 df = p2 - p1;
+      float t = (df.x*d2.y - df.y*d2.x) / max(abs(det), 1e-6);
+      return p1 + d1 * t;
+    }
+
+    vec2 gPts[MaxPoints];
+    float gDist[MaxPoints];
+    bool circumEmpty(int i1,int i2,int i3){
+      vec2 c = isectLines((gPts[i1]+gPts[i2])*0.5, (gPts[i2]-gPts[i1]).yx*vec2(1.0,-1.0),
+                          (gPts[i1]+gPts[i3])*0.5, (gPts[i3]-gPts[i1]).yx*vec2(1.0,-1.0));
+      float r = length(gPts[i1]-c);
+      for(int i=0;i<MaxPoints;i++){
+        if(i==i1||i==i2||i==i3) continue;
+        if(length(gPts[i]-c) < r) return false;
+      }
+      return true;
+    }
+
+    void main(){
+      // Pixel and grid setup
+      vec2 fragPx = acScreenNorm * acScreenSize; // convert UV to pixel coords
+      float tileSize = max(cellSize, 1.0);
+      vec2 gpos = floor(fragPx / tileSize + 0.5);
+
+      vec2 centroid;
+      if(safeMode){
+        // Minimal path: evaluate only 3 fixed neighboring cells
+        ivec2 c0 = ivec2(int(gpos.x), int(gpos.y));
+        vec2 pt0 = generatePoint(c0, tileSize);
+        vec2 pt1 = generatePoint(c0 + ivec2(1,0), tileSize);
+        vec2 pt2 = generatePoint(c0 + ivec2(0,1), tileSize);
+        centroid = (pt0 + pt1 + pt2) / 3.0;
+      } else {
+        // Build candidate set of nearest points
+        for(int i=0;i<MaxPoints;i++){ gDist[i]=1e9; gPts[i]=vec2(0.0); }
+        int r = int(clamp(float(neighborRange), 1.0, float(MaxNeighbor)));
+        for(int dy=-MaxNeighbor; dy<=MaxNeighbor; dy++){
+          for(int dx=-MaxNeighbor; dx<=MaxNeighbor; dx++){
+            if(abs(dx)>r || abs(dy)>r) continue;
+            ivec2 cell = ivec2(int(gpos.x) + dx, int(gpos.y) + dy);
+            vec2 pt = generatePoint(cell, tileSize);
+            float d = length(fragPx - pt);
+            // insertion into sorted arrays
+            for(int k=0;k<MaxPoints;k++){
+              if(d < gDist[k]){
+                float td=gDist[k]; gDist[k]=d; d=td;
+                vec2 tp=gPts[k]; gPts[k]=pt; pt=tp;
+              }
+            }
+          }
+        }
+        // Try to find a triangle around the fragment with empty circumcircle
+        bool found=false; int i1=0,i2=1,i3=2; int N=8;
+        for(int a=0; a<MaxPoints; a++){
+          if(a>=N) break;
+          for(int b=0; b<MaxPoints; b++){
+            if(b>=N) break;
+            if(b==a) continue;
+            for(int c=0; c<MaxPoints; c++){
+              if(c>=N) break;
+              if(c==a || c==b) continue;
+              if(pointInTri(fragPx, gPts[a], gPts[b], gPts[c]) && circumEmpty(a,b,c)){
+                i1=a; i2=b; i3=c; found=true; break;
+              }
+            }
+            if(found) break;
+          }
+          if(found) break;
+        }
+        if(found){
+          centroid = (gPts[i1] + gPts[i2] + gPts[i3]) / 3.0;
+        } else {
+          // Fallback: average the 3 nearest
+          centroid = (gPts[0] + gPts[1] + gPts[2]) / 3.0;
+        }
+      }
+      vec4 col = fetchColorPx(centroid);
+
+      // Preserve original alpha and apply control
+      float aSrc = texture2DCv(inputImg.texture, acScreenNorm).a;
+      gl_FragColor = vec4(col.rgb, 1.0) * aSrc * alpha;
+    }
+  ]]></shader>
+
+</effect>

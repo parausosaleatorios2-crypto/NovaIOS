@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VIBRANCE — o efeito nativo do After Effects (o do Photoshop), medido (0.451.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "vibrance". O "Vibração" que já existia é um desenho próprio da
+  Nova (peso 1 − saturação, com proteção de pele); ESTE devolve o que o After Effects devolve,
+  para os presets converterem com os valores deles.
+
+  DE ONDE VEIO (tools/vibrance/benchmark, 86 renders em 16 bpc, com uma fonte que tem a grade
+  33 × 33 × 33 de cores):
+
+  - SATURATION saiu em fórmula, exata: a cor vai para luz linear (curva do sRGB), afasta-se ou
+    aproxima-se da luminância Y = 0,2880 R + 0,7119 G + 0,0001 B (os pesos do ProPhoto) por
+    (1 + Saturation / 100), e volta. Modelo × AE: 0,004 a 0,011 nível de 255.
+  - VIBRANCE não tem fórmula aqui: a conta fica dentro do motor do Photoshop (AdobePIE.dll, 51 MB)
+    e não foi lida. O que se sabe (medido): cada pixel anda numa reta em luz linear, com o mesmo
+    fator nos três canais, e o fator depende da cor inteira. Por isso o efeito usa a RESPOSTA
+    MEDIDA: uma tabela de cores 33³ para cada valor de Vibrance (de 10 em 10, mais −5 e −2, onde
+    a resposta não é linear no valor), em `vibrance/ae-vibrance.png` (gerada por `gerar.py`).
+    Entre dois valores com tabela, mistura linear.
+  - A ordem: primeiro o Vibrance, depois o Saturation (o contrário erra 2 a 28 níveis).
+  - O alfa não muda; a conta é na cor reta.
+
+  QUANTO BATE: ver tools/vibrance/benchmark/resultado.txt. A tabela em 8 bits e a grade de 33
+  pontos custam ~0,2 nível em média; cores entre dois pontos da grade erram até uns poucos
+  níveis em pixels isolados (p99 ≤ 1,1).
+-->
+<effect
+    id="nova.effect.aevibrance"
+    name="Vibrance (AE)"
+    name-en="Vibrance (AE)"
+    desc="O Vibrance do After Effects (o do Photoshop): Vibrance pela resposta medida do efeito e Saturation em luz linear."
+    desc-en="After Effects' Vibrance (Photoshop's): Vibrance from the effect's measured response and Saturation in linear light."
+    category="color"
+    tags="vibrance,vibração,saturation,saturação,cor,photoshop,after effects,cc"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="atlas" src="image" files="vibrance/ae-vibrance.png" />
+
+        <slider id="vibrance" label="Vibrance" default="0.0" min="-100.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="saturation" label="Saturation" default="0.0" min="-100.0" max="100.0" step="1.0" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0) não mexe na cor: vibração e saturação no alto. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="vibrance" value="100.0" />
+        <set param="saturation" value="60.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+// Os valores de Vibrance que têm tabela, em ordem; o 0 (índice 12) é a própria cor e não ocupa linha.
+const int N_VALORES = 23;
+const int INDICE_DO_ZERO = 12;
+const float VALORES[23] = float[23](-100.0, -90.0, -80.0, -70.0, -60.0, -50.0, -40.0, -30.0, -20.0, -10.0, -5.0, -2.0, 0.0,
+                                    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0);
+
+// A LUT 33³ do atlas: 33 ladrilhos 33×33 lado a lado (x = b·33 + r, y = linha0 + g).
+vec3 lut(vec3 c, float linha0) {
+    vec2 tam = vec2(textureSize(atlas, 0));
+    vec3 p = clamp(c, 0.0, 1.0) * 32.0;
+    float b0 = floor(p.b);
+    float b1 = min(b0 + 1.0, 32.0);
+    float t = p.b - b0;
+    float v = (linha0 + p.g + 0.5) / tam.y;
+    vec3 a = texture(atlas, vec2((b0 * 33.0 + p.r + 0.5) / tam.x, v)).rgb;
+    vec3 d = texture(atlas, vec2((b1 * 33.0 + p.r + 0.5) / tam.x, v)).rgb;
+    return mix(a, d, t);
+}
+
+/** A resposta medida no valor de índice `i` da lista. */
+vec3 medido(vec3 c, int i) {
+    if (i == INDICE_DO_ZERO) return c;
+    return lut(c, 33.0 * float(i < INDICE_DO_ZERO ? i : i - 1));
+}
+
+vec3 paraLuz(vec3 c) { return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, vec3(lessThanEqual(c, vec3(0.04045)))); }
+vec3 paraTela(vec3 l) { return mix(1.055 * pow(max(l, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, l * 12.92, vec3(lessThanEqual(l, vec3(0.0031308)))); }
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 fonte = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+    vec3 c = fonte.rgb;
+
+    // Vibrance: mistura linear entre as duas tabelas vizinhas do valor.
+    float v = clamp(vibrance, -100.0, 100.0);
+    if (v != 0.0) {
+        int i = 0;
+        for (int k = 0; k < N_VALORES - 1; k++) { if (v >= VALORES[k]) i = k; }
+        i = min(i, N_VALORES - 2);
+        float t = (v - VALORES[i]) / (VALORES[i + 1] - VALORES[i]);
+        c = mix(medido(c, i), medido(c, i + 1), t);
+    }
+
+    // Saturation (medido, exato): em luz linear, em volta da luminância com os pesos do ProPhoto.
+    if (saturation != 0.0) {
+        vec3 l = paraLuz(c);
+        float y = dot(l, vec3(0.2880, 0.7119, 0.0001));
+        c = clamp(paraTela(clamp(y + (l - y) * (1.0 + clamp(saturation, -100.0, 100.0) / 100.0), 0.0, 1.0)), 0.0, 1.0);
+    }
+
+    fragColor = vec4(c, fonte.a);
+}
+]]></shader>
+</effect>

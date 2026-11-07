@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_paint
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- fora do catálogo (tools/nodevideo/fora_do_catalogo.py): passo interno do pincel do Node: não faz nada. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-rendercommand-paint"
+    name="Rendercommand Paint (NV)"
+    name-en="Rendercommand Paint (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_paint', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_paint', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+    </params>
+
+    <shader><![CDATA[
+void main()
+{
+    fragColor = texture(inputImg, acScreenNorm.xy);
+    return;
+}
+    ]]></shader>
+</effect>

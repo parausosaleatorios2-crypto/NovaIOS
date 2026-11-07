@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.bokeh"
+    name="Desfoque Bokeh (Ultra Motion)"
+    name-en="Bokeh Blur (Ultra Motion)"
+    desc="Amostras em disco com realce nas luzes — bokeh de lente."
+    desc-en="Disc-shaped samples with highlight bloom — lens bokeh."
+    category="blur"
+    tags="ultramotion,bokeh,lens,luz,blur,desfoque">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="radius"    label="Raio"        default="0.02" min="0.0" max="0.1" step="0.001" />
+        <slider id="samples"   label="Amostras"    default="32"   min="6"   max="64"  step="1" type="integer" />
+        <slider id="highlight" label="Brilho das luzes" default="0.8" min="0.0" max="4.0" step="0.05" />
+        <slider id="threshold" label="Limiar"      default="0.7"  min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// "fibonacci spiral" — amostras bem distribuídas num disco.
+void main() {
+    if (radius <= 0.0) { fragColor = texture(inputImg, acScreenNorm); return; }
+    int n = clamp(int(samples), 6, 64);
+    float phi = 2.39996323;
+
+    vec4 soma = vec4(0.0);
+    float pesoTot = 0.0;
+    for (int i = 0; i <= 64; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n);
+        float r = sqrt(t) * radius;
+        float a = float(i) * phi;
+        vec2 off = vec2(cos(a), sin(a)) * r;
+        off.x /= acAspect;
+        vec4 c = texture(inputImg, acScreenNorm + off);
+        float luz = dot(c.rgb, LUMA);
+        float k = smoothstep(threshold, threshold + 0.2, luz);
+        c.rgb *= (1.0 + highlight * k);
+        soma += c;
+        pesoTot += 1.0;
+    }
+    fragColor = soma / pesoTot;
+}
+    ]]></shader>
+</effect>

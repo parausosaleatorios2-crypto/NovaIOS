@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   REPETIR (AM) — o Repeat do Alight Motion, conta por conta (0.559.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz agora 100% igual o efeito repetir igual o alight motion", da série "100% iguais
+  ao AM". Mesmos parâmetros, mesmos ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.repeat` do
+  AM 5.0.281 (um projeto do AM importado cai direto aqui). "Repetir (AM)" porque o "Repetir" do Nova (a grade,
+  `tile.xml`) já existia.
+
+  O Repeat do AM não tem shader nem script: o `repeat.xml` do APK só declara os parâmetros, e quem desenha é o
+  MOTOR dele (`SceneElementRenderingKt.renderWithRepeat`). A conta foi lida do bytecode e escrita de novo em
+  `model/RepetirDoAm.kt`; o arquivo do AM não entra no repositório.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Desenha a camada Contagem vezes (0 = nada aparece). A cópia 0 é a própria camada, embaixo; cada cópia i vem
+    por cima da anterior com
+      posição + i · Deslocamento     (px da cena, no espaço da mãe)
+      escala × Escalaⁱ               (em torno da âncora)
+      giro + i · Ângulo              (em torno da âncora)
+      opacidade × (1 − i · (1 − Alfa))   — a que chega a 0 não é desenhada
+      i · Tempo quadros para trás    (o conteúdo, a animação e os quadros-chave da cópia)
+  - O Tempo anda com os arredondamentos do AM: a parte inteira em quadros e a fração em milissegundos iguais a
+    fração × fps (com Tempo 1,5 a 30 fps: 2 quadros e mais 15 ms). Ver `RepetirDoAm`.
+  - Os OUTROS efeitos da camada rodam uma vez sobre o CONJUNTO das cópias, na tela, e o conjunto vai para a cena
+    com a opacidade e o modo da camada — no AM o Repetir é tirado da lista antes de qualquer outro, então a
+    posição dele na lista não muda nada. Sem outro efeito (e com mesclagem Normal), cada cópia vai direto para a
+    cena com a opacidade da camada no instante dela.
+  - Balanço, Tamanho do pulso, Oscilar e Agitação automática agem em cada cópia, no instante dela, por cima da
+    transformação da cópia (no AM, os scripts depois do Repetir rodam na cópia).
+  - Vários Repetir na mesma camada: cada cópia de um é repetida pelos seguintes, como no AM.
+  - `<spinner>` e `<point spinner="true">` como no AM: o leitor do AM não lê `snap` no spinner (o `repeat.xml` traz
+    um `snap` copiado do Ângulo até na Escala), então aqui não há `snap`, só as marcas; o ponto sem padrão, faixa
+    e passo é (0, 0), ±9999 e 1.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel na cadeia — quem executa é o compositor
+  (`SceneRenderer.montarRepeticao`), com a transformação de cada cópia entrando em `LayerGeometry.matrizLocal`. O
+  shader abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-repeat"
+    name="Repetir (AM)"
+    name-en="Repeat (AM)"
+    desc="Gera várias cópias da camada dinamicamente (o Repeat do Alight Motion)."
+    desc-en="Dynamically generates multiple copies of the layer (Alight Motion's Repeat)."
+    category="repeat"
+    stage="transform"
+    tags="repetir,repetição,repeticao,cópias,copias,duplicar,clonar,eco,rastro,atraso,repeat,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="count" label="Contagem" default="10" min="0" max="9999" step="1" />
+        <spinner id="time" label="Tempo" default="0" min="0" max="9999" step="0.1" />
+        <point id="offset" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <spinner id="angle" label="Ângulo" default="0.0" min="-1800.0" max="1800.0" step="0.1"
+            ticks="-90,-45,0,45,90" type="angle" />
+        <spinner id="scale" label="Escala" default="1.0" min="0" max="10.0" step="0.01"
+            ticks="0.25,0.5,0.75,1,2" />
+        <spinner id="alpha" label="Alfa" default="1" min="0" max="1" step="0.001" type="percent" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coordenadas polares.
+
+  Troca "esquerda-direita, cima-baixo" por "ângulo, distância". O resultado
+  parece mágica e é uma troca de eixos: a linha do horizonte de uma paisagem
+  vira um círculo, e o mundo vira um planetinha.
+
+  O caminho inverso é o que transforma um retângulo num leque, e é como se faz
+  transição em espiral e mostrador de relógio.
+-->
+<effect
+    id="nova.effect.polarcoordinates"
+    name="Coordenadas polares"
+    name-en="Polar Coordinates"
+    desc="Enrola a imagem em torno de um ponto — ou desenrola."
+    desc-en="Wraps the image around a centre, and back."
+    category="distort"
+    tags="polar,planeta,tiny planet,circulo,espiral,enrolar,leque">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="direction" label="Sentido"
+                  options="Retangular para polar|Polar para retangular" default="0" />
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="amount" label="Intensidade"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+        <slider id="spin" label="Girar"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" snap="0.0" />
+
+        <slider id="zoom" label="Aproximação"
+                default="1.0" min="0.1" max="4.0" step="0.01" snap="1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+const float TAU = 6.28318530718;
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 offset = (uv - center) * vec2(acAspect, 1.0) / max(zoom, 0.01);
+
+    vec2 warped;
+    if (direction == 1) {
+        // Polar para retangular: X vira ângulo, Y vira raio. Um retângulo
+        // desenhado assim se abre em leque.
+        float angle = (uv.x - 0.5) * TAU + radians(spin);
+        float radius = uv.y * 0.5;
+        warped = vec2(cos(angle), sin(angle)) * radius / vec2(acAspect, 1.0) + center;
+    } else {
+        // Retangular para polar: o ângulo em volta do centro vira a coluna, e a
+        // distância vira a linha. A borda de baixo da imagem fecha o círculo.
+        float angle = atan(offset.y, offset.x) + radians(spin);
+        float radius = length(offset) * 2.0;
+        warped = vec2(fract(angle / TAU + 0.5), clamp(radius, 0.0, 1.0));
+    }
+
+    vec4 twisted = texture(inputImg, clamp(warped, 0.0, 1.0));
+    fragColor = mix(texture(inputImg, uv), twisted, amount);
+}
+
+    ]]></shader>
+</effect>

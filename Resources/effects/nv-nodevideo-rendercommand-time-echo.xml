@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand__time_echo
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-time-echo"
+    name="Rendercommand  Time Echo (NV)"
+    name-en="Rendercommand  Time Echo (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand__time_echo', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand__time_echo', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="EchoBuff" src="content" empty="transparent" />
+        <slider id="_opacity" label="Opacity" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="_blend" type="integer" label="Blend" default="0" min="0" max="1" step="1" />
+        <slider id="_frame" type="integer" label="Frame" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bool u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+bvec4 u_xlatb4;
+vec4 u_xlat5;
+bool u_xlatb6;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1 = texture(EchoBuff, acScreenNorm.xy);
+    if(int(_blend) == 0) {
+        fragColor = u_xlat0 * vec4(_opacity) + u_xlat1;
+    } else {
+        u_xlatb2 = int(_blend)==1;
+        if(u_xlatb2){
+            u_xlatb2 = 0<int(_frame);
+            u_xlat3 = max(u_xlat0, u_xlat1);
+            fragColor = (bool(u_xlatb2)) ? u_xlat3 : u_xlat0;
+        } else {
+            u_xlatb2 = int(_blend)==2;
+            if(u_xlatb2){
+                u_xlatb2 = 0<int(_frame);
+                u_xlat3 = min(u_xlat0, u_xlat1);
+                fragColor = (bool(u_xlatb2)) ? u_xlat3 : u_xlat0;
+            } else {
+                u_xlat2 = u_xlat0 * vec4(_opacity);
+                u_xlat3 = (-u_xlat0) * vec4(_opacity) + vec4(1.0, 1.0, 1.0, 1.0);
+                u_xlat4 = (-u_xlat1) + vec4(1.0, 1.0, 1.0, 1.0);
+                u_xlat3 = (-u_xlat3) * u_xlat4 + vec4(1.0, 1.0, 1.0, 1.0);
+                u_xlat4.x = (-_opacity) + 1.0;
+                u_xlat5 = u_xlat1 * vec4(_opacity);
+                u_xlat5 = u_xlat0 * u_xlat4.xxxx + u_xlat5;
+                u_xlat2 = u_xlat1 * u_xlat4.xxxx + u_xlat2;
+                u_xlatb4 = equal(ivec4(ivec4(int(_blend), int(_blend), int(_blend), int(_blend))), ivec4(3, 4, 5, 6));
+                u_xlatb6 = 0<int(_frame);
+                u_xlat1 = u_xlat0 + u_xlat1;
+                u_xlat1 = u_xlat1 * vec4(0.5, 0.5, 0.5, 0.5);
+                u_xlat0 = (bool(u_xlatb6)) ? u_xlat1 : u_xlat0;
+                u_xlat0 = u_xlatb4.w ? u_xlat0 : vec4(0.0, 0.0, 0.0, 0.0);
+                u_xlat0 = (u_xlatb4.z) ? u_xlat2 : u_xlat0;
+                u_xlat0 = (u_xlatb4.y) ? u_xlat5 : u_xlat0;
+                fragColor = (u_xlatb4.x) ? u_xlat3 : u_xlat0;
+            }
+        }
+    }
+    return;
+}
+    ]]></shader>
+</effect>

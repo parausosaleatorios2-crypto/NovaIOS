@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PINCELADAS
+  ============================================================================
+
+  A imagem repintada como se fosse quadro: traços curtos seguindo a direção da
+  forma, cada traço com uma cor média do pedaço que cobre.
+
+  ============================================================================
+   COMO UMA PINCELADA SABE PRA ONDE IR
+  ============================================================================
+
+  Um pincel de verdade segue o CONTORNO da forma, não corta ao meio. Em imagem,
+  o contorno aparece no GRADIENTE da luma: `∂L/∂x` e `∂L/∂y` apontam para onde
+  a luz mais muda, e o pincel anda PERPENDICULAR a isso — ao longo das linhas
+  de igual luminosidade. É o que faz pintor sem querer: a mão segue a fronteira.
+
+  Para cada pixel, o shader calcula esse gradiente por diferenças finitas (a
+  luma dos 4 vizinhos), gira 90° para ter a tangente, e amostra N pontos ao
+  longo dessa tangente — um para cada lado. A cor do pixel vira a média deles:
+  o traço fica espalhado na direção da linha e acumulado perpendicular a ela, o
+  que é a assinatura de uma pincelada.
+
+  ============================================================================
+   RUÍDO NA DIREÇÃO E NO TAMANHO: O QUE DÁ VIDA AO TRAÇO
+  ============================================================================
+
+  Uma pincelada mecânica vira hachura de impressora. O ruído por pincel — a
+  direção "desalinhando" um grau aqui e outro ali, o tamanho oscilando — é o
+  que distingue de um blur direcional. É um `sin` por pixel com semente, barato
+  e suficiente.
+-->
+<effect
+    id="nova.effect.paint-strokes"
+    name="Pinceladas"
+    name-en="Paint Strokes"
+    desc="Repinta a imagem com traços curtos que seguem as linhas da forma."
+    desc-en="Repaints the image with short strokes following the shape's flow lines."
+    category="stylize"
+    tags="pincel,tinta,pintura,traço,arte,quadro,oleo">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="strokeLength" label="Tamanho do traço (px)"
+                default="10.0" min="1.0" max="40.0" step="0.5" snap="0.0" />
+        <slider id="angleJitter" label="Variação de direção (°)"
+                default="8.0" min="0.0" max="45.0" step="0.5" snap="0.0" />
+        <slider id="strength" label="Mistura"
+                default="0.9" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="detail" label="Amostras por traço"
+                default="8" min="2" max="16" step="1" type="integer" />
+    </params>
+
+    <!-- Na vitrine, traço maior para a amostra ler como pintura mesmo. -->
+    <preview>
+        <set param="strokeLength" value="18.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAXIMO_DE_AMOSTRAS = 16;
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+float hash1(vec2 c) {
+    return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+void main() {
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    vec2 px = 1.0 / tam;
+
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // Gradiente da luma por diferenças centrais: ∂L/∂x = (L(x+1) - L(x-1)) / 2.
+    float lx = luma(texture(inputImg, acScreenNorm + vec2(px.x, 0.0)).rgb)
+             - luma(texture(inputImg, acScreenNorm - vec2(px.x, 0.0)).rgb);
+    float ly = luma(texture(inputImg, acScreenNorm + vec2(0.0, px.y)).rgb)
+             - luma(texture(inputImg, acScreenNorm - vec2(0.0, px.y)).rgb);
+
+    // Tangente = perpendicular ao gradiente. Uma área lisa (gradiente ~0) ganha uma
+    // direção padrão (horizontal) para o traço não desaparecer.
+    vec2 tangente = vec2(-ly, lx);
+    float magnitude = length(tangente);
+    tangente = magnitude > 1e-4 ? tangente / magnitude : vec2(1.0, 0.0);
+
+    // Ruído por pixel: rotaciona o traço angleJitter graus para cada lado.
+    float semente = hash1(floor(acScreenNorm * tam / max(strokeLength, 1.0)));
+    float giro = radians((semente * 2.0 - 1.0) * angleJitter);
+    float cosG = cos(giro);
+    float sinG = sin(giro);
+    vec2 t = vec2(tangente.x * cosG - tangente.y * sinG, tangente.x * sinG + tangente.y * cosG);
+
+    int n = clamp(int(detail + 0.5), 2, MAXIMO_DE_AMOSTRAS);
+    int metade = n / 2;
+
+    // Média ao longo da tangente — isso é o "borrão direcional" que pinta o traço.
+    vec3 soma = vec3(0.0);
+    float peso = 0.0;
+    for (int i = -MAXIMO_DE_AMOSTRAS / 2; i <= MAXIMO_DE_AMOSTRAS / 2; i++) {
+        if (i < -metade || i > metade) continue;
+        float f = float(i) / float(metade);
+        vec2 deslocamento = t * f * strokeLength * px;
+        vec3 c = texture(inputImg, acScreenNorm + deslocamento).rgb;
+        // Peso triangular: as pontas pesam menos, o miolo do traço mais.
+        float w = 1.0 - abs(f);
+        soma += c * w;
+        peso += w;
+    }
+    vec3 pintado = soma / max(peso, 1e-4);
+
+    vec3 cor = mix(original.rgb, pintado, strength);
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

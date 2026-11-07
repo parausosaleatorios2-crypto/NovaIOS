@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Model_blit_audio_spectrum
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-model-blit-audio-spectrum"
+    name="Model Blit Audio Spectrum (NV)"
+    name-en="Model Blit Audio Spectrum (NV)"
+    desc="NodeVideo effect 'NodeVideo/Model_blit_audio_spectrum', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Model_blit_audio_spectrum', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+void main()
+{
+    u_xlat0.xyz = vs_COLOR0.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat0.xyz = vs_COLOR0.xyz * u_xlat0.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    fragColor.xyz = u_xlat0.xyz * vs_COLOR0.xyz;
+    fragColor.w = vs_COLOR0.w;
+    return;
+}
+    ]]></shader>
+</effect>

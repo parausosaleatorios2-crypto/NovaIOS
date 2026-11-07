@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/TextMeshPro
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-textmeshpro"
+    name="Textmeshpro (NV)"
+    name-en="Textmeshpro (NV)"
+    desc="NodeVideo effect 'NodeVideo/TextMeshPro', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/TextMeshPro', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="FaceTex" src="content" empty="transparent" />
+        <texture id="OutlineTex" src="content" empty="transparent" />
+        <texture id="source_rt" src="content" empty="transparent" />
+        <slider id="_FaceUVSpeedX" label="Faceuvspeedx" default="1.0" min="0.0" max="5.0" step="0.01" />
+        <slider id="_FaceUVSpeedY" label="Faceuvspeedy" default="1.0" min="0.0" max="5.0" step="0.01" />
+        <color id="_FaceColor" label="Facecolor" default="#FFFFFFFF" />
+        <slider id="_OutlineSoftness" label="Outlinesoftness" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_OutlineUVSpeedX" label="Outlineuvspeedx" default="1.0" min="0.0" max="5.0" step="0.01" />
+        <slider id="_OutlineUVSpeedY" label="Outlineuvspeedy" default="1.0" min="0.0" max="5.0" step="0.01" />
+        <color id="_OutlineColor" label="Outlinecolor" default="#FFFFFFFF" />
+        <slider id="_OutlineWidth" label="Outlinewidth" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_ScaleRatioA" label="Scaleratioa" default="1.0" min="0.0" max="3.0" step="0.01" />
+        <slider id="_fill_texture" type="integer" label="Fill Texture" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+mediump vec4 u_xlat16_0;
+vec4 u_xlat1;
+mediump vec4 u_xlat16_1;
+vec4 u_xlat2;
+bool u_xlatb2;
+float u_xlat3;
+vec4 u_xlat4;
+mediump float u_xlat16_5;
+mediump vec3 u_xlat16_6;
+vec3 u_xlat7;
+bool u_xlatb7;
+vec2 u_xlat10;
+mediump float u_xlat16_12;
+mediump float u_xlat16_19;
+void main()
+{
+    u_xlat0.x = texture(inputImg, acScreenNorm.xy).w;
+    u_xlat7.x = u_xlat0.x + (-vs_TEXCOORD1.x);
+    u_xlatb7 = u_xlat7.x<0.0;
+    if(u_xlatb7){discard;}
+    u_xlat0.x = (-u_xlat0.x) + vs_TEXCOORD1.z;
+    u_xlat7.x = _OutlineWidth * _ScaleRatioA;
+    u_xlat7.y = _OutlineSoftness * _ScaleRatioA;
+    u_xlat7.xz = u_xlat7.xy * vs_TEXCOORD1.yy;
+    u_xlat16_1.xyz = vs_COLOR0.xyz * _FaceColor.xyz;
+    u_xlat2.xy = vec2(_FaceUVSpeedX, _FaceUVSpeedY) * _Time.yy + vs_TEXCOORD5.xy;
+    u_xlat2 = texture(FaceTex, u_xlat2.xy);
+    u_xlat2.xyz = u_xlat16_1.xyz * u_xlat2.xyz;
+    u_xlat3 = u_xlat2.w * _FaceColor.w;
+    u_xlat10.xy = vec2(_OutlineUVSpeedX, _OutlineUVSpeedY) * _Time.yy + vs_TEXCOORD5.zw;
+    u_xlat1 = texture(OutlineTex, u_xlat10.xy);
+    u_xlat4 = u_xlat1 * _OutlineColor;
+    u_xlat16_5 = u_xlat7.x * 0.5;
+    u_xlat16_12 = u_xlat0.x * vs_TEXCOORD1.y + (-u_xlat16_5);
+    u_xlat16_12 = u_xlat7.z * 0.5 + u_xlat16_12;
+    u_xlat16_19 = u_xlat7.y * vs_TEXCOORD1.y + 1.0;
+    u_xlat16_12 = u_xlat16_12 / u_xlat16_19;
+    u_xlat16_12 = clamp(u_xlat16_12, 0.0, 1.0);
+    u_xlat16_12 = (-u_xlat16_12) + 1.0;
+    u_xlat16_5 = u_xlat0.x * vs_TEXCOORD1.y + u_xlat16_5;
+    u_xlat16_5 = clamp(u_xlat16_5, 0.0, 1.0);
+    u_xlat16_19 = min(u_xlat7.x, 1.0);
+    u_xlat16_19 = sqrt(u_xlat16_19);
+    u_xlat16_5 = u_xlat16_19 * u_xlat16_5;
+    u_xlat16_6.xyz = u_xlat2.xyz * vec3(u_xlat3);
+    u_xlat16_0.xyz = u_xlat4.xyz * u_xlat4.www + (-u_xlat16_6.xyz);
+    u_xlat16_0.w = _OutlineColor.w * u_xlat1.w + (-u_xlat3);
+    u_xlat16_0 = u_xlat16_0 * vec4(u_xlat16_5);
+    u_xlat16_1.xyz = u_xlat2.xyz * vec3(u_xlat3) + u_xlat16_0.xyz;
+    u_xlat16_1.w = _FaceColor.w * u_xlat2.w + u_xlat16_0.w;
+    u_xlat16_0 = vec4(u_xlat16_12) * u_xlat16_1;
+    u_xlatb2 = 0<_fill_texture;
+    if(u_xlatb2){
+        u_xlat1 = texture(source_rt, vs_TEXCOORD2.xy);
+        u_xlat0 = u_xlat16_0 * u_xlat1;
+        u_xlat16_0 = u_xlat0;
+    }
+    fragColor = u_xlat16_0 * vs_COLOR0.wwww;
+    return;
+}
+    ]]></shader>
+</effect>

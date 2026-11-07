@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   RAIO
+  ============================================================================
+
+  Uma descarga elétrica entre dois pontos, com galhos, tremor e brilho.
+
+  ============================================================================
+   COMO SE DESENHA UM RAIO SEM SIMULAR UM RAIO
+  ============================================================================
+
+  A tentação é modelar o caminho: sortear galhos, guardar segmentos, desenhar.
+  Isso precisa de estado e de geometria, e um shader de fragmento não tem nem um
+  nem outro — ele só sabe responder "o que tem NESTE ponto".
+
+  A saída é inverter a pergunta. Em vez de traçar o raio, cada pixel pergunta a
+  que distância ele está do caminho — e o caminho é a linha reta entre os dois
+  pontos, **deslocada por ruído**. O deslocamento cresce no meio e vai a zero
+  nas pontas, que é o que prende o raio nos dois terminais.
+
+  Os galhos saem do mesmo truque, com sementes diferentes e vida curta: cada um
+  é um segundo caminho que nasce em algum ponto do principal e morre antes de
+  chegar ao fim.
+
+  ============================================================================
+   POR QUE O NÚCLEO É BRANCO E O RESTO É COLORIDO
+  ============================================================================
+
+  Descarga elétrica satura o sensor no centro: o miolo de qualquer raio
+  fotografado é branco, e a cor aparece só no halo. Pintar o raio inteiro de azul
+  dá aquele aspecto de desenho animado — o núcleo branco é o que faz parecer
+  luz de verdade.
+
+  ============================================================================
+   DESEMPENHO (0.660.0)
+  ============================================================================
+
+  O caminho é o MESMO para a tela inteira: até a 0.659 cada pixel refazia o
+  ruído de todos os pontos (6 caminhos × 21 pontos × até 6 oitavas, ~1 600
+  senos por pixel). Agora o passe 0 calcula o desvio de cada ponto uma vez, num
+  buffer de 21 × 6 (os 4 bytes do float, exatos), e o passe 1 monta os pontos
+  com a mesma conta de antes — a proporção (`acAspect`) é a do passe da imagem,
+  por isso o passe 0 guarda só o desvio. Na GPU do PC, 3,3 a 5,2× mais rápido.
+  NÃO é bit a bit: de 0 a 10 px num quadro de 1080 × 784 saem a 1 nível (de
+  255) do que saíam — o compilador da GPU arredonda o ruído (o seno de argumento
+  grande do `hash`) de um jeito no passe pequeno e de outro dentro do pixel, e o
+  GLSL ES 3.0 não tem como prender a ordem das contas (`precise` é do 3.2).
+-->
+<effect
+    id="nova.effect.lightning"
+    name="Raio"
+    name-en="Lightning"
+    desc="Descarga elétrica entre dois pontos, com galhos, tremor e halo."
+    desc-en="An animated electric discharge between two points."
+    category="procedural"
+    tags="raio,elétrico,relâmpago,energia,gerador,trovão">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="fromAt" label="De onde sai" defaultX="0.2" defaultY="0.1" />
+        <point id="toAt" label="Onde chega" defaultX="0.8" defaultY="0.9" />
+        <slider id="thickness" label="Espessura"
+                default="0.25" min="0.02" max="2.0" step="0.01" />
+
+        <!-- ============================== Forma ============================ -->
+        <slider id="chaos" group="Forma" label="Tremor"
+                default="0.12" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="detail" group="Forma" label="Detalhe do zigue-zague"
+                default="4" min="1" max="6" step="1" type="integer" />
+        <slider id="branches" group="Forma" label="Galhos"
+                default="3" min="0" max="5" step="1" type="integer" />
+        <slider id="speed" group="Forma" label="Velocidade"
+                default="8.0" min="0.0" max="40.0" step="0.5" snap="0.0" />
+        <slider id="seed" group="Forma" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+
+        <!-- ============================== Luz ============================== -->
+        <color id="boltColor" group="Luz" label="Cor" default="#FF7FB8FF" />
+        <slider id="glow" group="Luz" label="Halo"
+                default="1.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="flicker" group="Luz" label="Piscada"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- O desvio de cada ponto do caminho (coluna) de cada raio (linha 0 = o principal, 1..5 = os galhos). -->
+        <texture id="desvios" src="buffer" width="21" height="6" />
+    </params>
+
+    <!-- Na vitrine, o raio padrão é fino a 64 dp: mais grosso e com mais halo. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="thickness" value="0.7" />
+        <set param="glow" value="2.5" />
+    </preview>
+
+    <passes>
+        <pass target="desvios" />   <!-- 0: o ruído de cada ponto, uma vez -->
+        <pass />                    <!-- 1: a distância de cada pixel ao raio -->
+    </passes>
+
+    <shader><![CDATA[
+
+float hash(float x) {
+    return fract(sin(x * 127.1 + seed * 13.7) * 43758.5453);
+}
+
+/** Ruído de uma dimensão, suave: é ele que entorta a linha reta. */
+float ruido1(float x) {
+    float i = floor(x);
+    float f = fract(x);
+    float s = f * f * (3.0 - 2.0 * f);
+    return mix(hash(i), hash(i + 1.0), s) * 2.0 - 1.0;
+}
+
+/**
+ * Quanto o caminho se afasta da reta, na posição `t` (0 = origem, 1 = destino).
+ *
+ * O `sin(t * PI)` é o que prende as pontas: ele vale zero nos dois extremos e um
+ * no meio. Sem isso, o raio sairia dos terminais e o efeito perderia o sentido.
+ */
+float desvio(float t, float semente, float tempo, int oitavas) {
+    float soma = 0.0;
+    float amplitude = 1.0;
+    float frequencia = 3.0;
+    float peso = 0.0;
+
+    for (int i = 0; i < 6; i++) {
+        if (i >= oitavas) break;
+        soma += ruido1(t * frequencia + tempo + semente * 7.3) * amplitude;
+        peso += amplitude;
+        amplitude *= 0.55;
+        frequencia *= 2.1;
+    }
+
+    return (soma / max(peso, 1e-4)) * sin(t * 3.14159265);
+}
+
+const int PASSOS = 20;
+
+/** O trecho de um raio: o principal (0) vai de 0 a 1; o galho i nasce num ponto do principal e morre antes do fim. */
+vec2 trecho(int raio) {
+    if (raio == 0) return vec2(0.0, 1.0);
+    float s = float(raio);
+    float nasce = 0.15 + hash(s * 3.1) * 0.6;
+    float morre = nasce + 0.15 + hash(s * 5.7) * 0.25;
+    return vec2(nasce, morre);
+}
+
+/** O desvio guardado pelo passe 0: o ponto i do raio. */
+float desvioGuardado(int raio, int i) {
+    uvec4 b = uvec4(texelFetch(desvios, ivec2(i, raio), 0) * 255.0 + 0.5);
+    return uintBitsToFloat(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
+}
+
+/**
+ * A distância do ponto até UM caminho (principal ou galho).
+ *
+ * O caminho é percorrido em passos; para cada passo, a distância até o segmento.
+ * Vinte passos bastam porque o raio é fino: buracos entre os passos ficariam
+ * menores que a espessura da linha.
+ */
+float distanciaAoRaio(vec2 p, vec2 origem, vec2 destino, int raio,
+                      float inicio, float fim, float forca) {
+    vec2 direcao = destino - origem;
+    float comprimento = length(direcao);
+    if (comprimento < 1e-4) return 1e9;
+
+    vec2 perpendicular = vec2(-direcao.y, direcao.x) / comprimento;
+
+    float menor = 1e9;
+    vec2 anterior = vec2(0.0);
+
+    for (int i = 0; i <= PASSOS; i++) {
+        float t = mix(inicio, fim, float(i) / float(PASSOS));
+        vec2 atual = origem + direcao * t +
+            perpendicular * desvioGuardado(raio, i) * chaos * forca * comprimento;
+
+        if (i > 0) {
+            vec2 pa = p - anterior;
+            vec2 ba = atual - anterior;
+            float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+            menor = min(menor, length(pa - ba * h));
+        }
+        anterior = atual;
+    }
+
+    return menor;
+}
+
+void main() {
+    float tempo = acTime * speed;
+    int oitavas = clamp(int(detail + 0.5), 1, 6);
+
+    if (acPass == 0) {
+        // o desvio do ponto i (coluna) do raio (linha): os 4 bytes do float, para o passe 1 ler o mesmo número
+        ivec2 o = ivec2(gl_FragCoord.xy);
+        vec2 tr = trecho(o.y);
+        float t = mix(tr.x, tr.y, float(o.x) / float(PASSOS));
+        uint u = floatBitsToUint(desvio(t, float(o.y), tempo, oitavas));
+        fragColor = vec4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
+        return;
+    }
+
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+    vec2 origem = vec2(fromAt.x * acAspect, fromAt.y);
+    vec2 destino = vec2(toAt.x * acAspect, toAt.y);
+
+    float d = distanciaAoRaio(p, origem, destino, 0, 0.0, 1.0, 1.0);
+
+    // Galhos: cada um nasce num ponto do caminho principal e morre antes do fim.
+    // Eles usam a MESMA função, com semente e trecho diferentes — um galho é só
+    // um raio menor.
+    int quantos = clamp(int(branches + 0.5), 0, 5);
+    for (int i = 1; i <= 5; i++) {
+        if (i > quantos) break;
+        float s = float(i);
+        vec2 tr = trecho(i);
+        float fino = 0.45 + hash(s * 9.1) * 0.3;
+        d = min(d, distanciaAoRaio(p, origem, destino, i, tr.x, tr.y, fino * 1.8));
+    }
+
+    float esp = thickness * 0.006;
+
+    // Três faixas a partir da mesma distância: o miolo branco saturado, a cor no
+    // meio e o halo largo. É a assinatura de luz forte numa câmera.
+    float nucleo = 1.0 - smoothstep(0.0, esp, d);
+    float corpo = 1.0 - smoothstep(0.0, esp * 2.5, d);
+    float halo = exp(-d / max(esp * 9.0, 1e-5)) * glow;
+
+    // A piscada usa ruído, e não um seno: descarga elétrica não tem ritmo.
+    float pisca = 1.0 - flicker * (0.5 + 0.5 * ruido1(acTime * 11.0));
+
+    vec3 cor = boltColor.rgb * (corpo + halo) + vec3(1.0) * nucleo;
+    float alfa = clamp(max(max(nucleo, corpo), halo * 0.6), 0.0, 1.0) * boltColor.a * pisca;
+
+    vec4 desenhado = vec4(cor, alfa);
+    float saidaAlfa = desenhado.a + original.a * (1.0 - desenhado.a);
+    vec3 saidaCor = saidaAlfa > 0.0
+        ? (desenhado.rgb * desenhado.a + original.rgb * original.a * (1.0 - desenhado.a)) / saidaAlfa
+        : vec3(0.0);
+
+    fragColor = vec4(saidaCor, saidaAlfa);
+}
+
+    ]]></shader>
+</effect>

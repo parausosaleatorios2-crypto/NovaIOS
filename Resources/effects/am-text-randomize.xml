@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   RANDOMIZADOR DE TEXTO — o Text Randomizer do Alight Motion, conta por conta (0.550.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora o randomizador de texto, 100% igual o do alight motion", da série
+  "100% iguais ao AM". Mesmos parâmetros, mesmos ids, faixas, passos, padrões e a mesma ordem dos 15
+  conjuntos do `com.alightcreative.effects.textrand` do AM 5.0.281 (um projeto do AM importado cai direto
+  aqui). A conta foi LIDA do script do AM (`assets/effects/textrand.xml` do APK descompactado) e escrita de
+  novo em `model/RandomizadorDeTexto.kt`; o arquivo do AM não entra no repositório. A conferência é
+  `node tools/amtextorand/referencia.js` → `RandomizadorDeTextoAmTest`: o script do próprio AM e o Kotlin
+  daqui, texto a texto (4079 casos, letra por letra).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Troca letras do texto por letras sorteadas. Montante = quantas (0 = nenhuma, 100% = todas); Semente =
+    QUAIS posições; Evolução = QUAL letra entra (animar a Evolução faz as letras rolarem); Iniciar e Concluir
+    = o trecho que pode trocar; Conjunto de caracteres = de onde vêm as letras novas ("Camada de Texto" =
+    das letras do próprio texto); Preservar espaço = o " " nunca troca.
+  - O sorteio é o `AM.simplexNoise` do AM (`model/RuidoSimplexDoAm.kt`), na posição da letra DENTRO do
+    trecho: mudar o Iniciar muda o sorteio do resto.
+  - Só o espaço se preserva: a quebra de linha troca como qualquer letra (as linhas se juntam), e o emoji
+    são duas metades trocadas cada uma por si — como no AM.
+  - Com Iniciar maior que Concluir, o meio do texto sai repetido (as fatias do script do AM).
+  - Vários Randomizadores na mesma camada correm na ordem da lista, cada um sobre o texto do anterior.
+  - `<spinner>` como no AM: o leitor do AM não lê `snap` nem `ticks` no spinner, então aqui também não há.
+    `type="percent"` mostra o valor como o AM (com passo 0,001, uma casa: "50,0%").
+
+  `stage="text"`: como no AM, o efeito não desenha pixel — ele muda o TEXTO antes de a camada virar desenho.
+  Quem executa é `RandomizadorDeTexto.textoDesenhado`, perguntado por quem desenha e por quem mede o texto
+  da camada (prévia, exportação, a caixa de seleção e a medida do bloco). O shader abaixo só copia a
+  entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-text-randomize"
+    name="Randomizador de texto"
+    name-en="Text Randomizer"
+    desc="Altera os caracteres individuais aleatoriamente em uma camada de texto (o Text Randomizer do Alight Motion)."
+    desc-en="Randomly changes individual characters in a text layer (Alight Motion's Text Randomizer)."
+    category="text"
+    layer="text"
+    stage="text"
+    tags="randomizador,randomizar,aleatório,aleatorio,embaralhar,sortear,letras,caracteres,decodificar,hacker,matrix,glitch,texto,text,random,randomizer,scramble,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="amount" label="Montante" default="0.0" min="0.0" max="1.0" step="0.001" type="percent" />
+        <spinner id="evo" label="Evolução" default="0.0" min="0.0" max="25.0" step="0.01" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="25.0" step="0.01" />
+        <spinner id="start" label="Iniciar" default="0.0" min="0.0" max="1.0" step="0.001" type="percent" />
+        <spinner id="end" label="Concluir" default="1.0" min="0.0" max="1.0" step="0.001" type="percent" />
+        <selector id="charset" label="Conjunto de caracteres" default="0"
+            options="Letras maiúsculas|Letras minúsculas|Letras maiúsculas e minúsculas|Dígitos|Dígitos e Letras|Camada de Texto|Asterisco|Bala|Barra inferior|Em branco|Diamante|Traço|Símbolos|Dígitos, Letras e Símbolos|Estendido" />
+        <switch id="preserveSpace" label="Preservar espaço" default="true" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

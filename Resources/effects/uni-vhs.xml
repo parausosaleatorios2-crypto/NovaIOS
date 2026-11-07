@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  uni.VHS (Red Giant Universe 2, `Universe_Stylize_VHS`) — a engine do plugin, como no uni.Chromatic Aberration.
+  O efeito é um SCRIPT em JavaScript (embaralhado com XOR 0x21 dentro do .aex) que chama as funções da
+  Gpu_Shader_Engine_x64.dll; as funções montam GLSL (capturado da memória do AE pela sonda) e o host faz as contas.
+  `stage="univhs"`: o efeito roda NA cadeia, mas não por este `<shader>` (a cópia da entrada): o `EffectPipeline`
+  chama o `PasseDoVhsDoUniverse`, com a conta do host em `model/ContasDoVhsDoUniverse.kt` e os passes em
+  `assets/univhs` (a pirâmide do desfoque é a do `unichromab`). Bancada e números: tools/univhs/benchmark/LEIAME.md.
+
+  O script, uma linha por etapa:
+    1. cada canal isolado, desfocado na horizontal (Red/Green/Blue Blur ÷ 10, a pirâmide da engine) e deslocado com
+       espelho (Red/Green/Blue Offset); os três somados;
+    2. a croma reduzida à metade e ampliada de volta, deslocada (Chroma Offset + Chroma Weave: sin(0,05·quadro·Speed))
+       e desfocada (Chroma Blur ÷ 3 na horizontal, ÷ 6 na vertical);
+    3. a luminosidade (mín + máx)/2 desfocada (Luminance Blur ÷ 10) e o levels (γ 1,25, Black Level);
+    4. o modo Color (a croma com a luma da luminosidade); a Saturation multiplica a cor antes (os pesos do
+       lx.saturation são zero: medido);
+    5. o Interlace Error: a textura de linhas ampliada (H · 2 · Scale), levels, colorize de três tons, hard light;
+    6. a LUT da Tape Style;
+    7. a dobra (Tape Wrinkle): uma faixa de Wrinkle Radius % da altura com uma linha esticada, rolando a cada
+       0,5·H/Scroll Speed quadros quando o sorteio (Percent Chance) deixa;
+    8. o ruído da fita (Tape Noise Type) com as Pop Lines: o mapa neutro desloca a imagem (Distortion), o ruído entra
+       em hard light (Tape Noise) e o resultado vai sobre o original (Blend with Original — só com ruído, como no
+       script);
+    9. o Frame Jitter (a imagem treme na vertical) e o recorte do Frame Style 4x3.
+
+  Medido (8 bpc, os shaders do app na GPU do PC, `gpu.py`): com a .cube original do plugin, todo caso sem sorteio fica
+  a 1 nível do AE no miolo (o 4x3 e o preset Clean VHS inclusive); com a grade 9³ que vem com o app, até ~8 níveis.
+  A última coluna e a última linha erram até ~30 níveis (a borda da redução da croma, em aberto).
+
+  O QUE NÃO ENTROU / NÃO É IGUAL (LEIAME, "O que ainda não é igual"):
+    - o ruído da fita e as Pop Lines são GERADOS: as JPGs da Red Giant não vêm com o app. O campo médio, a borda
+      preta, as linhas do topo e a força do grão foram medidos nelas; o desenho do grão quadro a quadro é outro;
+    - as cinco Tape Style são grades 9³ ajustadas às LUTs do plugin (média 0,75 nível, pico ~8): as .cube são da Red
+      Giant e não vêm com o app;
+    - o sorteio (qual quadro tem Pop Line, a dobra, o tremor) é próprio — as regras são as do script;
+    - camada com alfa parcial: até ~0,18 de alfa a mais na borda semitransparente;
+    - a versão nova do plugin (os presets da pasta do snow foram salvos nela; o AE do snow tem a 2.0): o Sharpen
+      (uma máscara de nitidez na luma), Color Mix, Enable Color Controls/Tape Damage, Adjust Noise Scale, Post Noise,
+      Render Alpha e os ruídos Mixed Tracking/Color Noise/Vertical Slip 2 são aproximados (sem como medir); o gerador
+      de texto (Play/Timecode) não entrou (o conversor avisa).
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.univhs"
+    name="uni.VHS"
+    name-en="uni.VHS"
+    desc="O VHS do Red Giant Universe: canais borrados e fora do lugar, croma borrada, ruído de fita, pop lines, interlace, dobra e tremor — como no After Effects."
+    desc-en="Red Giant Universe's VHS: smeared, offset channels, blurry chroma, tape noise, pop lines, interlace, wrinkle and jitter — as in After Effects."
+    category="stylize"
+    stage="univhs"
+    tags="universe,red giant,uni,vhs,fita,tape,retro,80s,90s,glitch,ruido,noise,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="tapeStyle" label="Tape Style" default="0" options="VHS|Bad VHS|S-VHS|U-matic|Beta|None" />
+        <selector id="frameStyle" label="Frame Style" default="1" options="Original|4x3" />
+        <slider id="imageOffset" label="Image Offset" default="0.0" min="-500.0" max="500.0" step="1.0" snap="0.0" showIf="frameStyle=1" />
+
+        <switch id="colorControls" group="Color Controls" label="Enable Color Controls" default="true" />
+        <slider id="blackLevel" group="Color Controls" label="Black Level" default="10.0" min="0.0" max="100.0" step="0.1" snap="10.0" />
+        <slider id="saturation" group="Color Controls" label="Saturation" default="100.0" min="0.0" max="200.0" step="0.1" snap="100.0" />
+        <slider id="lumaBlur" group="Color Controls" label="Luminance Blur" default="2.0" min="0.0" max="20.0" step="0.01" snap="2.0" />
+        <slider id="chromaBlur" group="Color Controls" label="Chroma Blur" default="5.0" min="0.0" max="100.0" step="0.1" snap="5.0" />
+        <slider id="sharpenRadius" group="Color Controls" label="Sharpen Radius" default="5.0" min="0.0" max="100.0" step="0.1" snap="5.0" />
+        <slider id="sharpenMix" group="Color Controls" label="Sharpen Mix" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0,5.0" />
+        <slider id="chromaOffsetX" group="Color Controls" label="Chroma Offset X" default="10.0" min="-200.0" max="200.0" step="0.1" snap="0.0,10.0" />
+        <slider id="chromaOffsetY" group="Color Controls" label="Chroma Offset Y" default="0.0" min="-200.0" max="200.0" step="0.1" snap="0.0" />
+        <slider id="chromaWeaveX" group="Color Controls" label="Chroma Weave X" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="chromaWeaveY" group="Color Controls" label="Chroma Weave Y" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="speedX" group="Color Controls" label="Speed X" default="1.0" min="0.0" max="100.0" step="0.01" snap="1.0" />
+        <slider id="speedY" group="Color Controls" label="Speed Y" default="1.0" min="0.0" max="100.0" step="0.01" snap="1.0" />
+        <slider id="colorMix" group="Color Controls" label="Color Mix" default="100.0" min="0.0" max="100.0" step="0.1" snap="100.0" />
+
+        <slider id="redOffset" group="Channel Controls" label="Red Offset" default="10.0" min="-100.0" max="100.0" step="0.1" snap="0.0,10.0" />
+        <slider id="greenOffset" group="Channel Controls" label="Green Offset" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="blueOffset" group="Channel Controls" label="Blue Offset" default="-10.0" min="-100.0" max="100.0" step="0.1" snap="0.0,-10.0" />
+        <slider id="redBlur" group="Channel Controls" label="Red Blur" default="25.0" min="0.0" max="300.0" step="0.1" snap="25.0" />
+        <slider id="greenBlur" group="Channel Controls" label="Green Blur" default="55.0" min="0.0" max="300.0" step="0.1" snap="55.0" />
+        <slider id="blueBlur" group="Channel Controls" label="Blue Blur" default="45.0" min="0.0" max="300.0" step="0.1" snap="45.0" />
+
+        <switch id="tapeDamage" group="Tape Damage" label="Enable Tape Damage" default="true" />
+        <slider id="popLines" group="Tape Damage" label="Pop Line Frequency" default="25.0" min="0.0" max="100.0" step="0.1" snap="25.0" />
+        <slider id="frameJitter" group="Tape Damage" label="Frame Jitter" default="2.0" min="0.0" max="20.0" step="0.01" snap="2.0" />
+        <slider id="interlace" group="Tape Damage" label="Interlace Error" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="interlaceScale" group="Tape Damage" label="Interlace Scale" default="4.0" min="0.0" max="10.0" step="0.01" snap="4.0" />
+        <color id="interlaceColor1" group="Tape Damage" label="Interlace Color 1" default="#F01E7D" />
+        <color id="interlaceColor2" group="Tape Damage" label="Interlace Color 2" default="#7EFFFF" />
+        <selector id="tapeNoiseType" group="Tape Damage" label="Tape Noise Type" default="2"
+                  options="None|VHS Noise|Bad Tracking|Very Bad Tracking|Blank Tape|Vertical Slip|Mixed Tracking|Color Noise|Vertical Slip 2" />
+        <slider id="tapeOffset" group="Tape Damage" label="Offset" default="0" min="0" max="100" step="1" type="integer" />
+        <slider id="tapeNoise" group="Tape Damage" label="Tape Noise" default="100.0" min="0.0" max="200.0" step="0.1" snap="100.0" />
+        <slider id="distortion" group="Tape Damage" label="Distortion" default="3.0" min="0.0" max="20.0" step="0.01" snap="3.0" />
+        <slider id="noiseScale" group="Tape Damage" label="Adjust Noise Scale" default="1.0" min="1.0" max="1.1" step="0.001" snap="1.0" />
+
+        <switch id="wrinkle" group="Tape Wrinkle" label="Wrinkle Distortion" default="true" />
+        <slider id="scrollSpeed" group="Tape Wrinkle" label="Scroll Speed" default="5.0" min="0.0" max="200.0" step="0.1" snap="5.0" />
+        <slider id="percentChance" group="Tape Wrinkle" label="Percent Chance" default="40.0" min="0.0" max="100.0" step="0.1" snap="40.0" />
+        <slider id="wrinkleRadius" group="Tape Wrinkle" label="Wrinkle Radius" default="5.0" min="0.0" max="20.0" step="0.01" snap="5.0" />
+
+        <slider id="randomSeed" label="Random Seed" default="9300" min="1000" max="50000" step="1" type="integer" />
+        <slider id="blend" label="Blend with Original" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="postNoise" label="Post Noise" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <switch id="renderAlpha" label="Render Alpha" default="true" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoVhsDoUniverse` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

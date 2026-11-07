@@ -1,0 +1,120 @@
+// Gaussiano recursivo (Young/van Vliet de ordem 0) — `CoreKernel_GaussianKernel16`: uma invocação por coluna,
+// ida (de cima para baixo no AE) e volta; o host (`0x180421fd0`) roda nas colunas, transpõe, roda de novo e
+// transpõe de volta — aqui `uLinhas` percorre as linhas direto (da esquerda para a direita). Cada metade é um
+// despacho: a ida grava o resultado dela em `uSaida`; a volta lê esse resultado (`uIda`) e grava a soma.
+// O kernel grava float16 ARREDONDADO AO MAIS PRÓXIMO (`meiaPerto`); a recursão anda em float.
+// Coeficientes do host (`0x180424f30`): ContasDoLooks.gauss.
+//
+// Desempenho (0.878.0): a série anda de 4 em 4 passos escritos um atrás do outro (o compilador não desenrola um
+// laço de tamanho variável, e cada passo esperava o anterior gravar); com a `meiaPerto` sem desvio, 6,3 → 4,2 ms
+// por blur em 1920 × 1080 na GPU do PC, os mesmos bits. As contas e a ordem delas são as de sempre.
+//
+// CANAIS (0.881.0, `#define` que o PasseDoLooks põe antes): quantos canais quem recebe o blur lê. 4 = RGBA; 1 = só o
+// vermelho, num alvo R32F — a lightness do Pop (l, l, l, 1), que o `pop2pos.frag` lê no vermelho: 4,2 → 2,6 ms em
+// 1920 × 1080, os mesmos bits (o canal faz a mesma conta da versão RGBA). Só RGB (Diffusion, Haze) ganhava 4%: ficou de
+// fora.
+#ifndef CANAIS
+#define CANAIS 4
+#endif
+layout(local_size_x = 64) in;
+
+uniform highp sampler2D uEntrada;
+uniform highp sampler2D uIda;
+#if CANAIS == 1
+#define V float
+#define LER(t, p) texelFetch(t, p, 0).r
+#define GRAVAR(v) vec4(v)
+layout(r32f, binding = 0) writeonly uniform highp image2D uSaida;
+#else
+#define V vec4
+#define LER(t, p) texelFetch(t, p, 0)
+#define GRAVAR(v) (v)
+layout(rgba16f, binding = 0) writeonly uniform highp image2D uSaida;
+#endif
+uniform ivec2 uTamanho;
+uniform bool uDePe;
+uniform bool uLinhas;
+uniform bool uVolta;
+uniform float uA0;
+uniform float uA1;
+uniform float uA2;
+uniform float uA3;
+uniform float uB1;
+uniform float uB2;
+uniform float uCoefP;
+uniform float uCoefN;
+
+/**
+ * Infinito ou NaN vira 0. A recursão leva cada valor até o fim da coluna e depois da linha: um texel só não finito
+ * apagava a imagem inteira (a prévia preta de 25/10/2026). Pelos bits, que o compilador não pode jogar fora.
+ */
+float finito(float v) { return (floatBitsToUint(v) & 0x7F800000u) == 0x7F800000u ? 0.0 : v; }
+vec4 finito(vec4 v) { return vec4(finito(v.x), finito(v.y), finito(v.z), finito(v.w)); }
+
+/** O texel da posição `j` da coluna (ou linha) `i`, contadas como o AE conta (linha 0 = topo). */
+ivec2 texel(int i, int j) {
+    ivec2 p = uLinhas ? ivec2(j, i) : ivec2(i, j);
+    if (uDePe) p.y = uTamanho.y - 1 - p.y;
+    return p;
+}
+
+// o estado da série: x anterior / de dois atrás e y anterior / de dois atrás
+V x1;
+V x2;
+V y1;
+V y2;
+
+/** Um passo da ida no texel `j`: (x[j−1]·a1 − y[j−1]·b1 − y[j−2]·b2) + x[j]·a0. */
+void passoDaIda(int i, int j) {
+    ivec2 p = texel(i, j);
+    V xc = finito(LER(uEntrada, p));
+    V yc = ((x1 * uA1 - y1 * uB1) - y2 * uB2) + xc * uA0;
+    imageStore(uSaida, p, GRAVAR(meiaPerto(yc)));
+    x1 = xc;
+    y2 = y1;
+    y1 = yc;
+}
+
+/** Um passo da volta no texel `j`: (x[j+1]·a2 + x[j+2]·a3 − y[j+1]·b1 − y[j+2]·b2), somado à ida. */
+void passoDaVolta(int i, int j) {
+    ivec2 p = texel(i, j);
+    V xc = finito(LER(uEntrada, p));
+    V yc = ((x1 * uA2 + x2 * uA3) - y1 * uB1) - y2 * uB2;
+    imageStore(uSaida, p, GRAVAR(meiaPerto(finito(LER(uIda, p)) + yc)));
+    x2 = x1;
+    x1 = xc;
+    y2 = y1;
+    y1 = yc;
+}
+
+void main() {
+    int i = int(gl_GlobalInvocationID.x);
+    if (i >= (uLinhas ? uTamanho.y : uTamanho.x)) return;
+    int n = uLinhas ? uTamanho.x : uTamanho.y;
+    if (!uVolta) {
+        x1 = finito(LER(uEntrada, texel(i, 0)));
+        y1 = x1 * uCoefP;
+        y2 = y1;
+        int j = 0;
+        for (; j + 3 < n; j += 4) {
+            passoDaIda(i, j);
+            passoDaIda(i, j + 1);
+            passoDaIda(i, j + 2);
+            passoDaIda(i, j + 3);
+        }
+        for (; j < n; j++) passoDaIda(i, j);
+    } else {
+        x1 = finito(LER(uEntrada, texel(i, n - 1)));
+        x2 = x1;
+        y1 = x1 * uCoefN;
+        y2 = y1;
+        int j = n - 1;
+        for (; j >= 3; j -= 4) {
+            passoDaVolta(i, j);
+            passoDaVolta(i, j - 1);
+            passoDaVolta(i, j - 2);
+            passoDaVolta(i, j - 3);
+        }
+        for (; j >= 0; j--) passoDaVolta(i, j);
+    }
+}

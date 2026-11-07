@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AUXILIAR DE CAMADA PAI — o Parenting Helper do Alight Motion, conta por conta
+  ============================================================================
+
+  Pedido do snow (23/10/2026): "faz o efeito auxiliar de camada mãe do alight motion 100% igual". Mesmos
+  parâmetros, mesmos ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.parenthelper` do AM 5.0.281
+  (um projeto do AM importado cai direto aqui); os textos são os do AM em português (`values-pt`), e as escolhas
+  "Normal | Locked | Weighted", que o AM escreve em inglês nas duas línguas, estão iguais. O efeito não tem script no
+  AM: a conta foi LIDA do `LayerParentingKt.applyParentingInternal` do APK e escrita de novo em
+  `model/AuxiliarDaMae.kt` (o arquivo do AM não entra no repositório).
+
+  O QUE O EFEITO DO AM FAZ (e este repete), na camada FILHA:
+
+  - Escala Normal / Locked / Weighted: a escala da filha herda a da mãe inteira, nada dela, ou pelo Escala de Peso
+      escala = ((1 − peso) + escala da mãe · peso) · escala da filha
+  - Rotação Normal / Locked / Weighted: o mesmo com o giro
+      giro = giro da mãe · peso + giro da filha
+  - A POSIÇÃO segue a mãe sempre (com Locked, a filha não cresce com a mãe, mas se afasta dela).
+  - Rotação Automática (Eixo X / Eixo Y): gira como roda rolando pelo quanto a camada anda no eixo
+      r = mín(largura · escala.x, altura · escala.y) / 2 + Ajuste de Raio · mín(escala.x, escala.y)
+      giro += posição / (r · 2π) · 360
+    A posição é a do AM, contada do canto da cena: a roda já começa girada pelo lugar dela.
+  - Os pesos vão de −1000% a 1000% (2 = o dobro do giro da mãe; −1 = gira ao contrário).
+
+  `stage="transform"`: como no AM, não desenha pixel — muda a matriz da camada. Quem executa é `LayerGeometry`
+  (a cadeia de mães de toda camada: prévia, exportação, seleção, filhos, desfoque de movimento e a física do
+  puppet). O shader abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-parenting-helper"
+    name="Auxiliar de camada pai"
+    name-en="Parenting Helper"
+    desc="Ajusta como a escala e a rotação da camada reagem às mudanças na escala e na rotação da camada pai (o Parenting Helper do Alight Motion)."
+    desc-en="Adjusts how the layer's scale and rotation react to changes in the parent's scale and rotation (Alight Motion's Parenting Helper)."
+    category="distort"
+    stage="transform"
+    tags="auxiliar,camada pai,camada mãe,mãe,mae,pai,hierarquia,parentesco,parenting,parenting helper,escala,rotação,rotacao,peso,travar,roda,rolar,rotação automática,transformação,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <tip text="Para usar: Organize esta camada em outra usando o recurso Hierarquia de Camadas (este efeito deve ser aplicado a uma camada filho)"
+            text-en="To use: Parent this layer to another using Layer Parenting (this effect shoud be applied to a child layer)" />
+
+        <selector id="scaleMode" label="Escala" style="radio" options="Normal|Locked|Weighted" default="0" />
+        <selector id="rotateMode" label="Rotação" style="radio" options="Normal|Locked|Weighted" default="0" />
+
+        <spinner id="scaleWeight" label="Escala de Peso" default="1.0" min="-1000.0" max="1000.0" step="0.001"
+            type="percent" ticks="0.5,1.0,1.5,2.0" enabled="false" enabledIf="scaleMode=2" />
+        <spinner id="rotateWeight" label="Peso de Rotação" default="1.0" min="-1000.0" max="1000.0" step="0.01"
+            type="percent" ticks="0.5,1.0,1.5,2.0" enabled="false" enabledIf="rotateMode=2" />
+
+        <selector id="autoRotate" label="Rotação Automática" style="radio" options="Desligado|Eixo X|Eixo Y" default="0" />
+        <spinner id="radiusAdjust" label="Ajuste de Raio" default="0.0" min="-1000.0" max="1000.0" step="0.1"
+            ticks="0" enabled="false" enabledIf="autoRotate=1|2" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

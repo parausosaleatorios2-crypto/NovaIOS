@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.twirl" name="Twirl" desc="Rotates pixels around a centre with a falloff. A clean vortex that stays readable." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/twirl.png"
+        tags="distort,twirl,vortex,rotate" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Twirl" />
+<spinner id="centerX" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre X" />
+<spinner id="centerY" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre Y" />
+<spinner id="radius" default="0.55" min="0.05" max="1.5" step="0.01" label="Radius" />
+<spinner id="twist" default="1.2" min="-6.2832" max="6.2832" step="0.01" label="Twist (radians)" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 p = (uv - vec2(centerX, centerY)) * vec2(ar, 1.0);
+  float r = length(p);
+  float ang = twist * (1.0 - smoothstep(0.0, radius, r)) * mixAmt;
+  float s = sin(ang), c = cos(ang);
+  vec2 q = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+  uv = q / vec2(ar, 1.0) + vec2(centerX, centerY);
+  gl_FragColor = texture2DCv(inputImg.texture, uv);
+}
+]]></shader>
+</effect>

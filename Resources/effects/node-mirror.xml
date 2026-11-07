@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ESPELHO (NODE) — o Mirror do Node Video, conta por conta (0.651.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "proximo efeito 100% igual o do node video". Depois do Twirl e do Pinch&Bulge, o
+  próximo de Distorcer com a conta inteira num passe só (sem classe própria no código do Node) e o mesmo
+  `_viewport_ratio` (o `acProporcaoDoNode` do motor, da 0.647). O Node é um app em Unity, e tudo aqui foi LIDO do APK
+  9.0.2 descompactado (nada do Node entra no repositório; `tools/nodeespelho/extrair.py` tira o shader do APK na hora
+  e `comparar.py` roda os dois na GPU do PC):
+
+  - a definição: `_Mirror` (no menu, Efeitos → Distorcer → Espelho), um `AssetEffect` com 3 parâmetros, na ordem
+    dele: Centro de reflexão (Vector2 (0,5; 0,5), em UV da tela, sem prender), Ângulo de reflexão (Float, partida 0,
+    régua 0..360 com o Cycle 360 — só a volta da régua, sem prender) e Inverter (Bool; o Float guardado é −2,61, lixo:
+    `Float > 0` = desligado). Os rótulos em português são os do próprio Node (o TextAsset `param`);
+  - como cada um chega ao shader (o `SetShader` de cada tipo, lido no il2cpp): o Float por `SetGlobalFloat`, o
+    Vector2 inteiro, o Bool por `SetGlobalInt` (0 ou 1);
+  - o shader: `NodeVideo/Effect/Distort/mirror`, UM passe, o GLSL ES 3.00 que o Unity gerou, com `Blend One Zero`
+    (a saída do programa vai direto ao RT). O `m_Script` da definição é o `AESinglePass`: sem classe própria.
+
+  A CONTA DO NODE (o passe 1, na mesma ordem, com as mesmas constantes do float32). A camada chega como o RT dela
+  (pré-multiplicada, em luz linear):
+  - tudo em volta do meio da tela, com o X e o Y vezes o `_viewport_ratio` (a proporção da tela normalizada);
+  - a linha do espelho passa pelo Centro, na direção do Ângulo: dois pontos a meio passo do Centro, (−cos, −sen) e
+    (cos, sen) × 0,5 — o seno do −Ângulo, como o Node escreve;
+  - de cada ponto, a parte perpendicular à linha (o ponto menos a projeção dele na linha). O lado que reflete é o de
+    um lado da linha, escolhido pelo sinal da perpendicular com um degrau de 100 000× (preso a 0..1: um degrau quase
+    duro, contínuo nos últimos 10 µ); o lado vira com o Inverter e quando o Ângulo, dado a volta de 360 como o Node dá
+    (o `fract` de Ângulo ÷ 360, com o sinal), cai entre 90 e 270 graus. Perto da linha (|perp.y| < 0,0001) o sinal é
+    o do X;
+  - no lado que reflete, o ponto vai ao outro lado da linha (menos 2 × a perpendicular); no outro, fica;
+  - a leitura pelo filtro linear da GPU (em luz linear); fora da tela (UV < 0 ou > 1), transparente.
+  A máscara interna do Node (`_use_inner_mask`, a máscara de efeito dele) não é parâmetro do efeito e fica de fora.
+
+  EM LUZ LINEAR, como os outros efeitos do Node (o buffer sRGB do motor, `format="srgb"`, da 0.626), e com os RTs do
+  meio SEMPRE de pé, como no `node-pinch-bulge.xml`:
+  - passe 0: a camada como o RT dela no Node (a cor em luz linear vezes o alfa; a GPU guarda em sRGB), DE PÉ;
+  - passe 1: o programa do Node, copiado conta por conta (os nomes de variável são os do Unity), com o UV dele e
+    lendo o RT pela GPU, escrevendo num RT sRGB (o `One Zero` não mexe na saída);
+  - passe 2: os bytes desse RT de volta ao alfa reto do Nova (a cor linear ÷ o alfa, em sRGB): no opaco, os próprios
+    bytes do Node.
+  Na tela (`acEntradaDePe` = 1) o Centro chega na tela de pé (o UV do Node); num buffer de camada só os passes 0 e 2
+  espelham a linha, pelo `texelFetch` (exato), e o Y do Centro vira 1 − Y.
+
+  NA TELA (`stage="screen"`): o RT de cada camada do Node tem o tamanho da composição e o efeito entra depois do
+  Transform. Prévia reduzida (`screen-scale="safe"`): centro e ângulo são em fração da tela e em graus.
+
+  O que não fica igual: o Centro do Node é um lugar da COMPOSIÇÃO; aqui é um lugar da camada (com a alça na prévia),
+  levado à tela — numa camada que cobre a tela sem mexer, o mesmo número; numa camada movida ou escalada, o centro
+  acompanha a camada. E o Y do número cresce para baixo, como todo ponto do Nova (o 0,7 do Node é o 0,3 daqui). O
+  `_viewport_ratio` do Node passa pelo tamanho da janela na tela do celular e pode diferir no último bit; o daqui é o da
+  proporção exata. E o de todos os efeitos do Node: o Node compõe em luz linear e o Nova em gama (a borda de alfa
+  parcial se mistura diferente com o fundo), e a mídia do Node entra no RT com `Blend SrcAlpha Zero`.
+-->
+<effect
+    id="nova.effect.node-mirror"
+    name="Espelho (Node)"
+    name-en="Mirror (Node Video)"
+    desc="Reflete a camada numa linha que passa por um centro, no ângulo que você escolher (o Mirror do Node Video)."
+    desc-en="Reflects the layer across a line through a center, at the angle you choose (Node Video's Mirror)."
+    category="distort"
+    tags="espelho,espelhar,refletir,reflexão,reflexao,simetria,distorcer,mirror,reflect,reflection,symmetry,node video,nodevideo"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+
+        <!-- O Vector2 do Node, o centro da reflexão: um lugar (a alça na prévia), sem prender. -->
+        <point id="reflectionCenter" label="Centro de reflexão" defaultX="0.5" defaultY="0.5" min="-10.0" max="10.0" />
+        <!-- Graus, sem prender (o Cycle 360 do Node é só a volta da régua). -->
+        <spinner id="reflectionAngle" label="Ângulo de reflexão" default="0.0" min="-3600.0" max="3600.0" step="0.1"
+            type="angle" />
+        <!-- O Bool do Node (o Float guardado é −2,61: desligado). -->
+        <switch id="invert" label="Inverter" default="false" />
+
+        <!-- Os RTs do Node (sRGB de 8 bits, pré-multiplicados em luz linear): a camada e a saída. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="saidaRt" src="buffer" format="srgb" precision="highp" />
+    </params>
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="saidaRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (o
+// `floor(..)/255.0` vai pelo recíproco e erra o último bit — ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+// Os bytes que um RT sRGB de 8 bits guarda para esta cor linear.
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+// O texel exato de uma imagem do tamanho da tela no pixel de pé (a linha 0 é a base, como nos RTs do Node): no
+// buffer de camada (`acEntradaDePe` = 0, a linha 0 é o topo) a linha é espelhada. Lê a entrada para o RT de pé e o RT
+// de pé para a saída — os dois espelhos se desfazem, e a conta do meio é a da tela.
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+
+// O programa do Node, conta por conta (o `_SourceTex` é o `camadaRt`, os parâmetros com os nomes do Nova).
+// [vs_TEXCOORD0]: o UV do Node (cresce para cima). Sem a máscara interna: o ramo `_use_inner_mask` == 0.
+vec4 mirror(vec2 vs_TEXCOORD0, vec2 _reflection_center) {
+    // [_reflection_center]: no UV do Node (ver o `main`). O `_viewport_ratio` do `RCEffect::Render` é o
+    // `acProporcaoDoNode`, feito na CPU como o Node faz. O Bool chega como o `SetGlobalInt` do Node: 0 ou 1.
+    float _reflection_angle = reflectionAngle;
+    int _invert = invert ? 1 : 0;
+    vec2 _viewport_ratio = acProporcaoDoNode;
+    vec4 u_xlat0;
+    vec4 u_xlat1;
+    bvec2 u_xlatb1;
+    vec4 u_xlat2;
+    vec2 u_xlat12;
+    bvec2 u_xlatb12;
+    vec2 u_xlat13;
+    float u_xlat18;
+    bool u_xlatb18;
+    u_xlat0.xy = vs_TEXCOORD0.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = _reflection_center.xy + vec2(-0.5, -0.5);
+    u_xlat1.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat13.xy = vec2(vec2(_reflection_angle, _reflection_angle)) * vec2(0.0174532942, 360.0);
+    u_xlat2.x = cos(u_xlat13.x);
+    u_xlat13.x = sin((-u_xlat13.x));
+    u_xlat2.xy = u_xlat2.xx * vec2(-0.5, 0.5);
+    u_xlat2.zw = u_xlat13.xx * vec2(-0.5, 0.5);
+    u_xlat2 = u_xlat12.xyxy * vec4(_viewport_ratio.x, _viewport_ratio.y, _viewport_ratio.x, _viewport_ratio.y) + u_xlat2.xzyw;
+    u_xlat0.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y) + (-u_xlat2.xy);
+    u_xlat12.xy = (-u_xlat2.xy) + u_xlat2.zw;
+    u_xlat13.x = dot(u_xlat0.xy, u_xlat12.xy);
+    u_xlat2.x = dot(u_xlat12.xy, u_xlat12.xy);
+    u_xlat13.x = u_xlat13.x / u_xlat2.x;
+    u_xlat0.xy = (-u_xlat13.xx) * u_xlat12.xy + u_xlat0.xy;
+    u_xlatb12.x = u_xlat13.y>=(-u_xlat13.y);
+    u_xlat12.xy = (u_xlatb12.x) ? vec2(360.0, 0.00277777785) : vec2(-360.0, -0.00277777785);
+    u_xlat18 = u_xlat12.y * _reflection_angle;
+    u_xlat18 = fract(u_xlat18);
+    u_xlat12.x = u_xlat18 * u_xlat12.x;
+    u_xlatb18 = 90.0<abs(u_xlat12.x);
+    u_xlatb12.x = abs(u_xlat12.x)<270.0;
+    u_xlatb12.x = u_xlatb12.x && u_xlatb18;
+    u_xlat13.xy = (int(_invert) != 0) ? vec2(-1.0, 1.0) : vec2(1.0, -1.0);
+    u_xlat12.x = (u_xlatb12.x) ? u_xlat13.y : u_xlat13.x;
+    u_xlatb18 = abs(u_xlat0.y)<9.99999975e-05;
+    u_xlat13.xy = u_xlat12.xx * (-u_xlat0.yx);
+    u_xlat12.x = (u_xlatb18) ? u_xlat13.y : u_xlat13.x;
+    u_xlat12.x = u_xlat12.x * 100000.0;
+    u_xlat12.x = clamp(u_xlat12.x, 0.0, 1.0);
+    u_xlat0.xy = u_xlat0.xy * u_xlat12.xx;
+    u_xlat0.xy = (-u_xlat0.xy) * vec2(2.0, 2.0) + u_xlat1.xy;
+    u_xlat0.xy = u_xlat0.xy / vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat0.xy = u_xlat0.xy + vec2(0.5, 0.5);
+    u_xlatb12.xy = lessThan(u_xlat0.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb1.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.xyxx).xy;
+    u_xlatb12.x = u_xlatb12.x || u_xlatb1.x;
+    u_xlatb12.x = u_xlatb12.y || u_xlatb12.x;
+    u_xlatb12.x = u_xlatb1.y || u_xlatb12.x;
+    u_xlat1 = texture(camadaRt, u_xlat0.xy);
+    u_xlat0.x = (u_xlatb12.x) ? 0.0 : 1.0;
+    u_xlat0 = u_xlat0.xxxx * u_xlat1;
+    return u_xlat0;
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada como o RT dela no Node: a cor em luz linear vezes o alfa, de pé; a GPU guarda em sRGB.
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O RT da camada está de pé: o UV do Node é o da tela, nos dois casos. O Centro chega na tela de pé (o UV do
+        // Node) quando a entrada é de pé; no buffer de camada, no Y para baixo do buffer: vira 1 − Y.
+        // `Blend One Zero`: a saída como está (o alvo sRGB de 8 bits prende, como o do Node).
+        vec2 centro = acEntradaDePe == 1 ? reflectionCenter : vec2(reflectionCenter.x, 1.0 - reflectionCenter.y);
+        fragColor = mirror(acScreenNorm, centro);
+        return;
+    }
+
+    // Os bytes do RT de saída do Node (a GPU decodificou ao ler; codificar de novo devolve o byte guardado), de volta
+    // à orientação da entrada.
+    vec4 o = texelDePe(saidaRt);
+    vec3 kc = bytesSrgb(o.rgb);
+    float ka = floor(o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    // O Nova guarda reto: a cor linear guardada dividida pelo alfa, de volta ao sRGB (acima de 1 fica em 1).
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

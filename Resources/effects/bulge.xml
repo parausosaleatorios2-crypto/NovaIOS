@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.bulge"
+    name="Esferizar"
+    name-en="Spherize"
+    desc="Estufa ou aperta a imagem em torno de um ponto, como uma lente."
+    desc-en="Bulges or pinches a region, like a lens over the image."
+    category="distort"
+    tags="lente,olho de peixe,estufar,apertar,distorção">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="radius" label="Raio" default="0.4" min="0.05" max="1.5" step="0.01" />
+        <slider id="strength" label="Força" default="0.6" min="-2.0" max="2.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    // A correção de proporção é o que mantém a lente REDONDA num projeto 16:9.
+    // Sem ela o efeito vira uma elipse achatada.
+    vec2 p = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    float dist = length(p);
+
+    if (dist >= radius || radius <= 0.0) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+
+    float ratio = dist / radius;
+
+    // A curva `pow` faz a distorção ser forte no centro e ir a zero na borda do
+    // raio. Um fator linear deixaria uma emenda visível no limite do círculo.
+    float factor = pow(ratio, 1.0 + strength);
+
+    vec2 warped = p * (factor / max(ratio, 0.0001));
+    vec2 uv = center + warped / vec2(acAspect, 1.0);
+
+    fragColor = texture(inputImg, clamp(uv, 0.0, 1.0));
+}
+
+    ]]></shader>
+</effect>

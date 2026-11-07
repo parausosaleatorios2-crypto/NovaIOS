@@ -1,0 +1,103 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="com.alightcreative.effects.organic_particles_up"
+        name="Organic Particles Up"
+        desc="Procedural upward organic particles (Shadertoy Buffer A port)"
+        category="generate"
+        tags="particles,procedural,organic,sperm,shader"
+        thumb="thumb/organic.webp">
+
+  <params>
+    <texture id="inputImg" srcType="content" />
+
+    <section text="Particles" />
+    <slider id="particleCount" default="80" min="1" max="200" step="1" type="integer" label="Particle Count" />
+    <spinner id="speedScale" default="1.0" min="0.1" max="3.0" step="0.01" label="Speed Scale" />
+    <spinner id="sizeScale" default="1.0" min="0.5" max="3.0" step="0.01" label="Size Scale" />
+    <spinner id="tailFreqScale" default="1.0" min="0.2" max="2.0" step="0.01" label="Tail Freq Scale" />
+    <spinner id="seedOffset" default="0.0" min="0.0" max="1000.0" step="1.0" label="Random Seed Offset" />
+
+    <section text="Look" />
+    <color id="tint" default="#FFFF3300" label="Tint" alpha="false" />
+    <spinner id="intensity" default="1.0" min="0.0" max="3.0" step="0.01" label="Intensity" />
+
+    <section text="Composite" />
+    <spinner id="blend" default="1.0" min="0.0" max="1.0" step="0.01" label="Additive Blend with Source" />
+    <spinner id="alpha" default="1.0" min="0.0" max="1.0" step="0.01" label="Alpha" type="percent" />
+  </params>
+
+  <shader type="fragment" precision="high"><![CDATA[
+    // Procedural upward organic particles (Buffer A port)
+
+    float rand(vec2 co){
+      return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+    }
+
+    float organicWave(float y, float id) {
+      float freq1 = rand(vec2(id + seedOffset, 5.0)) * 3.0 + 2.0;
+      float amp1  = rand(vec2(id + seedOffset, 6.0)) * 0.04;
+      float freq2 = rand(vec2(id + seedOffset, 7.0)) * 10.0 + 8.0;
+      float amp2  = rand(vec2(id + seedOffset, 8.0)) * 0.02;
+      float drift = sin(acTime * (rand(vec2(id + seedOffset, 1.1)) * 0.3 + 0.1));
+      return sin(y * freq1 + id) * amp1 + sin(y * freq2 + id) * amp2 + drift * 0.02;
+    }
+
+    vec3 createParticle(vec2 uv, float id, float aspect) {
+      float initial_x      = rand(vec2(id + seedOffset, 1.0));
+      float speed          = mix(0.04, 0.12, rand(vec2(id + seedOffset, 2.0))) * speedScale;
+      float phase          = rand(vec2(id + seedOffset, 3.0)) * 200.0;
+      float size           = mix(0.6, 1.3, rand(vec2(id + seedOffset, 4.0))) * sizeScale;
+      float tail_dot_freq  = (mix(150.0, 200.0, rand(vec2(id + seedOffset, 9.0))) * tailFreqScale);
+
+      float y_pos = fract((acTime + phase) * speed);
+      float x_pos = initial_x + organicWave(y_pos, id);
+      vec2 pos = vec2(x_pos, y_pos);
+
+      vec2 uv_aspect = uv; uv_aspect.x *= aspect; pos.x *= aspect;
+
+      // Head
+      vec2 p_head = uv_aspect - pos;
+      float head_dist = length(p_head) - p_head.y * 0.4;
+      float head_size = 0.009 * size;
+      float head = smoothstep(head_size, head_size * 0.3, head_dist);
+
+      // Tail
+      float tail = 0.0;
+      if (uv.y < pos.y) {
+        float y_dist_from_head = (pos.y - uv.y);
+        float tail_x_center = (initial_x + organicWave(uv.y, id)) * aspect;
+        float x_dist_from_center = uv_aspect.x - tail_x_center;
+        float dots = smoothstep(0.7, 0.8, sin(y_dist_from_head * -tail_dot_freq));
+        float falloff = exp(-y_dist_from_head * 18.0);
+        float dot_size = 0.005 * falloff * size;
+        tail = smoothstep(dot_size, 0.0, abs(x_dist_from_center)) * falloff * dots;
+      }
+
+      float intensityLocal = head + tail * 1.5;
+      if (intensityLocal < 0.01) return vec3(0.0);
+
+      vec3 base = pow(intensityLocal, 2.0) * tint.rgb;
+      vec3 glow = pow(intensityLocal, 4.0) * mix(vec3(1.0, 0.2, 0.1), tint.rgb, 0.5);
+      return (base + glow) * intensity;
+    }
+
+    void main(){
+      vec2 uv = acScreenNorm;
+      float aspect = acScreenSize.x / acScreenSize.y;
+
+      // Accumulate particles
+      vec3 final_color = vec3(0.0);
+      int count = int(clamp(float(particleCount), 1.0, 200.0));
+      for(int i=0;i<200;i++){
+        if(i>=count) break;
+        final_color += createParticle(uv, float(i), aspect);
+      }
+
+      // Composite over source additively
+      vec4 src = texture2DCv(inputImg.texture, uv);
+      vec3 outRGB = mix(src.rgb, src.rgb + final_color, clamp(blend, 0.0, 1.0));
+      float a = src.a * alpha;
+      gl_FragColor = vec4(outRGB, 1.0) * a;
+    }
+  ]]></shader>
+
+</effect>

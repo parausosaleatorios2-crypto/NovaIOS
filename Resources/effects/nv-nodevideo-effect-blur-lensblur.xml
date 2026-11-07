@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/Blur/LensBlur — o Lens Blur do Node (definição `_LensBlur`, Efeitos → Desfoque), portado do C#
+  (0.915.0). O porte automático só tinha o passe final, que lê um `accumTex` que ninguém enchia.
+
+  O que o `AELensBlur` faz (lido no il2cpp e nos compute shaders `LensBlur`, plataforma GLES 3.1 do bundle):
+  - `CreatePyramid`: níveis do tamanho da composição, cada um a metade do anterior, até o lado menor chegar a 256
+    (128 na Qualidade Baixa; o último é preso nesse lado, com a proporção, e todo lado ímpar sobe para par);
+  - `Render` escolhe o nível: Qualidade Alta, o primeiro com o lado maior ≤ 640 (no Android; senão o nível 0); Baixa e
+    Média, o primeiro em que largura × altura × amostras ≤ 14.745.600 (Baixa) ou 58.982.400 (Média) — senão o último.
+    Com uma amostra só, a camada passa como está;
+  - `GetDirs` (no nível): R = (int)(min(Raio, 1) × 0,2 × lado maior ÷ 2), preso em 60; N = 2R + 1. Na grade
+    (2·dx − 1, 2·dy − 1) girada pela Rotação:
+      Polígono — 2·|p|·cos(ângulo até o lado mais perto) ≤ N, peso (|…| ÷ N)^(Recorte × 8);
+      Círculo — raio (int)(R ÷ 1,5), peso (d ÷ raio)^(Recorte × 10);
+      Coração — x² + 1,5·(y − 2√(|x| + 1))² ≤ 4R + 1 (em px, sem girar), peso smoothstep(|∇f| ÷ |f|)^(Recorte × 5);
+      Estrela — a distância de `AELensBlur.star` (pontas a 0,2·N, vértice de dentro a 0,2·N × 0,2·N × Raio interno)
+      ≤ 0, peso (|d| ÷ N)^(Recorte × 5);
+  - `LensBlurAccum` (compute, um despacho por deslocamento): cada pixel s do nível soma em s + d a cor² × W e W, com
+    W = (média de cor²)^Intensidade × peso; com Realces, a cor² cujo matiz/saturação/valor (a Fonte) cai entre os dois
+    números do Limiar vira HSV com a saturação × 2^Saturação e o valor × 2^Ganho (desligado: limiar (1, 1), nada
+    passa). `LensBlurAvg`: √(soma ÷ W). O passe do shader lê esse `_accumTex` (filtro linear) e é a saída.
+  Aqui: o mesmo somatório na ordem inversa (cada pixel junta de s = t − d), em luz linear e pré-multiplicado como os
+  RTs do Node; o nível é escolhido pelas mesmas regras a partir de `acTamanhoDaTela`, e os deslocamentos vão ao UV
+  pelo tamanho do nível. A imagem do nível é um buffer de ¼ (o `TempSource` do Node é um Blit do RT para o nível).
+  O que fica diferente do Node: a soma sai num buffer de ¼ da tela, não do tamanho do nível (numa composição 1080p o
+  nível de quase toda a faixa do Raio é 270×480 ou 256×456, quase o mesmo; com Raio bem pequeno o Node usa um nível
+  maior e sai mais nítido); a contagem de amostras para escolher o nível é pela área da forma, não contada; onde a
+  média de cor² é 0 com Intensidade 0 o Node faz NaN, aqui o peso é 0. A máscara interna do Node fica de fora.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blur-lensblur"
+    name="Desfoque de lente (NV)"
+    name-en="Lens Blur (NV)"
+    desc="Desfoque de lente com bokeh em forma de polígono, círculo, coração ou estrela, com realces (o Lens Blur do Node Video)."
+    desc-en="Lens blur with polygon, circle, heart or star bokeh and highlights (Node Video's Lens Blur)."
+    category="nodevideo"
+    tags="nodevideo,nv,desfoque,lente,bokeh,blur,lens blur,coração,estrela,realce"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <slider id="raio" label="Raio" default="0.1" min="0" max="1" step="0.001" />
+        <selector id="forma" label="Forma" default="0" options="Polígono|Círculo|Coração|Estrela" />
+        <slider id="lados" type="integer" label="Número de lados" default="6" min="3" max="10" step="1" />
+        <slider id="raioInterno" label="Raio interno" default="0.2" min="0" max="1" step="0.01" showIf="forma=3" />
+        <slider id="recorteInterno" label="Recorte interno" default="0" min="0" max="1" step="0.01" />
+        <!-- AboveZero no Node: ≥ 0, sem teto. -->
+        <slider id="intensidade" label="Intensidade" default="0.3" min="0" max="5" step="0.01" />
+        <slider id="rotacao" label="Rotação" default="0" min="0" max="360" step="0.1" />
+        <selector id="qualidade" label="Qualidade" default="1" options="Baixo|Médio|Alto" />
+        <switch id="realces" label="Ativar" group="Realces" default="false" />
+        <slider id="ganho" label="Ganho" group="Realces" default="1" min="0" max="5" step="0.01" enabledIf="realces=true" />
+        <slider id="saturacao" label="Saturação" group="Realces" default="0" min="0" max="5" step="0.01" enabledIf="realces=true" />
+        <selector id="fonteDoLimiar" label="Fonte de limiar" group="Realces" default="2" options="Matiz|Saturação|Luminosidade"
+            enabledIf="realces=true" />
+        <point id="limiar" label="Limiar" group="Realces" vetor="true" spinner="true" defaultX="0.7" defaultY="1.0"
+            min="0" max="1" step="0.01" enabledIf="realces=true" />
+
+        <!-- Os RTs do Node: a camada (pré-multiplicada em luz linear, de pé), o nível (¼) e a soma. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="metadeRt" src="buffer" format="srgb" scale="0.5" precision="highp" />
+        <texture id="nivelRt" src="buffer" format="srgb" scale="0.25" precision="highp" />
+        <texture id="acumRt" src="buffer" scale="0.25" precision="highp" />
+    </params>
+
+    <preview>
+        <set param="raio" value="0.5" />
+        <set param="realces" value="true" />
+    </preview>
+
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="metadeRt" />
+        <pass target="nivelRt" />
+        <pass target="acumRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+// powf do C: x^0 = 1 (o pow do GLSL não define 0^0).
+float potencia(float x, float e) { return e == 0.0 ? 1.0 : pow(max(x, 0.0), e); }
+
+// ---- A pirâmide e a escolha do nível (CreatePyramid + Render) ----
+const float PI = 3.14159265;
+int raioNoNivel(ivec2 n) {
+    int m = max(n.x, n.y);
+    float r = clamp(raio, 0.0, 1.0) * 0.2 * float(m / 2);
+    return min(int(r), 60);
+}
+// A contagem de deslocamentos de cada forma, pela área (o Node conta a lista).
+float amostras(int R) {
+    float N = float(2 * R + 1);
+    int f = int(forma);
+    float n = float(int(lados));
+    if (f == 0) { float a = N / 4.0; return n * a * a * tan(PI / n); }
+    if (f == 1) { float rc = float(int(float(R) / 1.5)); return PI * rc * rc; }
+    if (f == 2) return PI * float(4 * R + 1) / sqrt(1.5);
+    float ro = 0.2 * N, ri = ro * ro * clamp(raioInterno, 0.0, 1.0);
+    return max(1.0, n * ro * ri * sin(PI / n) / 4.0);
+}
+ivec2 par(ivec2 v) { return v + ivec2(v.x % 2 == 1 ? 1 : 0, v.y % 2 == 1 ? 1 : 0); }
+// O tamanho do nível escolhido; R sai junto.
+ivec2 nivel(out int R) {
+    int q = int(qualidade);
+    int piso = q == 0 ? 128 : 256;
+    ivec2 base = ivec2(acTamanhoDaTela + 0.5);
+    ivec2 n = base;
+    ivec2 ultimo = base;
+    ivec2 escolhido = ivec2(-1);
+    ivec2 alto = base;          // Qualidade Alta: sem nenhum ≤ 640, o nível 0
+    bool achouAlto = false;
+    float teto = q == 0 ? 14745600.0 : 58982400.0;
+    for (int k = 0; k < 12; k++) {
+        if (k > 0) {
+            if (min(ultimo.x, ultimo.y) <= piso) break;
+            int d = 1 << k;
+            ivec2 v = base / d;
+            if (v.x < v.y) { if (v.x < piso) { v.y = int(float(v.y) / float(v.x) * float(piso)); v.x = piso; } }
+            else if (v.y < piso) { v.x = int(float(v.x) / float(v.y) * float(piso)); v.y = piso; }
+            n = par(v);
+        }
+        ultimo = n;
+        if (!achouAlto && max(n.x, n.y) <= 640) { alto = n; achouAlto = true; }
+        if (escolhido.x < 0 && float(n.x) * float(n.y) * amostras(raioNoNivel(n)) <= teto) escolhido = n;
+    }
+    ivec2 res = q == 2 ? alto : (escolhido.x < 0 ? ultimo : escolhido);
+    R = raioNoNivel(res);
+    return res;
+}
+
+// ---- As formas (GetDirs) ----
+vec2 girar(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
+// AELensBlur.star: distância ao lado da estrela (negativa dentro), o ponto dobrado no 1º setor.
+float estrela(vec2 p, float r, float rf, float n) {
+    float an = 2.0 * PI / n;
+    float m = mod(atan(-p.x, -p.y) + PI + PI / n, 2.0 * PI);
+    if (an < m) {
+        float c = cos(an), s = sin(an), acc = an;
+        for (int i = 0; i < 12; i++) {
+            p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+            acc += an;
+            if (!(acc < m)) break;
+        }
+    }
+    float h = an * 0.5;
+    vec2 b = vec2(sin(h) * r * rf, cos(h) * r * rf - r);
+    vec2 a = vec2(abs(p.x), p.y - r);
+    float t = clamp(dot(b, a) / dot(b, b), 0.0, 1.0);
+    float d = length(a - b * t);
+    return b.x * a.y - b.y * a.x < 0.0 ? -d : d;
+}
+float coracao(vec2 p, float N4) { return p.x * p.x + 1.5 * pow(p.y - 2.0 * sqrt(abs(p.x) + 1.0), 2.0) - N4; }
+// O peso do deslocamento o (px do nível, Y para cima); < 0 = fora da forma.
+float pesoDaForma(ivec2 o, int R) {
+    int f = int(forma);
+    float N = float(2 * R + 1);
+    float corte = clamp(recorteInterno, 0.0, 1.0);
+    float ang = rotacao * 0.017453292;
+    if (f == 1) {
+        float rc = float(int(float(R) / 1.5));
+        float d2 = float(o.x * o.x + o.y * o.y);
+        if (d2 > rc * rc) return -1.0;
+        return potencia(sqrt(d2) / sqrt(rc * rc), corte * 10.0);
+    }
+    if (f == 2) {
+        float N4 = float(4 * R + 1);
+        vec2 p = vec2(o);
+        float v = coracao(p, N4);
+        if (v > 0.0) return -1.0;
+        vec2 g = 0.5 * vec2(coracao(p + vec2(1, 0), N4) - coracao(p - vec2(1, 0), N4),
+                            coracao(p + vec2(0, 1), N4) - coracao(p - vec2(0, 1), N4));
+        float t = min(1.0 / (abs(v) / length(g)), 1.0);
+        return potencia(t * t * (3.0 - 2.0 * t), corte * 5.0);
+    }
+    vec2 p = girar(vec2(o) * 2.0 - 1.0, ang);
+    if (f == 0) {
+        float sec = 2.0 * PI / float(int(lados));
+        float a = atan(p.x, p.y) + PI;
+        float d = floor(a / sec + 0.5) * sec - a;
+        float q = 2.0 * length(p) * cos(d);
+        if (q > N) return -1.0;
+        return potencia(abs(q) / N, corte * 8.0);
+    }
+    float r = N * 0.2;
+    float d = estrela(p, r, r * clamp(raioInterno, 0.0, 1.0), float(int(lados)));
+    if (d > 0.0) return -1.0;
+    return potencia(abs(d) / N, corte * 5.0);
+}
+// A caixa de cada forma (para não varrer a grade inteira).
+ivec4 caixa(int R) {
+    int f = int(forma);
+    float N = float(2 * R + 1);
+    if (f == 1) { int rc = int(float(R) / 1.5); return ivec4(-rc, -rc, rc, rc); }
+    if (f == 2) {
+        float N4 = float(4 * R + 1);
+        int ex = int(ceil(sqrt(N4))) + 1;
+        float ey = sqrt(N4 / 1.5);
+        return ivec4(-ex, max(-2 * R, int(floor(-ey)) - 1), ex, min(2 * R, int(ceil(2.0 * sqrt(sqrt(N4) + 1.0) + ey)) + 1));
+    }
+    float e;
+    if (f == 0) e = N / 4.0 / cos(PI / float(int(lados)));
+    else { float r = 0.2 * N; e = max(r, r * r * clamp(raioInterno, 0.0, 1.0)) * 0.5; }
+    int k = min(R + 1, int(ceil(e)) + 1);
+    return ivec4(-k, -k, k, k);
+}
+
+// ---- LensBlurAccum + LensBlurAvg, juntando em vez de espalhar ----
+vec3 rgbParaHsv(vec3 c) {
+    vec4 p = c.g >= c.b ? vec4(c.gb, 0.0, -1.0 / 3.0) : vec4(c.bg, -1.0, 0.666666687);
+    vec4 q = c.r >= p.x ? vec4(c.r, p.yzx) : vec4(p.xyw, c.r);
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-4)), d / (q.x + 1e-4), q.x);
+}
+vec3 hsvParaRgb(vec3 h) {
+    vec3 k = clamp(abs(fract(h.x + vec3(1.0, 0.666666687, 0.333333343)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+    return h.z * mix(vec3(1.0), k, h.y);
+}
+vec4 acumular() {
+    int R;
+    ivec2 n = nivel(R);
+    vec2 passo = 1.0 / vec2(n);
+    ivec4 bx = caixa(R);
+    bool liga = realces;
+    vec2 lim = liga ? clamp(limiar, 0.0, 1.0) : vec2(1.0);
+    int fonte = int(fonteDoLimiar);
+    float ganhoE = liga ? exp2(ganho) : 1.0;
+    float satE = exp2(saturacao);
+    float I = max(intensidade, 0.0);
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int y = bx.y; y <= bx.w; y++) {
+        for (int x = bx.x; x <= bx.z; x++) {
+            ivec2 o = ivec2(x, y);
+            float b = pesoDaForma(o, R);
+            if (b < 0.0) continue;
+            vec2 s = acScreenNorm - vec2(o) * passo;
+            if (any(lessThan(s, vec2(0.0))) || any(greaterThanEqual(s, vec2(1.0)))) continue;
+            vec4 c = texture(nivelRt, s);
+            vec4 c2 = c * c;
+            float m = (c2.r + c2.g + c2.b) * 0.333333343;
+            float W = (m > 0.0 ? exp2(log2(m) * I) : 0.0) * b;
+            vec3 hsv = rgbParaHsv(c2.rgb);
+            float v = fonte == 0 ? hsv.x : (fonte == 1 ? hsv.y : hsv.z);
+            if (lim.x < v && v < lim.y) c2.rgb = hsvParaRgb(vec3(hsv.x, hsv.y * satE, hsv.z * ganhoE));
+            soma += c2 * W;
+            pesos += W;
+        }
+    }
+    return pesos > 0.0 ? sqrt(soma / pesos) : vec4(0.0);
+}
+
+void main()
+{
+    if (acPass == 0) {
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    // o Blit para o nível: o filtro linear no meio de cada 2 × 2
+    if (acPass == 1) { fragColor = texture(camadaRt, acScreenNorm); return; }
+    if (acPass == 2) { fragColor = texture(metadeRt, acScreenNorm); return; }
+    if (acPass == 3) { fragColor = acumular(); return; }
+    // o passe do Node: o `_accumTex` pelo filtro linear (com uma amostra só, a camada como está)
+    int R;
+    ivec2 n = nivel(R);
+    vec2 q = acEntradaDePe == 1 ? acScreenNorm : vec2(acScreenNorm.x, 1.0 - acScreenNorm.y);
+    ivec4 bx = caixa(R);
+    bool umaSo = R == 0 || (bx.x == 0 && bx.z == 0 && bx.y == 0 && bx.w == 0);
+    vec4 o = umaSo ? texture(camadaRt, q) : texture(acumRt, q);
+    o = clamp(o, 0.0, 1.0);
+    fragColor = o.a > 1e-5 ? vec4(srgb(o.rgb / o.a), o.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

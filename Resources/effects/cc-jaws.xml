@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC JAWS
+  ============================================================================
+  A transição do After Effects em que a camada se abre como uma boca: uma
+  faixa transparente com bordas dentadas cresce a partir do Centro até a
+  camada sumir. Pedido do snow (02/10/2026): "igual o do After Effects, com os
+  mesmos parâmetros. 100%".
+
+  OS PARÂMETROS SÃO OS DO AE, NA MESMA ORDEM E COM O MESMO PADRÃO:
+    Completion 0% · Center no meio · Direction 0° · Height 10% · Width 10 ·
+    Shape Spikes. Um preset copiado do AE dá o mesmo quadro aqui.
+
+  ============================================================================
+   COMO FOI MEDIDO (scratchpad da sessão, não commitado)
+  ============================================================================
+  O AE 2023 do snow renderizou ~70 quadros do CC Jaws por script (fila de
+  render em TIFF) sobre uma imagem de teste, variando cada parâmetro sozinho e
+  depois todos juntos; as contas abaixo saíram de medir esses quadros pixel a
+  pixel, e uma referência em numpy com ELAS reproduz os 70:
+    - Spikes, Completion, Direction, Center, camada retrato: idêntico (diferença
+      máxima de 1–2 níveis em 255, só arredondamento);
+    - RoboJaw, Block e Waves: 99,5–100% dos pixels iguais; o resto é a borda
+      suavizada (antialias) diferindo em até ~1/3 de pixel nas quinas.
+
+  O QUE O AE FAZ, DE FATO:
+    - As duas metades NÃO se mexem: o efeito só recorta uma faixa. As bordas
+      de cima e de baixo são o MESMO perfil de dente (mesma fase), uma deslocada
+      para cada lado ao longo da normal da Direction — por isso os dentes se
+      encaixam com Completion 0.
+    - Tudo em escala da LARGURA da camada (conferido com camada retrato):
+      período do dente = Width/50 · largura; altura do dente (pico a vale) =
+      Height · largura.
+    - A abertura vai do Centro até o canto MAIS LONGE da camada ao longo da
+      normal (mais meio dente), então Completion 100% some com a camada inteira
+      de qualquer Centro. As constantes 1.00225/0.00067 são o ajuste fino medido.
+    - Direction gira no sentido horário (Y para baixo), como todo ângulo do AE.
+    - O AE amostra o pixel no canto (coordenada inteira), não no meio: daí o
+      `- 0.5`.
+    - Cada formato tem o seu jeito de suavizar a borda (constantes medidas):
+      Spikes usa a distância perpendicular de verdade; Waves subtrai metade da
+      inclinação máxima da onda da abertura (é o que fecha a costura no 0%) e
+      suaviza pela inclinação local; Block e os patamares do RoboJaw suavizam
+      numa rampa de 1,5 px; o degrau do Block fica 0,75 px adiante.
+-->
+<effect
+    id="nova.effect.ccjaws"
+    name="CC Jaws"
+    name-en="CC Jaws"
+    desc="Abre a camada como uma boca dentada: dentes, mandíbula robô, blocos ou ondas, em qualquer direção."
+    desc-en="Opens the layer like a jaw with spikes, robot teeth, blocks or waves, in any direction."
+    category="matte"
+    tags="cc jaws,jaws,mandibula,mandíbula,boca,dentes,transicao,transição,zigue-zague,zigzag,abrir"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Completion: 0 = camada inteira, 100 = sumiu. -->
+        <slider id="completion" label="Transição (%)"
+                default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0,50.0,100.0" />
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5"
+               min="-1.0" max="2.0" unit="px" />
+
+        <slider id="direction" label="Direção"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,45.0,90.0,-45.0,-90.0,180.0,-180.0" />
+
+        <!-- Height do AE: a altura do dente, em % da largura da camada. -->
+        <slider id="height" label="Altura (%)"
+                default="10.0" min="0.0" max="100.0" step="0.1" snap="10.0" />
+
+        <!-- Width do AE: o período do dente é Width/50 da largura da camada
+             (10 = cinco dentes no quadro). -->
+        <slider id="width" label="Largura"
+                default="10.0" min="2.0" max="25.0" step="0.1" snap="10.0" />
+
+        <selector id="shape" label="Formato" default="0"
+                  options="Dentes|Mandíbula robô|Blocos|Ondas" />
+    </params>
+
+    <preview>
+        <set param="completion" value="30.0" />
+    </preview>
+
+    <shader><![CDATA[
+// 0.915.0: as PowerVR (GE8320/GE8322) recusavam este shader ("Compile failed.", 11 aparelhos na 0.894.0) e o
+// `inversesqrt` era a única coisa dele que nenhum efeito que roda nelas usa: agora 1/sqrt, e o pow(x, 2) virou x·x.
+
+const float PI = 3.14159265;
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    float c = completion * 0.01;
+    // O AE devolve a camada intacta no 0% (conferido: igual à fonte).
+    if (c <= 0.0) {
+        fragColor = cor;
+        return;
+    }
+
+    vec2 res = acResolution;
+    vec2 centro = center * res;
+    // Coordenada inteira do pixel, relativa ao Centro (ver o cabeçalho).
+    vec2 p = acScreenNorm * res - 0.5 - centro;
+
+    float th = radians(direction);
+    vec2 t = vec2(cos(th), sin(th));   // ao longo da fileira de dentes
+    vec2 n = vec2(-t.y, t.x);          // para onde a boca abre
+
+    float W = res.x;
+    float per = max(width / 50.0 * W, 1e-3);
+    float A = height * 0.01 * W;
+
+    // O canto mais longe do Centro ao longo da normal.
+    vec2 a = -centro;
+    vec2 b = res - centro;
+    float alcance = max(
+        max(abs(dot(a, n)), abs(dot(vec2(b.x, a.y), n))),
+        max(abs(dot(vec2(a.x, b.y), n)), abs(dot(b, n))));
+    float base = alcance + 0.5 * A;
+
+    float st = dot(p, t);
+    float v = dot(p, n);
+    float u = st / per;
+    float d = abs(u - floor(u + 0.5));   // 0 no meio do dente, 0.5 entre dois
+
+    // dT/dB: quanto o pixel está DENTRO da metade de cima/de baixo, já na
+    // escala da suavização (>= 1 inteiro visível, <= 0 dentro da boca).
+    float dT;
+    float dB;
+    if (shape == 3) {
+        // ---- Ondas ----
+        float incl = PI * A / per;   // a inclinação máxima da onda
+        float e = 0.5 * (1.0 + incl);
+        float G = -1.11246 * e + c * 1.00013 * (base + 1.08721 * e);
+        float f = 0.5 * A * cos(2.0 * PI * u);
+        float den = 1.0 + 0.98438 * incl * abs(sin(2.0 * PI * u));
+        dT = (f - G - v) / den - 0.01222;
+        dB = (v - G - f) / den - 0.01222;
+    } else {
+        float G = base * (1.00225 * c - 0.00067);
+        if (shape == 0) {
+            // ---- Dentes (triângulos) ----
+            float f = A * (2.0 * d - 0.5);
+            float k = 1.0 / sqrt(1.0 + (2.0 * A / per) * (2.0 * A / per));
+            dT = (f - G - v) * k + 0.35;
+            dB = (v - G - f) * k + 0.35;
+        } else if (shape == 1) {
+            // ---- Mandíbula robô (trapézios: 1/3 em cima, 1/6 de rampa) ----
+            float f = A * (clamp((d - 1.0 / 6.0) * 6.0, 0.0, 1.0) - 0.5);
+            bool rampa = d > 1.0 / 6.0 && d < 1.0 / 3.0;
+            float k = rampa ? 1.0 / sqrt(1.0 + (6.12 * A / per) * (6.12 * A / per)) : 0.665;
+            float o = rampa ? 0.036 : 0.352;
+            dT = (f - G - v) * k + o;
+            dB = (v - G - f) * k + o;
+        } else {
+            // ---- Blocos ----
+            // A metade de cima avança onde a fase está em (0, 1/2]; a de baixo,
+            // no resto. `h` = distância até o degrau, positiva dentro desse trecho.
+            float w = mod(st - 0.75, per);
+            float h = w <= 0.5 * per ? min(w, 0.5 * per - w) : -min(w - 0.5 * per, per - w);
+            dT = max((-G - 0.5 * A - v) * 0.672 + 0.355,
+                     min((-G + 0.5 * A - v) * 0.672 + 0.355, h * 0.668 + 0.5));
+            dB = max((v - G - 0.5 * A) * 0.672 + 0.355,
+                     min((v - G + 0.5 * A) * 0.672 + 0.355, -h * 0.668 + 0.5));
+        }
+    }
+
+    float visivel = min(clamp(dT, 0.0, 1.0) + clamp(dB, 0.0, 1.0), 1.0);
+    fragColor = vec4(cor.rgb, cor.a * visivel);
+}
+
+    ]]></shader>
+</effect>

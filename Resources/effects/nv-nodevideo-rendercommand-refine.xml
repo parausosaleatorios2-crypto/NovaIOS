@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_refine
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-refine"
+    name="Rendercommand Refine (NV)"
+    name-en="Rendercommand Refine (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_refine', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_refine', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_blur_amount" label="Blur Amount" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_z" label="Z" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _SourceTex_TexelSize (1.0 / vec2(textureSize(inputImg, 0)))
+vec2 u_xlat0;
+vec2 u_xlat1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+int u_xlati8;
+ivec2 u_xlati9;
+float u_xlat12;
+bool u_xlatb12;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy / _SourceTex_TexelSize.xy;
+    u_xlat1.y = 0.0;
+    u_xlat2.x = float(0.0);
+    u_xlat2.y = float(0.0);
+    u_xlat2.z = float(0.0);
+    u_xlat2.w = float(0.0);
+    u_xlati8 = int(0xFFFFFFF4u);
+    while(true){
+        u_xlatb12 = 12<u_xlati8;
+        if(u_xlatb12){break;}
+        u_xlati9.xy = ivec2(u_xlati8) + ivec2(12, 1);
+        u_xlat12 = float(u_xlati8);
+        u_xlat1.x = u_xlat12 * _blur_amount;
+        u_xlat3.xy = u_xlat0.xy + u_xlat1.xy;
+        u_xlat3.xy = u_xlat3.xy * _SourceTex_TexelSize.xy;
+        u_xlat3 = texture(inputImg, u_xlat3.xy);
+        u_xlat2 = vec4(_kernel[u_xlati9.x]) * u_xlat3 + u_xlat2;
+        u_xlati8 = u_xlati9.y;
+    }
+    fragColor = u_xlat2 / vec4(vec4(_z, _z, _z, _z));
+    return;
+}
+    ]]></shader>
+</effect>

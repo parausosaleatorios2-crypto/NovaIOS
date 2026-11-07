@@ -1,0 +1,284 @@
+{
+    "id": "passada-de-luz",
+    "nome": "Passada de luz",
+    "nomeEn": "Light sweep",
+    "descricao": "Título em que um feixe de luz atravessa as letras; brilho de troféu, para revelar nomes e logos.",
+    "descricaoEn": "Title with a beam of light sweeping across the letters; trophy shine, to reveal names and logos.",
+    "categoria": "titulo",
+    "tags": [
+        "luz",
+        "brilho",
+        "feixe",
+        "reflexo",
+        "titulo",
+        "logo",
+        "shine",
+        "revelar"
+    ],
+    "estilos": [
+        "cinematico",
+        "esporte"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 2500000,
+    "duracaoMinUs": 1500000,
+    "duracaoMaxUs": 6000000,
+    "entradaUs": 300000,
+    "saidaUs": 300000,
+    "campos": [
+        {
+            "id": "titulo",
+            "tipo": "texto",
+            "rotulo": "Título",
+            "rotuloEn": "Title",
+            "padrao": "TÍTULO",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "cor",
+            "tipo": "cor",
+            "rotulo": "Cor do texto",
+            "rotuloEn": "Text color",
+            "padrao": "#FFFFFFFF",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto:cor"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "titulo",
+            "name": "TÍTULO",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "TÍTULO",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        190.0
+                    ]
+                },
+                "fontFamily": "galeria:Oswald-Bold.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 0,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "509eaf62-42c4-48ee-9ecb-b0429083d821"
+                        },
+                        {
+                            "timeUs": 250000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "3cd30e94-1b40-4895-acd1-05e2120464cb"
+                        },
+                        {
+                            "timeUs": 2200000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "cc6deba1-8f23-4224-a31b-7321d90aa0a8"
+                        },
+                        {
+                            "timeUs": 2500000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "7f4a40fe-96f0-45e5-ae91-e3f9bdefe389"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "luz",
+                    "manifestId": "nova.effect.lightsweep",
+                    "enabled": true,
+                    "values": {
+                        "center": {
+                            "kind": "VEC2",
+                            "staticValue": [
+                                -0.3,
+                                0.5
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 200000,
+                                    "value": [
+                                        -0.3,
+                                        0.5
+                                    ],
+                                    "easing": {
+                                        "kind": "linear"
+                                    },
+                                    "id": "e18712eb-573c-4755-881c-6e581f92129a"
+                                },
+                                {
+                                    "timeUs": 1300000,
+                                    "value": [
+                                        1.3,
+                                        0.5
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "d7d17d86-e94b-4685-aac5-8f999dd473ce"
+                                }
+                            ]
+                        },
+                        "sweepIntensity": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                1.6
+                            ]
+                        },
+                        "width": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                0.12
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 2500000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

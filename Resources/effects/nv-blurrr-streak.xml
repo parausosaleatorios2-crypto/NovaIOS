@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.streak"
+    name="Raios Anamórficos (Blurrr)"
+    name-en="Anamorphic Streak (Blurrr)"
+    desc="Rastros horizontais a partir das luzes — brilho de lente anamórfica."
+    desc-en="Horizontal streaks from highlights — anamorphic lens flare."
+    category="blur"
+    tags="blurrr,streak,anamorphic,lens,flare,highlight,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="comprimento" label="Comprimento" default="0.15" min="0.0" max="0.6" step="0.005" />
+        <slider id="threshold" label="Limiar das luzes" default="0.6" min="0.0" max="1.0" step="0.01" />
+        <slider id="strength"  label="Força" default="0.8" min="0.0" max="3.0" step="0.05" />
+        <slider id="angle"     label="Ângulo" default="0.0" min="0.0" max="180.0" step="1.0" type="angle" />
+        <slider id="samples"   label="Amostras" default="32" min="4" max="64" step="1" type="integer" />
+        <slider id="tintR"     label="Tom R" group="Cor" default="1.0" min="0.0" max="1.5" step="0.01" />
+        <slider id="tintG"     label="Tom G" group="Cor" default="0.9" min="0.0" max="1.5" step="0.01" />
+        <slider id="tintB"     label="Tom B" group="Cor" default="1.2" min="0.0" max="1.5" step="0.01" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    vec4 o = texture(inputImg, acScreenNorm);
+    if (comprimento <= 0.0 || strength <= 0.0) { fragColor = o; return; }
+
+    float a = angle * PI / 180.0;
+    vec2 d = vec2(cos(a), sin(a));
+    d.x /= max(acAspect, 1e-4);
+
+    int n = clamp(int(samples), 4, 64);
+    vec3 soma = vec3(0.0);
+    float pesoTot = 0.0;
+    for (int i = -64; i <= 64; i++) {
+        if (i < -n || i > n) continue;
+        float t = float(i) / float(n);
+        float w = (1.0 - abs(t));
+        vec4 c = texture(inputImg, acScreenNorm + d * comprimento * t);
+        float luz = dot(c.rgb, LUMA);
+        float k = smoothstep(threshold, threshold + 0.2, luz);
+        soma += c.rgb * k * w;
+        pesoTot += w;
+    }
+    vec3 streak = (soma / max(pesoTot, 1e-4)) * vec3(tintR, tintG, tintB) * strength;
+    fragColor = vec4(o.rgb + streak * o.a, o.a);
+}
+    ]]></shader>
+</effect>

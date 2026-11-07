@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TONECRAFT — o ToneCraft (9IBR) do After Effects, medido no plugin (0.421.0)
+  ============================================================================
+
+  Pedido do snow (06/10/2026): "agora o tonecraft". Medido no plugin dele (matchName
+  "9IBR ToneCraft"), numa instância separada do AE: 327 renders em 16 bits — patamares e rampa de
+  cinza, cores puras, cinza chapado com célula grande (o contorno de cada forma), a foto dele e uma
+  fonte de "impulso" (um bloco preto por célula) para achar onde o plugin lê a imagem
+  (tools/tonecraft/benchmark/).
+
+  O QUE FOI MEDIDO (c = Cell Size em px):
+
+  - A grade: as divisas das células passam pelo CENTRO do quadro; Offset em px; Rotation em volta
+    do centro.
+  - O tom da célula NÃO é a média dela: o plugin lê 9 pixels — o do centro e os oito a ±d em cada
+    eixo, d = 0,3 c com teto de 12 px — e tira a média. O brilho é Rec.709 e o alfa é ignorado.
+    Fora do quadro conta como papel branco.
+  - O ponto: "raio" s = 0,64 · c · tom · Dot Scale. A borda é um smoothstep de largura
+    c · (0,0704 + 0,0036 · Softness), no mínimo 1 px. Pontos que se encostam SOMAM.
+  - As 10 formas, em unidades de s: círculo (raio 1), quadrado (meio-lado 1), linha (meia-espessura
+    1, borda só para fora, e lida pixel a pixel ao longo dela — não por célula), flor
+    (r = 0,65 + 0,35 cos 5θ), estrela de 5 pontas (raio de dentro 0,382), hexágono (raio 1),
+    sakura e coração (bitmaps de 64 × 64 do plugin, texel = s / 31,5, filtro linear — copiados do
+    render), dígito de 7 segmentos (um por célula, sorteado) e triângulo de ponta para baixo.
+  - Mixed Shape: as casas LIGADAS se revezam na diagonal (i + j); a 3ª opção da lista é um traço
+    curto, não a Linha inteira.
+  - Contrast: 0,5 + (tom − 0,5) · Contrast/100. Invert inverte o tom (o papel de fora do quadro
+    vira ponto cheio).
+  - Color Scheme 2: três telas — ciano, magenta e amarelo — a −23°, 100° e 136°, multiplicadas.
+    Não há tela de preto.
+  - Gradient: o papel vira mix(Start, End) ao longo de Start → End. Paper Tint: puxa para
+    (0,92; 0,84; 0,66) na medida em que a cor é clara. Black Wear: ruído por pixel que tira até
+    70% da tinta em 60% dos pixels. Highlight Detail: não mexe nos pontos — é um ruído fino de ±4%.
+  - Transparent BG: o alfa vira a tinta (no CMYK, a média das três) e a cor fica a do quadro com
+    papel. Sem ele, o alfa da saída é o da camada.
+
+  QUANTO BATE (GPU do PC × AE, 1280 × 720, 245 casos): erro mediano de 0,11% do quadro; 200 dos 245
+  abaixo de 0,5%. Os que passam de 2% são os de ruído (Black Wear, Highlight Detail) e os dígitos:
+  o sorteio de cada pixel/célula não é o mesmo do plugin, só a estatística.
+
+  FORA: Blend Style 2 (um modo de limiar) e os controles que só agem nele — Threshold, Wave Amount /
+  Scale e Grain. Shadow Detail e Pre Exposure negativo não mudaram nada em nenhum render do plugin;
+  Pre Exposure positivo dá riscos de 1 px (parece defeito) e não foi refeito.
+-->
+<effect
+    id="nova.effect.tonecraft"
+    name="ToneCraft"
+    name-en="ToneCraft"
+    desc="O ToneCraft do After Effects: retícula (halftone) com dez formas de ponto, formas misturadas, CMYK, gradiente, papel e desgaste."
+    desc-en="After Effects' ToneCraft: halftone with ten dot shapes, mixed shapes, CMYK, gradient, paper and wear."
+    category="stylize"
+    tags="tonecraft,tone craft,halftone,reticula,retícula,pontos,dots,cmyk,manga,mangá,comic,quadrinhos,screentone,impressao,impressão,print,jornal,newspaper,estrela,coracao,coração,sakura">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="media" src="buffer" scale="0.5" />
+
+        <selector id="shape" label="Shape" default="0" options="Circle|Square|Line|Flower|Star|Hexagon|Sakura|Digits|Triangle|Heart" />
+        <slider id="cellSize" label="Cell Size" default="24.0" min="2.0" max="300.0" step="1.0" snap="24.0" />
+        <slider id="dotScale" label="Dot Scale" default="100.0" min="0.0" max="200.0" step="1.0" snap="100.0" />
+        <slider id="offsetX" label="Offset X" default="0.0" min="-2000.0" max="2000.0" step="1.0" snap="0.0" />
+        <slider id="offsetY" label="Offset Y" default="0.0" min="-2000.0" max="2000.0" step="1.0" snap="0.0" />
+        <slider id="rotation" label="Rotation" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="contrast" label="Contrast" default="100.0" min="0.0" max="300.0" step="1.0" snap="100.0" />
+        <slider id="mixAmount" label="Mix" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <switch id="invert" label="Invert" default="false" />
+        <switch id="transparentBg" label="Transparent BG" default="false" />
+        <selector id="colorScheme" label="Color Scheme" default="0" options="Mono|CMYK" />
+
+        <slider id="gradientAmount" group="Gradient" label="Gradient Amount" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <point id="gradientStart" group="Gradient" label="Gradient Start" defaultX="0.0" defaultY="0.0" />
+        <point id="gradientEnd" group="Gradient" label="Gradient End" defaultX="1.0" defaultY="1.0" />
+        <color id="startColor" group="Gradient" label="Start Color" default="#FFFFFFFF" />
+        <color id="endColor" group="Gradient" label="End Color" default="#FFFF8040" />
+
+        <selector id="shape1" group="Mixed Shape" label="Shape 1" default="0" options="Off|Circle|Square|Dash|Flower|Star|Hexagon|Sakura|Digits|Triangle|Heart" />
+        <selector id="shape2" group="Mixed Shape" label="Shape 2" default="0" options="Off|Circle|Square|Dash|Flower|Star|Hexagon|Sakura|Digits|Triangle|Heart" />
+        <selector id="shape3" group="Mixed Shape" label="Shape 3" default="0" options="Off|Circle|Square|Dash|Flower|Star|Hexagon|Sakura|Digits|Triangle|Heart" />
+        <selector id="shape4" group="Mixed Shape" label="Shape 4" default="0" options="Off|Circle|Square|Dash|Flower|Star|Hexagon|Sakura|Digits|Triangle|Heart" />
+        <selector id="shape5" group="Mixed Shape" label="Shape 5" default="0" options="Off|Circle|Square|Dash|Flower|Star|Hexagon|Sakura|Digits|Triangle|Heart" />
+
+        <slider id="softness" group="Style / Texture" label="Softness" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="highlightDetail" group="Style / Texture" label="Highlight Detail" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="paperTint" group="Style / Texture" label="Paper Tint" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="blackWear" group="Style / Texture" label="Black Wear" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+    </params>
+
+    <passes>
+        <pass target="media" />   <!-- 0: o tom médio da célula de cada ponto (um canal por tela) -->
+        <pass />                  <!-- 1: os pontos -->
+    </passes>
+
+    <shader><![CDATA[
+// Medidos no plugin (tools/tonecraft/benchmark):
+const float RAIO = 0.64;              // o "raio" do ponto de tom 1, em células
+const float BORDA = 0.0704;            // a largura da borda suave (smoothstep), em células
+const float BORDA_SOFT = 0.0036;  // quanto cada ponto de Softness soma a ela
+const uint SAKURA[128] = uint[128](0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 3221225472u, 3u, 3758096384u, 7u, 4026531840u, 15u, 4160749568u, 63u, 4278190080u, 255u, 4286578688u, 511u, 4290772992u, 1023u, 4292870144u, 2047u, 4292870144u, 2047u, 4293918720u, 2047u, 4293918720u, 4095u, 4293918720u, 4095u, 4293918720u, 2047u, 4292870144u, 460799u, 4293130240u, 2082815u, 4293918208u, 8385535u, 4292869888u, 8387583u, 4290772736u, 16776703u, 4294967168u, 67108607u, 4286578656u, 134217471u, 4278190072u, 536870783u, 4244635644u, 1073741759u, 4194303996u, 1073741727u, 4093640696u, 536870863u, 1677721592u, 536870854u, 3892314096u, 268435431u, 4160487408u, 268427247u, 4287627248u, 268431871u, 4177526768u, 134217503u, 4294967280u, 134217727u, 4294967264u, 134217727u, 4294967264u, 134217727u, 4244635616u, 134217503u, 4162846656u, 67107871u, 4152885120u, 33546735u, 4026400256u, 8331255u, 939458560u, 65516u, 2147467264u, 262142u, 2080370688u, 1048542u, 2113927168u, 2097086u, 2130704384u, 2097022u, 2130705408u, 4194174u, 2147482624u, 4194302u, 4294966272u, 4194303u, 4294966272u, 4194303u, 4294966272u, 4194303u, 4294966272u, 4194303u, 4294966272u, 4194303u, 2147481600u, 2097150u, 2147479552u, 1048574u, 2147479552u, 1048574u, 2147475456u, 524286u, 1073733632u, 524284u, 536862720u, 524280u, 536862720u, 524280u, 134201344u, 262112u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u);
+const uint CORACAO[128] = uint[128](0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 8372224u, 261632u, 67106816u, 2097088u, 134216704u, 4194272u, 536870400u, 8388592u, 1073741568u, 33554428u, 1073741696u, 33554428u, 2147483584u, 67108862u, 4294967264u, 134217727u, 4294967264u, 134217727u, 4294967280u, 268435455u, 4294967280u, 268435455u, 4294967280u, 268435455u, 4294967280u, 268435455u, 4294967288u, 536870911u, 4294967288u, 536870911u, 4294967288u, 536870911u, 4294967288u, 536870911u, 4294967280u, 268435455u, 4294967280u, 268435455u, 4294967280u, 268435455u, 4294967280u, 268435455u, 4294967264u, 134217727u, 4294967264u, 134217727u, 4294967264u, 134217727u, 4294967232u, 67108863u, 4294967232u, 67108863u, 4294967168u, 33554431u, 4294967040u, 16777215u, 4294967040u, 16777215u, 4294966784u, 8388607u, 4294966272u, 4194303u, 4294965248u, 2097151u, 4294963200u, 1048575u, 4294959104u, 524287u, 4294950912u, 262143u, 4294934528u, 131071u, 4294901760u, 65535u, 4294836224u, 32767u, 4294705152u, 16383u, 4294443008u, 8191u, 4293918720u, 4095u, 4292870144u, 2047u, 4286578688u, 511u, 4278190080u, 255u, 4261412864u, 127u, 4227858432u, 63u, 4160749568u, 31u, 3758096384u, 7u, 3221225472u, 3u, 2147483648u, 1u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u);
+
+vec2 tamanho() { return vec2(textureSize(inputImg, 0)); }
+
+mat2 giro(float graus) {
+    float a = radians(graus), c = cos(a), s = sin(a);
+    return mat2(c, s, -s, c);
+}
+
+/** O ângulo (graus) da tela `k`: 0 no mono; no CMYK cada tinta tem o seu (medidos; não há tela de preto). */
+float anguloDaTela(int k) {
+    float a = rotation;
+    if (colorScheme == 1) a += k == 0 ? -23.0 : k == 1 ? 100.0 : 136.0;
+    return a;
+}
+
+float lado() { return max(cellSize, 2.0) * acEscalaDePixel; }
+
+/** Do pixel da camada para o espaço da grade da tela `k` (as divisas das células passam pelo centro do quadro). */
+vec2 paraGrade(vec2 p, int k) {
+    return giro(-anguloDaTela(k)) * (p - 0.5 * tamanho() - vec2(offsetX, offsetY) * acEscalaDePixel);
+}
+vec2 daGrade(vec2 q, int k) {
+    return giro(anguloDaTela(k)) * q + 0.5 * tamanho() + vec2(offsetX, offsetY) * acEscalaDePixel;
+}
+
+/** As tintas (C, M, Y) da cor; no mono só a primeira conta: o brilho (Rec.709, medido). */
+vec4 tintas(vec4 c) {
+    vec3 rgb = c.rgb;                                   // medido: o plugin lê a cor e ignora o alfa
+    if (colorScheme == 0) return vec4(dot(rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 0.0, 1.0);
+    vec3 cmy = 1.0 - rgb;
+    return vec4(cmy, 0.0);
+}
+
+float tintaEm(vec2 px, int k);
+
+/**
+ * O tom da célula que contém `p`, na tela `k`. Medido (com uma fonte de um bloco preto por célula): o
+ * plugin NÃO faz a média da célula — lê 9 pixels dela, o do centro e os oito a ±d em cada eixo, com
+ * d = 0,3 célula até o teto de 12.0 px. Fora do quadro conta como papel.
+ */
+float mediaDaCelula(vec2 p, int k) {
+    float c = lado();
+    vec2 R = tamanho();
+    vec2 q = paraGrade(p, k);
+    vec2 centro = (floor(q / c) + 0.5) * c;
+    float d = min(0.3 * c, 12.0 * acEscalaDePixel);
+    float soma = 0.0;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        soma += tintaEm(floor(daGrade(centro + vec2(float(i), float(j)) * d, k)) + 0.5, k);
+    }
+    soma /= 9.0;
+    return colorScheme == 0 ? 1.0 - soma : soma;
+}
+
+/** A tinta (0..1) que a tela `k` lê no pixel `px` da camada; fora do quadro é papel. */
+float tintaEm(vec2 px, int k) {
+    vec2 R = tamanho();
+    if (px.x < 0.0 || px.y < 0.0 || px.x > R.x || px.y > R.y) return 0.0;
+    vec4 t = tintas(texture(inputImg, px / R));
+    return k == 0 ? (colorScheme == 0 ? 1.0 - t.x : t.x) : k == 1 ? t.y : t.z;
+}
+
+/**
+ * A Linha não é por célula (medido): ao longo dela o tom é lido pixel a pixel — três leituras na fileira
+ * do centro, em x e a ±d. Por isso a espessura varia de forma contínua.
+ */
+float valorDaLinha(vec2 q, float centroY, int k) {
+    float d = min(0.3 * lado(), 12.0 * acEscalaDePixel);
+    float soma = 0.0;
+    for (int i = -1; i <= 1; i++) soma += tintaEm(floor(daGrade(vec2(q.x + float(i) * d, centroY), k)) + 0.5, k);
+    soma /= 3.0;
+    return colorScheme == 0 ? 1.0 - soma : soma;
+}
+
+/** O tom (0 = sem ponto, 1 = ponto cheio) a partir do valor guardado. */
+float tom(float v) {
+    float d = colorScheme == 0 ? 1.0 - v : v;
+    if (invert) d = 1.0 - d;
+    d = clamp(0.5 + (d - 0.5) * contrast / 100.0, 0.0, 1.0);
+    return max(d, 0.0);
+}
+
+float texel(int qual, vec2 t) {
+    if (t.x < 0.0 || t.y < 0.0 || t.x > 63.0 || t.y > 63.0) return 0.0;
+    int ix = int(t.x), i = int(t.y) * 2 + (ix >> 5);
+    uint palavra = qual == 0 ? SAKURA[i] : CORACAO[i];
+    return float((palavra >> uint(ix & 31)) & 1u);
+}
+
+/** A sakura e o coração são bitmaps de 64 × 64 no plugin (um texel = s / 31,5), lidos com filtro linear. */
+float bit(int qual, vec2 x, float s) {
+    vec2 u = x / (s / 31.5) + 32.0 - 0.5;
+    vec2 t = floor(u), f = u - t;
+    float v = mix(mix(texel(qual, t), texel(qual, t + vec2(1.0, 0.0)), f.x),
+                  mix(texel(qual, t + vec2(0.0, 1.0)), texel(qual, t + vec2(1.0, 1.0)), f.x), f.y);
+    return clamp((v - 0.5) * 1.0 + 0.5, 0.0, 1.0);
+}
+
+float sdEstrela(vec2 p, float r, float rf) {
+    // (a estrela de 5 pontas do Inigo Quilez: r = raio de fora, rf = razão do de dentro)
+    const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+    const vec2 k2 = vec2(-k1.x, k1.y);
+    p.x = abs(p.x);
+    p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+    p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+    p.x = abs(p.x);
+    p.y -= r;
+    vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+    float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+    return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+
+float sdHexagono(vec2 p, float r) {
+    const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
+    p = abs(p);
+    p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+    p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+    return length(p) * sign(p.y);
+}
+
+float sdTriangulo(vec2 p, float r) {
+    // equilátero de ponta para BAIXO na tela, raio circunscrito r (a "distância" é a das três retas)
+    return max(-p.y, 0.8660254 * abs(p.x) + 0.5 * p.y) - 0.5 * r;
+}
+
+float sdCaixa(vec2 p, vec2 b) {
+    vec2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+/** A distância ao dígito de 7 segmentos `n` (0–9), em unidades de s. */
+float sdDigito(vec2 p, int n) {
+    // segmentos: a (cima), b (dir. cima), c (dir. baixo), d (baixo), e (esq. baixo), f (esq. cima), g (meio)
+    const int SEG[10] = int[10](63, 6, 91, 79, 102, 109, 125, 7, 127, 111);
+    int m = SEG[n];
+    float d = 1e3;
+    vec2 h = vec2(0.36, 0.02), v = vec2(0.02, 0.26);
+    if ((m & 1) != 0) d = min(d, sdCaixa(p - vec2(0.0, -0.76), h));
+    if ((m & 2) != 0) d = min(d, sdCaixa(p - vec2(0.52, -0.5 * 0.76), v));
+    if ((m & 4) != 0) d = min(d, sdCaixa(p - vec2(0.52, 0.5 * 0.76), v));
+    if ((m & 8) != 0) d = min(d, sdCaixa(p - vec2(0.0, 0.76), h));
+    if ((m & 16) != 0) d = min(d, sdCaixa(p - vec2(-0.52, 0.5 * 0.76), v));
+    if ((m & 32) != 0) d = min(d, sdCaixa(p - vec2(-0.52, -0.5 * 0.76), v));
+    if ((m & 64) != 0) d = min(d, sdCaixa(p, h));
+    return d;
+}
+
+/** Quanto do pixel o ponto de forma `f` e tamanho `s` (px) cobre; `x` = px a partir do centro da célula. */
+float ponto(int f, vec2 x, float s, float w, vec2 celula) {
+    if (s <= 0.0 && f != 2) return 0.0;      // (a Linha nunca some: no branco sobra o fio da borda suave)
+    float dist, a = 0.5;                 // a: onde a borda suave fica em relação ao contorno (0,5 = centrada)
+    if (f == 0) dist = length(x) - s;
+    else if (f == 1) { dist = max(abs(x.x), abs(x.y)) - s; a = 0.5; }
+    else if (f == 2) { dist = abs(x.y) - s; a = 0.0; }
+    else if (f == 3) { dist = length(x) - s * (0.65 + 0.35 * cos(5.0 * atan(x.y, x.x))); a = 0.5; }
+    else if (f == 4) { dist = sdEstrela(vec2(x.x, -x.y), s * 1.0, 0.382); a = 0.5; }
+    else if (f == 5) { dist = sdHexagono(x, s * 0.8660254); a = 0.5; }
+    else if (f == 6) return bit(0, x, s);
+    else if (f == 7) { dist = sdDigito(x / s, int(floor(hash(celula) * 10.0))) * s; a = 0.2; w *= 1.2; }
+    else if (f == 8) { dist = sdTriangulo(x, s); a = 0.5; }
+    else if (f == 9) return bit(1, x, s);
+    else { dist = sdCaixa(x, vec2(s, 0.2203 * s)); a = 0.5; }      // o traço do Mixed Shape
+    return 1.0 - smoothstep(-w * a, w * (1.0 - a), dist);
+}
+
+/**
+ * A forma da célula. Mixed Shape (medido): as casas LIGADAS se revezam na diagonal — com duas ligadas o
+ * período é 2, com cinco é 5; nenhuma ligada = a forma principal em tudo.
+ */
+int formaDa(vec2 ij, int k) {
+    int casas[5] = int[5](shape1, shape2, shape3, shape4, shape5);
+    int ligadas = 0;
+    for (int i = 0; i < 5; i++) if (casas[i] != 0) ligadas++;
+    if (ligadas == 0) return shape;
+    int vez = int(mod(ij.x + ij.y + 0.0, float(ligadas))), f = 0;
+    for (int i = 0; i < 5; i++) if (casas[i] != 0) { if (vez == 0) { f = casas[i]; break; } vez--; }
+    // na lista do Mixed Shape a 3ª forma não é a Linha inteira, é um traço curto
+    return f == 3 ? 10 : f - 1;
+}
+
+/** A cobertura da tela `k` no pixel `p`. */
+float tela(vec2 p, int k) {
+    float c = lado();
+    vec2 q = paraGrade(p, k);
+    vec2 ij0 = floor(q / c);
+    float w = max(c * (BORDA + BORDA_SOFT * softness), 1.0 * acEscalaDePixel);
+    float m = 0.0;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 ij = ij0 + vec2(float(i), float(j));
+        vec2 centro = (ij + 0.5) * c;
+        int f = formaDa(ij, k);
+        vec2 noQuadro = daGrade(centro, k), R = tamanho();
+        float v;
+        if (f == 2) {
+            if (i != 0) continue;                    // a Linha atravessa as células: basta a coluna do pixel
+            v = valorDaLinha(q, centro.y, k);
+        } else if (noQuadro.x < 1.0 || noQuadro.y < 1.0 || noQuadro.x > R.x - 1.0 || noQuadro.y > R.y - 1.0) {
+            v = mediaDaCelula(noQuadro, k);          // célula com o centro fora do quadro: não está no buffer
+        } else {
+            vec4 g = texture(media, noQuadro / R);
+            v = k == 0 ? g.x : k == 1 ? g.y : g.z;
+        }
+        float s = RAIO * c * tom(v) * dotScale / 100.0;
+        m = min(m + ponto(f, q - centro, s, w, ij), 1.0);
+    }
+    return m;
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 R = tamanho();
+    vec2 p = uv * R;
+    if (acPass == 0) {
+        if (colorScheme == 0) { fragColor = vec4(mediaDaCelula(p, 0), 0.0, 0.0, 1.0); return; }
+        fragColor = vec4(mediaDaCelula(p, 0), mediaDaCelula(p, 1), mediaDaCelula(p, 2), 1.0);
+        return;
+    }
+    vec4 orig = texture(inputImg, uv);
+
+    // o papel: branco, com o gradiente por cima
+    vec3 papel = vec3(1.0);
+    vec2 A = gradientStart * R, B = gradientEnd * R;
+    float t = clamp(dot(p - A, B - A) / max(dot(B - A, B - A), 1e-6), 0.0, 1.0);
+    papel = mix(papel, mix(startColor.rgb, endColor.rgb, t), gradientAmount / 100.0);
+
+    // Black Wear (medido): um ruído por pixel tira tinta — 40% dos pixels ficam cheios, o resto perde até 70%
+    float ruido = hash(floor(p / acEscalaDePixel) + 0.5);
+    float falha = 1.0 - blackWear / 100.0 * 0.7 * max(ruido - 0.4, 0.0) / 0.6;
+
+    vec3 cor; float cobre;
+    if (colorScheme == 0) {
+        cobre = tela(p, 0);
+        cor = papel * (1.0 - cobre * falha);
+    } else {
+        // CMYK (medido): três telas — ciano, magenta e amarelo — multiplicadas; o alfa do Transparent BG é a média
+        vec3 cmy = vec3(tela(p, 0), tela(p, 1), tela(p, 2));
+        cor = papel * (1.0 - cmy * falha);
+        cobre = dot(cmy, vec3(1.0 / 3.0));
+    }
+    vec4 saida;
+    if (transparentBg) {
+        // medido: o alfa vira a própria tinta e a cor continua a do quadro com papel (a borda sai clara)
+        saida = vec4(cor, cobre);
+    } else {
+        // Paper Tint (medido): puxa para o bege na medida em que a cor é clara (média dos canais) — o preto não muda
+        cor = mix(cor, vec3(0.92, 0.84, 0.66), paperTint / 100.0 * dot(cor, vec3(1.0 / 3.0)));
+        saida = vec4(cor, orig.a);       // medido: o alfa da saída é o da camada
+    }
+    // Highlight Detail (medido): não mexe nos pontos — soma um ruído fino de ±4% ao quadro
+    saida.rgb = clamp(saida.rgb + (hash(floor(p / acEscalaDePixel) + 17.5) - 0.5) * 2.0 * 0.04 * highlightDetail / 100.0, 0.0, 1.0);
+    fragColor = mix(orig, saida, mixAmount / 100.0);
+}
+]]></shader>
+</effect>

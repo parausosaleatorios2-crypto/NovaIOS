@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CHAVE DE COR — O "COLOR KEY" DO AFTER EFFECTS
+  ============================================================================
+
+  Pedido de 30/09/2026 ("temos o color key igual o After Effects?"). Não é o
+  Chroma key: aquele compara só a CROMINÂNCIA (ótimo em fundo verde mal
+  iluminado), e por isso não sabe tirar um fundo BRANCO, PRETO ou cinza — eles
+  não têm croma. O Color Key do AE compara a cor INTEIRA: some tudo que está a
+  menos de "Tolerância" (0 a 255, por canal, como lá) da cor escolhida — branco,
+  preto, qualquer uma.
+
+  As duas bordas do AE:
+
+   - **Edge Thin** (−5 a 5 px): positivo come a borda do que FICA, negativo
+     espalha;
+   - **Edge Feather** (px): a largura da rampa de transparência na borda.
+
+  Como a borda é feita, num passe só: em volta de cada pixel, um disco de raio
+  R = |Edge Thin| + Edge Feather é amostrado, e a FRAÇÃO que ficaria opaca diz a
+  que distância da borda o pixel está — num disco cortado por uma reta, essa
+  fração é uma função conhecida da distância (`fracaoNoDisco`). Daí a borda
+  anda exatamente Edge Thin pixels e a rampa tem exatamente Edge Feather.
+-->
+<effect
+    id="nova.effect.colorkey"
+    name="Chave de cor"
+    name-en="Color Key"
+    desc="Tira uma cor da imagem — inclusive branco, preto ou cinza —, como o Color Key do After Effects."
+    desc-en="Keys out one colour, like After Effects' Color Key — white, black or any colour."
+    category="matte"
+    tags="color key,chave de cor,recorte,fundo branco,fundo preto,transparência,key,ae">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="keyColor" label="Cor a tirar" default="#00FF00" />
+        <slider id="colorTolerance" label="Tolerância"
+                default="40.0" min="0.0" max="255.0" step="1.0" type="integer" />
+        <slider id="edgeThin" label="Afinar borda (Edge Thin)"
+                default="0.0" min="-5.0" max="5.0" step="1.0" type="integer" snap="0.0" />
+        <slider id="edgeFeather" label="Suavizar borda (Edge Feather)"
+                default="0.0" min="0.0" max="50.0" step="0.5" snap="0.0" />
+        <switch id="showMatte" label="Ver o recorte" default="false" />
+    </params>
+
+    <!-- Na vitrine, a cor-chave padrão (verde puro) não é a da tela verde da amostra. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="keyColor" color="#00B140" />
+        <set param="colorTolerance" value="70.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAX_AMOSTRAS = 64;
+const float PI = 3.14159265359;
+
+// 1 = fica, 0 = sai. A maior diferença entre os canais, em 0..255, contra a
+// tolerância — com meio nível de rampa para a borda não serrilhar.
+float fica(vec2 uv) {
+    vec3 c = texture(inputImg, clamp(uv, 0.0, 1.0)).rgb;
+    vec3 d = abs(c - keyColor.rgb) * 255.0;
+    float dif = max(d.r, max(d.g, d.b));
+    return smoothstep(colorTolerance - 0.5, colorTolerance + 0.5, dif);
+}
+
+// A fração de um disco de raio r que fica do lado opaco de uma borda reta,
+// quando o centro está a uma distância d DENTRO do opaco (negativa = fora).
+float fracaoNoDisco(float d, float r) {
+    float x = clamp(d / r, -1.0, 1.0);
+    return 0.5 + (x * sqrt(1.0 - x * x) + asin(x)) / PI;
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float afinar = edgeThin * acEscalaDePixel;
+    float rampa = max(edgeFeather * acEscalaDePixel, 0.0);
+    float raio = abs(afinar) + rampa;
+
+    float alpha;
+    if (raio < 0.5) {
+        alpha = fica(acScreenNorm);
+    } else {
+        // O disco, em espiral de ângulo áureo: amostras espalhadas por igual.
+        int n = clamp(int(raio * raio * 0.8), 12, MAX_AMOSTRAS);
+        float soma = 0.0;
+        for (int i = 0; i < MAX_AMOSTRAS; i++) {
+            if (i >= n) break;
+            float t = (float(i) + 0.5) / float(n);
+            float r = sqrt(t) * raio;
+            float a = float(i) * 2.39996323;
+            soma += fica(acScreenNorm + vec2(cos(a), sin(a)) * r * acTexelSize);
+        }
+        float fracao = soma / float(n);
+        // A borda nova fica a `afinar` px para DENTRO do que fica; a rampa tem
+        // `rampa` px (meio pixel no mínimo, para não serrilhar).
+        float meia = max(rampa, 1.0) * 0.5;
+        float de = fracaoNoDisco(afinar - meia, raio);
+        float ate = fracaoNoDisco(afinar + meia, raio);
+        alpha = smoothstep(de, max(ate, de + 0.001), fracao);
+    }
+
+    if (showMatte) {
+        fragColor = vec4(vec3(alpha), 1.0);
+        return;
+    }
+    fragColor = vec4(color.rgb, color.a * alpha);
+}
+
+    ]]></shader>
+</effect>

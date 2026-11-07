@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Optical Diffusion (`odif`, linear): realces (`GlowKernel_DiffusionHighlights`), 5 a 20 camadas
+  de gaussiano recursivo (compute shader) somadas "over" (`GlowKernel_ApplyDiffusionLayer`). Até 1 nível em
+  0,06% dos valores. FORA: tamanho diferente por canal (Red/Green/Blue), Filter e Preview Highlights — o ramo
+  do host ainda não lido; aí vale o maior tamanho nos três canais.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.opticaldiffusion"
+    name="Looks: Optical Diffusion"
+    name-en="Looks: Optical Diffusion"
+    desc="A ferramenta Optical Diffusion do Magic Bullet Looks: o brilho difuso das altas, como um filtro de difusão na lente."
+    desc-en="Magic Bullet Looks' Optical Diffusion tool: the soft glow of the highlights, like a diffusion filter on the lens."
+    category="looks"
+    stage="mblooks"
+    looks="odif"
+    tags="magic bullet,looks,red giant,optical diffusion,difusao,glow,brilho,bloom">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="density" label="Density" default="25.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="size" label="Size" default="300.0" min="0.0" max="2000.0" step="1.0" />
+        <slider id="falloff" label="Falloff" default="100.0" min="0.0" max="300.0" step="1.0" />
+        <slider id="glow" label="Glow" default="0.0" min="-3.0" max="3.0" step="0.01" />
+        <slider id="highlightsOnly" label="Highlights Only" default="50.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="luster" label="Luster" default="50.0" min="0.0" max="120.0" step="0.1" />
+        <slider id="red" label="Red" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="green" label="Green" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <slider id="blue" label="Blue" default="1.0" min="0.0" max="2.0" step="0.001" />
+        <switch id="filterOn" label="Filter" default="false" />
+        <selector id="quality" label="Quality" default="0" options="5|10|15|20" />
+        <switch id="previewHighlights" label="Preview Highlights" default="false" />
+        <slider id="filterType" label="Filter Type" type="integer" default="3" min="0" max="5" step="1" />
+    </params>
+
+    <!-- Na vitrine, a difusão padrão some a 64 dp: densa e com brilho. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="glow" value="1.5" />
+        <set param="density" value="70.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_chroma_key
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-chroma-key"
+    name="Effect Chroma Key (NV)"
+    name-en="Effect Chroma Key (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_chroma_key', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_chroma_key', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="_green_color" label="Green Color" default="#FF0CCA2F" />
+        <slider id="_red_intensity" label="Red Intensity" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_blue_intensity" label="Blue Intensity" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_green_intensity" label="Green Intensity" default="0.5" min="0" max="1" step="0.01" />
+        <color id="_blue_color" label="Blue Color" default="#FF0000FF" />
+        <color id="_red_color" label="Red Color" default="#FFFF0000" />
+        <slider id="_key_mode" type="integer" label="Key Mode" default="0" min="0" max="2" step="1" />
+        <slider id="_invert" type="integer" label="Invert" default="0" min="0" max="10" step="1" />
+        <slider id="_alpha_clip" label="Alpha Clip" default="0.5" min="0" max="1" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+float u_xlat0;
+bvec3 u_xlatb0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+vec3 u_xlat4;
+float u_xlat8;
+void main()
+{
+    u_xlat0 = dot(_blue_color.xy, vec2(_red_intensity, _green_intensity));
+    u_xlat0 = (-u_xlat0) + _blue_color.z;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat4.xyz = u_xlat1.xzy * vec3(_red_intensity, _blue_intensity, _green_intensity);
+    u_xlat4.xyz = u_xlat4.yzz + u_xlat4.xxy;
+    u_xlat4.xyz = (-u_xlat4.xyz) + u_xlat1.yzx;
+    u_xlat0 = u_xlat4.y / u_xlat0;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat0 = (-u_xlat0) + 1.0;
+    u_xlat8 = (-u_xlat0) * u_xlat1.w + 1.0;
+    u_xlat2.w = u_xlat1.w * u_xlat0;
+    u_xlat2.xyz = (-_blue_color.xyz) * vec3(u_xlat8) + u_xlat1.xyz;
+    u_xlat2.xyz = clamp(u_xlat2.xyz, 0.0, 1.0);
+    u_xlat0 = dot(u_xlat2.xy, vec2(0.5, 0.5));
+    u_xlat2.z = min(u_xlat0, u_xlat2.z);
+    u_xlat0 = dot(_red_color.zy, vec2(_blue_intensity, _green_intensity));
+    u_xlat0 = (-u_xlat0) + _red_color.x;
+    u_xlat0 = u_xlat4.z / u_xlat0;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat0 = (-u_xlat0) + 1.0;
+    u_xlat8 = (-u_xlat0) * u_xlat1.w + 1.0;
+    u_xlat3.w = u_xlat1.w * u_xlat0;
+    u_xlat3.xyz = (-_red_color.xyz) * vec3(u_xlat8) + u_xlat1.xyz;
+    u_xlat3.xyz = clamp(u_xlat3.xyz, 0.0, 1.0);
+    u_xlat0 = dot(u_xlat3.zy, vec2(0.5, 0.5));
+    u_xlat3.x = min(u_xlat0, u_xlat3.x);
+    u_xlatb0.xz = equal(ivec4(int(_key_mode), int(_key_mode), int(_invert), int(_key_mode)), ivec4(1, 0, 1, 0)).xz;
+    u_xlat2 = (u_xlatb0.x) ? u_xlat2 : u_xlat3;
+    u_xlat0 = dot(_green_color.xz, vec2(_red_intensity, _blue_intensity));
+    u_xlat0 = (-u_xlat0) + _green_color.y;
+    u_xlat0 = u_xlat4.x / u_xlat0;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat0 = (-u_xlat0) + 1.0;
+    u_xlat4.x = (-u_xlat0) * u_xlat1.w + 1.0;
+    u_xlat3.w = u_xlat1.w * u_xlat0;
+    u_xlat3.xyz = (-_green_color.xyz) * u_xlat4.xxx + u_xlat1.xyz;
+    u_xlat3.xyz = clamp(u_xlat3.xyz, 0.0, 1.0);
+    u_xlat0 = dot(u_xlat3.xz, vec2(0.5, 0.5));
+    u_xlat3.y = min(u_xlat0, u_xlat3.y);
+    u_xlat1 = (int(_key_mode) != 0) ? u_xlat2 : u_xlat3;
+    u_xlatb0.x = u_xlat1.w<_alpha_clip;
+    u_xlat1.w = (u_xlatb0.x) ? 0.0 : u_xlat1.w;
+    u_xlat2 = (-u_xlat1) + vec4(1.0, 1.0, 1.0, 1.0);
+    fragColor = (u_xlatb0.z) ? u_xlat2 : u_xlat1;
+    return;
+}
+    ]]></shader>
+</effect>

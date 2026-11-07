@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_FILMDAMAGE — o Film Damage do Sapphire (Boris FX), lido do plugin
+  ============================================================================
+
+  Pedido do snow (09/10/2026): "vai de s_filmdamage então ... tudo tem que ficar igualzinho".
+  Medição e leitura em tools/filmdamage/benchmark (LEIAME.md).
+
+  A CADEIA (da definição do efeito, texto na sapphire_ae.dll):
+    grão -> saturação -> Tint/Scale Lights/Offset Darks -> [manchas/poeira do negativo] -> [riscos] ->
+    [manchas/poeira da cópia] -> tremor (warp vertical com a faixa entre quadros) -> desfoque (Defocus e o
+    motion blur do tremor) × flicker -> vinheta -> [cabelos]
+
+  O QUE ESTÁ AQUI E BATE COM O AE (rodadas 1 e 2, 16 bpc):
+  - GRÃO: um hash de 4 rodadas (tabela de 256 inteiros do Sapphire) por grupo de 4 pixels; cada byte b dá
+    (b − 128)/256, vezes uma amplitude que depende do valor do pixel (65 degraus: Darks + (1 − Darks)·f(u),
+    f(u) = u + u² − u³). O contador anda por canal (10001), por campo (W·H + 7) e por pixel. Field, Frame e
+    os cinco pulldowns. Erro máximo 0,009 nível.
+  - COR: luma (5R + 8G + 3B)/16; Tint e Scale Lights multiplicam, Tint Darks e Offset Darks somam. 0,01 nível.
+  - FLICKER: o `warp_noise` do Sapphire (9 células, núcleo radial, o mesmo hash), em segundos. 0,00006.
+  - TREMOR: o `sawtooth_plus_noise` (uma serra de 1024 intervalos de semente fixa + ruído de 6 oitavas +
+    a zona morta do Shake Always), chamado na própria DLL para conferir. Deslocamento a 0,015 px; a faixa entre
+    quadros é preta e opaca.
+  - DESFOQUE: três caixas por eixo com raios inteiros que somam a largura (a do S_Glow); largura em px =
+    quantidade · W/8; Defocus nos dois eixos, o motion blur do tremor só no vertical. 0,004 nível.
+  - VINHETA: a conta da definição + o `static` (hash do índice do pixel, W·H por quadro). 0,006 nível.
+  - O AE guarda os controles do Sapphire em passos de 1/65536 (Seed 0,123 vira 0,1229858): o shader faz o
+    mesmo (`q16`) — a semente do desfoque depende disso.
+
+  AINDA NÃO: manchas, poeira, cabelos, riscos (em andamento) e o Grain Blur. Os carimbos (poeira, manchas,
+  cabelos) são IMAGENS da Boris FX: não vêm para o app — o lugar, o tamanho e a cor sairão da conta do plugin.
+
+  NOS BUFFERS (8 bits): a imagem depois do grão e da cor já sai multiplicada pelo flicker (escala por
+  constante: comuta com o tremor e o desfoque) e pré-multiplicada pelo alfa.
+-->
+<effect
+    id="nova.effect.sfilmdamage"
+    name="S_FilmDamage"
+    name-en="S_FilmDamage"
+    desc="O Film Damage do Sapphire: grão, cor, tremor, desfoque, flicker e vinheta de filme antigo."
+    desc-en="Sapphire's Film Damage: old film grain, colour, shake, defocus, flicker and vignette."
+    category="stylize"
+    tags="s_filmdamage,film damage,sapphire,filme,antigo,velho,grão,grain,flicker,tremor,shake,vinheta,vintage,boris">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tabelas" src="image" files="filmdamage/tabelas.png" />
+        <texture id="tempo" src="buffer" scale="0.03125" />
+        <texture id="imgA" src="buffer" />
+        <texture id="imgB" src="buffer" />
+        <texture id="ga" src="buffer" />
+        <texture id="gb" src="buffer" />
+
+        <slider id="grainAmp" group="Grain" label="Grain Amp" default="0.1" min="0.0" max="2.0" step="0.01" snap="0.1,0.0" />
+        <slider id="grainAmpRed" group="Grain" label="Grain Amp Red" default="0.9" min="0.0" max="4.0" step="0.01" snap="0.9" />
+        <slider id="grainAmpGreen" group="Grain" label="Grain Amp Green" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="grainAmpBlue" group="Grain" label="Grain Amp Blue" default="1.6" min="0.0" max="4.0" step="0.01" snap="1.6" />
+        <slider id="grainAmpDarks" group="Grain" label="Grain Amp Darks" default="0.2" min="0.0" max="2.0" step="0.01" snap="0.2" />
+        <slider id="grainAmpBrights" group="Grain" label="Grain Amp Brights" default="0.0" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <switch id="grainMono" group="Grain" label="Grain Mono" default="false" />
+        <selector id="grainHold" group="Grain" label="Grain Hold" default="1"
+            options="Field|Frame|3:2 Pulldown at 0|3:2 Pulldown at 1|3:2 Pulldown at 2|3:2 Pulldown at 3|3:2 Pulldown at 4" />
+
+        <slider id="saturation" group="Color Correct" label="Saturation" default="1.0" min="-2.0" max="8.0" step="0.01" snap="1.0,0.0" />
+        <slider id="scaleLights" group="Color Correct" label="Scale Lights" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="offsetDarks" group="Color Correct" label="Offset Darks" default="0.0" min="-1.0" max="1.0" step="0.005" snap="0.0" />
+        <color id="tintLights" group="Color Correct" label="Tint Lights" default="#FFFFFF" />
+        <color id="tintDarks" group="Color Correct" label="Tint Darks" default="#000000" />
+
+        <slider id="shakeAmplitude" group="Shake" label="Shake Amplitude" default="0.0" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="shakeFrequency" group="Shake" label="Shake Frequency" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="shakeJumpiness" group="Shake" label="Shake Jumpiness" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="shakeRandom" group="Shake" label="Shake Random" default="0.1" min="0.0" max="1.0" step="0.01" snap="0.1" />
+        <slider id="shakeAlways" group="Shake" label="Shake Always" default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="interframeBorder" group="Shake" label="Interframe Border Height" default="0.1" min="0.0" max="1.0" step="0.01" snap="0.1" />
+        <slider id="shakeTimeOffset" group="Shake" label="Shake Time Offset" default="0.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="shakeMotionBlur" group="Shake" label="Shake Motion Blur" default="0.1" min="0.0" max="2.0" step="0.01" snap="0.1" />
+
+        <slider id="vignetteDarkness" group="Vignette" label="Vignette Darkness" default="0.1" min="0.0" max="1.0" step="0.01" snap="0.1,0.0" />
+        <slider id="vignetteRadius" group="Vignette" label="Vignette Radius" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="vignetteSoftness" group="Vignette" label="Vignette Edge Softness" default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="vignetteRelHeight" group="Vignette" label="Vignette Rel Height" default="0.75" min="0.1" max="2.0" step="0.01" snap="0.75" />
+
+        <slider id="flicker" group="Flicker" label="Flicker" default="0.2" min="0.0" max="2.0" step="0.01" snap="0.2,0.0" />
+        <slider id="flickerRandAmp" group="Flicker" label="Flicker Rand Amp" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="flickerRandFreq" group="Flicker" label="Flicker Rand Freq" default="10.0" min="0.0" max="50.0" step="0.1" snap="10.0" />
+        <slider id="flickerWaveAmp" group="Flicker" label="Flicker Wave Amp" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="flickerWaveFreq" group="Flicker" label="Flicker Wave Freq" default="5.0" min="0.0" max="50.0" step="0.1" snap="5.0" />
+
+        <slider id="defocus" group="Defocus" label="Defocus" default="0.0" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="defocusRandAmp" group="Defocus" label="Defocus Rand Amp" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="defocusRandFreq" group="Defocus" label="Defocus Rand Freq" default="10.0" min="0.0" max="50.0" step="0.1" snap="10.0" />
+        <slider id="defocusWaveAmp" group="Defocus" label="Defocus Wave Amp" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="defocusWaveFreq" group="Defocus" label="Defocus Wave Freq" default="5.0" min="0.0" max="50.0" step="0.1" snap="5.0" />
+
+        <slider id="seed" label="Seed" default="0.123" min="0.0" max="10.0" step="0.001" snap="0.123" />
+    </params>
+
+    <passes>
+        <pass target="tempo" />                                            <!-- 0: os números do quadro -->
+        <pass target="imgA" />                                             <!-- 1: grão, cor, flicker -->
+        <pass target="imgB" skipIfZero="shakeAmplitude" />                 <!-- 2: o tremor -->
+        <pass target="ga" skipIfZero="defocus,shakeAmplitude" />           <!-- 3..5: caixas na horizontal -->
+        <pass target="gb" skipIfZero="defocus,shakeAmplitude" />
+        <pass target="ga" skipIfZero="defocus,shakeAmplitude" />
+        <pass target="gb" skipIfZero="defocus,shakeAmplitude" />           <!-- 6..8: caixas na vertical -->
+        <pass target="ga" skipIfZero="defocus,shakeAmplitude" />
+        <pass target="gb" skipIfZero="defocus,shakeAmplitude" />
+        <pass />                                                           <!-- 9: vinheta e saída -->
+    </passes>
+
+    <shader><![CDATA[
+const float RAIO_MAX = 240.0;
+
+// O AE guarda os controles do Sapphire em passos de 1/65536 (truncados): 0,123 -> 0,1229858.
+float q16(float v) { return floor(v * 65536.0) / 65536.0; }
+
+// ---------------------------------------------------------------------------------------------------------
+// As tabelas fixas (assets/filmdamage/tabelas.png, gerada por tools/filmdamage/benchmark/gerar.py): cada
+// número de 32 bits em dois texels da mesma coluna (bytes 0-2 em RGB, byte 3 no R da linha de baixo).
+// ---------------------------------------------------------------------------------------------------------
+uint ler32(int x, int linha) {
+    uvec3 a = uvec3(floor(texelFetch(tabelas, ivec2(x, linha), 0).rgb * 255.0 + 0.5));
+    uint b = uint(floor(texelFetch(tabelas, ivec2(x, linha + 1), 0).r * 255.0 + 0.5));
+    return a.x | (a.y << 8) | (a.z << 16) | (b << 24);
+}
+
+/** O hash do Sapphire: 4 rodadas de c = (c >> 8) + T[c & 255]. */
+uint rodadas(uint c) {
+    for (int i = 0; i < 4; i++) c = (c >> 8) + ler32(int(c & 255u), 6);
+    return c;
+}
+uint hash2(uint a, uint b) { return rodadas(rodadas(a) + b); }
+
+// ---------------------------------------------------------------------------------------------------------
+// warp_noise de uma oitava em (X, 0): 9 células, núcleo radial (t = d/1,5: 1 − 2t² até 0,5, depois 2(1 − t)²,
+// em passos de 1/4096 — o inicializador do plugin), valor ((h & 0x1fff) − 4096)/4096.
+// ---------------------------------------------------------------------------------------------------------
+float nucleo(float d2) {
+    int i = int(d2 * 4096.0) >> 1;
+    float x = float(i) / 4608.0;
+    float t = sqrt(x);
+    float v = t < 0.5 ? 1.0 - 2.0 * x : 2.0 * (t - 1.0) * (t - 1.0);
+    return floor(v * 4096.0 + 0.5) / 4096.0;
+}
+
+float ruido1(float X, uint semente) {
+    float ix = roundEven(X);
+    float fx = X - ix;
+    int iix = int(ix);
+    float soma = 0.0, pesos = 0.0;
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            float ddx = dx == -1 ? 1.0 + 2.0 * fx + fx * fx : (dx == 0 ? fx * fx : 1.0 - 2.0 * fx + fx * fx);
+            float d2 = ddx + float(dy * dy);
+            if (!(d2 < 2.249755859375)) continue;
+            float p = nucleo(d2);
+            uint h = hash2(uint(dy * 16) ^ semente, uint(iix + dx));
+            soma += (float(h & 0x1fffu) - 4096.0) * (1.0 / 4096.0) * p;
+            pesos += p;
+        }
+    }
+    return 0.5 + 0.5 * (soma * (1.0 / pesos));
+}
+
+/** warp_noise(t, freq, 1, seed) do efeito: x = t · 2 · freq, semente = int(4096 · seed). */
+float warpNoise(float t, float freq, float sd) {
+    return ruido1(t * freq * 2.0, uint(int(4096.0 * sd)));
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// sawtooth_plus_noise (0x180d05650 na DLL): uma serra de intervalos sorteados + ruído de 6 oitavas.
+// ---------------------------------------------------------------------------------------------------------
+const float M30F = 9.313226e-10;   // 2^-30
+
+float umLado(int sem, float u, float un, float aleat, float pulo, float morta) {
+    int bloco = int(floor(u * 0.0009765625));
+    float v = u - float(bloco * 1024);
+    int lo = 0, hi = 1024, k = -1;
+    for (int it = 0; it < 12; it++) {
+        if (lo >= hi) break;
+        int m = (lo + hi) >> 1;
+        float ini = uintBitsToFloat(ler32(m, 2));
+        float comp = uintBitsToFloat(ler32(m, 4));
+        if (v >= ini && comp + ini > v) { k = m; break; }
+        if (ini >= v) hi = m; else lo = m + 1;
+    }
+    if (k < 0) k = lo;
+    float ini = uintBitsToFloat(ler32(k, 2));
+    uint h = hash2(uint(sem), uint(bloco) + ler32(k, 0));
+    float s = float(rodadas(h) & 0x3fffffffu) * M30F;
+    float inc = s > 0.15 ? s - 0.15 : 0.0;
+    float nivel = float(h & 0x3fffffffu) * (2.0 * 9.313225746e-10) - 1.0;
+    inc = inc * 2.0 - 1.0;
+    float serra = (nivel + (v - ini) * inc) * pulo;
+    float acc = 0.0, mult = 1.0, amp = 1.0;
+    for (int b = 0; b < 6; b++) {
+        float r = float(rodadas(uint(sem + 0x2bd + b)) & 0x3fffffffu) * 4.656612873e-10 - 0.25;
+        float x = r + un * mult;
+        int i = int(floor(x));
+        float a = float(hash2(uint(sem + i), uint(b)) & 0x3fffffffu) * M30F;
+        float c = float(hash2(uint(sem + i + 1), uint(b)) & 0x3fffffffu) * M30F;
+        float val = a + (x - float(i)) * (c - a);
+        float peso = amp + amp;
+        mult += mult; amp *= 0.5;
+        acc += peso * (val - 0.5);
+    }
+    float x = serra + acc * (aleat * 0.5079);
+    if (!(abs(x) > morta)) return 0.0;
+    return x - morta * sign(x);
+}
+
+/** film_damage_yshift: (yshift, |yslope|) em unidades do Sapphire (altura = 2 · H/W). */
+vec2 tremor(float quadro, float fps, float a) {
+    float sempre = q16(shakeAlways);
+    if (!(sempre > 0.0)) return vec2(0.0);
+    float f = q16(shakeFrequency) / 4.0;
+    float yt = (quadro - q16(shakeTimeOffset)) * (30.0 / fps);
+    float morta = 1.2 / (sempre + 0.2) - 1.0;
+    int sem = int(4096.0 * (q16(seed) + 0.3));
+    float r0 = float(rodadas(uint(sem + 0x3fd)) & 0x3fffffffu) * 9.313225746e-08;
+    float t7 = r0 + yt, t14 = t7 - 1.0;
+    float aleat = q16(shakeRandom), pulo = q16(shakeJumpiness);
+    float ant = umLado(sem, t14 * f + r0, 5.0 * f * t14, aleat, pulo, morta);
+    float ag = umLado(sem, t7 * f + r0, 5.0 * f * t7, aleat, pulo, morta);
+    float k = q16(shakeAmplitude) * 2.0 * a;
+    return vec2(ag * k, abs((ag - ant) * k));
+}
+
+// Um float de 32 bits num texel RGBA8 (o buffer `tempo`).
+vec4 guardar(float v) {
+    uint u = floatBitsToUint(v);
+    return vec4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
+}
+float lerTempo(int i) {
+    uvec4 b = uvec4(floor(texelFetch(tempo, ivec2(i, 0), 0) * 255.0 + 0.5));
+    return uintBitsToFloat(b.x | (b.y << 8) | (b.z << 16) | (b.w << 24));
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// O grão (lambda 0x180ad74f0): por canal, contador = int(4096 · (Seed + 0,123)) + 10001 · canal +
+// campo · (W·H + 7) + y · W + (x com os 2 bits de baixo zerados); o byte (x & 3) do hash.
+// ---------------------------------------------------------------------------------------------------------
+ivec2 campos(int quadro, int modo) {
+    if (modo == 0) return ivec2(2 * quadro, 2 * quadro + 1);
+    if (modo == 1) return ivec2(2 * quadro);
+    int r = 2 * (quadro - (modo - 2)) + 14;
+    int r1 = r + 1;
+    int a = 2 * (r / 5) + ((r - 5 * (r / 5)) >= 2 ? 1 : 0);
+    int b = 2 * (r1 / 5) + ((r1 - 5 * (r1 / 5)) >= 2 ? 1 : 0);
+    return ivec2(b, a);   // medido: no pulldown as linhas pares ficam com o segundo campo
+}
+
+float amplitudeDoGrao(float v, float darks, float brights) {
+    int idx = clamp(int(floor(v * 4096.0)) >> 6, 0, 64);
+    float i = float(idx) / 32.0;
+    float u = min(i, 2.0 - i);
+    float f = u + u * u - u * u * u;
+    return i <= 1.0 ? darks + (1.0 - darks) * f : brights + (1.0 - brights) * f;
+}
+
+vec3 grao(vec3 v, ivec2 p, ivec2 T, int quadro) {
+    float amp = q16(grainAmp);
+    if (amp <= 0.0) return v;
+    ivec2 cs = campos(quadro, grainHold);
+    int campo = (p.y & 1) == 0 ? cs.x : cs.y;
+    uint base0 = uint(int(4096.0 * (q16(seed) + 0.123)));
+    uint n0 = base0 + uint(campo) * uint(T.x * T.y + 7) + uint(p.y * T.x + (p.x & ~3));
+    uint desl = uint(8 * (p.x & 3));
+    vec3 ampC = vec3(q16(grainAmpRed), q16(grainAmpGreen), q16(grainAmpBlue));
+    float darks = q16(grainAmpDarks), brights = q16(grainAmpBrights);
+    vec3 o;
+    for (int c = 0; c < 3; c++) {
+        uint n = n0 + uint(10001 * (grainMono ? 1 : c));
+        float b = float((rodadas(n) >> desl) & 255u);
+        o[c] = v[c] + amp * ampC[c] * amplitudeDoGrao(v[c], darks, brights) * (b - 128.0) / 256.0;
+    }
+    return o;
+}
+
+vec3 corrigir(vec3 c) {
+    float y = dot(c, vec3(5.0, 8.0, 3.0) / 16.0);
+    c = y + (c - y) * q16(saturation);
+    vec3 L = floor(clamp(tintLights.rgb, 0.0, 1.0) * 255.0 + 0.5) / 255.0 * q16(scaleLights);
+    vec3 D = floor(clamp(tintDarks.rgb, 0.0, 1.0) * 255.0 + 0.5) / 255.0 + q16(offsetDarks);
+    return c * sign(L) * max(abs(L) - D, 0.0) + D;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// O desfoque: três caixas por eixo (a mesma conta do S_Glow), largura em px = quantidade · W/8.
+// ---------------------------------------------------------------------------------------------------------
+int espelhar(int i, int n) {
+    // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+vec4 lerCaixa(int passo, ivec2 p, ivec2 T) {
+    p = ivec2(espelhar(p.x, T.x), espelhar(p.y, T.y));
+    if (passo == 3) return q16(shakeAmplitude) > 0.0 ? texelFetch(imgB, p, 0) : texelFetch(imgA, p, 0);
+    if ((passo & 1) == 0) return texelFetch(ga, p, 0);
+    return texelFetch(gb, p, 0);
+}
+
+vec4 caixa(int passo, ivec2 p, ivec2 T, bool vertical, int qual, float w) {
+    w = clamp(w, 0.0, 3.0 * RAIO_MAX);
+    float a = floor(w);
+    float f = w - a;
+    float r = floor((a + float(2 - qual)) / 3.0 + 1e-4);
+    float cresce = abs(a - 3.0 * floor(a / 3.0 + 1e-4) - float(qual)) < 0.5 ? 1.0 : 0.0;
+    f *= cresce;
+    float dentro = (1.0 - f) / (2.0 * r + 1.0) + f / (2.0 * r + 3.0);
+    float ponta = f / (2.0 * r + 3.0);
+    int alcance = int(r) + (f > 0.0 ? 1 : 0);
+    vec4 soma = vec4(0.0);
+    for (int i = -alcance; i <= alcance; i++) {
+        float d = abs(float(i));
+        float peso = d <= r + 0.5 ? dentro : ponta;
+        soma += peso * lerCaixa(passo, p + (vertical ? ivec2(0, i) : ivec2(i, 0)), T);
+    }
+    return soma;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// A vinheta (simple_vignette) com o `static`: (hash4(y·W + x + quadro·W·H) & 0xfff)/4096.
+// ---------------------------------------------------------------------------------------------------------
+float vinheta(ivec2 p, ivec2 T, int quadro) {
+    float dark = q16(vignetteDarkness);
+    if (dark <= 0.0) return 1.0;
+    float W = float(T.x), H = float(T.y), a = H / W;
+    float X = (float(p.x) + 0.5) / W * 2.0 - 1.0;
+    float Y = ((float(p.y) + 0.5) / H * 2.0 - 1.0) * a;
+    float soft = q16(vignetteSoftness);
+    float mn = q16(vignetteRadius) - soft * 0.5;
+    float lin = (length(vec2(X, Y / q16(vignetteRelHeight))) - mn) / max(0.001, soft);
+    float sm = (1.0 - cos(3.14159265 * clamp(lin, 0.0, 1.0))) * 0.5;
+    float esc = lin > 0.5 ? max(lin, sm) : min(lin, sm);
+    float g = lin + (esc - lin) * 0.4;
+    uint n = uint(p.y * T.x + p.x) + uint(quadro) * uint(T.x * T.y);
+    float st = float(rodadas(n) & 0xfffu) / 4096.0;
+    float tex = clamp(1.0 - (g + (st - 0.5) / 256.0), 0.0, 1.0);
+    return 1.0 + (tex - 1.0) * dark;
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    float fps = acFrameDuration > 0.0 ? 1.0 / acFrameDuration : 30.0;
+    int quadro = int(floor(acTime * fps + 0.5));
+    float a = float(T.y) / float(T.x);
+
+    // ---- 0: os números do quadro ----
+    if (acPass == 0) {
+        int i = int(gl_FragCoord.x);
+        if (i > 3 || gl_FragCoord.y >= 1.0) { fragColor = vec4(0.0); return; }   // só a linha 0, texels 0..3
+        float v = 0.0;
+        float sd = q16(seed);
+        if (i == 0) {
+            float r = q16(flickerRandAmp) * (warpNoise(acTime, q16(flickerRandFreq), sd) - 0.5) * 2.0;
+            float o = sin(6.28318531 * (acTime * q16(flickerWaveFreq) - 0.25)) * q16(flickerWaveAmp);
+            v = 1.0 + q16(flicker) * (r + o);
+        } else if (i == 1 || i == 2) {
+            vec2 t = q16(shakeAmplitude) > 0.0 ? tremor(float(quadro), fps, a) : vec2(0.0);
+            v = i == 1 ? t.x : t.y;
+        } else if (i == 3) {
+            float r = q16(defocusRandAmp) * (warpNoise(acTime, q16(defocusRandFreq), sd + 0.2) - 0.5) * 2.0;
+            float o = sin(6.28318531 * (acTime * q16(defocusWaveFreq) - 0.75)) * q16(defocusWaveAmp);
+            v = q16(defocus) * (r + o);
+        }
+        fragColor = guardar(v);
+        return;
+    }
+
+    // ---- 1: grão, saturação, tint (e o flicker, que é uma escala só) ----
+    if (acPass == 1) {
+        vec4 s = texelFetch(inputImg, p, 0);
+        vec3 c = corrigir(grao(s.rgb, p, T, quadro)) * lerTempo(0);
+        fragColor = vec4(clamp(c, 0.0, 1.0) * s.a, s.a);
+        return;
+    }
+
+    // ---- 2: o tremor — y do Sapphire para cima, a faixa entre quadros preta e opaca ----
+    if (acPass == 2) {
+        float ys = lerTempo(1);
+        float Ys = a - (float(p.y) + 0.5) / float(T.y) * 2.0 * a;
+        float wrap = (1.0 + q16(interframeBorder)) * 2.0 * a;
+        float Yl = mod(Ys + ys + a, wrap) - a;
+        float yl = (a - Yl) / (2.0 * a) * float(T.y) - 0.5;
+        float y0 = floor(yl), f = yl - y0;
+        int i0 = int(y0);
+        vec4 preto = vec4(0.0, 0.0, 0.0, 1.0);
+        vec4 c0 = (i0 >= 0 && i0 < T.y) ? texelFetch(imgA, ivec2(p.x, i0), 0) : preto;
+        vec4 c1 = (i0 + 1 >= 0 && i0 + 1 < T.y) ? texelFetch(imgA, ivec2(p.x, i0 + 1), 0) : preto;
+        fragColor = mix(c0, c1, f);
+        return;
+    }
+
+    // ---- 3..8: o desfoque ----
+    if (acPass < 9) {
+        float d = lerTempo(3);
+        float px = float(T.x) / 8.0;
+        bool vertical = acPass >= 6;
+        float w = vertical ? max(d + q16(shakeMotionBlur) * lerTempo(2), 0.0) * px : max(d, 0.0) * px;
+        fragColor = caixa(acPass, p, T, vertical, vertical ? acPass - 6 : acPass - 3, w);
+        return;
+    }
+
+    // ---- 9: a vinheta e a saída ----
+    bool desfocou = q16(defocus) > 0.0 || q16(shakeAmplitude) > 0.0;
+    vec4 c = desfocou ? texelFetch(gb, p, 0) : texelFetch(imgA, p, 0);
+    vec3 rgb = clamp(c.rgb * vinheta(p, T, quadro), 0.0, 1.0);
+    fragColor = c.a > 0.0 ? vec4(min(rgb / c.a, vec3(1.0)), c.a) : vec4(0.0);
+}
+]]></shader>
+</effect>

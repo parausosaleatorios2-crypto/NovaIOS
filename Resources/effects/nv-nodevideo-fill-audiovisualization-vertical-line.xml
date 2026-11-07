@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Fill_AudioVisualization_vertical_line — a Linha vertical do Node Video (definição `_VerticalLine`,
+  Visualização de áudio), portada do C# (0.915.0). O porte automático lia um `audio_sampler` que ninguém mandava
+  (saía preto) e não tinha a Intensidade, que o C# usa na textura.
+  AQUI: o passe 0 refaz a textura do som; o passe 1 é o programa do Node, com entrada e cores em luz linear e a saída
+  de volta à cor reta do Nova (como os outros portes do Node).
+  O que fica diferente do Node: a escala do espectro é medida contra a conta do Node em Python, não no aparelho; a
+  frequência é a de 30 fps e 44,1 kHz fixos (o Node acompanha o fps e a taxa do projeto: a 60 fps ele lê o dobro das
+  frequências); a janela aqui é a Hamming do src="spectrum", não a Blackman, e o som é a média dos dois canais (o Node
+  pega L ou R conforme o índice cai); a queda entre quadros ("Configurações de velocidade": Imediatamente /
+  Interpolação, a banda que cai Band Decrease por quadro, acelerando ×1,2) não entrou — aqui a banda acompanha o som
+  quadro a quadro; e que a textura do Node seja sRGB (o padrão do new Texture2D(w, h) num projeto linear) é a leitura
+  do il2cpp, não conferida no aparelho. A máscara interna do Node fica de fora; o Node compõe em luz linear e o Nova em
+  gama (só onde sobra alfa parcial).
+-->
+<effect
+    id="nv.effect.nodevideo-fill-audiovisualization-vertical-line"
+    name="Linha vertical (NV)"
+    name-en="Vertical Line (NV)"
+    desc="Linhas verticais de duas cores que acendem com o som — a Vertical Line do Node Video."
+    desc-en="Two-color vertical lines that light up with the audio — Node Video's Vertical Line."
+    category="nodevideo"
+    stage="screen"
+    tags="nodevideo,nv,áudio,audio,som,música,visualizador,linha,vertical,espectro">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <color id="_color1" label="Cor1" default="#FF00B3FF" />
+        <color id="_color2" label="Cor2" default="#FF848484" />
+        <slider id="_blend" label="Mesclagem" default="4" min="0" max="5" step="0.01" />
+        <slider id="_scale" label="Escala" default="0.5" min="0" max="5" step="0.01" />
+        <slider id="_offset" label="Deslocamento" default="0.1" min="0" max="2" step="0.01" />
+        <slider id="_feather" label="Desvanecimento" default="0.2" min="0" max="1" step="0.01" />
+        <slider id="_intensity" label="Intensidade" default="0.9" min="0" max="1" step="0.01" />
+        <switch id="_symmetry" label="Simetria" default="false" />
+        <selector id="_blend_mode" label="Modo de mesclagem" default="0" options="Sobrepor|Multiplicação|Adicionar" />
+        <switch id="_enable" group="Bloco" label="Ativar" default="false" />
+        <switch id="_randomize" group="Bloco" label="Aleatorizar" default="false" />
+        <slider id="_block_count" type="integer" group="Bloco" label="Contagem" default="100" min="3" max="500" step="1" />
+        <slider id="_bands_count" type="integer" group="Configurações das bandas" label="Quantidade de bandas" default="600" min="3" max="1024" step="1" />
+        <!-- O espectro do Node refeito do src="spectrum" do Nova (o do Audio Spectrum do AE), medido contra a conta do
+             Node em duas músicas (ver abaixo): um ponto a cada 4 do chirp-z dele, a janela de um quadro de 30 fps. -->
+        <texture id="faixasImg" src="spectrum" />
+        <slider id="startFreq" hidden="true" default="19.3114" min="0" max="30000" />
+        <slider id="endFreq" hidden="true" default="2780.5412" min="0" max="30000" />
+        <slider id="bands" hidden="true" default="256" min="1" max="4096" />
+        <slider id="duration" hidden="true" default="33.3333" min="0" max="1000" />
+        <slider id="offset" hidden="true" default="-16.6667" min="-1000" max="1000" />
+        <!-- A Texture2D do Node: Quantidade de bandas × 1, RGBA32 sRGB (o teto do controle é 1024). -->
+        <texture id="somImg" src="buffer" width="1024" height="1" format="srgb" filter="nearest" />
+    </params>
+
+    <preview anda="true" />
+
+    <passes>
+        <pass target="somImg" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// A máscara interna do Node (o editor de máscara dele) fica desligada, como no padrão: a definição não a mostra.
+#define _use_inner_mask 0
+#define _b_clip_mask 0
+#define _show_inner_mask 0
+#define Mask inputImg
+
+// ---- a ponte Nova <-> Node (a mesma de tools/nodeluzes/gerar.py) ----
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 nvGama(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+// SetGlobalColor: num projeto linear o Unity manda a cor já em luz linear.
+vec4 nvCor(vec4 c) { return vec4(nvLinear(c.rgb), c.a); }
+// O RT da camada no Node: pré-multiplicada, em luz linear.
+vec4 nvEntrada(vec2 uv) { vec4 c = texture(inputImg, uv); return vec4(nvLinear(c.rgb) * c.a, c.a); }
+// A saída do Node (pré-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz acima do
+// alfa vira alfa; NaN (o log2 de 0 na conta do Node) vira 0, como no RT dele.
+vec4 nvSaida(vec4 p) {
+    p = mix(vec4(0.0), min(p, vec4(1.0)), greaterThanEqual(p, vec4(0.0)));
+    float a = max(p.a, max(p.r, max(p.g, p.b)));
+    return a > 0.0 ? vec4(nvGama(p.rgb / a), a) : vec4(0.0);
+}
+
+// ---- O _audio_sampler do Node (AEAudioVisualizer.RenderNew → AudioSampler.GetCurSampleTexture) ----
+// Uma Texture2D de Quantidade de bandas × 1 (RGBA32 sRGB, Repeat, Bilinear) com 1 ÷ (1 + e^(−banda ÷ (1 − Intensidade))).
+// O espectro (CheckGetSpectrumBuf → nv_get_spectrum_data, NVSpectrum(10, 1, 3, taxa, 20, 2000)): 1024 pontos espalhados
+// pelo quadro, janela Blackman do FFmpeg, chirp-z de 20 a 2000 Hz que o nativo acha ser a 44,1 kHz; os pontos k ≥ 512
+// são a sobra do chirp-z, sem o começo da janela. O ponto k é então (20 + k × 1980/511) × (1023 × fps ÷ taxa) Hz.
+// Aqui: |X| ≈ altura do src="spectrum" × 465,1. A conta dá 404,5 (Blackman ÷ Hamming em tom puro); o ×1,15 vem de duas
+// músicas contra a conta do Node em Python: acesas (luz > 0,8) 1,56% × 1,49% e 6,03% × 5,94%, erro médio 1,5–3%.
+const int LARGURA_ESP = 256;
+float alturaDaFaixa(int j) {
+    int t = 1 + 3 * j;
+    vec4 c = floor(texelFetch(faixasImg, ivec2(t % LARGURA_ESP, t / LARGURA_ESP), 0) * 255.0 + 0.5);
+    return (c.r * 65536.0 + c.g * 256.0 + c.b) / 16777215.0;
+}
+// O ponto k (de 2 a 1023) do espectro do Node.
+float pontoDoNode(int k) {
+    float p = float(k - 2) / 4.0;
+    int a = int(p);
+    float h = mix(alturaDaFaixa(a), alturaDaFaixa(min(a + 1, 255)), p - float(a));
+    float u = clamp(float(k - 511) / 1024.0, 0.0, 1.0);
+    float resto = (0.42659 * (1.0 - u) + 0.49656 * sin(6.2831853 * u) / 6.2831853 - 0.076849 * sin(12.5663706 * u) / 12.5663706) / 0.42659;
+    return h * 465.1 * resto;
+}
+// AEAudioVisualizer.freqToIndex(f, 1024, taxa).
+int indiceDaFreq(float f) {
+    if (f < 21.533203) return 0;
+    if (f > 22028.467) return 511;
+    return int(floor(f / 44100.0 * 1024.0 + 0.5));
+}
+int limiteDaBanda(float falta) {
+    return indiceDaFreq(floor(22050.0 / pow(1.035, falta)) - 1.0);
+}
+// A banda i do UpdateBandsNew: a média dos pontos da divisão logarítmica, nunca abaixo do ponto i + 2 (com 600 ou 1024
+// bandas é sempre só esse ponto). × 0,01; o ponto 1024 em diante não existe.
+float bandaDoNode(int i, int N) {
+    int zero = limiteDaBanda(float(N));
+    int de = max(limiteDaBanda(float(N - i)) - zero, i + 2);
+    int ate = max(limiteDaBanda(float(N - 1 - i)) - zero - 1, i + 2);
+    de = min(de, ate);
+    if (i == N - 1) ate = 511;
+    ate = min(ate, 1023);
+    if (ate < de) return 0.0;
+    float soma = 0.0;
+    int passo = max((ate - de) / 32, 1);
+    int quantos = 0;
+    for (int k = de; k <= ate; k += passo) { soma += pontoDoNode(k); quantos++; }
+    return soma / float(quantos) * 0.01;
+}
+// O passe 0 escreve em luz linear; o buffer sRGB guarda o byte da Texture2D do Node e devolve linear ao ler.
+vec4 texelDoSom(int i) {
+    int N = clamp(int(_bands_count), 1, 1024);
+    if (i >= N) return vec4(0.0, 0.0, 0.0, 1.0);
+    float k = 1.0 - clamp(_intensity, 0.0, 1.0);
+    float b = bandaDoNode(i, N);
+    float v = k > 0.0 ? 1.0 / (1.0 + exp(-b / k)) : (b > 0.0 ? 1.0 : 0.5);
+    return vec4(nvLinear(vec3(v)), 1.0);
+}
+// O Repeat + Bilinear do Node, à mão: só as Quantidade de bandas primeiras colunas do buffer valem.
+float amostraDoSom(float u) {
+    int N = clamp(int(_bands_count), 1, 1024);
+    float x = fract(u) * float(N) - 0.5;
+    float f0 = floor(x);
+    int i0 = int(f0);
+    int i1 = i0 + 1 >= N ? 0 : i0 + 1;
+    if (i0 < 0) i0 = N - 1;
+    return mix(texelFetch(somImg, ivec2(i0, 0), 0).r, texelFetch(somImg, ivec2(i1, 0), 0).r, x - f0);
+}
+
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec3 u_xlatb1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+bool u_xlatb6;
+float u_xlat12;
+int u_xlati12;
+float u_xlat18;
+bool u_xlatb18;
+void desenhoDoNode()
+{
+    u_xlat0.x = acScreenNorm.x * _scale + _offset;
+    u_xlat6.x = float(int(_block_count));
+    u_xlat6.x = u_xlat6.x * u_xlat0.x;
+    u_xlat6.x = floor(u_xlat6.x);
+    u_xlati12 = int(_block_count) + int(0xFFFFFFFFu);
+    u_xlat12 = float(u_xlati12);
+    u_xlat6.x = u_xlat6.x / u_xlat12;
+    u_xlatb18 = u_xlat6.x>=(-u_xlat6.x);
+    u_xlat6.x = fract(abs(u_xlat6.x));
+    u_xlat6.x = (u_xlatb18) ? u_xlat6.x : (-u_xlat6.x);
+    u_xlat6.x = u_xlat12 * u_xlat6.x;
+    u_xlat12 = u_xlat6.x / u_xlat12;
+    u_xlatb1.xyz = lessThan(ivec4(0, 0, 0, 0), ivec4(int(_enable), int(_randomize), int(_symmetry), int(_enable))).xyz;
+    u_xlat2.xz = u_xlat6.xx * vec2(213.897003, 253.098007);
+    u_xlat2.y = 0.0;
+    u_xlat2.xyz = fract(u_xlat2.xyz);
+    u_xlat6.xz = u_xlat2.yx + vec2(79.7600021, 79.7600021);
+    u_xlat6.x = dot(u_xlat2.xz, u_xlat6.xz);
+    u_xlat2.xyz = u_xlat6.xxx + u_xlat2.xyz;
+    u_xlat6.x = u_xlat2.y + u_xlat2.x;
+    u_xlat6.x = u_xlat2.z * u_xlat6.x;
+    u_xlat6.x = fract(u_xlat6.x);
+    u_xlat6.x = (u_xlatb1.y) ? u_xlat6.x : u_xlat12;
+    u_xlat0.x = (u_xlatb1.x) ? u_xlat6.x : u_xlat0.x;
+    u_xlatb6 = 0.5<u_xlat0.x;
+    u_xlat12 = (-u_xlat0.x) + 1.0;
+    u_xlat6.x = (u_xlatb6) ? u_xlat12 : u_xlat0.x;
+    u_xlat0.x = (u_xlatb1.z) ? u_xlat6.x : u_xlat0.x;
+    u_xlat1.xyz = nvCor(_color1).xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = nvCor(_color1).xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat2.xyz = nvCor(_color2).xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat2.xyz = nvCor(_color2).xyz * u_xlat2.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat2.xyz = u_xlat2.xyz * nvCor(_color2).xyz;
+    u_xlat0.y = 0.0;
+    u_xlat6.x = amostraDoSom(u_xlat0.x);
+    u_xlat12 = u_xlat6.x * 4.0;
+    u_xlat18 = (-u_xlat6.x) + 1.0;
+    u_xlat12 = u_xlat18 * u_xlat12;
+    u_xlat12 = log2(u_xlat12);
+    u_xlat12 = u_xlat12 * _blend;
+    u_xlat12 = exp2(u_xlat12);
+    u_xlat1.xyz = nvCor(_color1).xyz * u_xlat1.xyz + (-u_xlat2.xyz);
+    u_xlat1.xyz = vec3(u_xlat12) * u_xlat1.xyz + u_xlat2.xyz;
+    u_xlat1.xyz = u_xlat1.xyz * vec3(0.00999999978, 0.00999999978, 0.00999999978);
+    u_xlat0.x = (-u_xlat0.x) + u_xlat6.x;
+    u_xlat1.xyz = u_xlat1.xyz / abs(u_xlat0.xxx);
+    u_xlat1.w = nvCor(_color1).w / abs(u_xlat0.x);
+    u_xlat0.x = (-_feather) + 1.0;
+    u_xlat0.x = float(1.0) / u_xlat0.x;
+    u_xlat0 = u_xlat0.xxxx * u_xlat1;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat1 = u_xlat0 * vec4(-2.0, -2.0, -2.0, -2.0) + vec4(3.0, 3.0, 3.0, 3.0);
+    u_xlat0 = u_xlat0 * u_xlat0;
+    u_xlat2 = u_xlat0 * u_xlat1;
+    u_xlat3 = nvEntrada(acScreenNorm.xy);
+    u_xlatb18 = int(_blend_mode)==1;
+    u_xlat4 = u_xlat2 * u_xlat3;
+    u_xlat1.xyz = u_xlat1.xyz * u_xlat0.xyz + u_xlat3.xyz;
+    u_xlat1.w = u_xlat2.w;
+    u_xlat0 = (bool(u_xlatb18)) ? u_xlat4 : u_xlat1;
+    u_xlat4.xyz = u_xlat2.xyz;
+    u_xlat0 = (int(_blend_mode) != 0) ? u_xlat0 : u_xlat4;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb1.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat2 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat3 = u_xlat3 * u_xlat5;
+        u_xlat2 = u_xlat2 * u_xlat4 + u_xlat3;
+        u_xlat1.x = u_xlat4.x * u_xlat2.w;
+        fragColor.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat2.w;
+        fragColor.xyz = u_xlat2.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+
+void main() {
+    if (acPass == 0) {
+        fragColor = texelDoSom(int(gl_FragCoord.x));
+        return;
+    }
+    desenhoDoNode();
+    fragColor = nvSaida(fragColor);
+}
+    ]]></shader>
+</effect>

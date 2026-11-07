@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   LINEAR WIPE (AE) — o Linear Wipe nativo do After Effects (ADBE Linear Wipe), 0.715.0
+  ============================================================================
+
+  Pedido do snow (21/10/2026): "proximo efeito agora que desbloqueia mais presets da pasta lá de
+  presets" — o 5º da fila de docs/PRESETS-DA-PASTA-DO-SNOW.md (37 presets da pasta usam, 25 entram
+  inteiros com ele). A "Cortina linear" de antes continua (é outro efeito, com outra conta).
+
+  Não foi ajustado por medida: a conta foi LIDA nos binários do AE 2023 e conferida pixel a pixel
+  (tools/linearwipe/benchmark, LEIAME.md). O AE do snow roda o caminho de GPU do plugin (OpenCL na
+  Radeon): o host (Linear_Wipe.aex 1800045a0 e 180007bd0 — aqui `model/LinearWipeDoAe.kt`, que calcula
+  em double os números que chegam como `lw…`), o kernel `LinearWipeKernel` (PTX/OpenCL/LinearWipe.clz),
+  a caixa do AE (`GF::FastBoxBlur`, BoxBlurKernelFloatV2) e `GF::AlphaMultiplyWithMask`. O modelo em
+  Python deles bate com o AE em 45 casos: 8 pixels diferentes, a 1 nível.
+
+  O QUE O AE FAZ (e este shader repete):
+
+  1. A reta passa pelo ponto da DIAGONAL da camada na fração da Completion, de um canto ao oposto
+     conforme o quadrante do ângulo. Tudo em inteiros 16.16: o pixel (x, y) da camada (y para baixo)
+     fica visível quando y · dy + x · dx > limite — o teste cai no CENTRO do pixel.
+  2. Em Best, o pixel em que um dos 4 cantos cai do outro lado é subamostrado 16 × 16 (passos de
+     dx/16 e dy/16 truncados, a partir do canto de cima à esquerda): máscara = k/256 + 1/65536.
+  3. Com Feather, a máscara passa por uma caixa de raio Feather / 2,71, 3 vezes na horizontal e 3 na
+     vertical. A caixa do AE cresce n = ceil(raio) px de cada lado a cada passada e, na borda, faz a
+     média só das amostras que EXISTEM na entrada da passada (`inRepeatEdgeB`) — a borda da camada não
+     escurece, e o degradê segue reto até ela.
+  4. O alfa da camada vezes a máscara; a cor não muda. Completion 0 devolve a camada como está;
+     a partir de 99,99924 % (0x63ffce em 16.16), transparente.
+
+  COMO ISSO CABE NOS BUFFERS: a máscara e as passadas guardam um valor só, em 24 bits fixos (RGB de um
+  RGBA8: a precisão do float32 do AE perto de 1), e a janela da caixa é somada nesses inteiros. Os
+  buffers têm moldura de 256 px: a caixa cresce até 3 · n de cada lado.
+
+  O QUE NÃO ENTROU: com Feather acima de ~230 (3 · n passa da moldura) o que cresce além dela fica de
+  fora da média, e perto da borda da camada a máscara se afasta da do AE. O modo Draft do AE (sem a
+  subamostragem; raio · 1,4 e uma passada só) — o render do AE é sempre Best. 16/32 bpc e pixel não
+  quadrado. Não rodou em aparelho.
+
+  CUSTO: sem Feather, um passe (256 testes inteiros só nos pixels da borda); com Feather, a máscara e
+  6 passadas de até (2n + 1) leituras (n ≈ 0,37 · Feather; o laço só corre pelo quadro que existe).
+-->
+<effect
+    id="nova.effect.aelinearwipe"
+    name="Linear Wipe (AE)"
+    name-en="Linear Wipe (AE)"
+    desc="O Linear Wipe do After Effects, igual pixel a pixel: esconde a camada por uma linha reta, com borda suave."
+    desc-en="After Effects' Linear Wipe, pixel for pixel: hides the layer along a straight edge, with feather."
+    category="matte"
+    tags="linear wipe,cortina,transicao,wipe,revelar,varredura,alfa,after effects,adbe"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="lwA" src="buffer" margin="256" />
+        <texture id="lwB" src="buffer" margin="256" />
+
+        <slider id="completion" label="Transição (%)" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0,50.0,100.0" />
+        <slider id="wipeAngle" label="Ângulo" default="90.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="0.0,90.0,180.0,-90.0" />
+        <slider id="feather" label="Suavidade" default="0.0" min="0.0" max="32000.0" step="0.1" snap="0.0" />
+    </params>
+
+    <!--
+      Só para a MINIATURA do catálogo: o padrão (Completion 0) devolve a camada como está, como no AE.
+    -->
+    <preview amostra="personagem">
+        <set param="completion" value="50.0" ate="0.0" />
+        <set param="wipeAngle" value="60.0" />
+        <set param="feather" value="20.0" />
+    </preview>
+
+    <passes>
+        <pass target="lwA" skipIfZero="feather" />   <!-- 0: a máscara -->
+        <pass target="lwB" skipIfZero="feather" />   <!-- 1: a 1ª passada horizontal -->
+        <pass target="lwA" skipIfZero="feather" />   <!-- 2: a 2ª horizontal -->
+        <pass target="lwB" skipIfZero="feather" />   <!-- 3: a 3ª horizontal -->
+        <pass target="lwA" skipIfZero="feather" />   <!-- 4: a 1ª vertical -->
+        <pass target="lwB" skipIfZero="feather" />   <!-- 5: a 2ª vertical -->
+        <pass target="lwA" skipIfZero="feather" />   <!-- 6: a 3ª vertical -->
+        <pass />                                     <!-- 7: o alfa da camada vezes a máscara -->
+    </passes>
+
+    <shader><![CDATA[
+// Calculados no Kotlin (model/LinearWipeDoAe.kt), em double, como o host do plugin.
+uniform int lwModo;      // 0: Completion 0 (a camada como está); 1: transparente; 2: a cortina
+uniform int lwDx;        // a reta em 16.16: visível quando y · lwDy + x · lwDx > lwLimite
+uniform int lwDy;
+uniform int lwLimite;
+uniform int lwDx2;       // os meios passos (o canto do pixel) e os passos da subamostragem (1/16, truncados)
+uniform int lwDy2;
+uniform int lwDxo;
+uniform int lwDyo;
+uniform float lwRaio;    // o raio da caixa da Feather: Feather / 2,71
+uniform int lwN;         // ceil(lwRaio); 0 = sem Feather
+
+const int MARGEM = 256;  // = margin dos buffers
+
+ivec2 gTam;   // a camada do AE no buffer
+ivec2 gIni;   // o canto dela
+bool gDePe;   // a linha 0 do buffer é a BASE da imagem (cena de pé)
+
+void preparar() {
+    ivec2 buf = textureSize(inputImg, 0);
+    gTam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    gIni = (buf - gTam) / 2;
+    gDePe = acEntradaDePe == 1;
+}
+
+// O LinearWipeKernel no pixel b do buffer (dentro da camada): 1, 0 ou a fração da subamostragem.
+float mascara(ivec2 b) {
+    int x = b.x - gIni.x;
+    int y = gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y;
+    int t = y * lwDy + x * lwDx;
+    bool dentro = t > lwLimite;
+    t -= lwDx2 + lwDy2;
+    bool c1 = dentro != (t > lwLimite);
+    bool c2 = dentro != (t + lwDx > lwLimite);
+    bool c3 = dentro != (t + lwDx + lwDy > lwLimite);
+    bool c4 = dentro != (t + lwDy > lwLimite);
+    if (!(c1 || c2 || c3 || c4)) return dentro ? 1.0 : 0.0;
+    int k = 0;
+    for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+            if (t > lwLimite) k++;
+            t += lwDxo;
+        }
+        t -= lwDx;
+        t += lwDyo;
+    }
+    // (k · 32768 + 128) / 256 / 32768, em float como o kernel (as potências de 2 são exatas)
+    return (float(k) * 128.0 + 0.5) / 32768.0;
+}
+
+// 24 bits fixos no RGB de um RGBA8 (o valor fica em [0, 1]).
+vec4 guardar(float v) {
+    uint q = min(uint(clamp(v, 0.0, 1.0) * 16777216.0), 16777215u);
+    return vec4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
+}
+uint abrirQ(sampler2D b, ivec2 c) {
+    uvec3 k = uvec3(floor(texelFetch(b, c + MARGEM, 0).rgb * 255.0 + 0.5));
+    return (k.x << 16u) | (k.y << 8u) | k.z;
+}
+float abrir(sampler2D b, ivec2 c) { return float(abrirQ(b, c)) / 16777216.0; }
+
+// O quadro que existe na entrada da passada p (1..6), em px do buffer, de gLo até gHi (fora): a camada, crescida n
+// por passada já feita (as horizontais crescem na largura; as verticais, na altura, sobre o quadro já 3n mais
+// largo), cortada na moldura.
+ivec2 gLo;
+ivec2 gHi;
+void quadro(int p) {
+    int h = min(p - 1, 3);
+    int v = max(p - 4, 0);
+    gLo = max(gIni - ivec2(h, v) * lwN, ivec2(-MARGEM));
+    gHi = min(gIni + gTam + ivec2(h, v) * lwN, textureSize(inputImg, 0) + MARGEM);
+}
+
+uint anterior(int p, ivec2 c) { return (p % 2 == 1) ? abrirQ(lwA, c) : abrirQ(lwB, c); }
+
+void main() {
+    preparar();
+    ivec2 b = ivec2(gl_FragCoord.xy);
+
+    if (acPass == 0) {
+        // a máscara, na camada (fora dela não existe)
+        ivec2 c = b - MARGEM;
+        bool na = all(greaterThanEqual(c, gIni)) && all(lessThan(c, gIni + gTam));
+        fragColor = guardar(na ? mascara(c) : 0.0);
+        return;
+    }
+    if (acPass < 7) {
+        // uma passada da caixa (BoxBlurKernelFloatV2 com inRepeatEdgeB): a média só das amostras que existem —
+        // o laço corre só por elas (com a Feather grande, o custo fica no tamanho do quadro, não no raio)
+        ivec2 c = b - MARGEM;
+        bool horizontal = acPass < 4;
+        ivec2 eixo = horizontal ? ivec2(1, 0) : ivec2(0, 1);
+        quadro(acPass);
+        int ca = horizontal ? c.x : c.y;
+        int cb = horizontal ? c.y : c.x;
+        int loA = horizontal ? gLo.x : gLo.y;
+        int hiA = horizontal ? gHi.x : gHi.y;
+        int loB = horizontal ? gLo.y : gLo.x;
+        int hiB = horizontal ? gHi.y : gHi.x;
+        int n = lwN;
+        int k0 = max(-n, loA - ca);
+        int k1 = min(n, hiA - 1 - ca);
+        if (cb < loB || cb >= hiB || k1 < k0) { fragColor = guardar(0.0); return; }
+        float inv = float(n) - lwRaio;
+        // A soma em INTEIROS (os 24 bits guardados, em duas metades de 12 que não estouram), arredondada uma vez
+        // só: somada em float, a janela de 30 valores já errava o bastante para virar empates de 8 bits.
+        uint alto = 0u;
+        uint baixo = 0u;
+        for (int k = k0; k <= k1; k++) {
+            uint q = anterior(acPass, c + eixo * k);
+            alto += q >> 12u;
+            baixo += q & 4095u;
+        }
+        float soma = (float(alto) * 4096.0 + float(baixo)) / 16777216.0;
+        // as pontas (peso 1 − frac) só contam se existem
+        uint pq = 0u;
+        float noPeso = 0.0;
+        if (k0 == -n) { pq += anterior(acPass, c - eixo * n); noPeso += inv; }
+        if (k1 == n) { pq += anterior(acPass, c + eixo * n); noPeso += inv; }
+        float pontas = float(pq) / 16777216.0;
+        float peso = float(k1 - k0 + 1) - noPeso;
+        fragColor = guardar(peso > 0.0 ? (soma - pontas * inv) / peso : 0.0);
+        return;
+    }
+
+    vec4 l = floor(texelFetch(inputImg, b, 0) * 255.0 + 0.5) / 255.0;
+    bool naCamada = all(greaterThanEqual(b, gIni)) && all(lessThan(b, gIni + gTam));
+    if (lwModo == 0 || !naCamada) { fragColor = l; return; }
+    if (lwModo == 1) { fragColor = vec4(0.0); return; }
+    float m = lwN == 0 ? mascara(b) : abrir(lwA, b);
+    // o alfa vezes a máscara (float), e 8 bits como o AE: v·255 arredondado em float, + 0,5, para baixo. O `um`
+    // impede o compilador de fundir o produto e a soma num fma.
+    float um = float(min(acIterationCount, 1));
+    float a = clamp(l.a * m, 0.0, 1.0);
+    fragColor = vec4(l.rgb, floor((a * 255.0) * um + 0.5) / 255.0);
+}
+    ]]></shader>
+</effect>

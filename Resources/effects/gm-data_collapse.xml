@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.data_collapse" name="Data Collapse Pro" desc="Hard slab displacement, row dropouts, RGB tearing and colour corruption in one aggressive digital failure." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/data_collapse.png"
+        tags="glitch,pro,strong,datamosh,tearing,dropout,digital" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Data Collapse" />
+<spinner id="rows" default="36.0" min="6.0" max="140.0" step="1.0" label="Rows" type="integer" />
+<spinner id="shift" default="0.14" min="0.0" max="0.55" step="0.002" label="Tear Amount" />
+<spinner id="chance" default="0.48" min="0.0" max="1.0" step="0.01" label="Failure Chance" />
+<spinner id="dropouts" default="0.35" min="0.0" max="1.0" step="0.01" label="Row Dropouts" />
+<spinner id="speed" default="10.0" min="1.0" max="40.0" step="0.5" label="Speed" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+void main(){
+  vec2 baseUv = acScreenNorm;
+  vec4 origin = texture2DCv(inputImg.texture, baseUv);
+  float t = floor(acTime * speed);
+  float row = floor(baseUv.y * rows);
+  float r1 = gmHash(vec2(row, t));
+  float r2 = gmHash(vec2(row * 3.7, t + 5.1));
+  float active = step(1.0 - chance, r1);
+  float dropped = step(1.0 - dropouts * chance, gmHash(vec2(row * 7.3, t + 11.0)));
+  vec2 uv = baseUv;
+  uv.x += (r2 - 0.5) * 2.0 * shift * active * mixAmt;
+  float split = shift * 0.10 * active * mixAmt;
+  vec4 sr = texture2DCv(inputImg.texture, uv + vec2(split, 0.0));
+  vec4 sg = texture2DCv(inputImg.texture, uv);
+  vec4 sb = texture2DCv(inputImg.texture, uv - vec2(split, 0.0));
+  float a = max(sg.a, 1e-4);
+  vec3 broken = vec3(sr.r / max(sr.a, 1e-4), sg.g / max(sg.a, 1e-4), sb.b / max(sb.a, 1e-4));
+  broken = mix(broken, broken * vec3(1.55, 0.62, 1.28), active * 0.72);
+  broken *= 1.0 - dropped * 0.70;
+  vec4 outSrc = vec4(clamp(broken, 0.0, 1.0) * a, a);
+  gl_FragColor = mix(origin, outSrc, mixAmt);
+}
+]]></shader>
+</effect>

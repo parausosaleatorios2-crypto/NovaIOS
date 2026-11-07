@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TAMANHO DO PULSO (ANTIGO) — o `com.alightcreative.effects.pulsate` do Alight Motion (0.549.0).
+
+  O AM marca este como "deprecated" (o atual é o `pulsate2`, `am-pulse-size.xml`), mas os projetos feitos antes
+  ainda o trazem: existe para a importação e fica fora do catálogo. A mesma conta do atual (`model/Pulso.kt`), com
+  uma diferença lida do script dele: a Frequência não acumula — entra como `tempo × duração × frequência do
+  instante`, e com quadro-chave a camada pula. A Frequência vai de 0,1 (não de 0) e não é do tipo "hz", como lá.
+-->
+<effect
+    id="nova.effect.am-pulse-size-legacy"
+    name="Tamanho do pulso (antigo)"
+    name-en="Pulse Size (legacy)"
+    desc="O Tamanho do pulso antigo do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Pulse Size, from projects made before its current version."
+    category="distort"
+    stage="transform"
+    catalog="false"
+    tags="pulso,pulse size,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="2.0" min="0.1" max="16.0" step="0.1" />
+        <spinner id="minsize" label="Encolher" default="0.9" min="0.0" max="1.0" step="0.01" />
+        <spinner id="maxsize" label="Ampliar" default="1.1" min="1.0" max="2.0" step="0.01" />
+        <spinner id="phase" label="Fase Inicial" default="0.0" min="0.0" max="2.0" step="0.01" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AGITAR AS PARTES — o Shake Parts do Alight Motion, conta por conta (0.565.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz agora agitar as partes 100% igual o alight motion", da série "100% iguais ao
+  AM". Mesmos parâmetros, mesmos ids, faixas, passos e padrões do `com.alightcreative.effect.shakeparts` (AM
+  5.0.281, marcado "experimental" lá; um projeto do AM importado cai direto aqui). O script do AM é Kotlin dentro
+  do APK (`ShakePartsKt.script_shakeParts`), lido do bytecode e escrito de novo em `model/AgitarAsPartes.kt`; o
+  ruído é o simplex 3D do AM (`model/RuidoSimplexDoAm.kt`). Nada do AM entra no repositório. A conferência é
+  `python tools/amagitarpartes/referencia.py` → `AgitarAsPartesAmTest`: o ruído do PRÓPRIO bytecode, interpretado
+  instrução por instrução, e a conta do script conferida no smali.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Num GRUPO, cada camada de dentro (e de dentro das de dentro) sai do lugar por um ruído próprio, lido na posição
+    dela, na Evolução e no número dela no projeto:
+      dx = ruído(x, y, Evolução + 1 + id % 10000) · Magnitude
+      dy = ruído(x, y, Evolução + 812,3417 + id % 10000) · Magnitude · profundidade ÷ 10
+    A própria camada com o efeito (profundidade 0) só anda na horizontal; um filho direto anda 1/10 da Magnitude
+    na vertical, um neto 2/10. É assim no AM.
+  - Parado, as partes ficam deslocadas e paradas: o efeito não anda sozinho com o tempo. Animar a Evolução é que
+    faz as partes tremerem.
+  - Os passos e as faixas são os do AM: Magnitude de 0 a 1000 (de 0,1, padrão 10) e Evolução de 0 a 2000 (de 0,01,
+    padrão 0). As marcas da régua da Magnitude são as do AM (−1, 0 e 1).
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele move as camadas. Quem executa é
+  `model/AgitarAsPartes.kt`, dentro de `LayerGeometry.matrizLocal`, por onde passa a matriz de toda camada (prévia,
+  exportação, seleção, filhos e o desfoque de movimento). O shader abaixo só copia a entrada, para o caso de algum
+  caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-shake-parts"
+    name="Agitar as partes"
+    name-en="Shake Parts"
+    desc="Desloca cada parte de um grupo por um ruído próprio; animar a Evolução faz as partes tremerem (o Shake Parts do Alight Motion)."
+    desc-en="Moves each part of a group by its own noise; animating Evolution makes the parts shake (Alight Motion's Shake Parts)."
+    category="distort"
+    stage="transform"
+    tags="agitar,partes,tremer,tremido,espalhar,grupo,ruído,evolução,shake,shake parts,jitter,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="magnitude" label="Magnitude" default="10.0" min="0.0" max="1000.0" step="0.1" ticks="-1.0,0.0,1.0" />
+        <spinner id="evolution" label="Evolução" default="0" min="0" max="2000" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

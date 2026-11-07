@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_prism
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-prism"
+    name="Prism (NV)"
+    name-en="Prism (NV)"
+    desc="NodeVideo Asset Store effect 'prism', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'prism', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_samples" type="integer" label="Samples" default="50" min="1" max="256" step="1" />
+        <slider id="_blur" label="Blur" default="0.25" min="0" max="1" step="0.01" />
+        <slider id="_falloff" label="Falloff" default="3" min="0" max="10" step="0.01" />
+        <point id="_center" label="Center" defaultX="0.5" defaultY="0.5" min="0" max="64" />
+        <xyz id="_rgb_shift" label="Rgb Shift" defaultX="1" defaultY="2" defaultZ="3" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec4 u_xlat6;
+vec2 u_xlat14;
+int u_xlati15;
+vec2 u_xlat19;
+float u_xlat21;
+float u_xlat22;
+bool u_xlatb22;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + (-_center.xy);
+    u_xlat14.x = dot(u_xlat0.xy, u_xlat0.xy);
+    u_xlat14.x = inversesqrt(u_xlat14.x);
+    u_xlat0.xy = u_xlat14.xx * u_xlat0.xy;
+    u_xlat0.xy = u_xlat0.xy * vec2(vec2(_blur, _blur));
+    u_xlat14.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat14.x = dot(u_xlat14.xy, u_xlat14.xy);
+    u_xlat14.x = sqrt(u_xlat14.x);
+    u_xlat14.x = log2(u_xlat14.x);
+    u_xlat14.x = u_xlat14.x * _falloff;
+    u_xlat14.x = exp2(u_xlat14.x);
+    u_xlat0.xy = u_xlat14.xx * u_xlat0.xy;
+    u_xlat14.x = float(int(_samples));
+    u_xlat21 = float(1.0) / u_xlat14.x;
+    u_xlat1 = u_xlat0.xyxy * _rgb_shift.xxyy;
+    u_xlat2.xy = vec2(u_xlat21) * u_xlat1.zw;
+    u_xlat0.xy = u_xlat0.xy * _rgb_shift.zz;
+    u_xlat2.zw = vec2(u_xlat21) * u_xlat0.xy;
+    u_xlat3.x = float(0.0);
+    u_xlat3.y = float(0.0);
+    u_xlat3.z = float(0.0);
+    u_xlat3.w = float(0.0);
+    u_xlat0.x = float(0.0);
+    u_xlat0.y = float(0.0);
+    u_xlat4.x = float(0.0);
+    u_xlat4.y = float(0.0);
+    u_xlat4.z = float(0.0);
+    u_xlat4.w = float(0.0);
+    for(int u_xlati_loop_1 = 0 ; u_xlati_loop_1<int(_samples) ; u_xlati_loop_1++)
+    {
+        u_xlat5.xy = u_xlat0.xy + acScreenNorm.xy;
+        u_xlat5.xy = texture(inputImg, u_xlat5.xy).xw;
+        u_xlat19.xy = u_xlat4.xy + acScreenNorm.xy;
+        u_xlat5.zw = texture(inputImg, u_xlat19.xy).yw;
+        u_xlat6.xy = u_xlat4.zw + acScreenNorm.xy;
+        u_xlat6.zw = texture(inputImg, u_xlat6.xy).zw;
+        u_xlat22 = u_xlat5.w + u_xlat5.y;
+        u_xlat22 = u_xlat6.w + u_xlat22;
+        u_xlat6.w = u_xlat22 * 0.333333343;
+        u_xlat6.xy = u_xlat5.xz;
+        u_xlat3 = u_xlat3 + u_xlat6;
+        u_xlat0.xy = (-u_xlat1.xy) * vec2(u_xlat21) + u_xlat0.xy;
+        u_xlat4 = (-u_xlat2) + u_xlat4;
+    }
+    u_xlat0 = u_xlat3 / u_xlat14.xxxx;
+    if(int(_use_inner_mask) != 0) {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AURORA — o Aurora da LaForge Suite (Stormoid), tirado do próprio plugin
+  ============================================================================
+
+  O plugin roda um compute shader Vulkan embutido no Aurora.aex. Ele foi
+  extraído (SPIR-V) e traduzido de volta (`tools/aurora/benchmark/`, ver o
+  LEIAME), e este shader é ele, conta por conta: o céu de aurora do "Auroras"
+  do Stormoid (nimitz no Shadertoy), parametrizado pela LaForge.
+
+  - Uma marcha de raio com [Iterations] passos por um plano de aurora que sobe
+    com a distância (Aurora Length, Curvature), lendo um ruído triangular
+    (Aurora Detail oitavas) deformado por um laço de seno (Warp) e animado pelo
+    tempo (Speed, Time Offset).
+  - Estrelas por hash de célula 3D, o céu em degradê (Sky Color → Color,
+    Sky Glow), e abaixo do horizonte o REFLEXO no chão (Ground Reflections) com
+    uma névoa de ruído na água (Ground Visibility).
+  - 3D: com Use 3D Camera e uma câmera na composição, o raio sai da câmera dela
+    (posição × 0,0001, como o plugin faz com a câmera do AE); sem câmera, a
+    vista fixa do plugin.
+
+  Os controles mostram os números do AE (Warp −24, Exposure 39…); as divisões
+  por 100 do plugin estão no shader.
+
+  DESEMPENHO (06/10/2026: "travando bastante"): eram 300 passos de marcha por
+  pixel — 360 ms por quadro em 1080×1920 na GPU do PC, segundos no celular. A
+  cortina da aurora é suave: a marcha agora roda num buffer de MEIA resolução
+  (passe 0, 4× menos pixels) e o passe final, em resolução cheia, junta a aurora
+  com o céu, as estrelas (nítidas) e a água. Medido contra a marcha cheia: 0,2
+  de 255 em média — o que muda é só o granulado do dither, um pouco mais suave.
+  As contas que não mudam dentro da marcha (a rotação das oitavas) também saíram
+  dela.
+-->
+<effect
+    id="nova.effect.aurora"
+    name="Aurora"
+    name-en="Aurora"
+    desc="Céu de aurora boreal em 3D, com estrelas e reflexo no chão: segue a câmera da composição."
+    desc-en="A 3D northern lights sky with stars and ground reflections that follows the composition camera."
+    category="generate"
+    tags="aurora,aurora boreal,northern lights,céu,sky,estrelas,stars,noite,night,3d,laforge,stormoid">
+
+    <params>
+        <!-- Todo efeito lê a camada (o parser exige); o Aurora a cobre inteira, como no AE. -->
+        <texture id="inputImg" src="content" />
+        <!-- A marcha da aurora em MEIA resolução (ver o cabeçalho, "Desempenho"). -->
+        <texture id="auroraBuf" src="buffer" scale="0.5" />
+
+        <slider id="warp" label="Warp" default="-24.0" min="-200.0" max="200.0" step="0.1" snap="0.0" />
+        <slider id="amount" label="Aurora Amount" default="140.0" min="0.0" max="200.0" step="0.1" snap="140.0" />
+        <slider id="scale" label="Scale" default="7.3" min="0.0" max="100.0" step="0.1" snap="7.3" />
+        <slider id="auroraLength" label="Aurora Length" default="64.0" min="0.0" max="100.0" step="0.1" snap="64.0" />
+        <slider id="exposure" label="Exposure" default="39.0" min="0.0" max="200.0" step="0.1" snap="39.0" />
+        <slider id="auroraDetail" label="Aurora Detail" default="94.0" min="0.0" max="100.0" step="1.0" snap="94.0" />
+        <slider id="curvature" label="Curvature" default="6.9" min="0.0" max="100.0" step="0.1" snap="6.9" />
+        <slider id="skyGlow" label="Sky Glow" default="25.3" min="0.0" max="200.0" step="0.1" snap="25.3" />
+        <color id="auroraColor" label="Color" default="#FF00A5CE" />
+        <color id="auroraColor2" label="Secondary Color" default="#FF5A9434" />
+        <color id="skyColor" label="Sky Color" default="#FF03091C" />
+        <slider id="timeOffset" label="Time Offset" default="-332.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="speed" label="Speed" default="46.0" min="0.0" max="100.0" step="1.0" snap="46.0" />
+
+        <slider id="stars" group="Environment" label="Stars" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="starBrightness" group="Environment" label="Star Brightness" default="9.0" min="0.0" max="100.0" step="0.1" snap="9.0" />
+        <slider id="groundVisibility" group="Environment" label="Ground Visibility" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <slider id="groundReflections" group="Environment" label="Ground Reflections" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+
+        <switch id="useCamera" group="Utility" label="Use 3D Camera" default="true" />
+        <slider id="iterations" group="Utility" label="Iterations" default="300.0" min="1.0" max="400.0" step="1.0" type="integer" snap="300.0" />
+    </params>
+
+    <presets>
+        <preset id="breeze" name="Breeze" name-en="Breeze">
+            <value param="warp" value="-24" />
+            <value param="amount" value="140" />
+            <value param="scale" value="7.3" />
+            <value param="auroraLength" value="64" />
+            <value param="exposure" value="39" />
+            <value param="auroraDetail" value="94" />
+            <value param="curvature" value="6.9" />
+            <value param="skyGlow" value="25.3" />
+            <value param="auroraColor" value="#FF00A5CE" />
+            <value param="auroraColor2" value="#FF5A9434" />
+            <value param="skyColor" value="#FF03091C" />
+            <value param="timeOffset" value="-332" />
+            <value param="speed" value="46" />
+            <value param="stars" value="50" />
+            <value param="starBrightness" value="9" />
+            <value param="groundVisibility" value="100" />
+            <value param="groundReflections" value="100" />
+        </preset>
+        <preset id="arctic" name="Arctic" name-en="Arctic">
+            <value param="warp" value="23" />
+            <value param="amount" value="140" />
+            <value param="scale" value="8.3" />
+            <value param="auroraLength" value="63" />
+            <value param="exposure" value="49" />
+            <value param="auroraDetail" value="94" />
+            <value param="curvature" value="1.2" />
+            <value param="skyGlow" value="25.3" />
+            <value param="auroraColor" value="#FF4997C0" />
+            <value param="auroraColor2" value="#FF913494" />
+            <value param="skyColor" value="#FF03091C" />
+            <value param="timeOffset" value="678" />
+            <value param="speed" value="46" />
+            <value param="stars" value="50" />
+            <value param="starBrightness" value="2" />
+            <value param="groundVisibility" value="100" />
+            <value param="groundReflections" value="100" />
+        </preset>
+        <preset id="chilled" name="Chilled" name-en="Chilled">
+            <value param="warp" value="23" />
+            <value param="amount" value="140" />
+            <value param="scale" value="3.3" />
+            <value param="auroraLength" value="64" />
+            <value param="exposure" value="26" />
+            <value param="auroraDetail" value="94" />
+            <value param="curvature" value="1.9" />
+            <value param="skyGlow" value="25.3" />
+            <value param="auroraColor" value="#FF4976C0" />
+            <value param="auroraColor2" value="#FF34937B" />
+            <value param="skyColor" value="#FF03091C" />
+            <value param="timeOffset" value="-322" />
+            <value param="speed" value="46" />
+            <value param="stars" value="50" />
+            <value param="starBrightness" value="2" />
+            <value param="groundVisibility" value="100" />
+            <value param="groundReflections" value="100" />
+        </preset>
+        <preset id="horizon" name="Horizon" name-en="Horizon">
+            <value param="warp" value="8.5" />
+            <value param="amount" value="140" />
+            <value param="scale" value="3.8" />
+            <value param="auroraLength" value="64" />
+            <value param="exposure" value="39" />
+            <value param="auroraDetail" value="104" />
+            <value param="curvature" value="3" />
+            <value param="skyGlow" value="25.3" />
+            <value param="auroraColor" value="#FF0052CE" />
+            <value param="auroraColor2" value="#FFD8640F" />
+            <value param="skyColor" value="#FF03091C" />
+            <value param="timeOffset" value="956" />
+            <value param="speed" value="27.6" />
+            <value param="stars" value="50" />
+            <value param="starBrightness" value="9" />
+            <value param="groundVisibility" value="100" />
+            <value param="groundReflections" value="100" />
+        </preset>
+        <preset id="magnetic" name="Magnetic" name-en="Magnetic">
+            <value param="warp" value="35" />
+            <value param="amount" value="99" />
+            <value param="scale" value="6.7" />
+            <value param="auroraLength" value="64" />
+            <value param="exposure" value="44" />
+            <value param="auroraDetail" value="86" />
+            <value param="curvature" value="4.9" />
+            <value param="skyGlow" value="25.3" />
+            <value param="auroraColor" value="#FF1C57BA" />
+            <value param="auroraColor2" value="#FFCE0B7E" />
+            <value param="skyColor" value="#FF00030A" />
+            <value param="timeOffset" value="-761" />
+            <value param="speed" value="46" />
+            <value param="stars" value="50" />
+            <value param="starBrightness" value="6" />
+            <value param="groundVisibility" value="100" />
+            <value param="groundReflections" value="100" />
+        </preset>
+    </presets>
+
+    <passes>
+        <pass target="auroraBuf" />   <!-- 0: a marcha da aurora, meia resolução -->
+        <pass />                      <!-- 1: céu, estrelas, água e a aurora lida -->
+    </passes>
+
+    <shader><![CDATA[
+
+// --------------------------------------------------------------- o plugin
+// Nomes do original (Stormoid): tri, tri2, triNoise2d, aurora, stars, bg.
+
+float tri(float x) { return clamp(abs(fract(x) - 0.5), 0.01, 0.49); }
+
+vec2 tri2(vec2 p) { return vec2(tri(p.x) + tri(p.y), tri(p.y + tri(p.x))); }
+
+mat2 mm2(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+
+const mat2 M2 = mat2(-0.95534, -0.29552, 0.29552, -0.95534);
+
+/*
+ * DESEMPENHO (06/10/2026: "travando bastante"). O que não muda dentro da marcha de 300
+ * passos sai dela: a deformação (W), o tempo dela (tw), o número de oitavas e — o maior —
+ * a rotação de cada oitava, que tem o MESMO ângulo na cena inteira e era recalculada
+ * (seno + cosseno) a cada oitava de cada passo: 3 000 trigonométricas por pixel a menos.
+ * A conta é a mesma (conferida de novo contra o AE, `tools/aurora/benchmark`).
+ *
+ * E o chão desligado (0.660.0): com Ground Reflections 0 a marcha da metade de baixo soma
+ * zero (cada passo é multiplicado pelo reflexo) e não roda; com Ground Visibility 0 o passe
+ * final não faz a água nem as estrelas do chão (sai multiplicado por zero). O buffer da marcha
+ * continua cheio nesse caso: o céu logo acima do horizonte lê a metade de baixo dele pelo
+ * filtro bilinear. Os mesmos pixels.
+ */
+float W_DEF;        // warp / 100
+float TW_DEF;       // o tempo da deformação
+float N_OITAVAS;    // auroraDetail × 0,05
+mat2 GIRO;          // mm2(giro) do ruído da aurora
+
+/** O ruído triangular deformado. [rot] é a rotação de cada oitava (mm2 do ângulo). */
+float triNoise2d(vec2 p, mat2 rot) {
+    float W = W_DEF;
+    float tw = TW_DEF;
+    for (float k = 1.0; k < 5.0; k += 1.0) {
+        float a = k * 1.5;
+        float x = W * sin(a * p.y + tw) + p.x;
+        p = vec2(x, W * cos(a * x + tw) + p.y);
+    }
+    float z = 2.5, z2 = 1.8, rz = 0.0;
+    vec2 bp = p;
+    for (float i = 0.0; i < N_OITAVAS; i += 1.0) {
+        vec2 dg = tri2(bp * 1.85) * 0.75;
+        dg = dg * rot;
+        p -= dg / z;
+        z2 *= 0.42;
+        vec2 q = p * (1.21 + (rz - 1.0) * 0.02);
+        p = q * M2;
+        z *= 0.45;
+        bp *= 2.3;
+        rz += tri(q.x + tri(q.y)) * z2;
+    }
+    return rz;
+}
+
+float alfaDaAurora(float rz) {
+    return max(clamp(1.0 / pow(rz * 29.0, 2.8 - amount / 100.0), 0.0, 0.55), 0.0);
+}
+
+/** A marcha pela aurora. [rdy] é |rd.y|; [refl] pondera o reflexo. */
+vec4 aurora(vec3 ro, vec3 rd, float rdy, vec2 uv, float T, float refl) {
+    vec4 col = vec4(0.0);
+    vec4 avg = vec4(0.0);
+    float iter = max(iterations, 1.0);
+    float passo = 150.0 / iter;
+    float dither = fract(sin(dot(uv, vec2(12.9898, 4.1414))) * 43758.5469);
+    vec3 c1 = auroraColor.rgb;
+    vec3 c2x4 = auroraColor2.rgb * 4.0;
+    for (float i = 0.0; i < iter; i += 1.0) {
+        float pt = i * passo;
+        float t = dither * -0.006 * smoothstep(0.0, 25.0, pt)
+            + ((pow(pt, 1.5) * 0.002 * (auroraLength / 100.0) * passo + 0.9) - ro.y)
+            / (rdy * 2.0 + curvature * 0.01);
+        vec2 p = (ro + rd * t).zx * (scale / 100.0) * 2.0;
+        p = p * mm2(p.x * 0.06);
+        float a = alfaDaAurora(triNoise2d(p, GIRO));
+        vec4 col2 = vec4(mix(vec3(0.0), mix(c1, c2x4, pt * 0.01) * 2.0, a), a);
+        avg = mix(avg, col2, 0.5);
+        col += avg * refl * exp2(-i * passo * 0.065 - 2.5) * smoothstep(0.0, 5.0, pt) * passo * (exposure / 100.0);
+    }
+    return col;
+}
+
+vec3 estrelas(vec3 p, float largura) {
+    vec3 c = vec3(0.0);
+    float n = stars * 0.1;
+    for (float i = 0.0; i < n; i += 1.0) {
+        vec3 q = p * (0.15 * largura);
+        uvec3 id = uvec3(ivec3(floor(q)));
+        uvec3 h = (id * uvec3(374761393u, 1103515245u, 668265263u)) + id.zxy + id.yzx;
+        h = h.yzx * (h.zxy ^ (h >> 3u));
+        vec3 rn = vec3(h ^ (h >> 16u)) * 2.3283064365386962890625e-10;
+        p *= 1.3;
+        c += (mix(vec3(1.0, 0.49, 0.1), vec3(0.75, 0.9, 1.0), rn.y) * 0.1 + 0.9)
+            * ((1.0 - smoothstep(0.0, 0.6, length(fract(q) - 0.5))) * step(rn.x, i * i * 0.001 + 0.0005));
+    }
+    return c;
+}
+
+vec3 ceu(vec3 rd, float fade) {
+    vec3 c1335 = mix(auroraColor.rgb, auroraColor2.rgb * 4.0, 0.1);
+    float h = pow(-rd.y * 1.1 + 1.1, 11.0) * (skyGlow / 100.0);
+    return mix(skyColor.rgb, c1335, h) * 0.63 * fade;
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 res = acResolution;
+    float esc = max(acEscalaDePixel, 1e-4);
+    float largura = res.x / esc;   // a largura do AE (px da composição)
+    float T = acTime;
+    W_DEF = warp / 100.0;
+    TW_DEF = 0.1 * T * (speed * 0.01) + timeOffset / 100.0;
+    N_OITAVAS = auroraDetail * 0.05;
+    GIRO = mm2(T * (speed * 0.1) * 0.06 + timeOffset / 100.0);
+
+    vec3 ro;
+    vec3 rd;
+    if (useCamera && acCamera3D == 1) {
+        // A câmera da composição, em coordenadas do AE (origem no canto, Y para
+        // baixo), e o raio deste pixel na TELA; o plugin vira o Y.
+        vec2 tela = acTela(acScreenNorm);
+        vec4 longe = acCameraInvVP * vec4(tela.x * 2.0 - 1.0, 1.0 - tela.y * 2.0, 1.0, 1.0);
+        vec3 dir = normalize(longe.xyz / longe.w - acCameraOlhoNova);
+        ro = acCameraOlho * 0.0001;
+        ro.y = -ro.y;
+        rd = vec3(dir.x, -dir.y, dir.z);
+    } else {
+        vec2 q = uv - 0.5;
+        rd = normalize(vec3(q.x * (res.x / res.y), q.y, 1.3));
+        rd.y = -rd.y;
+        ro = vec3(0.0, 0.0, -0.7);
+    }
+
+    float rdy = abs(rd.y);
+    float fade = smoothstep(0.0, 0.01, rdy) * 0.1 + 0.9;
+
+    // Passe 0: só a marcha da aurora (já com o corte do smoothstep: cabe em 0..1).
+    if (acPass == 0) {
+        vec4 aurBuf;
+        if (rd.y > 0.0) {
+            aurBuf = smoothstep(vec4(0.0), vec4(1.5), aurora(ro, rd, rd.y, uv, T, 1.0) * clamp(rd.y * 15.0 + 0.4, 0.0, 1.0) * 1.8) * fade;
+        } else if (groundReflections == 0.0) {
+            aurBuf = vec4(0.0);     // o reflexo soma zero: cada passo da marcha seria multiplicado por 0
+        } else {
+            vec3 rrBuf = vec3(rd.x, rdy, rd.z);
+            aurBuf = smoothstep(vec4(0.0), vec4(2.5), aurora(ro, rrBuf, rdy, uv, T, groundReflections / 100.0) * clamp(rdy * 15.0 + 0.4, 0.0, 1.0) * 1.8);
+        }
+        fragColor = clamp(aurBuf, 0.0, 1.0);
+        return;
+    }
+    vec4 aur = texture(auroraBuf, uv);
+
+    vec3 col;
+    if (rd.y > 0.0) {
+        vec3 s = estrelas(rd, largura);
+        col = (ceu(rd, fade) + s * s * (starBrightness / 100.0)) * (1.0 - aur.w) + aur.xyz;
+    } else if (groundVisibility == 0.0) {
+        col = vec3(0.0);            // o chão inteiro sai multiplicado por zero
+    } else {
+        vec3 rr = vec3(rd.x, rdy, rd.z);
+        vec3 s = estrelas(rr, largura);
+        vec2 pl = (ro + rr * ((0.5 - ro.y) / rdy)).xz * vec2(0.5, 0.7);
+        pl = pl * mm2(pl.x * 0.06);
+        float rz2 = triNoise2d(pl, mm2(timeOffset / 100.0));
+        vec3 agua = mix(skyColor.rgb * 0.08, vec3(0.21, 0.21, 0.35), alfaDaAurora(rz2) * 0.4);
+        col = ((ceu(rr, fade) * 0.6 + s * s * (starBrightness / 100.0) * 0.1) * (1.0 - aur.w) + aur.xyz + agua)
+            * (groundVisibility / 100.0);
+    }
+    // A camada fica por baixo do céu opaco: lida só para o efeito ter entrada.
+    vec4 fonte = texture(inputImg, uv);
+    fragColor = vec4(clamp(col, 0.0, 1.0), 1.0) + fonte * 0.0;
+}
+
+    ]]></shader>
+</effect>

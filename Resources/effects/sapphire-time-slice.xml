@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_TIMESLICE — o Time Slice do Sapphire (Boris FX), igual ao do After Effects
+  ============================================================================
+
+  Pedido do snow (26/10/2026): "pode fazer o efeito time slice? 100% igual". A imagem é cortada em
+  faixas e cada faixa mostra a camada num quadro diferente: o objeto que gira vira uma hélice, a
+  pessoa que anda se estica em degraus. Seis presets das pastas do snow usam (os vito oneframe 11 e
+  12, os três Ryan's Time Slice e o utilize timeslice).
+
+  DE ONDE VEIO: a receita está em texto dentro da sapphire_ae.dll (`tools/sapphire/extrair.py
+  Time_Slice`), e cada detalhe que ela não diz foi medido no After Effects do snow
+  (`tools/stimeslice/benchmark`, LEIAME lá). A conta está em `model/FatiaDoTempo.kt`.
+
+  COMO O MOTOR FAZ: um shader só enxerga UM instante, e aqui cada faixa precisa de outro. Por isso
+  `stage="timeslice"`: o compositor redesenha a camada em cada quadro que as faixas pedem (o mesmo
+  caminho do CC Wide Time) e o passe da fatia (`PasseDaFatiaDeTempo`) escolhe o quadro de cada
+  pixel. Os parâmetros são lidos pelo MOTOR; o `<shader>` daqui é só uma cópia fiel da entrada.
+
+  - O que vem ANTES dele na lista entra em cada quadro (medido: o Fill animado anda junto); o que
+    vem DEPOIS age sobre o resultado.
+  - Tocando em ordem, os quadros já desenhados são guardados e só o mais novo é desenhado de novo.
+    Pausado ou arrastando, todos são desenhados: Slice Number 12 numa camada 16:9 a 90° são 10.
+  - Acima de 64 quadros por quadro (Slice Number alto), as amostras se espaçam: o tempo varre a
+    mesma faixa, em degraus maiores.
+
+  QUANTO BATE: a receita deu 0 pixels diferentes do After Effects em 16 bpc em 73 casos
+  (direção, número de fatias, offset, Interp Frames, camada em pé/quadrada/ímpar, camada começando
+  depois, cortada, esticada, composição a 24 fps, começo e fim do vídeo, os três modos de Opacity,
+  sólido com efeito antes), e o shader DO APP, rodado na GPU do PC no mesmo laço do compositor
+  (`tools/stimeslice/benchmark/gpu.py`), também 0. Em 8 bpc (o app): 0 nos modos Normal e no
+  Interp em todas as direções; nos modos All Opaque e As Premult, 102 px de 57 600 a 1 nível — os
+  empates EXATOS de meio nível, que caem pelo float32 do plugin numa ordem de contas que não achei.
+
+  O QUE NÃO ENTROU:
+  - Mask from Layer / Mask from Path, Mask Use, Blur Mask, Invert Mask: a máscara que mistura o
+    resultado com a camada original. Nenhum preset do snow usa.
+  - Mocha (o rastreio do Boris): fora, como nos outros Sapphire.
+  - Show Slice: é só a alça na tela do AE, não muda o render.
+  - Camada de AJUSTE: ela não tem imagem própria para redesenhar em outro instante (como no CC Wide
+    Time); o efeito não faz nada nela.
+-->
+<effect
+    id="nova.effect.stimeslice"
+    name="S_TimeSlice"
+    name-en="S_TimeSlice"
+    desc="O Time Slice do Sapphire: a imagem em faixas, cada uma num quadro diferente da camada."
+    desc-en="Sapphire's Time Slice: the image cut into slices, each showing a different frame of the layer."
+    category="stylize"
+    stage="timeslice"
+    tags="time slice,timeslice,s_timeslice,sapphire,fatia,fatias,tempo,quadros,slit scan,slitscan,helice,degrau">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          Em graus, como o AE mostra (o plugin guarda com o sinal trocado: a receita diz 90, o AE, -90).
+          -90: faixas deitadas, os quadros mais novos embaixo; 0: faixas em pé, os mais novos à direita.
+        -->
+        <slider id="sliceDirection" label="Slice Direction" default="-90.0" min="-32000.0" max="32000.0"
+                step="1.0" type="angle" snap="-90.0,0.0,90.0" />
+        <!-- Quadros por meia largura = Slice Number / 1,5. No AE a régua vai a 250 (500 no modo largo); mínimo 1. -->
+        <slider id="sliceNumber" label="Slice Number" default="12.0" min="1.0" max="500.0" step="0.1" snap="12.0" />
+        <!-- Soma a todos os quadros que as faixas recebem. -->
+        <slider id="frameOffset" label="Frame Offset" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <!-- Desligado: cada faixa leva o quadro inteiro (⌊df⌋). Ligado: a mistura dos dois vizinhos, sem degrau. -->
+        <switch id="interpFrames" label="Interp Frames" default="false" />
+        <selector id="opacity" label="Opacity" default="1" options="All Opaque|Normal|As Premult" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

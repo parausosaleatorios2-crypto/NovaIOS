@@ -1,0 +1,148 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="com.alightcreative.effects.fracture_wipe" name="Fracture Wipe" desc="A Voronoi-based transition effect that reveals a new layer through cracks." category="transition" tags="transition,voronoi,crack,reveal" thumb="thumb/fracturwipe.webp">
+
+    <params>
+        <texture id="inputImg" srcType="content" />
+        <texture id="targetImg" srcType="content" label="Input 2" />
+
+        <spinner id="progress" default="0.0" min="0.0" max="10.0" step="0.01" label="Progress" />
+        
+        <section text="Cracks" />
+        <spinner id="voroScale" default="5.0" min="1.0" max="20.0" step="0.1" label="Voronoi Scale" />
+        <spinner id="crackWidth" default="0.01" min="0.0" max="0.1" step="0.001" label="Crack Width" />
+        <spinner id="crackAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Crack Intensity" />
+        
+        <section text="Animation" />
+        <switch id="autoAnimate" default="false" label="Auto Animate" />
+        <spinner id="speed" default="0.25" min="0.0" max="2.0" step="0.01" label="Speed" />
+        <spinner id="seed" default="0.0" min="0.0" max="10.0" step="0.01" label="Random Seed" />
+
+        <section text="Source" />
+        <switch id="useLayerBelow" default="true" label="Use Layer Below as Target" />
+    </params>
+
+    <shader type="fragment" precision="high"><![CDATA[
+
+        // Simple hash/noise for procedural generation
+        float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        vec2 h2(vec2 p) {
+            float n = hash(p);
+            return vec2(n, hash(p + vec2(15.23, 37.11)));
+        }
+
+        // Adapted Voronoi Border algorithm
+        float voroBorder(vec2 x, out vec2 id, out vec2 mr) {
+            vec2 n = floor(x);
+            vec2 f = fract(x);
+            vec2 mg = vec2(0.0);
+            mr = vec2(0.0);
+            float md = 8.0;
+
+            for (int j = -1; j <= 1; j++) {
+                for (int i = -1; i <= 1; i++) {
+                    vec2 g = vec2(float(i), float(j));
+                    vec2 r = g + h2(n + g) - f;
+                    float d = dot(r, r);
+                    if (d < md) {
+                        md = d;
+                        mr = r;
+                        mg = g;
+                    }
+                }
+            }
+
+            id = n + mg;
+            md = 8.0;
+
+            for (int j = -2; j <= 2; j++) {
+                for (int i = -2; i <= 2; i++) {
+                    vec2 g = mg + vec2(float(i), float(j));
+                    vec2 r = g + h2(n + g) - f;
+                    vec2 v = r - mr;
+                    float vv = dot(v, v);
+                    if (vv > 1e-5) {
+                        md = min(md, dot(0.5*(mr + r), normalize(v)));
+                    }
+                }
+            }
+            
+            // Smooth edge
+            md = 1.0 - (1.0 - md) * (1.0 - md);
+            return md;
+        }
+
+        void main() {
+            vec2 uv = acScreenNorm;
+            
+            // Handle aspect ratio for Voronoi
+            vec2 st = acLayerNorm.xy;
+            st.x *= acLayerSize.x / acLayerSize.y;
+            
+            float t = autoAnimate ? acTime * speed : progress;
+            
+            // Map t to the ranges used in the original Shadertoy
+            // Original t cycles 0-1, but we use a single transition
+            float seg = floor(seed); // Use seed as a base segment
+            
+            // Random value for variation
+            float r = hash(vec2(seg, 123.456));
+            
+            // Transition curve (tp)
+            float tt = clamp((t - 0.08 * r) / max(1.0 - 0.08 * r, 1e-4), 0.0, 1.0);
+            float s = smoothstep(0.0, 1.0, tt);
+            float tp = mix(mix(s, pow(s, mix(1.2, 2.4, r)), 0.5), tt, 0.45);
+
+            // Warp and distance params
+            float w = 1.0 - smoothstep(0.88, 1.08, t); // Fade out at end of cycle if auto-animating
+            if(!autoAnimate) w = 1.0; // Keep full effect for manual progress
+            
+            float rad = clamp(length(acLayerNorm.xy - 0.5) * 1.4, 0.0, 1.0);
+
+            vec2 p = st * voroScale + (h2(vec2(seg + 1.23, seed)) * 2.0 - 1.0) * 10.0;
+
+            vec2 id, mr;
+            float dist = clamp(voroBorder(p, id, mr), 0.0, 1.0);
+
+            // Warp logic from Shadertoy
+            float warp = ((0.65 * (h2(id).x * 2.0 - 1.0) + 0.35 * dot(mr, vec2(0.73, 0.37))) * 0.28)
+                         * smoothstep(0.0, 0.20, t) * w;
+
+            float ph = clamp(tp + (-rad + warp + pow(1.0 - rad, 1.2) * 0.10 * smoothstep(0.0, 0.30, t)) * w, 0.0, 1.0);
+            float d = dist - ph;
+
+            // Revelation and Crack logic
+            float gate = mix(smoothstep(0.0, 0.10, tp - (rad - warp)), 1.0, smoothstep(0.92, 1.0, t));
+            float reveal = smoothstep(0.020, 0.0, d) * gate;
+            float crack = smoothstep(crackWidth, 0.0, abs(d)) * gate * smoothstep(0.18, 0.30, ph);
+
+            // Textures
+            vec4 colA = texture2DCv(inputImg.texture, uv);
+            
+            vec3 finalRGB;
+            float finalAlpha;
+
+            if (useLayerBelow) {
+                // To reveal layers below in Alight Motion, we transition to transparency
+                finalRGB = colA.rgb * (1.0 - reveal);
+                finalAlpha = colA.a * (1.0 - reveal);
+                
+                // Add the cracks as solid black (or dimmed) lines
+                finalRGB = finalRGB * (1.0 - crack * crackAmt);
+                // Ensure cracks themselves are at least somewhat opaque during the transition
+                finalAlpha = max(finalAlpha, min(colA.a, crack * crackAmt));
+            } else {
+                // To reveal a specific target texture, we mix the colors
+                vec4 colB = texture2DCv(targetImg.texture, uv);
+                finalRGB = mix(colA.rgb, colB.rgb, reveal) * (1.0 - crack * crackAmt);
+                finalAlpha = mix(colA.a, colB.a, reveal);
+            }
+
+            gl_FragColor = vec4(finalRGB, finalAlpha);
+        }
+
+    ]]></shader>
+
+</effect>

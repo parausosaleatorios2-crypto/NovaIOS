@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.box"
+    name="Desfoque Caixa (Blurrr)"
+    name-en="Box Blur (Blurrr)"
+    desc="Média de blocos — borrão duro, estética crua."
+    desc-en="Block average — hard blur, raw look."
+    category="blur"
+    tags="blurrr,box,caixa,desfoque,blur,media">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+        <slider id="radius"     label="Raio" default="8.0" min="0.0" max="40.0" passo="0.5" />
+        <slider id="iterations" label="Iterações" default="2" min="1" max="4" passo="1" type="integer" />
+    </params>
+    <iterations param="iterations" />
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+void main() {
+    if (radius <= 0.0) { fragColor = texture(inputImg, acScreenNorm); return; }
+    vec2 d = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 passo = d * acTexelSize * (radius * acEscalaDePixel);
+
+    vec4 soma = vec4(0.0);
+    const int K = 9;
+    for (int i = -4; i <= 4; i++) {
+        vec2 uv = acScreenNorm + passo * float(i) / 4.0;
+        soma += (acPass == 0) ? texture(inputImg, uv) : texture(hblur, uv);
+    }
+    fragColor = soma / float(K);
+}
+    ]]></shader>
+</effect>

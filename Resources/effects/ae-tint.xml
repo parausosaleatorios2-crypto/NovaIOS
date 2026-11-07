@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TINT — o do After Effects, medido no plugin (0.445.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "tint". É o efeito nativo do AE (ADBE Tint), medido lá com varreduras
+  de matiz, cinzas e cores ao acaso (tools/tint/benchmark):
+
+  - a luminância do pixel (0,299 R + 0,587 G + 0,114 B) escolhe a cor entre Map Black To e Map White To;
+  - Amount to Tint mistura essa cor com a original (0 = nada, 100 = só a cor);
+  - o alfa do pixel não muda, e o alfa das duas cores não entra na conta;
+  - as duas cores valem com 8 bits lá (o conversor as arredonda).
+
+  O modelo fica a 0,04 nível (de 255) do AE no pior pixel de 20 casos.
+
+  O "Duas cores" (duotone) do app é parecido, mas tem pontos de preto e de branco e não tem o Amount:
+  por isso este é outro efeito, com os controles de lá.
+-->
+<effect
+    id="nova.effect.aetint"
+    name="Tint (AE)"
+    name-en="Tint (AE)"
+    desc="O Tint do After Effects: pinta as sombras e as luzes com duas cores, na medida do Amount."
+    desc-en="After Effects' Tint: maps blacks and whites to two colors, by the Amount."
+    category="color"
+    tags="tint,tingir,matiz,cor,duotone,duas cores,preto e branco,pb,after effects,map black,map white,cc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="mapBlackTo" label="Map Black To" default="#000000" />
+        <color id="mapWhiteTo" label="Map White To" default="#FFFFFF" />
+        <slider id="amountToTint" label="Amount to Tint" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0,0.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    // medido: os pesos da luminância de lá
+    float y = dot(cor.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 alvo = mix(mapBlackTo.rgb, mapWhiteTo.rgb, y);
+    fragColor = vec4(mix(cor.rgb, alvo, clamp(amountToTint / 100.0, 0.0, 1.0)), cor.a);
+}
+
+    ]]></shader>
+</effect>

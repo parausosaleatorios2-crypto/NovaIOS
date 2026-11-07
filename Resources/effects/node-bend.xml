@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CURVATURA (NODE) — o Bend do Node Video, conta por conta (0.674.0)
+  ============================================================================
+
+  Pedido do snow (20/10/2026): "proximo efeito 100% igual do node video". Depois das Coordenadas polares, o próximo do
+  menu Distorcer do Node (o TextAsset `prop`: … Turbilhão, Coordenadas polares, Curvatura, Squeeze …) com a conta
+  inteira num passe só (sem classe própria no código do Node). O Node é um app em Unity, e tudo aqui foi LIDO do APK
+  9.0.2 descompactado (nada do Node entra no repositório; `tools/nodecurvatura/extrair.py` tira o shader do APK na hora
+  e `comparar.py` roda os dois na GPU do PC):
+
+  - a definição: `_Bend` (no menu, Efeitos → Distorcer → Curvatura), um `AssetEffect` com 7 parâmetros, na ordem dele:
+    Pivô (Enum: Esquerda, Direita, Topo, Inferior; o Float guardado é 3 = Inferior), Quantidade (Float, partida 45,
+    preso a −180..180 pelo Clamp, em graus), Deslocamento (Float, partida 0,5, preso a 0..1), Tipo (Enum: Único,
+    Espelho, Reverso; partida Único) e o grupo Transformação — Deslocamento da textura (Vector2, (0; 0)), Escala da
+    textura (Vector2, (1; 1), X e Y ligados no Node) e Rotação da textura (Float, 0, dá a volta de 360). Os rótulos em
+    português são os do próprio Node (o TextAsset `param`; o `_single` está no `ui`);
+  - como cada um chega ao shader (o `SetShader` de cada tipo, lido no il2cpp): os Enum como inteiro, o Float por
+    `SetGlobalFloat`, o Vector2 inteiro; e o `_resolution` do `RCEffect::Render` (o tamanho da composição);
+  - o shader: `NodeVideo/Effect/Distort/bend`, UM passe, o GLSL ES 3.00 que o Unity gerou, com `Blend One Zero` (a
+    saída do programa vai direto ao RT). O `m_Script` da definição é o `AESinglePass`: sem classe própria.
+
+  A CONTA DO NODE (o passe 1, na mesma ordem, com as mesmas constantes do float32). A camada chega como o RT dela
+  (pré-multiplicada, em luz linear):
+  - a Transformação primeiro: o ponto em volta do meio da tela ÷ a Escala, girado pela Rotação (graus × 0,0174533) e
+    mais o Deslocamento da textura;
+  - o Pivô escolhe a borda que fica parada e o eixo da dobra; o Deslocamento (× 0,99) é onde a dobra começa, medido a
+    partir dessa borda. Do lado da borda, a camada como está (no Tipo Único, ou com Deslocamento 0); do outro lado — e
+    nos dois lados no Espelho e no Reverso, este com a Quantidade ao contrário — a camada se enrola num arco de
+    Quantidade × π/360 (o raio 0,5 ÷ o ângulo pela distância até a outra ponta), pelo atan2 que o compilador do Unity
+    abre num polinômio de 5 termos e na proporção da tela (o `_resolution`). Com a dobra quase reta (|ângulo| < 0,001),
+    só desliza;
+  - a leitura pelo filtro linear da GPU (em luz linear); fora da tela (UV < 0 ou > 1) tudo vai a 0.
+  A máscara interna do Node (`_use_inner_mask`, a máscara de efeito dele) não é parâmetro do efeito e fica de fora.
+
+  EM LUZ LINEAR, como os outros efeitos do Node (o buffer sRGB do motor, `format="srgb"`, da 0.626), e com os RTs do
+  meio SEMPRE de pé, como no `node-polar-coordinates.xml`:
+  - passe 0: a camada como o RT dela no Node (a cor em luz linear vezes o alfa; a GPU guarda em sRGB), DE PÉ;
+  - passe 1: o programa do Node, copiado conta por conta (os nomes de variável são os do Unity), com o UV dele e
+    lendo o RT pela GPU, escrevendo num RT sRGB (o `One Zero` não mexe na saída);
+  - passe 2: os bytes desse RT de volta ao alfa reto do Nova (a cor linear ÷ o alfa, em sRGB): no opaco, os próprios
+    bytes do Node.
+  Num buffer de camada só os passes 0 e 2 espelham a linha, pelo `texelFetch` (exato); a conta do meio é a da tela.
+
+  NA TELA (`stage="screen"`): o RT de cada camada do Node tem o tamanho da composição e o efeito entra depois do
+  Transform. Prévia reduzida (`screen-scale="safe"`): tudo é em fração da tela, e o `acTamanhoDaTela` tem a proporção
+  da composição também na prévia.
+
+  O que não fica igual: a Escala da textura do Node tem X e Y ligados por padrão; aqui são dois números. E o de todos
+  os efeitos do Node: o Node compõe em luz linear e o Nova em gama (a borda de alfa parcial se mistura diferente com o
+  fundo), e a mídia do Node entra no RT com `Blend SrcAlpha Zero`.
+-->
+<effect
+    id="nova.effect.node-bend"
+    name="Curvatura (Node)"
+    name-en="Bend (Node Video)"
+    desc="Dobra a camada num arco a partir de uma borda, como uma folha que se enrola, com espelho, reverso e a transformação da textura (o Bend do Node Video)."
+    desc-en="Bends the layer into an arc from one edge, like a curling sheet, with mirror, reverse and texture transform (Node Video's Bend)."
+    category="distort"
+    tags="curvatura,curvar,dobrar,dobra,enrolar,arco,página,folha,distorcer,bend,curve,curl,arc,node video,nodevideo"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+
+        <!-- O Enum do Node (o inteiro do uniform): a borda parada. O Float guardado é 3 = Inferior. -->
+        <selector id="pivot" label="Pivô" default="3" options="Esquerda|Direita|Topo|Inferior" />
+        <!-- Float PRESO do Node (Clamp ligado, −180..180): o arco da dobra, em graus. -->
+        <slider id="amount" label="Quantidade" default="45.0" min="-180.0" max="180.0" step="0.1" />
+        <!-- Float PRESO do Node (Clamp ligado, 0..1): onde a dobra começa, a partir da borda parada. -->
+        <slider id="offset" label="Deslocamento" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <!-- O Enum do Node: 0 = Único, 1 = Espelho, 2 = Reverso. -->
+        <selector id="bendType" label="Tipo" default="0" options="Único|Espelho|Reverso" />
+
+        <!-- O grupo Transformação: os Vector2 do Node são dois números crus, que vão ao uniform como estão (sem
+             prender: a régua 0..3 dele é só a régua). -->
+        <point id="texOffset" label="Deslocamento da textura" group="Transformação" spinner="true" vetor="true"
+            defaultX="0.0" defaultY="0.0" min="-1000.0" max="1000.0" step="0.01" />
+        <point id="texScale" label="Escala da textura" group="Transformação" spinner="true" vetor="true"
+            defaultX="1.0" defaultY="1.0" min="-1000.0" max="1000.0" step="0.01" />
+        <!-- Float do Node sem prender que dá a volta de 360: graus, como estão. -->
+        <spinner id="texAngle" label="Rotação da textura" group="Transformação" default="0.0" min="-3600.0"
+            max="3600.0" step="0.1" type="angle" />
+
+        <!-- Os RTs do Node (sRGB de 8 bits, pré-multiplicados em luz linear): a camada e a saída. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="saidaRt" src="buffer" format="srgb" precision="highp" />
+    </params>
+
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="saidaRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (o
+// `floor(..)/255.0` vai pelo recíproco e erra o último bit — ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+// Os bytes que um RT sRGB de 8 bits guarda para esta cor linear.
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+// O texel exato de uma imagem do tamanho da tela no pixel de pé (a linha 0 é a base, como nos RTs do Node): no
+// buffer de camada (`acEntradaDePe` = 0, a linha 0 é o topo) a linha é espelhada. Lê a entrada para o RT de pé e o RT
+// de pé para a saída — os dois espelhos se desfazem, e a conta do meio é a da tela.
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+
+// O `~` de inteiro do HLSL, como o Unity o escreve: o programa guarda "o Pivô não é Direita" como os bits de um float
+// (0 ou 0xFFFFFFFF) e mais adiante testa esses bits para escolher o ramo vertical (Topo e Inferior).
+int op_not(int value) { return -value - 1; }
+
+// O programa do Node, conta por conta (o `_SourceTex` é o `camadaRt`, os parâmetros com os nomes do Nova).
+// [vs_TEXCOORD0]: o UV do Node (cresce para cima). Sem a máscara interna do Node: o ramo dela desligado, nas duas
+// saídas do programa (a antecipada, do lado parado, e a do fim).
+vec4 bend(vec2 vs_TEXCOORD0) {
+    // Os uniforms do Node com os nomes dele: o `_resolution` do `RCEffect::Render` é o `acTamanhoDaTela` (o tamanho
+    // da composição); os Enum chegam como o inteiro, o Float por `SetGlobalFloat`, os Vector2 inteiros.
+    vec2 _resolution = acTamanhoDaTela;
+    int _pivot = pivot;
+    float _amount = amount;
+    float _offset = offset;
+    int _type = bendType;
+    vec2 _tex_offset = texOffset;
+    vec2 _tex_scale = texScale;
+    float _tex_angle = texAngle;
+    vec4 u_xlat0;
+    bvec2 u_xlatb0;
+    vec4 u_xlat1;
+    ivec3 u_xlati1;
+    bvec2 u_xlatb1;
+    vec4 u_xlat2;
+    bvec4 u_xlatb2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    vec4 u_xlat5;
+    int u_xlati5;
+    bvec2 u_xlatb5;
+    vec4 u_xlat6;
+    bool u_xlatb6;
+    vec4 u_xlat7;
+    vec4 u_xlat8;
+    vec2 u_xlat9;
+    vec3 u_xlat10;
+    int u_xlati10;
+    vec2 u_xlat11;
+    bool u_xlatb11;
+    float u_xlat14;
+    bool u_xlatb14;
+    vec2 u_xlat18;
+    bvec2 u_xlatb18;
+    vec2 u_xlat19;
+    bvec2 u_xlatb19;
+    float u_xlat20;
+    float u_xlat23;
+    bool u_xlatb23;
+    bool u_xlatb27;
+    float u_xlat28;
+    bool u_xlatb28;
+    float u_xlat29;
+    int u_xlati29;
+    float u_xlat30;
+    bool u_xlatb30;
+    float u_xlat32;
+    bool u_xlatb32;
+
+    u_xlat0.x = _tex_angle * 0.0174532998;
+    u_xlat1.x = cos(u_xlat0.x);
+    u_xlat0.x = sin(u_xlat0.x);
+    u_xlat2.x = (-u_xlat0.x);
+    u_xlat9.xy = vs_TEXCOORD0.xy + vec2(-0.5, -0.5);
+    u_xlat9.xy = u_xlat9.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat2.y = u_xlat1.x;
+    u_xlat2.z = u_xlat0.x;
+    u_xlat10.x = dot(u_xlat9.xy, u_xlat2.yz);
+    u_xlat10.y = dot(u_xlat9.xy, u_xlat2.xy);
+    u_xlat0.xy = u_xlat10.xy + _tex_offset.xy;
+    u_xlat0.yz = u_xlat0.xy + vec2(0.5, 0.5);
+    u_xlati1.xyz = ivec3(uvec3(equal(ivec4(_pivot), ivec4(1, 2, 3, 0)).xyz) * 0xFFFFFFFFu);
+    u_xlat2.z = intBitsToFloat(op_not(u_xlati1.x));
+    u_xlat3.x = float(0.5);
+    u_xlat3.y = float(0.0);
+    u_xlat3.w = (-_amount);
+    u_xlat4.x = 0.0;
+    u_xlat4.z = _amount;
+    u_xlat3.xyz = (u_xlati1.z != 0) ? u_xlat3.xyw : u_xlat4.xxz;
+    u_xlat4.y = float(0.5);
+    u_xlat4.z = float(0.0);
+    u_xlat4.w = float(0.5);
+    u_xlat4.x = _offset * -0.99000001 + 1.0;
+    u_xlat5.x = float(0.5);
+    u_xlat5.z = float(0.5);
+    u_xlat5.w = float(1.0);
+    u_xlat5.y = _offset * 0.99000001;
+    u_xlat6 = (u_xlati1.y != 0) ? u_xlat4.wxwz : u_xlat5;
+    u_xlat7.x = float(0.5);
+    u_xlat7.y = float(1.0);
+    u_xlat7.w = _amount;
+    u_xlat10.xyz = (u_xlati1.y != 0) ? u_xlat7.xyw : u_xlat3.xyz;
+    u_xlat3.x = float(1.0);
+    u_xlat3.y = float(0.5);
+    u_xlat3.w = (-_amount);
+    u_xlat2.xyw = (u_xlati1.x != 0) ? u_xlat3.xyw : u_xlat10.xyz;
+    u_xlat1 = (u_xlati1.x != 0) ? u_xlat4 : u_xlat6;
+    u_xlat3.yw = (_pivot != 0) ? u_xlat1.xy : u_xlat5.yz;
+    u_xlat1.xy = (_pivot != 0) ? u_xlat1.zw : vec2(1.0, 0.5);
+    u_xlat4.x = float(0.0);
+    u_xlat4.y = float(0.5);
+    u_xlat4.w = _amount;
+    u_xlat2 = (_pivot != 0) ? u_xlat2.wxyz : u_xlat4.wxyx;
+    u_xlat1.xy = (-u_xlat3.yw) + u_xlat1.xy;
+    u_xlat19.xy = u_xlat0.yz + (-u_xlat3.yw);
+    u_xlat19.x = dot(u_xlat1.xy, u_xlat19.xy);
+    // (o `u_xlat4 = texture(camadaRt, vs_TEXCOORD0.xy)` do Node só serve à máscara interna)
+    u_xlatb19.x = u_xlat19.x<0.0;
+    if(u_xlatb19.x){
+        u_xlatb19.x = _type==0;
+        u_xlatb28 = 0.0>=_offset;
+        u_xlatb19.x = u_xlatb28 || u_xlatb19.x;
+        if(u_xlatb19.x){
+            u_xlatb19.xy = lessThan(u_xlat0.yzyz, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+            u_xlatb5.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.yzyy).xy;
+            u_xlatb19.x = u_xlatb19.x || u_xlatb5.x;
+            u_xlatb19.x = u_xlatb19.y || u_xlatb19.x;
+            u_xlatb19.x = u_xlatb5.y || u_xlatb19.x;
+            u_xlat5 = texture(camadaRt, u_xlat0.yz);
+            u_xlat19.x = (u_xlatb19.x) ? 0.0 : 1.0;
+            u_xlat5 = u_xlat19.xxxx * u_xlat5;
+            return u_xlat5;
+        } else {
+            u_xlat1.xy = (-u_xlat3.yw) + u_xlat2.yz;
+            u_xlatb19.x = _type==2;
+            u_xlat2.x = (u_xlatb19.x) ? (-u_xlat2.x) : u_xlat2.x;
+        }
+    }
+    u_xlat19.x = u_xlat2.x * 0.00872664619;
+    u_xlat1.x = dot(u_xlat1.xy, u_xlat1.xy);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat1.x = u_xlat19.x / u_xlat1.x;
+    if(uint(floatBitsToUint(u_xlat2.w)) != uint(0)) {
+        u_xlat10.xy = _resolution.xy / _resolution.yx;
+        u_xlat0.x = u_xlat0.y * u_xlat10.x;
+        u_xlat3.z = u_xlat10.x * u_xlat3.y;
+        u_xlat10.xz = u_xlat0.xz + (-u_xlat3.zw);
+        u_xlatb0.x = abs(u_xlat1.x)<0.00100000005;
+        u_xlat2.x = u_xlat10.z;
+        u_xlat2.x = clamp(u_xlat2.x, 0.0, 1.0);
+        u_xlat2.x = u_xlat10.z + (-u_xlat2.x);
+        u_xlat2.y = (u_xlatb0.x) ? u_xlat2.x : u_xlat10.z;
+        u_xlat20 = 0.5 / u_xlat1.x;
+        u_xlat2.x = u_xlat10.x + (-u_xlat20);
+        u_xlati29 = int((0.0<u_xlat1.x) ? 0xFFFFFFFFu : uint(0));
+        u_xlati5 = int((u_xlat1.x<0.0) ? 0xFFFFFFFFu : uint(0));
+        u_xlati29 = (-u_xlati29) + u_xlati5;
+        u_xlat29 = float(u_xlati29);
+        u_xlat5.x = dot(u_xlat2.xy, u_xlat2.xy);
+        u_xlat5.x = sqrt(u_xlat5.x);
+        u_xlat5.x = abs(u_xlat20) + (-u_xlat5.x);
+        u_xlat11.x = u_xlat2.y * u_xlat29;
+        u_xlat2.x = u_xlat2.x * (-u_xlat29);
+        u_xlat14 = min(abs(u_xlat2.x), abs(u_xlat11.x));
+        u_xlat23 = max(abs(u_xlat2.x), abs(u_xlat11.x));
+        u_xlat23 = float(1.0) / u_xlat23;
+        u_xlat14 = u_xlat23 * u_xlat14;
+        u_xlat23 = u_xlat14 * u_xlat14;
+        u_xlat32 = u_xlat23 * 0.0208350997 + -0.0851330012;
+        u_xlat32 = u_xlat23 * u_xlat32 + 0.180141002;
+        u_xlat32 = u_xlat23 * u_xlat32 + -0.330299497;
+        u_xlat23 = u_xlat23 * u_xlat32 + 0.999866009;
+        u_xlat32 = u_xlat23 * u_xlat14;
+        u_xlatb6 = abs(u_xlat2.x)<abs(u_xlat11.x);
+        u_xlat32 = u_xlat32 * -2.0 + 1.57079637;
+        u_xlat32 = u_xlatb6 ? u_xlat32 : float(0.0);
+        u_xlat14 = u_xlat14 * u_xlat23 + u_xlat32;
+        u_xlatb23 = u_xlat2.x<(-u_xlat2.x);
+        u_xlat23 = u_xlatb23 ? -3.14159274 : float(0.0);
+        u_xlat14 = u_xlat23 + u_xlat14;
+        u_xlat23 = min(u_xlat2.x, u_xlat11.x);
+        u_xlat2.x = max(u_xlat2.x, u_xlat11.x);
+        u_xlatb11 = u_xlat23<(-u_xlat23);
+        u_xlatb2.x = u_xlat2.x>=(-u_xlat2.x);
+        u_xlatb2.x = u_xlatb2.x && u_xlatb11;
+        u_xlat2.x = (u_xlatb2.x) ? (-u_xlat14) : u_xlat14;
+        u_xlat11.y = u_xlat2.x * u_xlat20;
+        u_xlat11.x = u_xlat29 * u_xlat5.x;
+        u_xlat2.yz = (u_xlatb0.x) ? u_xlat10.xz : u_xlat11.xy;
+        u_xlat2.x = u_xlat10.y * u_xlat2.y;
+        u_xlat3.x = u_xlat10.y * u_xlat3.z;
+        u_xlat10.xy = u_xlat3.xw + u_xlat2.xz;
+        u_xlatb2.xy = greaterThanEqual(u_xlat10.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+        u_xlatb2.zw = greaterThanEqual(vec4(0.0, 0.0, 1.0, 1.0), u_xlat10.xxxy).zw;
+        u_xlat2.x = u_xlatb2.x ? float(1.0) : 0.0;
+        u_xlat2.y = u_xlatb2.y ? float(1.0) : 0.0;
+        u_xlat2.z = u_xlatb2.z ? float(1.0) : 0.0;
+        u_xlat2.w = u_xlatb2.w ? float(1.0) : 0.0;
+;
+        u_xlat0.x = u_xlat2.z * u_xlat2.x;
+        u_xlat0.x = u_xlat2.y * u_xlat0.x;
+        u_xlat0.x = u_xlat2.w * u_xlat0.x;
+        u_xlat2 = texture(camadaRt, u_xlat10.xy);
+        u_xlat2 = u_xlat0.xxxx * u_xlat2;
+    } else {
+        u_xlat10.xy = _resolution.yx / _resolution.xy;
+        u_xlat0.w = u_xlat0.z * u_xlat10.x;
+        u_xlat3.x = u_xlat10.x * u_xlat3.w;
+        u_xlat0.xy = u_xlat0.yw + (-u_xlat3.yx);
+        u_xlatb27 = abs(u_xlat1.x)<0.00100000005;
+        u_xlat10.x = u_xlat0.y;
+        u_xlat10.x = clamp(u_xlat10.x, 0.0, 1.0);
+        u_xlat10.x = u_xlat0.y + (-u_xlat10.x);
+        u_xlat10.x = (u_xlatb27) ? u_xlat10.x : u_xlat0.y;
+        u_xlat28 = 0.5 / u_xlat1.x;
+        u_xlat0.z = (-u_xlat28) + u_xlat10.x;
+        u_xlati10 = int((0.0<u_xlat1.x) ? 0xFFFFFFFFu : uint(0));
+        u_xlati1.x = int((u_xlat1.x<0.0) ? 0xFFFFFFFFu : uint(0));
+        u_xlati1.x = (-u_xlati10) + u_xlati1.x;
+        u_xlat1.x = float(u_xlati1.x);
+        u_xlat10.x = dot(u_xlat0.xz, u_xlat0.xz);
+        u_xlat10.x = sqrt(u_xlat10.x);
+        u_xlat10.x = (-u_xlat10.x) + abs(u_xlat28);
+        u_xlat30 = u_xlat0.x * u_xlat1.x;
+        u_xlat18.x = u_xlat0.z * (-u_xlat1.x);
+        u_xlat5.x = min(abs(u_xlat18.x), abs(u_xlat30));
+        u_xlat14 = max(abs(u_xlat18.x), abs(u_xlat30));
+        u_xlat14 = float(1.0) / u_xlat14;
+        u_xlat5.x = u_xlat14 * u_xlat5.x;
+        u_xlat14 = u_xlat5.x * u_xlat5.x;
+        u_xlat23 = u_xlat14 * 0.0208350997 + -0.0851330012;
+        u_xlat23 = u_xlat14 * u_xlat23 + 0.180141002;
+        u_xlat23 = u_xlat14 * u_xlat23 + -0.330299497;
+        u_xlat14 = u_xlat14 * u_xlat23 + 0.999866009;
+        u_xlat23 = u_xlat14 * u_xlat5.x;
+        u_xlatb32 = abs(u_xlat18.x)<abs(u_xlat30);
+        u_xlat23 = u_xlat23 * -2.0 + 1.57079637;
+        u_xlat23 = u_xlatb32 ? u_xlat23 : float(0.0);
+        u_xlat5.x = u_xlat5.x * u_xlat14 + u_xlat23;
+        u_xlatb14 = u_xlat18.x<(-u_xlat18.x);
+        u_xlat14 = u_xlatb14 ? -3.14159274 : float(0.0);
+        u_xlat5.x = u_xlat14 + u_xlat5.x;
+        u_xlat14 = min(u_xlat18.x, u_xlat30);
+        u_xlat18.x = max(u_xlat18.x, u_xlat30);
+        u_xlatb30 = u_xlat14<(-u_xlat14);
+        u_xlatb18.x = u_xlat18.x>=(-u_xlat18.x);
+        u_xlatb18.x = u_xlatb18.x && u_xlatb30;
+        u_xlat18.x = (u_xlatb18.x) ? (-u_xlat5.x) : u_xlat5.x;
+        u_xlat5.x = u_xlat18.x * u_xlat28;
+        u_xlat5.y = u_xlat1.x * u_xlat10.x;
+        u_xlat0.xy = (bool(u_xlatb27)) ? u_xlat0.xy : u_xlat5.xy;
+        u_xlat0.z = u_xlat10.y * u_xlat0.y;
+        u_xlat3.z = u_xlat10.y * u_xlat3.x;
+        u_xlat0.xy = u_xlat0.xz + u_xlat3.yz;
+        u_xlatb18.xy = greaterThanEqual(u_xlat0.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+        u_xlat18.x = u_xlatb18.x ? float(1.0) : 0.0;
+        u_xlat18.y = u_xlatb18.y ? float(1.0) : 0.0;
+;
+        u_xlatb1.xy = greaterThanEqual(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.xyxx).xy;
+        u_xlat1.x = u_xlatb1.x ? float(1.0) : 0.0;
+        u_xlat1.y = u_xlatb1.y ? float(1.0) : 0.0;
+;
+        u_xlat18.x = u_xlat18.x * u_xlat1.x;
+        u_xlat18.x = u_xlat18.y * u_xlat18.x;
+        u_xlat18.x = u_xlat1.y * u_xlat18.x;
+        u_xlat1 = texture(camadaRt, u_xlat0.xy);
+        u_xlat2 = u_xlat18.xxxx * u_xlat1;
+    }
+    return u_xlat2;
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada como o RT dela no Node: a cor em luz linear vezes o alfa, de pé; a GPU guarda em sRGB.
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O RT da camada está de pé: o UV do Node é o da tela, nos dois casos.
+        // `Blend One Zero`: a saída como está (o alvo sRGB de 8 bits prende, como o do Node).
+        fragColor = bend(acScreenNorm);
+        return;
+    }
+
+    // Os bytes do RT de saída do Node (a GPU decodificou ao ler; codificar de novo devolve o byte guardado), de volta
+    // à orientação da entrada.
+    vec4 o = texelDePe(saidaRt);
+    vec3 kc = bytesSrgb(o.rgb);
+    float ka = floor(o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    // O Nova guarda reto: a cor linear guardada dividida pelo alfa, de volta ao sRGB (acima de 1 fica em 1).
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

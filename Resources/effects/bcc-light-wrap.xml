@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC LIGHT WRAP — o Light Wrap do Boris Continuum, lido do plugin (0.864.0)
+  ============================================================================
+
+  Pedido do snow (01/11/2026): "BCC Light Wrap 100% igual agora".
+
+  DE ONDE VEIO (tools/bcclightwrap): a conta foi lida na Continuum_AE_8Bit.dll (a classe LightWrap, o
+  LightWrapRenderer e o misturador RGBMix dos modos) e conferida no After Effects 2023 (91 renders em 8 bpc):
+
+      fundo   = a camada Background (cor reta, 8 bits)
+      fundo   = caixa(fundo, Softness) se Softness > 0,1      raio em px, ponta fracionária pesa a fração,
+                                                              x depois y, arredondando a 8 bits; borda repetida
+      fundo   = Lightness (0x1809fe9a0), se |L| > 0,01: k = trunc(65536 − |L|·32768)
+                L < 0: c = (c·k + 0x8000) >> 16;  L > 0: c = 255 − ((255 − c)·k + 0x8000) >> 16
+      máscara = caixa(255 − alfa da camada, Width)
+      wrap    = o fundo com alfa = máscara · alfa do fundo / 255 (arredondado como o plugin)
+      Normal  = o modo (0x18042a480: o 1º operando é o wrap, o 2º a camada) e a composição pelos alfas
+                (0x1804283b0, 0x180426d00), tudo em inteiros; a saída leva o alfa da camada
+      Wrap Only     = a cor do wrap com alfa min(wrap, camada)
+      Wrap On Black = o mesmo pré-multiplicado sobre preto, opaco
+
+  Medido: 0 pixels diferentes do AE em todos os controles (Width, Softness, Lightness, as três Views) e nos modos 1
+  a 20, com camada opaca, com alfa parcial e com foto. Sem camada de fundo o BCC desenha um aviso de erro ("Light
+  Wrap with BG Layer enabled but no Background Layer selected"); aqui a camada passa como está.
+
+  O QUE NÃO É IGUAL: os modos 21 a 26 (Boost Expo 1/2, Boost Eq Power +/−, Boost Bias, 50 50 Mix) não saem do
+  caminho que o código mostra — o AE dá Normal no 21 e no 22 e Lighter no 24 (medido, igual); o 23 fica como
+  Normal (até 36 níveis), o 25 como Lighter e o 26 como Multiply (os mais próximos, não iguais). O Mix with
+  Original foi lido (mistura pré-multiplicada em 1/1024) e não medido. A camada de fundo entra no lugar dela na
+  composição; o AE a centraliza na camada sem olhar a posição (igual quando as duas ocupam a tela toda).
+-->
+<effect
+    id="nova.effect.bcclightwrap"
+    name="BCC Light Wrap"
+    name-en="BCC Light Wrap"
+    desc="O Light Wrap do Boris Continuum: a luz da camada de fundo vaza para a borda da camada, igual ao After Effects."
+    desc-en="Boris Continuum's Light Wrap: the background layer's light wraps into the layer's edges, as in After Effects."
+    category="stylize"
+    tags="bcc light wrap,light wrap,lightwrap,envolver em luz,borda de luz,boris,continuum,bcc,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="bX" src="buffer" />
+        <texture id="mX" src="buffer" />
+
+        <selector id="view" label="View" default="0" options="Normal|Wrap Only|Wrap On Black" />
+        <texture id="bgImg" src="layer" label="Background" empty="transparent" />
+        <slider id="lightness" label="Lightness" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="softness" label="Softness" default="10.0" min="0.0" max="100.0" step="0.1" snap="10.0" />
+        <slider id="width" label="Width" default="10.0" min="0.0" max="100.0" step="0.1" snap="10.0" />
+        <selector id="applyMode" label="Apply Mode" default="0"
+                  options="Lighten|Darken|Multiply|Screen|Difference|Lighter|Darker|Scale Multiply|Scale Screen|Difference X 2|Difference X 4|Add|Subtract|Overlay|Soft Light|Hard Light|Hue|Saturation|Color|Lightness|Boost Expo 1|Boost Expo 2|Boost Eq Power +|Boost Eq Power -|Boost Bias|50 50 Mix" />
+        <slider id="mixWithOriginal" label="Mix with Original" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+    </params>
+
+    <passes>
+        <pass target="bX" />   <!-- 0: o fundo desfocado em x (Softness) -->
+        <pass target="mX" />   <!-- 1: a máscara 255 − alfa desfocada em x (Width) -->
+        <pass />               <!-- 2: o resto -->
+    </passes>
+
+    <shader><![CDATA[
+const float RAIO_MAX = 1000.0;     // o maior raio dos desfoques, em px do buffer
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+float gEscala;     // a prévia reduzida (Width e Softness são em px da composição)
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+}
+
+ivec2 naCamada(ivec2 q) {
+    return gInicio + clamp(q, ivec2(0), gN - ivec2(1));     // borda repetida
+}
+
+ivec4 bytes4(vec4 c) { return ivec4(floor(c * 255.0 + 0.5)); }
+vec4 cor4(ivec4 b) { return vec4(b) / 255.0; }
+
+bool temFundo() { return textureSize(bgImg, 0).x > 1; }
+
+// O fundo no lugar dele na composição, em bytes (cor reta).
+ivec4 fundo(ivec2 q) {
+    return bytes4(texture(bgImg, (vec2(naCamada(q)) + 0.5) / vec2(gT)));
+}
+
+int mascara(ivec2 q) { return 255 - bytes4(texelFetch(inputImg, naCamada(q), 0)).a; }
+
+// ---- a caixa do BCC: raio r, ponta fracionária com peso = fração, total 2r + 1 ----------------
+float raioDoFundo() { return min(softness * gEscala, RAIO_MAX); }
+float raioDaMascara() { return min(width * gEscala, RAIO_MAX); }
+
+ivec4 fundoEmX(ivec2 q) {
+    float r = raioDoFundo();
+    if (!(softness > 0.1)) return fundo(q);
+    int n = int(floor(r));
+    float f = r - float(n);
+    vec4 soma = vec4(0.0);
+    for (int d = -n - 1; d <= n + 1; d++) {
+        float w = abs(d) <= n ? 1.0 : f;
+        if (w == 0.0) continue;
+        soma += w * vec4(fundo(q + ivec2(d, 0)));
+    }
+    return ivec4(floor(soma / (2.0 * r + 1.0) + 0.5));
+}
+
+ivec4 fundoEmY(ivec2 q) {
+    if (!(softness > 0.1)) return fundo(q);
+    float r = raioDoFundo();
+    int n = int(floor(r));
+    float f = r - float(n);
+    vec4 soma = vec4(0.0);
+    for (int d = -n - 1; d <= n + 1; d++) {
+        float w = abs(d) <= n ? 1.0 : f;
+        if (w == 0.0) continue;
+        soma += w * vec4(bytes4(texelFetch(bX, naCamada(q + ivec2(0, d)), 0)));
+    }
+    return ivec4(floor(soma / (2.0 * r + 1.0) + 0.5));
+}
+
+int mascaraEm(ivec2 q, bool emX) {
+    float r = raioDaMascara();
+    if (r < 0.05) return emX ? mascara(q) : bytes4(texelFetch(mX, naCamada(q), 0)).r;
+    int n = int(floor(r));
+    float f = r - float(n);
+    float soma = 0.0;
+    for (int d = -n - 1; d <= n + 1; d++) {
+        float w = abs(d) <= n ? 1.0 : f;
+        if (w == 0.0) continue;
+        soma += w * (emX ? float(mascara(q + ivec2(d, 0))) : float(bytes4(texelFetch(mX, naCamada(q + ivec2(0, d)), 0)).r));
+    }
+    return int(floor(soma / (2.0 * r + 1.0) + 0.5));
+}
+
+// ---- contas de 8 bits do plugin ---------------------------------------------------------------
+int div255(int t) { t += 128; return (t + (t >> 8)) >> 8; }          // m·a/255 arredondado
+int truncDiv(int a, int b) { int q = abs(a) / b; return a < 0 ? -q : q; }   // divisão truncada (b > 0)
+int luma(ivec3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
+
+ivec3 ajustaLuma(ivec3 d, int lq) {
+    int l2 = (d.r * 77 + d.g * 150 + d.b * 29) >> 8;
+    return clamp(d + ivec3(lq - l2), ivec3(0), ivec3(255));
+}
+
+// 0x180425fe0: o croma de P com a luma de Q.
+ivec3 setLum(ivec3 P, ivec3 Q) {
+    int lp = luma(P), lq = luma(Q);
+    ivec3 d = P - ivec3(lp);
+    float s = 1.0;
+    for (int i = 0; i < 3; i++) {
+        float si = 1.0;
+        if (d[i] + lq > 255) si = float(255 - lq) / float(d[i]);
+        else if (d[i] + lq < 0) si = float(-lq) / float(d[i]);
+        s = min(s, si);
+    }
+    if (s < 1.0) d = ivec3(trunc(s * vec3(d)));
+    return ajustaLuma(d, lq);
+}
+
+int amplitude(ivec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+
+// Hue e Saturation: o croma D escalado pela razão (limitada com 256 − luma) e a luma lq.
+ivec3 setSat(ivec3 D, int lq, float razao) {
+    float r = razao;
+    if (r > 1.0) {
+        for (int i = 0; i < 3; i++) {
+            if (D[i] == 0) continue;
+            float inv = 1.0 / float(D[i]);
+            float lim = D[i] > 0 ? (256.0 - float(lq)) * inv : -(inv * float(lq));
+            r = min(r, lim);
+        }
+    }
+    return ajustaLuma(ivec3(trunc(vec3(D) * r)), lq);
+}
+
+ivec3 matiz(ivec3 P, ivec3 Q) {           // 0x1804261c0: P = o wrap, Q = a camada
+    int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
+    if (sp == 0) return ivec3(lq);
+    return setSat(P - ivec3(luma(P)), lq, float(sq) / float(sp));
+}
+
+ivec3 saturacao(ivec3 P, ivec3 Q) {       // 0x180426450: P = o wrap, Q = a camada
+    int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
+    if (sq == 0) return Q;
+    return setSat(Q - ivec3(lq), lq, float(sp) / float(sq));
+}
+
+int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wrap
+    if (A > 128) {
+        int s = 255 - ((((255 - B) * (255 - A)) * 0x8081) >> 23);
+        return truncDiv((s - B) * (A - 128), 127) + B;
+    }
+    int u = ((B * A) >> 8) - B;
+    return truncDiv(u * (128 - A), 128) + B;
+}
+
+// 0x18042a480: a = o wrap, b = a camada (os dois em bytes). Devolve a cor e se a camada inteira foi escolhida.
+ivec3 modo(int m, ivec3 a, ivec3 b, out bool pegaB) {
+    pegaB = false;
+    if (m == 0) return max(a, b);                                          // Lighten
+    if (m == 1) return min(a, b);                                          // Darken
+    if (m == 2) return ivec3(a.r == 255 ? b.r : (b.r * a.r) >> 8, a.g == 255 ? b.g : (b.g * a.g) >> 8,
+                             a.b == 255 ? b.b : (b.b * a.b) >> 8);         // Multiply
+    if (m == 3) return ivec3(255) - ((((ivec3(0x80007f) - b * 0x8081) * (ivec3(255) - a)) >> 23) & 255);   // Screen
+    if (m == 4) return abs(a - b);                                         // Difference
+    if (m == 5 || m == 23) {                                               // Lighter (e o Boost Eq Power −, medido)
+        pegaB = (b.r * 77 + b.g * 150 + b.b * 29) > (a.r * 77 + a.g * 150 + a.b * 29);
+        return pegaB ? b : a;
+    }
+    if (m == 6) {                                                          // Darker
+        pegaB = (b.r * 77 + b.g * 150 + b.b * 29) < (a.r * 77 + a.g * 150 + a.b * 29);
+        return pegaB ? b : a;
+    }
+    if (m == 7) return min(ivec3(255), (b * a) >> 6);                      // Scale Multiply
+    if (m == 8) return ivec3(255) - min(ivec3(255), (((ivec3(255) - b) * (ivec3(255) - a)) * 0x8081) >> 22);   // Scale Screen
+    if (m == 9) return min(ivec3(255), abs(2 * (b - a)));                  // Difference X 2
+    if (m == 10) return min(ivec3(255), abs(4 * (b - a)));                 // Difference X 4
+    if (m == 11) return min(ivec3(255), a + b);                            // Add
+    if (m == 12) return (a - b) & 255;                                     // Subtract (com a volta do byte)
+    if (m == 13) {                                                         // Overlay
+        ivec3 r;
+        for (int i = 0; i < 3; i++) r[i] = b[i] < 128 ? (b[i] * a[i]) >> 7 : 255 - (((255 - b[i]) * (255 - a[i])) >> 7);
+        return r;
+    }
+    if (m == 14) return ((((a - ivec3(128)) * (ivec3(255) - b) * b) >> 15) + b) & 255;   // Soft Light
+    if (m == 15) return ivec3(luzDura(b.r, a.r), luzDura(b.g, a.g), luzDura(b.b, a.b)); // Hard Light
+    if (m == 16) return matiz(a, b);                                       // Hue
+    if (m == 17) return saturacao(a, b);                                   // Saturation
+    if (m == 18) return setLum(a, b);                                      // Color
+    if (m == 19) return setLum(b, a);                                      // Lightness
+    if (m == 24) {                                                         // Boost Bias: o mais próximo (Lighter)
+        pegaB = (b.r * 77 + b.g * 150 + b.b * 29) > (a.r * 77 + a.g * 150 + a.b * 29);
+        return pegaB ? b : a;
+    }
+    if (m == 25) return ivec3(a.r == 255 ? b.r : (b.r * a.r) >> 8, a.g == 255 ? b.g : (b.g * a.g) >> 8,
+                              a.b == 255 ? b.b : (b.b * a.b) >> 8);        // 50 50 Mix: o mais próximo (Multiply)
+    return a;                                                              // 21, 22 (medido) e 23: Normal
+}
+
+// 0x180426d00: Y sobre X em 8 bits.
+ivec4 sobre(ivec4 X, ivec4 Y) {
+    if (Y.a == 0) return X;
+    if (Y.a == 255 || X.a == 0) return Y;
+    if (X.a == 255) return ivec4(X.rgb + (((Y.rgb - X.rgb) * Y.a) >> 8), 255);
+    int k = ((255 - Y.a) * X.a) >> 8;
+    int ao = Y.a + k;
+    int inv = 0x10000 / ao;
+    return ivec4(((Y.rgb * Y.a + X.rgb * k) * inv) >> 16, ao);
+}
+
+// 0x1804283b0: M = o resultado do modo, X = o wrap, Y = a camada. Só a cor (o alfa sai o da camada).
+ivec3 compor(ivec4 M, ivec4 X, ivec4 Y) {
+    if (X.a == 0) return Y.rgb;
+    if (Y.a == 0) return X.rgb;
+    if (Y.a == 255) return X.a == 255 ? M.rgb : (Y.rgb + (((M.rgb - Y.rgb) * X.a) >> 8)) & 255;
+    ivec4 o68 = sobre(Y, ivec4(M.rgb, X.a));
+    if (X.a > Y.a) {
+        ivec4 o20 = sobre(Y, X);
+        int f = int(trunc(float(abs(Y.a - X.a)) * 255.0 / float(X.a)));
+        return (o68.rgb + (((o20.rgb - o68.rgb) * f) >> 8)) & 255;
+    }
+    return o68.rgb;
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN));
+
+    if (acPass == 0) {
+        fragColor = (fora || !temFundo()) ? vec4(0.0) : cor4(fundoEmX(q));
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = (fora || !temFundo()) ? vec4(0.0) : vec4(float(mascaraEm(q, true)) / 255.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    // ---- 2: o resto ----
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora || !temFundo()) {          // sem fundo o BCC desenha um aviso de erro; aqui a camada passa como está
+        fragColor = s;
+        return;
+    }
+    ivec4 A = bytes4(s);               // a camada (cor reta)
+    ivec4 B = fundoEmY(q);             // o fundo desfocado
+
+    // Lightness (0x1809fe9a0): o valor chega ao renderer como float(double(float(L·100))·0,01)
+    float L = lightness;
+    if (abs(L) > 0.01) {
+        int k = int(65536.0 - abs(L) * 32768.0);
+        if (L < 0.0) B.rgb = (B.rgb * k + 0x8000) >> 16;
+        else B.rgb = ivec3(255) - (((ivec3(255) - B.rgb) * k + 0x8000) >> 16);
+    }
+
+    int m = mascaraEm(q, false);
+    B.a = div255(m * B.a);             // o wrap
+
+    ivec4 R;
+    if (view == 0) {
+        bool pegaB;
+        ivec3 c = modo(applyMode, B.rgb, A.rgb, pegaB);
+        ivec4 M = pegaB ? A : ivec4(c, B.a);
+        R = ivec4(compor(M, B, A), A.a);
+    } else {
+        int a = min(B.a, A.a);
+        R = ivec4(B.rgb, a);
+        if (view == 2) {
+            R.rgb = a == 0 ? ivec3(0) : (a < 255 ? ivec3(div255(R.r * a), div255(R.g * a), div255(R.b * a)) : R.rgb);
+            R.a = 255;
+        }
+    }
+
+    // Mix with Original (BlendFramesRenderer, 0x1804098d0): pesos em 1/1024 na cor pré-multiplicada (não medido)
+    if (mixWithOriginal > 0.1) {
+        int w = int((mixWithOriginal / 100.0) * 1024.0);
+        ivec3 pr = ivec3(div255(R.r * R.a), div255(R.g * R.a), div255(R.b * R.a));
+        ivec3 po = ivec3(div255(A.r * A.a), div255(A.g * A.a), div255(A.b * A.a));
+        int ao = (A.a * w + R.a * (1024 - w)) >> 10;
+        ivec3 pc = (po * w + pr * (1024 - w)) >> 10;
+        R = ivec4(ao > 0 ? min(ivec3(255), (pc * 255 + ao / 2) / ao) : ivec3(0), ao);
+    }
+    fragColor = cor4(R);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.bulge" name="Bulge and Pinch" desc="A lens-style spherical magnification. Positive bulges outward, negative pinches inward." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/bulge.png"
+        tags="distort,bulge,pinch,lens,magnify" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Bulge" />
+<spinner id="centerX" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre X" />
+<spinner id="centerY" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre Y" />
+<spinner id="radius" default="0.45" min="0.02" max="1.5" step="0.01" label="Radius" />
+<spinner id="amount" default="0.50" min="-1.0" max="1.0" step="0.01" label="Amount" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 p = (uv - vec2(centerX, centerY)) * vec2(ar, 1.0);
+  float r = length(p);
+  float t = clamp(r / max(radius, 1e-4), 0.0, 1.0);
+  float f = 1.0 - amount * (1.0 - t * t) * mixAmt;
+  vec2 q = p * f;
+  uv = q / vec2(ar, 1.0) + vec2(centerX, centerY);
+  gl_FragColor = texture2DCv(inputImg.texture, uv);
+}
+]]></shader>
+</effect>

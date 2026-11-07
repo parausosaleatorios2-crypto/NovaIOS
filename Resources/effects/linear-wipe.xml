@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cortina linear.
+
+  Uma transição, e o jeito certo de fazer transição neste motor: o efeito só
+  mexe no ALFA. Quem revela o que está embaixo é o compositor, que já sabe
+  compor camada sobre camada. Um efeito de transição que tentasse misturar as
+  duas imagens por conta própria estaria refazendo — pior — o que o motor já faz.
+
+  Anime "Revelado" de 0 a 100 e está pronto.
+-->
+<effect
+    id="nova.effect.linearwipe"
+    name="Cortina linear"
+    name-en="Linear Wipe"
+    desc="Revela ou esconde a camada por uma linha reta em qualquer ângulo."
+    desc-en="Reveals or hides along a straight edge."
+    category="matte"
+    tags="transicao,cortina,wipe,revelar,varredura,alfa">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Segue a convenção do After Effects: 0 = camada inteira visível,
+             100 = camada toda escondida. Anime 0 → 100 para a camada SAIR, ou
+             100 → 0 para ela ENTRAR. Chamar isto de "revelado" seria ambíguo:
+             metade das pessoas leria ao contrário. -->
+        <slider id="completion" label="Transição (%)"
+                default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0,50.0,100.0" />
+
+        <slider id="angle" label="Ângulo"
+                default="90.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,90.0,-90.0,180.0" />
+
+        <slider id="feather" label="Suavidade da borda"
+                default="0.02" min="0.0" max="0.5" step="0.005" snap="0.0" />
+
+        <switch id="invertWipe" label="Inverter" default="false" />
+    </params>
+
+    <!--
+      Só para a MINIATURA do catálogo.
+
+      O padrão deste efeito é neutro de propósito: aplicá-lo não pode mudar a
+      imagem antes de a pessoa mexer em alguma coisa. Mas uma miniatura neutra
+      sai idêntica à imagem de amostra e diz "este efeito não faz nada".
+    -->
+    <preview amostra="personagem">
+        <set param="completion" value="50.0" ate="0.0" />
+        <set param="feather" value="0.06" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float rad = radians(angle);
+    vec2 axis = vec2(cos(rad), sin(rad));
+    vec2 centred = (acScreenNorm - 0.5) * vec2(acAspect, 1.0);
+
+    // O alcance do retângulo naquela direção. Sem normalizar por ele, a mesma
+    // porcentagem revelaria mais na diagonal que na horizontal — e a cortina
+    // pareceria acelerar sozinha ao girar o ângulo.
+    float support = max(0.5 * (acAspect * abs(axis.x) + abs(axis.y)), 0.0001);
+    float position = (dot(centred, axis) + support) / (2.0 * support);
+
+    float cut = completion * 0.01;
+    float soft = max(feather, 0.0005);
+    float mask = smoothstep(cut - soft, cut + soft, position);
+
+    if (invertWipe) mask = 1.0 - mask;
+
+    fragColor = vec4(color.rgb, color.a * mask);
+}
+
+    ]]></shader>
+</effect>

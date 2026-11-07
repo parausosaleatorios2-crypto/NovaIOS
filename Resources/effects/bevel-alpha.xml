@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BEVEL ALPHA (AE) — o Bevel Alpha nativo do After Effects (ADBE Bevel Alpha)
+  ============================================================================
+
+  Pedido do snow (23/10/2026): "faça o efeito bevel alpha 100% igual o do after effects".
+  O plugin Bevel_Alpha.aex (37 KB) é CPU-only (só importa KERNEL32/MSVCP140/VCRUNTIME140 —
+  nenhum kernel de GPU). O algoritmo foi DERIVADO do bevel.xml da Nova (que usa a mesma ideia
+  de coroa de 8 amostras que o plugin emprega) e ainda não foi validado pixel a pixel contra o
+  AE. Ver tools/bevelalpha/benchmark/ para a infraestrutura de medição.
+
+  O QUE O AE FAZ (e este shader aproxima):
+
+  1. Para cada pixel DENTRO do alfa, lê o alfa em 8 direções ao redor, espaçadas 45°, a
+     uma distância de `edgeThickness` pixels ("coroa de 8"). A média das leituras dá uma rampa
+     0→1 da borda para o interior; a soma vetorial delas, com sinal invertido, aponta a normal
+     da superfície ("para fora").
+  2. A luz vem de `lightAngle` graus. O produto interno (normal · luz) dá o brilho de um lado
+     e a sombra do outro.
+  3. O brilho mescla para `lightColor`; a sombra mescla para preto. Ambos escalados por
+     `lightIntensity`. A fórmula da inclinação é a triangular do bevel.xml da Nova.
+
+  O QUE FALTA MEDIR (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md):
+  - Fator exato do scaling da inclinação (agora: inclinação pico = lightIntensity).
+  - Se o AE usa realmente o perfil triangular (1 − |2·rampa − 1|) ou outro.
+  - O lado sombra: preto puro ou algo diferente de zero.
+  - Amostragem: o AE pode usar mais ou menos que 8 pontos, ou pesos diferentes.
+  - Tratamento do alfa na borda (sub-pixel, pré-multiplicação).
+
+  CUSTO: 9 leituras de textura por pixel (1 centro + 8 coroa).
+-->
+<effect
+    id="nova.effect.aebevelalpha"
+    name="Bevel Alpha (AE)"
+    name-en="Bevel Alpha (AE)"
+    desc="O Bevel Alpha do After Effects: chanfro iluminado na borda do alfa da camada, com direção e intensidade ajustáveis."
+    desc-en="After Effects' Bevel Alpha: a lit bevel on the layer's alpha edge, with adjustable light direction and intensity."
+    category="stylize"
+    tags="bisel,chanfro,relevo,borda,perspectiva,bevel alpha,after effects,adbe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="edgeThickness" label="Espessura da borda"
+                default="2.0" min="0.0" max="100.0" step="0.5" snap="2.0" />
+        <slider id="lightAngle" label="Ângulo da luz"
+                default="135.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="135.0" />
+        <color id="lightColor" label="Cor da luz" default="#FFFFFFFF" />
+        <slider id="lightIntensity" label="Intensidade da luz"
+                default="0.5" min="0.0" max="1.0" step="0.01" type="percent" snap="0.5,1.0" />
+    </params>
+
+    <preview amostra="figura">
+        <set param="edgeThickness" value="8.0" />
+        <set param="lightIntensity" value="0.8" />
+    </preview>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+// Converte da fase (x·aspect, y) de volta para UV (x, y).
+vec2 paraUv(vec2 v) { return vec2(v.x / max(acAspect, 1e-4), v.y); }
+
+/**
+ * Coroa de 8 amostras ao redor de `ph` no raio `raio` (em unidades de fase,
+ * onde 1 = altura da imagem). Devolve (rampa, normal.x, normal.y):
+ *   rampa  — 1 no interior plano, ~0 exatamente na borda, 0 fora
+ *   normal — direção "para fora" da superfície do chanfro (normalizada)
+ */
+vec3 bordaEm(vec2 ph, float raio) {
+    float media = texture(inputImg, paraUv(ph)).a * 0.2;
+    vec2 soma = vec2(0.0);
+    for (int i = 0; i < 8; i++) {
+        float ang = float(i) * 0.78539816; // PI/4
+        vec2 dir = vec2(cos(ang), sin(ang));
+        float a = texture(inputImg, paraUv(ph + dir * raio)).a;
+        media += a * 0.1;
+        soma -= dir * a;
+    }
+    float comp = length(soma);
+    return vec3(media, comp > 1e-5 ? soma / comp : vec2(0.0));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    if (original.a <= 0.0) { fragColor = original; return; }
+
+    vec2 ph = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+
+    // edgeThickness em pixels → raio em unidades de fase (1 = altura)
+    float raio = max(edgeThickness, 0.5) * acTexelSize.y;
+
+    vec3 borda = bordaEm(ph, raio);
+    float rampa  = clamp(borda.x, 0.0, 1.0);
+    vec2  normal = borda.yz;
+
+    // Inclinação triangular: 0 no platô e na borda dura, máximo na meia-borda.
+    float inclinacao = (1.0 - abs(rampa * 2.0 - 1.0)) * lightIntensity;
+
+    float ang = lightAngle * PI / 180.0;
+    vec2 luz = vec2(cos(ang), -sin(ang));
+    float voltado = dot(normal, luz);
+
+    float claro  = clamp(max( voltado, 0.0) * inclinacao, 0.0, 1.0);
+    float escuro = clamp(max(-voltado, 0.0) * inclinacao, 0.0, 1.0);
+
+    vec3 cor = original.rgb;
+    cor = mix(cor, lightColor.rgb, claro);
+    cor = mix(cor, vec3(0.0),      escuro);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

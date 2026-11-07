@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC COMPOSITE — o CC Composite do After Effects (Cycore), medido (0.462.0)
+  ============================================================================
+
+  Devolve a camada ORIGINAL — como ela era antes do primeiro efeito — por cima (ou por baixo, ou
+  mesclada) do resultado dos efeitos que vêm antes deste na lista. A posição na lista importa.
+  O motor entrega a camada crua pela textura `src="original"` (ver `TextureSource.ORIGINAL`).
+
+  Pedido do snow (09/10/2026): "faz o cc composite agora". Medido no AE (tools/cccomposite/benchmark):
+  o plugin (`Composite.aex`, 32 KB) entrega a conta ao próprio AE (`AEGP_TransferRect`), então os modos
+  são os de camada do AE, com o ORIGINAL por cima e o RESULTADO como fundo:
+
+  - o menu tem 34 modos (os 41 itens menos 7 separadores), na ordem do AE;
+  - os separáveis "novos" (Darken … Exclusion) fazem a conta nas cores RETAS, com Porter-Duff:
+    (1 − as)·pb + (1 − ab)·ps + ab·as·f(cb, cs); a união é o alfa;
+  - Add, Classic Difference e Classic Color Dodge fazem a conta nas cores PRÉ-MULTIPLICADAS;
+  - os "Classic" e o Vivid Light testam o extremo do original antes (b = 0, s = 1 → 1); o Classic Color Burn
+    queima a cor pré-multiplicada com o original clareado pelo próprio alfa: união − (ab − pb)/(1 − (1 − cs)·as);
+  - Hue/Saturation/Color/Luminosity: o fundo da fórmula é o resultado SOBRE o original (cor reta), e a saída
+    mistura esse fundo com a fórmula pelo alfa do original;
+  - o item "Linear Light" SOMA (b + s), como o Add — é o que o AE faz, medido;
+  - Hard Mix: com s < 0,5 basta b + s ≥ 1; com s > 0,5 precisa b + s > 1;
+  - Stencil/Silhouette (Alpha e Luma, luma 0,299/0,587/0,114): a cor do resultado, o alfa vezes o do original
+    (ou 1 − ele); Add Alpha: o fundo entra até completar o alfa; Luminescent Premul: o original conta como já
+    pré-multiplicado;
+  - Opacity: a % exata (passos de 1/32768);
+  - RGB Only: a cor da composição com o alfa do RESULTADO — nos seis modos de alfa não muda nada; no Copy a cor
+    é sempre a do original.
+
+  Erro do modelo contra o AE (420 casos, 16 bpc): 0,02 nível (de 255) quase sempre; o pior pixel, 0,89.
+
+  O QUE NÃO ENTROU / NÃO FECHOU: ver docs/PENDENCIAS-DOS-EFEITOS-AE.md (CC Composite).
+-->
+<effect
+    id="nova.effect.cccomposite"
+    name="CC Composite"
+    name-en="CC Composite"
+    desc="Junta a camada original, antes dos efeitos, ao resultado dos efeitos de cima, com os modos do After Effects."
+    desc-en="Composites the untouched layer with the result of the effects above it, with After Effects' modes."
+    category="stylize"
+    tags="cc composite,composite,original,compor,juntar,brilho,glow,na frente,atras,estencil,silhueta,in front,behind">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="originalImg" src="original" />
+
+        <slider id="opacity" label="Opacity" default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <selector id="compositeOriginal" label="Composite Original" default="2"
+                  options="Copy|Behind|In front|Darken|Multiply|Linear Burn|Color Burn|Classic Color Burn|Add|Lighten|Screen|Linear Dodge|Color Dodge|Classic Color Dodge|Overlay|Soft Light|Hard Light|Linear Light|Vivid Light|Pin Light|Hard Mix|Difference|Classic Difference|Exclusion|Hue|Saturation|Color|Luminosity|Stencil Alpha|Stencil Luma|Silhouette Alpha|Silhouette Luma|Add Alpha|Luminescent Premul" />
+        <switch id="rgbOnly" label="RGB Only" default="false" />
+    </params>
+
+    <shader><![CDATA[
+// Os índices do menu (o do AE sem os separadores).
+const int COPY = 0, BEHIND = 1, IN_FRONT = 2, DARKEN = 3, MULTIPLY = 4, LINEAR_BURN = 5, COLOR_BURN = 6,
+          CLASSIC_BURN = 7, ADD = 8, LIGHTEN = 9, SCREEN = 10, LINEAR_DODGE = 11, COLOR_DODGE = 12,
+          CLASSIC_DODGE = 13, OVERLAY = 14, SOFT_LIGHT = 15, HARD_LIGHT = 16, LINEAR_LIGHT = 17, VIVID_LIGHT = 18,
+          PIN_LIGHT = 19, HARD_MIX = 20, DIFFERENCE = 21, CLASSIC_DIFFERENCE = 22, EXCLUSION = 23, HUE = 24,
+          SATURATION = 25, COLOR = 26, LUMINOSITY = 27, STENCIL_ALPHA = 28, STENCIL_LUMA = 29,
+          SILHOUETTE_ALPHA = 30, SILHOUETTE_LUMA = 31, ADD_ALPHA = 32, LUMINESCENT = 33;
+
+const vec3 LUMA = vec3(0.299, 0.587, 0.114);
+
+// O dodge/burn "novos" testam o fundo antes; os "Classic" (e o Vivid Light) testam o original antes.
+float dodge(float b, float s)  { return b <= 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
+float burn(float b, float s)   { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+float dodgeC(float b, float s) { return s >= 1.0 ? 1.0 : (b <= 0.0 ? 0.0 : min(1.0, b / (1.0 - s))); }
+float burnC(float b, float s)  { return s <= 0.0 ? 0.0 : (b >= 1.0 ? 1.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+
+float macia(float b, float s) {
+    if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
+    float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
+    return b + (2.0 * s - 1.0) * (d - b);
+}
+
+/** Os separáveis, nas cores retas: b = o resultado (fundo), s = o original (por cima). */
+float canal(int m, float b, float s) {
+    if (m == DARKEN) return min(b, s);
+    if (m == MULTIPLY) return b * s;
+    if (m == LINEAR_BURN) return max(b + s - 1.0, 0.0);
+    if (m == COLOR_BURN) return burn(b, s);
+    if (m == LIGHTEN) return max(b, s);
+    if (m == SCREEN) return 1.0 - (1.0 - b) * (1.0 - s);
+    if (m == LINEAR_DODGE || m == LINEAR_LIGHT) return min(b + s, 1.0);   // medido: "Linear Light" soma
+    if (m == COLOR_DODGE) return dodge(b, s);
+    if (m == OVERLAY) return b <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
+    if (m == SOFT_LIGHT) return macia(b, s);
+    if (m == HARD_LIGHT) return s <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
+    if (m == VIVID_LIGHT) return s <= 0.5 ? burnC(b, 2.0 * s) : dodgeC(b, 2.0 * s - 1.0);
+    if (m == PIN_LIGHT) return s <= 0.5 ? min(b, 2.0 * s) : max(b, 2.0 * s - 1.0);
+    if (m == HARD_MIX) return (s < 0.5 ? b + s >= 1.0 - 1e-6 : b + s > 1.0 + 1e-6) ? 1.0 : 0.0;
+    if (m == DIFFERENCE) return abs(b - s);
+    if (m == EXCLUSION) return b + s - 2.0 * b * s;
+    return s;
+}
+
+// Hue/Saturation/Color/Luminosity (as do W3C, luma 0,299/0,587/0,114).
+vec3 cortarCor(vec3 c) {
+    float l = dot(c, LUMA), n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
+    if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-12);
+    if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-12);
+    return c;
+}
+vec3 comLuma(vec3 c, float l) { return cortarCor(c + (l - dot(c, LUMA))); }
+float satDe(vec3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+vec3 comSat(vec3 c, float s) {
+    float n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
+    return x > n ? (c - n) * s / (x - n) : vec3(0.0);
+}
+vec3 componente(int m, vec3 b, vec3 s) {
+    if (m == HUE) return comLuma(comSat(s, satDe(b)), dot(b, LUMA));
+    if (m == SATURATION) return comLuma(comSat(b, satDe(s)), dot(b, LUMA));
+    if (m == COLOR) return comLuma(s, dot(b, LUMA));
+    return comLuma(b, dot(s, LUMA));
+}
+
+void main() {
+    vec4 res = texture(inputImg, acScreenNorm);
+    vec4 org = texture(originalImg, acScreenNorm);
+    int m = compositeOriginal;
+    float q = floor(clamp(opacity, 0.0, 1.0) * 32768.0 + 0.5) / 32768.0;
+    vec3 cb = res.rgb, cs = org.rgb;
+    float ab = res.a, as_ = org.a * q;
+    vec3 pb = cb * ab, ps = cs * as_;
+    float uni = ab + as_ - ab * as_;
+
+    if (m == COPY) { fragColor = vec4(cs, rgbOnly ? ab : as_); return; }
+
+    vec3 cor;
+    float a = uni;
+    bool deAlfa = false;
+    if (m == BEHIND) cor = pb + (1.0 - ab) * ps;
+    else if (m == IN_FRONT) cor = ps + (1.0 - as_) * pb;
+    else if (m == ADD) cor = min(pb + ps, vec3(uni));
+    else if (m == CLASSIC_DIFFERENCE) cor = abs(pb - ps);
+    else if (m == CLASSIC_DODGE) cor = min(vec3(dodgeC(pb.r, ps.r), dodgeC(pb.g, ps.g), dodgeC(pb.b, ps.b)), vec3(uni));
+    else if (m == CLASSIC_BURN) {
+        // burn nas cores pré-multiplicadas, com o original clareado pelo próprio alfa: s' = 1 − (1 − cs)·as
+        vec3 s2 = 1.0 - (1.0 - cs) * as_;
+        vec3 q2 = (ab - pb) / max(s2, vec3(1e-12));
+        cor = vec3(s2.r <= 0.0 ? 0.0 : uni - min(uni, q2.r),
+                   s2.g <= 0.0 ? 0.0 : uni - min(uni, q2.g),
+                   s2.b <= 0.0 ? 0.0 : uni - min(uni, q2.b));
+    }
+    else if (m >= HUE && m <= LUMINOSITY) {
+        // o fundo da fórmula é o RESULTADO SOBRE O ORIGINAL (cor reta); a saída mistura com ele pelo alfa do original
+        vec3 bl = uni > 0.0 ? (pb + (1.0 - ab) * ps) / uni : vec3(0.0);
+        cor = uni * mix(bl, clamp(componente(m, bl, cs), 0.0, 1.0), as_);
+    }
+    else if (m >= STENCIL_ALPHA && m <= SILHOUETTE_LUMA) {
+        float k = (m == STENCIL_ALPHA || m == SILHOUETTE_ALPHA) ? as_ : dot(cs, LUMA) * as_;
+        a = ab * ((m == STENCIL_ALPHA || m == STENCIL_LUMA) ? k : 1.0 - k);
+        cor = cb * a;
+        deAlfa = true;
+    }
+    else if (m == ADD_ALPHA) {
+        float k = ab > 0.0 ? min(1.0, (1.0 - as_) / ab) : 0.0;
+        cor = ps + pb * k;
+        a = as_ + ab * k;
+        deAlfa = true;
+    }
+    else if (m == LUMINESCENT) {
+        cor = min(cs * q + pb * (1.0 - as_), vec3(1.0));   // o original conta como já pré-multiplicado
+        deAlfa = true;
+    }
+    else {
+        vec3 f = vec3(canal(m, cb.r, cs.r), canal(m, cb.g, cs.g), canal(m, cb.b, cs.b));
+        cor = (1.0 - as_) * pb + (1.0 - ab) * ps + ab * as_ * clamp(f, 0.0, 1.0);
+    }
+
+    vec3 reto = a > 0.0 ? clamp(cor / a, 0.0, 1.0) : vec3(0.0);
+    // RGB Only: a cor da composição, o alfa do resultado — nos modos que SÃO de alfa não muda nada.
+    if (rgbOnly && !deAlfa) a = ab;
+    fragColor = vec4(reto, a);
+}
+    ]]></shader>
+</effect>

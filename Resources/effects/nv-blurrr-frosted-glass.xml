@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.frostedglass"
+    name="Vidro Fosco (Blurrr)"
+    name-en="Frosted Glass (Blurrr)"
+    desc="Ruído de deslocamento + desfoque — janela embaçada."
+    desc-en="Jittered sampling plus blur — steamed-up window."
+    category="blur"
+    tags="blurrr,frosted,glass,vidro,fosco,noise,desfoque,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+        <slider id="blur"   label="Desfoque" default="4.0"  min="0.0" max="30.0" passo="0.5" />
+        <slider id="jitter" label="Granulado" default="0.006" min="0.0" max="0.03" passo="0.0005" />
+        <slider id="seed"   label="Semente"   default="1.0"  min="0.0" max="20.0" passo="0.5" />
+    </params>
+
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+const int N = 9;
+const float OFF[9] = float[9](-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0);
+const float WT[9]  = float[9](0.028,0.070,0.133,0.196,0.228,0.196,0.133,0.070,0.028);
+
+void main() {
+    vec2 d = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    float r = blur * acEscalaDePixel;
+    vec2 passo = d * acTexelSize * r;
+
+    vec2 j = vec2(
+        hash21(acScreenNorm * acResolution + vec2(seed, 0.0)) - 0.5,
+        hash21(acScreenNorm * acResolution + vec2(0.0, seed + 7.0)) - 0.5
+    ) * jitter;
+
+    vec4 soma = vec4(0.0);
+    float pesoTot = 0.0;
+    for (int i = 0; i < N; i++) {
+        vec2 u = acScreenNorm + passo * OFF[i] + j;
+        vec4 c = (acPass == 0) ? texture(inputImg, u) : texture(hblur, u);
+        soma += c * WT[i];
+        pesoTot += WT[i];
+    }
+    fragColor = soma / pesoTot;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   HOLOGRAMA
+  ============================================================================
+
+  Transforma a camada em projeção holográfica ciano-azul: linhas de varredura,
+  flicker aleatório, borda brilhando, interferência horizontal. O visual de
+  Star Wars / Blade Runner, em 1 passe.
+
+  ============================================================================
+   QUATRO CAMADAS NO MESMO PIXEL
+  ============================================================================
+
+  Holograma é a soma de quatro assinaturas visuais que acontecem juntas:
+
+   1. **Scanlines:** linhas horizontais escuras alternando com claras, numa
+      frequência fixa pelo eixo Y.
+   2. **Flicker:** a projeção inteira pisca em intensidades aleatórias,
+      traindo a "fonte instável".
+   3. **Interferência:** faixas horizontais mais largas correndo lentamente
+      pela tela, com opacidade variável.
+   4. **Borda viva:** Sobel na luma destaca o contorno em azul, como se a
+      silhueta estivesse brilhando.
+
+  Tudo tingido na mesma cor (`hologramColor`) pra parecer MONOCROMÁTICO na
+  cor do holograma, e aditivamente somado por cima do fundo (ou com o original
+  escurecido pelo `darken`).
+-->
+<effect
+    id="nova.effect.hologram"
+    name="Holograma"
+    name-en="Hologram"
+    desc="Projeção holográfica com scanlines, flicker, interferência e borda viva."
+    desc-en="Holographic projection with scanlines, flicker, interference and edge glow."
+    category="stylize"
+    tags="holograma,hologram,star wars,blade runner,ficção,scanlines,ciano,projeção">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="hologramColor" label="Cor do holograma" default="#66DDFFFF" />
+        <slider id="scanlineDensity" label="Densidade das scanlines"
+                default="200.0" min="20.0" max="800.0" step="5.0" snap="0.0" />
+        <slider id="scanlineStrength" label="Intensidade das scanlines"
+                default="0.6" min="0.0" max="1.0" step="0.02" snap="0.0" />
+        <slider id="flickerStrength" label="Flicker"
+                default="0.15" min="0.0" max="0.6" step="0.01" snap="0.0" />
+        <slider id="interferenceSpeed" label="Velocidade da interferência"
+                default="0.4" min="0.0" max="3.0" step="0.05" snap="0.0" />
+        <slider id="edgeStrength" label="Força da borda"
+                default="2.0" min="0.0" max="6.0" step="0.1" snap="0.0" />
+        <slider id="darken" label="Escurecer o original"
+                default="0.7" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <preview>
+        <set param="flickerStrength" value="0.3" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash1(float x) {
+    return fract(sin(x * 127.1 + float(seed) * 13.7) * 43758.5453);
+}
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Sobel: magnitude do gradiente da luma. */
+float sobelAqui(vec2 uv) {
+    vec2 px = 1.0 / vec2(textureSize(inputImg, 0));
+    float tl = luma(texture(inputImg, uv + vec2(-px.x,  px.y)).rgb);
+    float t  = luma(texture(inputImg, uv + vec2( 0.0,   px.y)).rgb);
+    float tr = luma(texture(inputImg, uv + vec2( px.x,  px.y)).rgb);
+    float l  = luma(texture(inputImg, uv + vec2(-px.x,  0.0 )).rgb);
+    float r  = luma(texture(inputImg, uv + vec2( px.x,  0.0 )).rgb);
+    float bl = luma(texture(inputImg, uv + vec2(-px.x, -px.y)).rgb);
+    float b  = luma(texture(inputImg, uv + vec2( 0.0,  -px.y)).rgb);
+    float br = luma(texture(inputImg, uv + vec2( px.x, -px.y)).rgb);
+    float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+    float gy = -tl - 2.0 * t - tr + bl + 2.0 * b + br;
+    return length(vec2(gx, gy));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // Monocromatiza o original pela luma e tinge na cor do holograma.
+    float L = luma(original.rgb);
+    vec3 monocromado = hologramColor.rgb * L;
+
+    // 1. Scanlines: linhas finas horizontais pela densidade.
+    float scanline = 0.5 + 0.5 * sin(acScreenNorm.y * scanlineDensity);
+    scanline = mix(1.0, scanline, scanlineStrength);
+    monocromado *= scanline;
+
+    // 2. Flicker: brilho global oscila.
+    float quadro = floor(acTime * 15.0);
+    float pisca = 1.0 + (hash1(quadro) - 0.5) * flickerStrength * 2.0;
+    monocromado *= pisca;
+
+    // 3. Interferência: faixas horizontais largas correndo.
+    float faixa = sin(acScreenNorm.y * 8.0 - acTime * interferenceSpeed * 6.0);
+    float peso = smoothstep(0.7, 1.0, faixa);
+    monocromado *= mix(1.0, 1.4, peso);
+
+    // 4. Borda viva: Sobel acrescenta brilho na silhueta.
+    float borda = sobelAqui(acScreenNorm) * edgeStrength;
+    monocromado += hologramColor.rgb * borda;
+
+    // Fundo: o original escurecido (darken); soma com o holograma por cima.
+    vec3 fundo = mix(original.rgb, vec3(0.0), darken);
+    vec3 cor = fundo + monocromado * hologramColor.a;
+    cor = clamp(cor, 0.0, 1.0);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

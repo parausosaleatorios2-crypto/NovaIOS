@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.smokenoise"
+    name="Fumaça Procedural (Ultra Motion)"
+    name-en="Smoke Noise (Ultra Motion)"
+    desc="FBM animado — fumaça subindo sobre a camada."
+    desc-en="Animated FBM — smoke drifting over the layer."
+    category="stylize"
+    tags="ultramotion,smoke,fog,noise,fbm,atmosphere">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="scale"     label="Escala"    default="4.0" min="0.5" max="20.0" step="0.1" />
+        <slider id="speed"     label="Velocidade" default="0.2" min="0.0" max="2.0" step="0.01" />
+        <slider id="density"   label="Densidade" default="0.6" min="0.0" max="1.5" step="0.01" />
+        <color  id="tint"      label="Cor"       default="#ffc8c8c8" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float ruido(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float a = hash21(i), b = hash21(i + vec2(1,0));
+    float c = hash21(i + vec2(0,1)), d = hash21(i + vec2(1,1));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(vec2 p) {
+    float v = 0.0; float a = 0.5;
+    for (int i = 0; i < 5; i++) { v += a * ruido(p); p *= 2.0; a *= 0.5; }
+    return v;
+}
+
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    vec2 p = acScreenNorm * scale + vec2(-acTime * speed * 0.3, -acTime * speed);
+    float n = fbm(p);
+    float alfa = clamp(n * density, 0.0, 1.0);
+    vec3 cor = mix(orig.rgb, tint.rgb, alfa * tint.a);
+    fragColor = vec4(cor, orig.a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.voxel" name="Voxel Look" desc="Quantises the frame into blocks and lights each block from its own height. Reads as a voxel render." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/voxel.png"
+        tags="3d,voxel,blocks,quantize" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Voxel" />
+<spinner id="blocks" default="90.0" min="20.0" max="300.0" step="1.0" label="Block Count" />
+<spinner id="levels" default="6.0" min="2.0" max="24.0" step="1.0" label="Height Levels" type="integer" />
+<spinner id="lightAngle" default="135.0" min="-180.0" max="180.0" step="0.5" label="Light Angle" type="angle" />
+<spinner id="ambient" default="0.45" min="0.0" max="1.0" step="0.01" label="Ambient" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 grid = vec2(blocks * ar, blocks) / max(ar, 1.0);
+  vec2 cell = floor(uv * grid) / grid + 0.5 / grid;
+  vec4 src = texture2DCv(inputImg.texture, cell);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  float n = max(levels, 2.0) - 1.0;
+  float h = floor(l * n + 0.5) / n;
+  float lx = gmLum(texture2DCv(inputImg.texture, cell + vec2(1.0 / grid.x, 0.0)).rgb) - l;
+  float ly = gmLum(texture2DCv(inputImg.texture, cell + vec2(0.0, 1.0 / grid.y)).rgb) - l;
+  float rad = radians(lightAngle);
+  float lam = clamp((lx * cos(rad) + ly * sin(rad)) * 6.0 + ambient + h * 0.5, 0.0, 1.4);
+  vec3 col = c * lam;
+  col = mix(c, col, mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Particle_Rain
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- Fora do catálogo (0.910.0): o shader precisa de os dados de vértice das partículas, que o Node mandava pelo C# e o conversor
+     não trouxe. Não compila em GPU nenhuma; para voltar, portar essa parte. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-particle-rain"
+    name="Particle Rain (NV)"
+    name-en="Particle Rain (NV)"
+    desc="NodeVideo effect 'NodeVideo/Particle_Rain', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Particle_Rain', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="env_tex" src="content" empty="transparent" />
+        <texture id="MainTex" src="content" empty="transparent" />
+        <texture id="CutOut" src="content" empty="transparent" />
+        <slider id="_BumpAmt" label="Bumpamt" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_ColorStrength" label="Colorstrength" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <color id="_TintColor" label="Tintcolor" default="#FFFFFFFF" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+mediump vec2 u_xlat16_1;
+vec3 u_xlat2;
+float u_xlat3;
+void main()
+{
+    u_xlat0.xy = texture(inputImg, vs_TEXCOORD1.xy).xy;
+    u_xlat16_1.xy = u_xlat0.xy * vec2(2.0, 2.0) + vec2(-1.0, -1.0);
+    u_xlat0.xy = u_xlat16_1.xy * vec2(_BumpAmt);
+    u_xlat0.xy = u_xlat0.xy * vs_COLOR0.xx;
+    u_xlat0.xy = u_xlat0.xy * acScreenNorm.ww + acScreenNorm.xy;
+    u_xlat0.xy = u_xlat0.xy / acScreenNorm.ww;
+    u_xlat0.xyz = texture(env_tex, u_xlat0.xy).xyz;
+    u_xlat2.xyz = texture(MainTex, vs_TEXCOORD2.xy).xyz;
+    u_xlat2.xyz = u_xlat2.xyz * vs_COLOR0.xyz;
+    u_xlat2.xyz = u_xlat2.xyz * vec3(vec3(_ColorStrength, _ColorStrength, _ColorStrength));
+    fragColor.xyz = u_xlat2.xyz * _TintColor.xyz + u_xlat0.xyz;
+    u_xlat0.x = texture(CutOut, vs_TEXCOORD3.xy).w;
+    u_xlat0.x = u_xlat0.x * vs_COLOR0.w;
+    u_xlat3 = vs_COLOR0.w * _TintColor.w;
+    fragColor.w = u_xlat0.x * u_xlat3;
+    return;
+}
+    ]]></shader>
+</effect>

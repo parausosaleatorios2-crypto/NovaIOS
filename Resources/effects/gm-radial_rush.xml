@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.radial_rush" name="Radial Rush Pro" desc="Heavy bidirectional zoom smear with radial RGB dispersion, built for impacts, transitions and speed punches." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/radial_rush.png"
+        tags="blur,pro,strong,radial,zoom,transition,speed" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Radial Rush" />
+<spinner id="centerX" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre X" />
+<spinner id="centerY" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre Y" />
+<spinner id="amount" default="0.20" min="0.0" max="0.65" step="0.005" label="Rush Amount" />
+<spinner id="chroma" default="0.35" min="0.0" max="1.0" step="0.01" label="RGB Dispersion" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 16;
+void main(){
+  vec2 baseUv = acScreenNorm;
+  vec2 centre = vec2(centerX, centerY);
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float t = (float(i) / float(TAPS - 1) - 0.5) * amount * mixAmt;
+    vec2 p = centre + (baseUv - centre) * (1.0 + t);
+    acc += texture2DCv(inputImg.texture, p);
+  }
+  acc /= float(TAPS);
+  float a = max(acc.a, 1e-4);
+  vec2 radial = (baseUv - centre) * amount * chroma * mixAmt;
+  float r = texture2DCv(inputImg.texture, baseUv + radial).r / max(texture2DCv(inputImg.texture, baseUv + radial).a, 1e-4);
+  float g = acc.rgb.g / a;
+  float b = texture2DCv(inputImg.texture, baseUv - radial).b / max(texture2DCv(inputImg.texture, baseUv - radial).a, 1e-4);
+  gl_FragColor = vec4(clamp(vec3(r, g, b), 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

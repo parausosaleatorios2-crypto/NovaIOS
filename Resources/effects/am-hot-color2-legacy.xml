@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COR QUENTE 2 — o antigo Hot Color 2 do Alight Motion (0.648.0, fora do catálogo)
+  ============================================================================
+
+  O `com.alightcreative.effects.colorhot2` ("deprecated" no AM 5.0.281: o AM ainda abre, não oferece), lido do
+  `assets/effects/colorhot2.xml` do APK, para os projetos antigos do AM abrirem igual (`amimport/EfeitosDoAm.kt`). O
+  de hoje é o `am-hot-color.xml`, que explica a conta; aqui a diferença:
+
+  - Um disco só, a Tonalidade, sem padrão (0, 0, 0). O Y dele é o gama (gama = Y + 1).
+  - As duas cores saem do MESMO matiz: o múltiplo de 60° abaixo e o de cima dele (a "fatia" do HSV); a mais perta do
+    matiz é a clara, a outra a escura. Até 50% de brilho vai da escura ao matiz, dali para cima do matiz à clara.
+  - O resto (o YUV, o branco acima de 85%, a cor acima do alfa) é igual ao de hoje.
+-->
+<effect
+    id="nova.effect.am-hot-color2-legacy"
+    name="Cor Quente 2"
+    name-en="Hot Color 2"
+    desc="A versão antiga da Cor Quente do Alight Motion, para abrir projetos antigos."
+    desc-en="The old version of Alight Motion's Hot Color, for opening old projects."
+    category="color"
+    catalog="false"
+    tags="cor quente,hot color,alight motion"
+    stage="screen">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+        <texture id="quente" src="buffer" />
+
+        <hue-disc id="tint" label="Tonalidade" bias="true" />
+    </params>
+
+    <passes>
+        <pass target="quente" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A do `am-hot-color.xml` (e do `am-sharpen.xml`).
+vec4 paraReta(vec4 q) {
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return q.a > 0.0 ? vec4(q.rgb / q.a, q.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+mediump vec3 hsv2rgb(mediump vec3 c)
+{
+    mediump vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    mediump vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+const highp mat3 rgb2yuv = mat3(
+     0.299,     0.587,    0.114,
+    -0.14713,  -0.28886,  0.436,
+     0.615,    -0.51499, -0.10001
+);
+
+const highp mat3 yuv2rgb = mat3(
+    1.0,  0.0,      1.13983,
+    1.0, -0.39465, -0.58060,
+    1.0,  2.03211,  0.0
+);
+
+void main() {
+    if (acPass == 0) {
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 pre = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            pre = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        mediump vec3 tom = tint;
+
+        mediump vec4 source = vec4(pre, c.a);
+        mediump float luminance = dot(source.rgb, luminanceWeighting);
+
+        mediump float gamma = tom.z+1.0;
+        luminance = pow(luminance,1.0/gamma);
+
+        mediump float hue = tom.x /360.;
+        mediump float sat = tom.y;
+
+        mediump float lowHue = hue - mod(hue, 1./6. );
+        mediump float highHue = lowHue + 1./6.;
+
+        mediump vec3 lowColor = hsv2rgb(vec3(lowHue,sat,1.0));
+        mediump vec3 baseColor = hsv2rgb(vec3(hue,sat,1.0));
+        mediump vec3 highColor = hsv2rgb(vec3(highHue,sat,1.0));
+
+        mediump vec3 darkColor;
+        mediump vec3 lightColor;
+        if( abs(hue-lowHue) > abs(hue-highHue) ) {
+            lightColor = highColor;
+            darkColor = lowColor;
+        } else {
+            lightColor = lowColor;
+            darkColor = highColor;
+        }
+
+        mediump vec3 blendColor = luminance < 0.5 ? mix( darkColor, baseColor, luminance*2.) :  mix( baseColor, lightColor, (luminance-0.5)*2.);
+
+        mediump vec3 yuv = blendColor * rgb2yuv;
+        yuv.x = luminance;
+        yuv.yz *= luminance;
+        blendColor = yuv * yuv2rgb;
+
+        mediump float shineStart = .85;
+        mediump float shineAmount = max(0.,luminance - shineStart) * (1./(1.-shineStart));
+        shineAmount = shineAmount * shineAmount * sat;
+        blendColor = mix( blendColor, vec3(1.), shineAmount );
+
+        fragColor = clamp(vec4(blendColor,1.0) * source.a, 0.0, 1.0);
+        return;
+    }
+    fragColor = paraReta(texture(quente, acScreenNorm));
+}
+    ]]></shader>
+</effect>

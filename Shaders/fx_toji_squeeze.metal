@@ -1,0 +1,56 @@
+// ---------------------------------------------------------------------------
+// @am:string/effect_squeeze_name
+// origem : assets/effects/toji-squeeze.xml
+// id     : com.alightcreative.effects.squeeze
+// passes : 1
+// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// ---------------------------------------------------------------------------
+#include <metal_stdlib>
+#include "NovaEngineUniforms.h"
+#include "NovaShaderHelpers.h"
+using namespace metal;
+
+struct toji_squeezeParams {
+    float strength;
+};
+
+// --- funcoes auxiliares do efeito
+float2 l2s( float2 v ) {
+            return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
+        }
+
+fragment float4 fx_toji_squeeze(
+    NovaVertexOut       in   [[stage_in]],
+    constant EngineUniforms& eng [[buffer(0)]],
+    constant toji_squeezeParams&  u    [[buffer(1)]],
+    sampler             __nv_smp [[sampler(0)]],
+    texture2d<float> inputImg [[texture(0)]],
+    constant NovaTexInfo& inputImg_info [[buffer(2)]])
+{
+    float4 __nv_fragCoord = in.position;
+    float2 __nv_pointCoord = in.uv;
+    float4 __nv_out = float4(0.0);
+
+            float2 st = in.acLayerNorm;
+
+            float str = u.strength/2.0;
+
+            st -= 0.5;
+            st *= 2.0;
+
+            float xdiv = 1. + (1.-pow(abs(st.y), 2.0))*-str;
+            float ydiv = 1. + (1.-pow(abs(st.x), 2.0))*str;
+            xdiv = clamp(xdiv, 0., 2. );
+            ydiv = clamp(ydiv, 0., 2. );
+            st.x /= xdiv;
+            st.y /= ydiv;
+
+            st /= 2.0;
+            st += 0.5;
+
+            //float inside = step(0.,st.x) * step(st.x,1.) * step(0.,st.y) * step(st.y,1.);
+
+            __nv_out = inputImg.sample(__nv_smp, l2s(st));
+            //__nv_out = mix(float4(xdiv,ydiv,0.5,1.0), inputImg.sample(__nv_smp, l2s(st)), 0.5);// * inside;
+    return __nv_out;
+}

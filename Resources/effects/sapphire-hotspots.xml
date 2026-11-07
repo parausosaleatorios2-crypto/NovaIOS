@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_HOTSPOTS — o Hotspots do Sapphire (Boris FX), igual ao do After Effects (0.479.0)
+  ============================================================================
+
+  Pedido do snow (10/10/2026): "agora o s_hotspot". Está em 9 presets da pasta dele e 17 vezes no
+  projeto headlock. (O "Pontos de luz" de `hotspots.xml` é outro efeito: nasceu de um documento de
+  especificação, não do plugin.)
+
+  DE ONDE VEIO (tools/shotspots/benchmark):
+
+  - A definição do efeito está em texto na sapphire_ae.dll:
+        th = Threshold + Threshold Add Color;   b = Brightness / max(0,01, 1 − min(th))
+        resultado = sat_scale(b · hotspots(blur(Fonte, Blur Input, Gauss, subpixel), th), Saturation)
+    e, com a camada de máscara, a mistura com a fonte (PROCESS_MASKS + dissolve).
+  - Lidas no código: `hotspots` (0x180fa6320) multiplica a cor por UM fator,
+        Σ max(c − th, 0) / Σ max(c, 0)          (0 se algum dos dois não passa de 0);
+    `sat_scale` (0x180f16c20) é s·c + (1 − s)·(5R + 8G + 3B)/16.
+  - Medido no After Effects (87 renders, 16 e 8 bpc):
+      * o desfoque (o Gauss do Sapphire) são TRÊS CAIXAS por eixo com raios que somam a largura em px
+        (8 -> 3, 3, 2), largura quebrada = mistura linear entre ⌊W⌋ e ⌊W⌋ + 1, borda espelhada repetindo
+        o pixel da borda — o mesmo do S_Glow; não muda com o tamanho do quadro;
+      * os sliders chegam em ponto fixo 16.16 (o Threshold padrão é 45875/65536); a cor somada ao limiar,
+        em 8 bits (meio para cima: 0,3 -> 77);
+      * Opacity: Normal trabalha na cor pré-multiplicada; All Opaque usa a cor reta e sai opaco; As
+        Premult toma a cor reta como pré-multiplicada;
+      * a camada de máscara: (5R + 8G + 3B)/16 da cor pré-multiplicada dela (Mask Use = Luma) ou o alfa,
+        invertida ou não, desfocada pelas mesmas caixas com a largura ARREDONDADA, e a mistura com a
+        fonte em pré-multiplicado.
+    O modelo em numpy fica a 0,01 nível (de 255) do AE de 16 bpc; no de 8 bpc, 0,01% dos px diferem
+    em 1 nível (empates de meio nível que a conta em float32 do plugin decide).
+
+  COMO É FEITO AQUI (o buffer do motor é RGBA8):
+    0  hA  o desfoque em x da fonte, a 1ª palavra (21 bits por canal em dois buffers: o brilho
+    1  hB  ...a 2ª palavra                          multiplica o erro por até 100 no limiar 0,99)
+    2  mH  o desfoque em x da camada de máscara (24 bits)
+    3      o desfoque em y, o hotspots, a saturação, a máscara e a saída
+  Os passes 0 e 1 só rodam com Blur Input > 0 e o 2 com Blur Mask > 0. As três caixas viram UM núcleo
+  por eixo (a soma de uma caixa sobre o trapézio das outras duas, em conta inteira): 2W + 3 leituras.
+  As caixas espelham na borda da CAMADA do AE (`acCamada`), não do buffer.
+
+  O QUE NÃO ENTROU: Mask from Path (as máscaras da camada), Mocha. A camada de máscara entra como está
+  na composição. Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.shotspots"
+    name="S_Hotspots"
+    name-en="S_Hotspots"
+    desc="O Hotspots do Sapphire: só as áreas acima do limiar, com a cor que elas tinham, igual ao After Effects."
+    desc-en="Sapphire's Hotspots: only the areas above the threshold, keeping their color, as in After Effects."
+    category="stylize"
+    tags="s_hotspots,hotspots,sapphire,realces,highlights,limiar,threshold,luz,brilho,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hA" src="buffer" />
+        <texture id="hB" src="buffer" />
+        <texture id="mH" src="buffer" />
+
+        <slider id="blurInput" label="Blur Input" default="0.0" min="0.0" max="200.0" step="0.1" snap="0.0" />
+        <slider id="threshold" label="Threshold" default="0.7" min="0.0" max="1.0" step="0.01" snap="0.7" />
+        <color id="thresholdAddColor" label="Threshold Add Color" default="#000000" />
+        <slider id="saturation" label="Saturation" default="1.0" min="-2.0" max="8.0" step="0.01" snap="0.0,1.0" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <selector id="opacity" label="Opacity" default="1" options="All Opaque|Normal|As Premult" />
+
+        <texture id="maskImg" src="layer" group="Mask" label="Mask from Layer" empty="transparent" />
+        <selector id="maskUse" group="Mask" label="Mask Use" default="0" options="Luma|Alpha" />
+        <slider id="blurMask" group="Mask" label="Blur Mask" default="12.0" min="0.0" max="200.0" step="0.1" snap="12.0" />
+        <switch id="invertMask" group="Mask" label="Invert Mask" default="false" />
+    </params>
+
+    <passes>
+        <pass target="hA" skipIfZero="blurInput" />   <!-- 0: o desfoque em x, 1ª palavra -->
+        <pass target="hB" skipIfZero="blurInput" />   <!-- 1: o desfoque em x, 2ª palavra -->
+        <pass target="mH" skipIfZero="blurMask" />    <!-- 2: a máscara desfocada em x -->
+        <pass />                                      <!-- 3: o resto -->
+    </passes>
+
+    <shader><![CDATA[
+const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
+
+// Os sliders do Sapphire chegam em ponto fixo 16.16 (medido: o limiar 0,3 é 0,3000031 no AE).
+float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+float gEscala;     // a prévia reduzida (o Blur Input é em px da composição)
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+}
+
+/** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
+int espelhar(int i, int n) {
+    // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+ivec2 naCamada(ivec2 q) {
+    return gInicio + ivec2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
+}
+
+// ---- o núcleo das três caixas --------------------------------------------------------------
+// Largura inteira n -> raios r0 ≥ r1 ≥ r2 que somam n ((n + 2 − i) div 3). A soma das caixas r1 e r2 é um
+// trapézio T (contagens); a das três, em d, é Σ T(d − i) com |i| ≤ r0 = S(d + r0) − S(d − r0 − 1), S a soma
+// acumulada de T. Tudo em inteiros (exato), dividido no fim por (2r0 + 1)(2r1 + 1)(2r2 + 1).
+
+// Σ T(j) para 0 ≤ j ≤ x (x ≥ 0), com p = r2 ≤ q = r1.
+int somaDoTrapezio(int x, int p, int q) {
+    int m = q - p;
+    int M = p + q;
+    x = min(x, M);
+    if (x <= m) return (x + 1) * (2 * p + 1);
+    return (m + 1) * (2 * p + 1) + (x - m) * (M + 1) - (x * (x + 1) - m * (m + 1)) / 2;
+}
+
+// Σ T(j) para j ≤ x.
+int acumulado(int x, int p, int q) {
+    int total = (2 * p + 1) * (2 * q + 1);
+    int meio = (total - (2 * p + 1)) / 2;      // os j < 0 (T(0) = 2p + 1)
+    if (x >= 0) return meio + somaDoTrapezio(x, p, q);
+    return total - (meio + somaDoTrapezio(-x - 1, p, q));       // T é simétrico
+}
+
+float pesoDasCaixas(int d, int n) {
+    if (n <= 0) return d == 0 ? 1.0 : 0.0;
+    int r0 = (n + 2) / 3;
+    int r1 = (n + 1) / 3;
+    int r2 = n / 3;
+    if (abs(d) > n) return 0.0;
+    int c = acumulado(d + r0, r2, r1) - acumulado(d - r0 - 1, r2, r1);
+    return float(c) / (float(2 * r0 + 1) * float(2 * r1 + 1) * float(2 * r2 + 1));
+}
+
+// ---- 21 bits por canal em dois buffers (do Add Grain) ---------------------------------------
+uvec2 palavras(vec3 u) {
+    uvec3 q = uvec3(floor(clamp(u, 0.0, 1.0) * 2097151.0 + 0.5));
+    return uvec2(q.x | (q.y << 21), (q.y >> 11) | (q.z << 10));
+}
+
+vec4 bytes(uint w) {
+    return vec4(float(w & 255u), float((w >> 8) & 255u), float((w >> 16) & 255u), float(w >> 24)) / 255.0;
+}
+
+uint palavra(vec4 c) {
+    uvec4 b = uvec4(floor(c * 255.0 + 0.5));
+    return b.x | (b.y << 8) | (b.z << 16) | (b.w << 24);
+}
+
+vec3 valores(vec4 c0, vec4 c1) {
+    uint a = palavra(c0);
+    uint b = palavra(c1);
+    return vec3(uvec3(a & 2097151u, (a >> 21) | ((b & 1023u) << 11), b >> 10)) / 2097151.0;
+}
+
+// ---- a fonte e a máscara --------------------------------------------------------------------
+// Opacity (medido): Normal (1) trabalha na cor pré-multiplicada; All Opaque (0) e As Premult (2), na cor reta.
+vec3 entrada(ivec2 p) {
+    vec4 s = texelFetch(inputImg, p, 0);
+    return opacity == 1 ? s.rgb * s.a : s.rgb;
+}
+
+bool temMascara() { return textureSize(maskImg, 0).x > 1; }
+
+// A camada de máscara no lugar dela na composição: (5R + 8G + 3B)/16 da cor pré-multiplicada, ou o alfa.
+float mascara(ivec2 p) {
+    vec4 m = texture(maskImg, (vec2(p) + 0.5) / vec2(gT));
+    float v = maskUse == 1 ? m.a : dot(m.rgb * m.a, vec3(0.3125, 0.5, 0.1875));
+    return invertMask ? 1.0 - v : v;
+}
+
+vec4 gravarMascara(float m) {
+    float a = floor(clamp(m, 0.0, 1.0) * 16777215.0 + 0.5);
+    float b0 = floor(a / 65536.0);
+    float r = a - b0 * 65536.0;
+    float b1 = floor(r / 256.0);
+    return vec4(b0, b1, r - b1 * 256.0, 255.0) / 255.0;
+}
+
+float lerMascara(vec4 v) {
+    vec3 b = floor(v.rgb * 255.0 + 0.5);
+    return (b.x * 65536.0 + b.y * 256.0 + b.z) / 16777215.0;
+}
+
+// A largura do desfoque em px do buffer.
+float larguraDaEntrada() { return clamp(fixo(blurInput) * gEscala, 0.0, LARGURA_MAX); }
+// A da máscara, arredondada (o subpixel 0 da definição: meio para cima).
+int larguraDaMascara() { return int(clamp(floor(fixo(blurMask) * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+
+// O desfoque da fonte num eixo: (1 − f)·núcleo(⌊W⌋) + f·núcleo(⌊W⌋ + 1).
+vec3 desfoqueEmX(ivec2 q) {
+    float w = larguraDaEntrada();
+    int a = int(floor(w));
+    float f = w - float(a);
+    vec3 soma = vec3(0.0);
+    for (int d = -a - 1; d <= a + 1; d++) {
+        float k = (1.0 - f) * pesoDasCaixas(d, a) + f * pesoDasCaixas(d, a + 1);
+        if (k == 0.0) continue;
+        soma += k * entrada(naCamada(q + ivec2(d, 0)));
+    }
+    return soma;
+}
+
+vec3 desfoqueEmY(ivec2 q) {
+    float w = larguraDaEntrada();
+    int a = int(floor(w));
+    float f = w - float(a);
+    vec3 soma = vec3(0.0);
+    for (int d = -a - 1; d <= a + 1; d++) {
+        float k = (1.0 - f) * pesoDasCaixas(d, a) + f * pesoDasCaixas(d, a + 1);
+        if (k == 0.0) continue;
+        ivec2 p = naCamada(q + ivec2(0, d));
+        soma += k * valores(texelFetch(hA, p, 0), texelFetch(hB, p, 0));
+    }
+    return soma;
+}
+
+float mascaraDesfocada(ivec2 q, bool emX) {
+    int n = larguraDaMascara();
+    float soma = 0.0;
+    for (int d = -n; d <= n; d++) {
+        float k = pesoDasCaixas(d, n);
+        if (k == 0.0) continue;
+        ivec2 p = naCamada(q + (emX ? ivec2(d, 0) : ivec2(0, d)));
+        soma += k * (emX ? mascara(p) : lerMascara(texelFetch(mH, p, 0)));
+    }
+    return soma;
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN));
+
+    if (acPass == 0) {
+        fragColor = fora ? vec4(0.0) : bytes(palavras(desfoqueEmX(q)).x);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = fora ? vec4(0.0) : bytes(palavras(desfoqueEmX(q)).y);
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = (fora || !temMascara()) ? vec4(0.0) : gravarMascara(mascaraDesfocada(q, true));
+        return;
+    }
+
+    // ---- 3: o resto ----
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora) {
+        fragColor = s;
+        return;
+    }
+    vec3 x = larguraDaEntrada() > 0.0 ? desfoqueEmY(q) : entrada(t);
+
+    // hotspots (0x180fa6320): a cor vezes Σ max(c − th, 0) / Σ max(c, 0)
+    vec3 th = fixo(threshold) + floor(thresholdAddColor.rgb * 255.0 + 0.5) / 255.0;
+    float b = fixo(brightness) / max(0.01, 1.0 - min(th.r, min(th.g, th.b)));
+    vec3 passa = max(x - th, vec3(0.0));
+    vec3 pos = max(x, vec3(0.0));
+    float e = passa.r + passa.g + passa.b;
+    float sm = pos.r + pos.g + pos.b;
+    vec3 h = (e > 0.0 && sm > 0.0) ? x * (e / sm) : vec3(0.0);
+
+    // sat_scale (0x180f16c20)
+    vec3 c = b * h;
+    float sat = fixo(saturation);
+    float luma = (0.1875 * c.b + 0.5 * c.g) + 0.3125 * c.r;      // na ordem do plugin
+    vec3 r = clamp(c * sat + luma * (1.0 - sat), 0.0, 1.0);
+
+    float a = s.a;
+    if (opacity == 0) a = 1.0;                 // All Opaque: sai opaco
+    else if (opacity == 2) r *= a;             // As Premult: o resultado volta reto (em pré-multiplicado, r · alfa)
+
+    if (temMascara()) {
+        float m = larguraDaMascara() > 0 ? mascaraDesfocada(q, false) : mascara(t);
+        vec3 sp = s.rgb * s.a;
+        r = sp + (r - sp) * m;
+        a = s.a;
+    }
+
+    vec3 reta = a > 0.0 ? min(r / a, vec3(1.0)) : vec3(0.0);
+    // a saída em níveis inteiros, arredondada como o AE de 8 bpc (a da GPU não arredonda igual)
+    fragColor = vec4(floor(reta * 255.0 + 0.5) / 255.0, a);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Exposure (`expo`, linear): ganho 2^stops (`MulAdd`). Idêntica ao AE.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.exposure"
+    name="Looks: Exposure"
+    name-en="Looks: Exposure"
+    desc="A ferramenta Exposure do Magic Bullet Looks: o ganho em stops, no linear."
+    desc-en="Magic Bullet Looks' Exposure tool: gain in stops, in linear light."
+    category="looks"
+    stage="mblooks"
+    looks="expo"
+    tags="magic bullet,looks,red giant,exposure,exposicao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="stops" label="Stops" default="0.0" min="-5.0" max="5.0" step="0.01" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0) não muda a luz: um ponto e meio a mais. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="stops" value="1.5" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

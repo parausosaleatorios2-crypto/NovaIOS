@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Blur_gaussian_blur
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- Fora do catálogo (0.910.0): o shader precisa de _kernel (pesos do desfoque), que o Node mandava pelo C# e o conversor
+     não trouxe. Não compila em GPU nenhuma; para voltar, portar essa parte. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-effect-blur-gaussian-blur"
+    name="Effect Blur Gaussian Blur (NV)"
+    name-en="Effect Blur Gaussian Blur (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Blur_gaussian_blur', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Blur_gaussian_blur', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_z" label="Z" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_amount" label="Amount" default="1.0" min="0.0" max="10.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+ivec2 u_xlati2;
+vec4 u_xlat3;
+int u_xlati8;
+float u_xlat12;
+bool u_xlatb12;
+void main()
+{
+    u_xlat0.y = 0.0;
+    u_xlat1.x = float(0.0);
+    u_xlat1.y = float(0.0);
+    u_xlat1.z = float(0.0);
+    u_xlat1.w = float(0.0);
+    u_xlati8 = int(0xFFFFFFECu);
+    while(true){
+        u_xlatb12 = 20<u_xlati8;
+        if(u_xlatb12){break;}
+        u_xlati2.xy = ivec2(u_xlati8) + ivec2(20, 1);
+        u_xlat12 = float(u_xlati8);
+        u_xlat0.x = u_xlat12 * _amount;
+        u_xlat0.xw = acScreenNorm.xy * _resolution.xy + u_xlat0.xy;
+        u_xlat0.xw = u_xlat0.xw / _resolution.xy;
+        u_xlat3 = texture(inputImg, u_xlat0.xw);
+        u_xlat1 = vec4(_kernel[u_xlati2.x]) * u_xlat3 + u_xlat1;
+        u_xlati8 = u_xlati2.y;
+    }
+    fragColor = u_xlat1 / vec4(vec4(_z, _z, _z, _z));
+    return;
+}
+    ]]></shader>
+</effect>

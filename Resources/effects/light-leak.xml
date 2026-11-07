@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VAZAMENTO DE LUZ (LIGHT LEAK)
+  ============================================================================
+
+  Aquele clarão quente de canto de câmera analógica: luz que vaza pela tampa
+  do filme e queima um canto do quadro. Animado, respira junto do take.
+
+  ============================================================================
+   LUZ DE CANTO: GRADIENTE RADIAL DESLOCADO
+  ============================================================================
+
+  A fonte do vazamento é um PONTO na borda do quadro. A luz cai como um
+  gradiente radial a partir desse ponto — forte perto, zero longe — com uma
+  curva exponencial, que é o que uma luz real em filme faz.
+
+  O ponto não fica parado: um ruído de baixa frequência o desloca lentamente,
+  dando o "respirar" do vazamento. Isso é o que faz parecer analógico, e não
+  um overlay de Photoshop.
+
+  ============================================================================
+   PINTURA É "SCREEN", NÃO "NORMAL"
+  ============================================================================
+
+  Overlay de luz em cima de imagem DEVE ser modo tela: `1 − (1−a)(1−b)`. É o
+  que simula luz somando a luz. Normal/alpha-over pinta POR CIMA e esconde o
+  que estava lá — uma luz nunca faz isso. Screen deixa o original passar onde
+  ele já é claro, e levanta o escuro.
+-->
+<effect
+    id="nova.effect.light-leak"
+    name="Vazamento de luz"
+    name-en="Light Leak"
+    desc="Clarão quente de canto de câmera analógica, animado e respirando."
+    desc-en="Warm leak from a frame corner, animated and breathing."
+    category="stylize"
+    tags="vazamento,light leak,filme,analógico,quente,clarão,cinema">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="sourceAt" label="De onde vaza" defaultX="0.95" defaultY="0.05" />
+        <color id="leakColor" label="Cor" default="#FFCC66FF" />
+        <slider id="intensity" label="Intensidade"
+                default="1.0" min="0.0" max="3.0" step="0.05" snap="0.0" />
+        <slider id="spread" label="Alcance"
+                default="0.5" min="0.05" max="2.0" step="0.01" snap="0.0" />
+        <slider id="breathe" label="Respirar"
+                default="0.3" min="0.0" max="1.0" step="0.02" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="0.5" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <!-- Na vitrine, mais intensa pra ver o vazamento. -->
+    <preview>
+        <set param="intensity" value="2.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash1(float x) {
+    return fract(sin(x * 127.1 + float(seed) * 13.7) * 43758.5453);
+}
+
+/** Ruído suave 1D (interpolação smoothstep entre hashes). */
+float ruido1(float x) {
+    float i = floor(x);
+    float f = fract(x);
+    float s = f * f * (3.0 - 2.0 * f);
+    return mix(hash1(i), hash1(i + 1.0), s);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // A fonte "respira" andando devagar num círculo pequeno.
+    float t = acTime * speed;
+    vec2 andanca = vec2(ruido1(t * 0.37 + 1.3) - 0.5, ruido1(t * 0.41 + 7.7) - 0.5);
+    vec2 fonte = sourceAt + andanca * 0.08;
+    fonte = vec2(fonte.x * acAspect, fonte.y);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+    float d = length(p - fonte);
+
+    // Gradiente radial exponencial: luz forte perto, desvanece longe.
+    float gradiente = exp(-d / max(spread, 1e-4));
+
+    // Respirar: a intensidade oscila devagar.
+    float pulsacao = mix(1.0, 0.5 + 0.5 * ruido1(t * 0.9 + 2.7), breathe);
+
+    float forca = gradiente * intensity * pulsacao * leakColor.a;
+
+    vec3 luz = leakColor.rgb * forca;
+
+    // Mistura por SCREEN: 1 − (1−orig)(1−luz). Luz nunca escurece pixel claro.
+    vec3 cor = 1.0 - (1.0 - original.rgb) * (1.0 - luz);
+    cor = mix(original.rgb, cor, clamp(forca, 0.0, 1.0));
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

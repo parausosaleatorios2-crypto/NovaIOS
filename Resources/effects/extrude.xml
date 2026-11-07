@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EXTRUSÃO (EXTRUDE)
+  ============================================================================
+
+  Dá profundidade à camada: a silhueta dela é varrida numa direção, e os lados
+  que aparecem ganham cor, sombra de profundidade e luz. Texto vira letra
+  maciça; imagem com recorte (PNG, logo, adesivo) vira peça; imagem
+  retangular vira uma caixa.
+
+  ============================================================================
+   O QUE ISTO É, E O QUE NÃO É
+  ============================================================================
+
+  É extrusão 2.5D, em shader. NÃO é geometria 3D: aqui não há giro em torno do
+  próprio eixo com a profundidade acompanhando, nem bisel, nem tampa de trás.
+  Para espessura de VERDADE — um sólido que gira com a camada —, existe a
+  "Extrusão 3D" (`extrude3d.xml`), que é uma malha. Este continua existindo
+  porque é barato, roda dentro da cadeia de efeitos (com outros efeitos por
+  cima e por baixo) e não precisa de nada além do alfa da camada.
+
+  O que há aqui é o que se vê de FRENTE: a peça com a espessura para um lado
+  (modo reto) ou fugindo para um ponto (modo perspectiva).
+
+  A camada é extrudada ANTES da transformação, como todo efeito deste app: se
+  a camada girar no plano, a extrusão gira junto, e é o certo — a espessura é
+  parte do objeto. O que ela não faz é ficar parada enquanto o objeto gira;
+  para isso a espessura teria que ser parte da cena, não da imagem.
+
+  ============================================================================
+   COMO A CONTA FUNCIONA
+  ============================================================================
+
+  Para cada pixel, o shader caminha do FRENTE para o FUNDO e pergunta, em cada
+  passo, "a camada, deslocada para trás até aqui, cobre este pixel?". Cada
+  resposta positiva é uma cópia da silhueta, mais fundo e mais escura, e elas
+  são compostas de frente para trás — a mais próxima tapa as de trás, e a borda
+  suave (alfa parcial) deixa passar a de trás por baixo, sem serrilhado.
+
+  Não é uma "sombra longa" (`long-shadow.xml`): aquela é uma faixa de cor
+  única e sem forma. Aqui os lados TÊM cor (a da própria borda, uma sólida ou um
+  degradê), afundam para o escuro com a profundidade e recebem luz conforme a
+  direção para onde a borda aponta — é o que faz uma letra ter "lado de cima" e
+  "lado de baixo" em vez de um bloco chapado.
+
+  A luz vem do ALFA: a normal da borda é o gradiente do alfa no ponto onde a
+  cópia mais próxima toca a peça. Curva de letra dá degradê de luz; quina dá
+  troca brusca — o mesmo que uma extrusão de verdade mostraria.
+
+  ============================================================================
+   O CUSTO, E ONDE ELE PARA
+  ============================================================================
+
+  Uma passada só, com no máximo `Amostras` leituras por pixel — o mesmo custo de
+  `long-shadow.xml`. O número de passos SOBE com a profundidade (um passo a cada
+  ~1,25 px), então uma extrusão rasa custa pouco, e uma funda não deixa buracos
+  no meio de um traço fino. O laço para no primeiro pixel opaco: dentro de um
+  lado, a conta termina em uma leitura.
+
+  Limites que não são descuido:
+  - a profundidade é em pixels de uma composição de 1080 de lado curto (como
+    em `hotspots.xml`), para a prévia em meia resolução mostrar o mesmo desenho
+    do export;
+  - acima de ~150 px de profundidade com poucas amostras, um traço mais fino
+    que o passo pode falhar. Aumente "Amostras";
+  - o efeito age no buffer da camada, do tamanho da composição: a extrusão de
+    uma imagem que já enche o quadro sai do quadro e some. Reduza a imagem
+    dentro do próprio conteúdo, ou use uma imagem com recorte.
+-->
+<effect
+    id="nova.effect.extrude"
+    name="Extrusão 2.5D"
+    name-en="Extrude 2.5D"
+    desc="Espessura desenhada como imagem plana, barata e sem giro: lados com cor, profundidade e luz. Para espessura de verdade, use Extrusão 3D."
+    desc-en="Thickness drawn as a flat image — cheap, no rotation. For real thickness, use Extrude 3D."
+    category="stylize"
+    tags="extrusão,extrude,3d,profundidade,espessura,texto 3d,letra 3d,lados,perspectiva,ponto de fuga,relevo"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="depth" label="Profundidade"
+                default="60.0" min="0.0" max="600.0" step="1.0" snap="0.0" />
+
+        <selector id="mode" label="Tipo" default="0"
+                  options="Reta (numa direção)|Perspectiva (para um ponto de fuga)" />
+
+        <slider id="angle" label="Direção (no tipo reta; 45° = para baixo e à direita)"
+                default="45.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,45.0,90.0,135.0,180.0,-45.0,-90.0,-135.0" />
+
+        <point id="vanish" label="Ponto de fuga (no tipo perspectiva)"
+               defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" />
+
+        <selector id="sideMode" group="Lados" label="Cor dos lados" default="0"
+                  options="A da própria camada|Cor sólida|Degradê (frente até o fundo)" />
+        <color id="sideColor" group="Lados" label="Cor (sólida, ou a da frente do degradê)" default="#5B6CFF" />
+        <color id="sideColor2" group="Lados" label="Cor do fundo do degradê" default="#0A0A2E" />
+        <slider id="darken" group="Lados" label="Escurecer com a profundidade"
+                default="0.45" min="0.0" max="1.0" step="0.01" snap="0.45" />
+        <slider id="lightAmount" group="Lados" label="Luz nos lados"
+                default="0.6" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="lightAngle" group="Lados" label="De onde vem a luz (−45° = do alto, à direita)"
+                default="-45.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,45.0,90.0,135.0,180.0,-45.0,-90.0,-135.0" />
+
+        <!-- Escondida (pedido do snow, 25/09/2026): sempre no máximo agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <slider id="quality" group="Avançado" label="Amostras (máximo por pixel)" hidden="true"
+                default="128.0" min="16.0" max="128.0" step="1.0" type="integer" />
+        <switch id="hideFace" group="Avançado" label="Só a extrusão (sem a frente)" default="false" />
+    </params>
+
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura">
+        <set param="depth" value="180.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAX_STEPS = 128;
+
+// Pixels de uma composição de 1080 de lado curto. Ver o cabeçalho.
+float escalaDePixel() {
+    return min(acResolution.x, acResolution.y) / 1080.0;
+}
+
+// Onde, na camada, está o pedaço que aparece em `uv` quando a cópia está a
+// profundidade `t` (0 = a frente, 1 = o fundo).
+//
+// Reta: a cópia do fundo está DESLOCADA para o lado da direção, então o pedaço
+// que cai em `uv` vem de mais para trás dessa direção.
+// Perspectiva: a cópia do fundo está ENCOLHIDA em direção ao ponto de fuga, e o
+// pedaço que cai em `uv` vem de mais longe dele. A divisão é a inversa do
+// encolhimento — e o piso de 0,05 impede o fundo de fugir para o infinito.
+vec2 origemNoFundo(vec2 uv, float t, vec2 deslocamento, float afunilamento) {
+    if (mode == 0) return uv - deslocamento * t;
+    return vanish + (uv - vanish) / max(1.0 - afunilamento * t, 0.05);
+}
+
+vec3 corDoLado(vec3 daCamada, float t) {
+    if (sideMode == 1) return sideColor.rgb;
+    if (sideMode == 2) return mix(sideColor.rgb, sideColor2.rgb, t);
+    return daCamada;
+}
+
+// Para onde a borda aponta, em `uv`: o gradiente do alfa, virado do avesso.
+// O alfa CRESCE para dentro da peça, então o gradiente aponta para dentro e a
+// normal de fora é o oposto dele. Sem borda ali, não há normal.
+vec2 normalDaBorda(vec2 uv) {
+    float raio = max(1.5 * escalaDePixel(), 1.0);
+    vec2 ex = vec2(raio * acTexelSize.x, 0.0);
+    vec2 ey = vec2(0.0, raio * acTexelSize.y);
+    vec2 gradiente = vec2(
+        texture(inputImg, uv + ex).a - texture(inputImg, uv - ex).a,
+        texture(inputImg, uv + ey).a - texture(inputImg, uv - ey).a
+    );
+    float tamanho = length(gradiente);
+    return tamanho > 0.001 ? -gradiente / tamanho : vec2(0.0);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec4 frente = texture(inputImg, uv);
+
+    float escala = escalaDePixel();
+    float profundidadePx = depth * escala;
+
+    // No tipo perspectiva a "profundidade" vira quanto o fundo encolhe:
+    // 100 px valem 10 %, e o teto de 90 % deixa sempre um fundo para ver.
+    float afunilamento = clamp(depth / 1000.0, 0.0, 0.9);
+
+    // Quanto a cópia mais funda anda, em pixels: é o que decide o número de
+    // passos. No perspectiva, o canto da tela é o que mais anda.
+    float alcancePx = (mode == 0)
+        ? profundidadePx
+        : afunilamento * 0.5 * max(acResolution.x, acResolution.y);
+
+    if (alcancePx < 0.5) {
+        fragColor = hideFace ? vec4(0.0) : frente;
+        return;
+    }
+
+    float rad = radians(angle);
+    vec2 deslocamento = vec2(cos(rad), sin(rad)) * profundidadePx * acTexelSize;
+
+    // Um passo a cada ~1,25 px, entre 8 e o teto do usuário. Menos que isso
+    // deixa buraco em traço fino; mais que isso é leitura à toa.
+    int passos = clamp(int(alcancePx * 0.8), 8, min(int(quality + 0.5), MAX_STEPS));
+
+    // Cor PRÉ-MULTIPLICADA, acumulada de frente para trás.
+    vec4 lados = vec4(0.0);
+    bool achou = false;
+    vec2 pontoDaBorda = uv;
+
+    for (int i = 1; i <= MAX_STEPS; i++) {
+        if (i > passos) break;
+        float t = float(i) / float(passos);
+
+        vec2 origem = origemNoFundo(uv, t, deslocamento, afunilamento);
+        if (origem.x < 0.0 || origem.x > 1.0 || origem.y < 0.0 || origem.y > 1.0) continue;
+
+        vec4 leitura = texture(inputImg, origem);
+        if (leitura.a < 0.004) continue;
+
+        // A profundidade escurece a cópia inteira; a luz (abaixo) escurece por
+        // direção. São duas coisas diferentes e se multiplicam.
+        vec3 cor = corDoLado(leitura.rgb, t) * mix(1.0, 1.0 - darken, t);
+        lados += (1.0 - lados.a) * vec4(cor * leitura.a, leitura.a);
+
+        // O primeiro ponto realmente dentro da peça é o que toca a borda: é
+        // dali que sai a normal, uma vez só por pixel.
+        if (!achou && leitura.a > 0.3) {
+            achou = true;
+            pontoDaBorda = origem;
+        }
+
+        // Opaco: o resto está tapado. É aqui que o custo de um lado cai para
+        // uma leitura.
+        if (lados.a > 0.995) break;
+    }
+
+    if (achou && lightAmount > 0.0) {
+        float luzRad = radians(lightAngle);
+        vec2 paraALuz = vec2(cos(luzRad), sin(luzRad));
+        float aceso = 0.5 + 0.5 * dot(normalDaBorda(pontoDaBorda), paraALuz);
+        // Do lado apagado (1 − quantidade) ao aceso (1, a cor como ela é): a
+        // luz só ESCURECE. Clarear além da cor da própria camada estouraria o
+        // branco de um texto branco e apagaria o degradê dos lados.
+        lados.rgb *= mix(1.0 - lightAmount, 1.0, aceso);
+    }
+
+    // A frente por cima dos lados, em alfa reto.
+    float alfaDaFrente = hideFace ? 0.0 : frente.a;
+    float alfa = alfaDaFrente + lados.a * (1.0 - alfaDaFrente);
+    vec3 rgb = alfa > 0.0001
+        ? (frente.rgb * alfaDaFrente + lados.rgb * (1.0 - alfaDaFrente)) / alfa
+        : vec3(0.0);
+
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), clamp(alfa, 0.0, 1.0));
+}
+
+    ]]></shader>
+</effect>

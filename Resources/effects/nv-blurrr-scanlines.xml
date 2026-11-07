@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.scanlines"
+    name="Scanlines (Blurrr)"
+    name-en="Scanlines (Blurrr)"
+    desc="Linhas de varredura escuras com leve borrão — tela antiga."
+    desc-en="Dark scan lines with a soft blur — old display."
+    category="blur"
+    tags="blurrr,scanline,crt,retro,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="count"     label="Quantidade" default="500.0" min="50.0" max="1200.0" step="10.0" />
+        <slider id="depth"     label="Profundidade" default="0.4" min="0.0" max="1.0" step="0.01" />
+        <slider id="softness"  label="Suavidade" default="0.003" min="0.0" max="0.02" step="0.0005" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec4 c = texture(inputImg, acScreenNorm);
+    if (softness > 0.0) {
+        vec4 s = vec4(0.0);
+        for (int i = -2; i <= 2; i++) {
+            s += texture(inputImg, acScreenNorm + vec2(0.0, float(i)) * softness * 0.5);
+        }
+        c = s * 0.2;
+    }
+    float linha = sin(acScreenNorm.y * count * 3.14159);
+    float mdl = mix(1.0 - depth, 1.0, 0.5 + 0.5 * linha);
+    fragColor = vec4(c.rgb * mdl, c.a);
+}
+    ]]></shader>
+</effect>

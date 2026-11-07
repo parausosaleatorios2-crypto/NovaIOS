@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DIRECTIONAL BLUR (AE) — o Directional Blur nativo do After Effects (ADBE Motion Blur), 0.677.0
+  ============================================================================
+
+  Pedido do snow (20/10/2026): "proximo efeito 100% igual do after effects" — o 5º da fila de
+  docs/PRESETS-DA-PASTA-DO-SNOW.md (28 presets da pasta usam, 25 entram inteiros com ele).
+
+  Não foi ajustado por medida: a conta foi LIDA nos binários do AE 2023 e conferida pixel a pixel
+  (tools/directionalblur/benchmark, LEIAME.md). O AE do snow roda o caminho de GPU do plugin
+  (OpenCL na Radeon): o host (DirectionalBlur.aex, 180005cf0 — aqui `model/DirectionalBlurDoAe.kt`,
+  que calcula em double os números que chegam como `db…`) e três kernels, o cisalhamento
+  (PTX/OpenCL/AEFX_DirectionalBlur.clz), a caixa (FastBoxBlur.clz) e o cisalhamento de volta.
+  O modelo em Python deles dá 99,72 a 100 % dos pixels iguais ao AE, no máximo 1 nível; este XML, rodado na GPU
+  do PC como o motor (tools/directionalblur/benchmark/comparar.py, 44 casos), 99,54 a 100 %, no máximo 1 nível no
+  que se vê (2 em poucos pixels de 3 casos).
+
+  O QUE O AE FAZ (e este shader repete):
+
+  1. A direção vira φ, o ângulo em relação ao eixo mais perto (vertical até 45°): o desfoque corre
+     num eixo só, com comprimento R = |cos φ| · L, numa caixa de raio R / 2,71 passada 3 vezes.
+  2. Antes, a imagem é CISALHADA para a direção ficar reta: cada linha y anda
+     OffX + (y + OffY) · tan φ, em float32, lida com o filtro bilinear da textura — a fração da
+     mistura quantizada em 1/256 (medido) — e, entre −1 e 0 px da borda, o texel da borda vezes o
+     peso exato (1 + x).
+  3. A caixa é a da GPU do AE: a primeira passada pré-multiplica (o cisalhamento andou nos valores
+     retos), as do meio dão a média (Σ − frac·(pontas)) / ((2n+1) − 2·frac), com n = ceil(raio) e
+     frac = n − raio, e a última devolve reta (divide pela soma do alfa quando ela passa de 1/4096).
+  4. O cisalhamento de volta, a conta inversa (o mesmo kernel com −tan φ).
+
+  COMO ISSO CABE NOS BUFFERS: o quadro cisalhado do AE é um paralelogramo (a largura cresce |tan φ|
+  · altura). Aqui cada linha l dele é guardada deslocada de K(l) colunas — o deslocamento inteiro da
+  volta —, e fica sempre perto do lugar da camada: o buffer só precisa da MOLDURA que a caixa
+  espalha (3·n px de cada lado, n = ceil(raio)). As passadas do meio são em float no AE: aqui
+  vão em 16 bits fixos, em dois buffers RGBA8 (os bytes alto e baixo, `fragColor` e `fragColor1`).
+
+  O QUE NÃO É IGUAL: as somas da caixa do AE são corridas (cada pixel herda o arredondamento dos
+  anteriores da linha); aqui cada pixel soma a janela inteira, e o resultado muda no último bit do
+  float — só decide empate de arredondamento de 8 bits. A camada menor que a composição usa a altura
+  dela (`acCamada`), centrada. A moldura é de 256 px: com raio acima de ~85 (comprimento ~230) a ponta mais
+  longe da cauda que sai da camada, já quase transparente, fica de fora; dentro da camada vale até raio 256.
+
+  CUSTO: (2n + 1) leituras por pixel em cada uma das três passadas (n ≈ 0,37 · R).
+-->
+<effect
+    id="nova.effect.aedirectionalblur"
+    name="Directional Blur (AE)"
+    name-en="Directional Blur (AE)"
+    desc="O Directional Blur do After Effects, igual pixel a pixel: borra a camada numa direção, como um objeto em movimento."
+    desc-en="After Effects' Directional Blur, pixel for pixel: blurs the layer along one direction, like motion."
+    category="blur"
+    tags="directional blur,desfoque direcional,motion blur,movimento,velocidade,rastro,after effects,adbe"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="dbA" src="buffer" margin="256" />
+        <texture id="dbA2" src="buffer" margin="256" />
+        <texture id="dbB" src="buffer" margin="256" />
+        <texture id="dbB2" src="buffer" margin="256" />
+
+        <slider id="direction" label="Direction" default="0.0" min="-32000.0" max="32000.0" step="1.0" type="angle" snap="0.0,90.0,-90.0" />
+        <slider id="blurLength" label="Blur Length" default="0.0" min="0.0" max="1000.0" step="0.1" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine: o Blur Length padrão é 0, como no AE (a camada sai igual). (0.677.0) -->
+    <preview>
+        <set param="direction" value="60.0" />
+        <set param="blurLength" value="30.0" />
+    </preview>
+
+    <passes>
+        <pass target="dbA,dbA2" skipIfZero="blurLength" />   <!-- 0: o cisalhamento + a 1ª passada da caixa -->
+        <pass target="dbB,dbB2" skipIfZero="blurLength" />   <!-- 1: a 2ª passada -->
+        <pass target="dbA,dbA2" skipIfZero="blurLength" />   <!-- 2: a 3ª passada (sai reta) -->
+        <pass />                                         <!-- 3: o cisalhamento de volta -->
+    </passes>
+
+    <shader><![CDATA[
+// Calculados no Kotlin (model/DirectionalBlurDoAe.kt), em double, como o host do plugin.
+uniform int dbAtivo;      // 0: Blur Length 0 (o AE devolve a camada)
+uniform int dbEixoH;      // 1: o desfoque corre na horizontal (as "linhas" do cisalhamento são as colunas)
+uniform float dbS;        // tan φ
+uniform float dbBase;     // OffX: |tan φ| · linhas quando tan φ < 0
+uniform float dbOffLinha; // OffY: ceil(L · |cos θ|) + 5
+uniform int dbDIda;       // trunc(−tan φ · OffY): o deslocamento inteiro do quadro cisalhado
+uniform float dbRaio;     // o raio da caixa, R / 2,71
+uniform int dbLargura;    // ceil(|tan φ| · linhas): quanto o quadro cisalhado é mais largo
+
+const int MARGEM = 256;   // = margin dos buffers
+
+ivec2 gTam;       // a camada do AE no buffer
+ivec2 gIni;       // o canto dela
+bool gDePe;       // a linha 0 do buffer é a BASE da imagem (cena de pé)
+int gLinhas;      // quantas linhas tem a camada no eixo do cisalhamento
+int gLargura;     // e quantas colunas
+int gN;           // ceil(raio)
+int gExt;         // 3 · ceil(raio): quanto a caixa cresce de cada lado
+
+void preparar() {
+    ivec2 buf = textureSize(inputImg, 0);
+    gTam = clamp(ivec2(floor(acCamada * vec2(buf) + 0.5)), ivec2(1), buf);
+    gIni = (buf - gTam) / 2;
+    gDePe = acEntradaDePe == 1;
+    gLinhas = dbEixoH == 1 ? gTam.x : gTam.y;
+    gLargura = dbEixoH == 1 ? gTam.y : gTam.x;
+    gN = int(ceil(dbRaio));
+    gExt = 3 * gN;
+}
+
+// (coluna, linha) no eixo do cisalhamento, na orientação do AE (linha 0 = o topo da camada) <-> buffer
+ivec2 noBuffer(int a, int l) {
+    ivec2 p = dbEixoH == 1 ? ivec2(l, a) : ivec2(a, l);
+    return ivec2(gIni.x + p.x, gDePe ? gIni.y + gTam.y - 1 - p.y : gIni.y + p.y);
+}
+ivec2 doBuffer(ivec2 b) {
+    ivec2 p = ivec2(b.x - gIni.x, gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y);
+    return dbEixoH == 1 ? ivec2(p.y, p.x) : p;
+}
+
+// A camada (reta, k / 255 exato); fora dela, transparente.
+vec4 entrada(int a, int l) {
+    if (a < 0 || a >= gLargura || l < 0 || l >= gLinhas) return vec4(0.0);
+    return floor(texelFetch(inputImg, noBuffer(a, l), 0) * 255.0 + 0.5) / 255.0;
+}
+
+// A leitura do kernel do AE numa linha, na posição p: o filtro bilinear (fração em 1/256) no meio, a
+// borda vezes o peso exato entre −1 e 0 (e entre W−1 e W), zero fora.
+vec4 cisalhada(int l, float p) {
+    if (l < 0 || l >= gLinhas) return vec4(0.0);
+    float w1 = float(gLargura - 1);
+    if (p >= 0.0 && p <= w1) {
+        float i0 = floor(p);
+        float f = floor((p - i0) * 256.0 + 0.5) / 256.0;
+        int i = int(i0);
+        return entrada(i, l) * (1.0 - f) + entrada(min(i + 1, gLargura - 1), l) * f;
+    }
+    if (p < 0.0 && p > -1.0) return entrada(0, l) * (1.0 + p);
+    if (p > w1 && p <= float(gLargura)) return entrada(gLargura - 1, l) * (float(gLargura) - p);
+    return vec4(0.0);
+}
+
+// srcX do kernel de ida: (tx − dx) − OffX − (y + OffY) · s, em float32 e nesta ordem
+float posIda(int t, int l) {
+    float a = float(t - dbDIda) - dbBase;
+    return a - (float(l) + dbOffLinha) * dbS;
+}
+
+// o da volta: −OffX, OffY − ext, −s, lido na linha l + ext do quadro desfocado
+float posVolta(int a, int l) {
+    float x = float(a + dbDIda) + dbBase;
+    return x + (float(l + gExt) + (dbOffLinha - float(gExt))) * dbS;
+}
+
+// Onde a linha l do quadro cisalhado mora no buffer: a coluna T do AE fica em T − K(l).
+int desloc(int l) { return int(floor(posVolta(0, l))); }
+
+// 16 bits fixos em dois RGBA8
+vec4 ler16(sampler2D alto, sampler2D baixo, int u, int l) {
+    ivec2 b = noBuffer(u, l) + MARGEM;
+    ivec2 n = textureSize(alto, 0);
+    if (any(lessThan(b, ivec2(0))) || any(greaterThanEqual(b, n))) return vec4(0.0);
+    vec4 h = floor(texelFetch(alto, b, 0) * 255.0 + 0.5);
+    vec4 lo = floor(texelFetch(baixo, b, 0) * 255.0 + 0.5);
+    return (h * 256.0 + lo) / 65535.0;
+}
+void gravar16(vec4 v) {
+    vec4 q = floor(clamp(v, 0.0, 1.0) * 65535.0 + 0.5);
+    vec4 h = floor(q / 256.0);
+    fragColor = h / 255.0;
+    fragColor1 = (q - h * 256.0) / 255.0;
+}
+
+// O valor da linha j na coluna T do quadro que a passada lê: na 1ª, o cisalhamento na hora (e
+// pré-multiplicado); nas outras, o buffer da passada anterior.
+vec4 linhaAnterior(int passada, int t, int j, int largura) {
+    if (passada == 0) {
+        if (t < 0 || t >= largura) return vec4(0.0);
+        vec4 c = cisalhada(j, posIda(t, j));
+        return vec4(c.rgb * c.a, c.a);
+    }
+    int u = t - desloc(j);
+    return passada == 1 ? ler16(dbA, dbA2, u, j) : ler16(dbB, dbB2, u, j);
+}
+
+void main() {
+    preparar();
+    if (dbAtivo == 0) {
+        if (acPass == 3) fragColor = texelFetch(inputImg, ivec2(gl_FragCoord.xy), 0);
+        return;
+    }
+    int largura = gLargura + dbLargura;   // o quadro cisalhado: colunas 0 .. largura − 1
+
+    if (acPass < 3) {
+        // uma passada da caixa, na coluna T = u + K(l) do quadro cisalhado
+        ivec2 ul = doBuffer(ivec2(gl_FragCoord.xy) - MARGEM);
+        int u = ul.x, l = ul.y;
+        int t = u + desloc(l);
+        float inv = float(gN) - dbRaio;
+        float peso = float(2 * gN + 1) - 2.0 * inv;
+        vec4 inteira = vec4(0.0);
+        for (int j = l - gN; j <= l + gN; j++) inteira += linhaAnterior(acPass, t, j, largura);
+        vec4 pontas = vec4(0.0);
+        if (inv != 0.0) pontas = linhaAnterior(acPass, t, l - gN, largura) + linhaAnterior(acPass, t, l + gN, largura);
+        vec4 num = inteira - pontas * inv;
+        if (acPass < 2) {
+            vec4 m = num / peso;
+            gravar16(vec4(m.rgb, clamp(m.a, 0.0, 1.0)));
+        } else {
+            // a última: reta
+            float ap = num.a;
+            if (peso != 0.0 && ap > 1.0 / 4096.0) gravar16(vec4(num.rgb / ap, clamp(num.a / peso, 0.0, 1.0)));
+            else gravar16(vec4(0.0));
+        }
+        return;
+    }
+
+    // o cisalhamento de volta, lendo a 3ª passada
+    ivec2 al = doBuffer(ivec2(gl_FragCoord.xy));
+    int a = al.x, l = al.y;
+    float p = posVolta(a, l);
+    int k = desloc(l);
+    float w1 = float(largura - 1);
+    vec4 c = vec4(0.0);
+    if (p >= 0.0 && p <= w1) {
+        float i0 = floor(p);
+        float f = floor((p - i0) * 256.0 + 0.5) / 256.0;
+        int i = int(i0);
+        c = ler16(dbA, dbA2, i - k, l) * (1.0 - f) + ler16(dbA, dbA2, min(i + 1, largura - 1) - k, l) * f;
+    } else if (p < 0.0 && p > -1.0) {
+        c = ler16(dbA, dbA2, -k, l) * (1.0 + p);
+    } else if (p > w1 && p <= float(largura)) {
+        c = ler16(dbA, dbA2, largura - 1 - k, l) * (float(largura) - p);
+    }
+    // 8 bits como o AE (`floor(v·255 + 0,5)`), aqui: a GPU converte com viés próprio (a da AMD arredonda o x,5 para
+    // baixo em 1 de cada 7 pixels)
+    fragColor = floor(clamp(c, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+}
+    ]]></shader>
+</effect>

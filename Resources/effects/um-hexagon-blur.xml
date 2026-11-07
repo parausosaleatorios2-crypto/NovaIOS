@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.hexagonblur"
+    name="Desfoque Hexagonal (Ultra Motion)"
+    name-en="Hexagon Blur (Ultra Motion)"
+    desc="Três passadas direcionais a 120° — bokeh de lâmina hexagonal."
+    desc-en="Three 120° directional sweeps — hex-aperture bokeh."
+    category="blur"
+    tags="ultramotion,hexagon,hex,bokeh,lens,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="passA" src="buffer" />
+        <texture id="passB" src="buffer" />
+        <slider id="radius" label="Raio" default="0.025" min="0.0" max="0.1" step="0.001" />
+        <slider id="samples" label="Amostras por lado" default="10" min="4" max="24" step="1" type="integer" />
+    </params>
+
+    <passes>
+        <pass target="passA" />
+        <pass target="passB" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+vec4 varrer(sampler2D s, vec2 uv, vec2 dir, int n, float r) {
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i <= 24; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n);
+        soma += texture(s, uv + dir * r * t);
+    }
+    return soma / float(n + 1);
+}
+
+void main() {
+    int n = clamp(int(samples), 4, 24);
+    float r = radius;
+
+    if (acPass == 0) {
+        // direção 1: para baixo
+        vec2 d = vec2(0.0, -1.0);
+        d.x /= acAspect;
+        fragColor = varrer(inputImg, acScreenNorm, d, n, r);
+    } else if (acPass == 1) {
+        // direção 2: 60° no sentido horário do A
+        vec2 d = vec2(sin(radians(60.0)), -cos(radians(60.0)));
+        d.x /= acAspect;
+        fragColor = varrer(passA, acScreenNorm, d, n, r);
+    } else {
+        // mistura: lado A (passA já tem d1) + lado B (passB tem d1+d2); juntar com uma terceira direção de passB
+        vec2 d = vec2(-sin(radians(60.0)), -cos(radians(60.0)));
+        d.x /= acAspect;
+        vec4 lado1 = varrer(passA, acScreenNorm, d, n, r);
+        vec4 lado2 = varrer(passB, acScreenNorm, d, n, r);
+        fragColor = (lado1 + lado2) * 0.5;
+    }
+}
+    ]]></shader>
+</effect>

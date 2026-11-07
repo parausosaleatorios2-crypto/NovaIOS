@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CAPA AO VENTO — efeito original do Nova (não é port de plugin algum)
+  ============================================================================
+
+  Pedido do snow (23/10/2026): "um efeito de capa ao vento". Simulação de pano
+  simples, feita do zero: grade de partículas (Pano × Pano), presas na borda
+  de cima, integrador de Verlet, restrições de distância relaxadas por
+  passadas, força do vento em 3D. O passe é `PasseDaCapaAoVento`; a física
+  mora em `model/CapaAoVento.kt` e tem teste próprio.
+
+  O vento é um VETOR 3D: X mexe de lado, Y mexe para cima e para baixo (soma
+  com a gravidade), Z aproxima/afasta da câmera (projeção simples). Força
+  escala o vetor; Pano decide a resolução da malha (quanto maior, mais
+  natural, mas mais lento).
+
+  Fica em `category="distort"` (deforma a camada por malha), do mesmo lado
+  que o Mesh Warp. O desenho roda na GPU: a física corre na CPU por quadro,
+  as posições sobem como vértices, e o shader só varre textura por UV.
+
+  0.800.0 ("tá todo bugado, nenhum parâmetro muda nada", 25/10/2026): a
+  simulação só andava com o tempo (com o vídeo parado nenhum controle mudava
+  nada), a capa saía de cabeça para baixo, o vento constante a fazia assentar e
+  parar, e o pano cobria o buffer inteiro em vez da camada. Agora o mesmo
+  instante e os mesmos controles dão sempre o mesmo pano, as Rajadas o mantêm
+  balançando, o texto balança pela caixa das letras, e a camada ganha folga em
+  volta para o pano não ser cortado. Ver `model/CapaAoVento.kt`.
+-->
+<effect
+    id="nova.effect.capaaovento"
+    name="Capa ao vento"
+    name-en="Cape in the Wind"
+    desc="Simula o balanço de uma capa ao vento: a borda de cima fica presa, o resto balança com um vento 3D."
+    desc-en="Simulates a cape swaying in the wind: the top edge is pinned while the rest sways under a 3D wind."
+    category="distort"
+    stage="capaaovento"
+    tags="capa,cape,vento,wind,pano,cloth,fabric,sway,balanço,bandeira,flag,sail">
+
+    <params>
+        <!-- A camada entra pela textura "content" (convenção da pipeline). -->
+        <texture id="inputImg" src="content" />
+
+        <slider id="ventoX" label="Vento X" default="20" min="-100" max="100" step="1" />
+        <slider id="ventoY" label="Vento Y" default="0" min="-100" max="100" step="1" />
+        <slider id="ventoZ" label="Vento Z" default="0" min="-100" max="100" step="1"
+                desc="Negativo: o vento vem na sua direção; positivo: vai para longe." />
+        <slider id="forca" label="Força" default="100" min="0" max="200" step="1" />
+        <slider id="rajadas" label="Rajadas" default="50" min="0" max="100" step="1"
+                desc="Quanto o vento varia: em zero a capa só inclina e para; mais, ela continua balançando." />
+        <slider id="pano" label="Pano" type="integer" default="10" min="2" max="24" step="1"
+                desc="Resolução da malha: quanto maior, mais natural (e mais pesado)." />
+    </params>
+
+    <!-- O `<shader>` existe porque o parser exige um; quem desenha é o PasseDaCapaAoVento. -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

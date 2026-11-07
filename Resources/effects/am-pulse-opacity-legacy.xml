@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A OPACIDADE DO PULSO ANTIGA do Alight Motion (`com.alightcreative.effects.pulseopacity`, "deprecated" no AM
+  5.0.281, `pulse-opacity.xml` lá), para os projetos velhos que ainda a trazem (0.567.0). Fora do catálogo.
+
+  A mesma conta da atual (`am-pulse-opacity.xml`), com a Frequência do INSTANTE vezes o tempo da camada
+  (`tempo · duração · frequência`, como no Tamanho do pulso antigo): com quadro-chave, a camada pula. A Fase Inicial
+  é um slider, como lá. Quem executa é `model/OpacidadeDoPulso.kt`.
+-->
+<effect
+    id="nova.effect.am-pulse-opacity-legacy"
+    name="Opacidade do pulso (antiga)"
+    name-en="Pulse Opacity (legacy)"
+    desc="A Opacidade do pulso antiga do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Pulse Opacity, from projects made before its current version."
+    category="opacity"
+    stage="transform"
+    catalog="false"
+    tags="pulso,pulse opacity,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="2.0" min="0.1" max="16.0" step="0.1" />
+        <spinner id="strength" label="Intensidade" default="1" min="0" max="1" step="0.01" type="percent" />
+        <slider id="phase" label="Fase Inicial" default="0" min="0" max="2" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

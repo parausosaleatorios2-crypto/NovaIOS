@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COPIAR FUNDO — o Copy Background do Alight Motion, conta por conta (0.652.0)
+  ============================================================================
+
+  O próximo da fila dos efeitos do AM pelo uso nas cenas do snow (`com.alightcreative.effects.lift`, 11 usos).
+  Mesmos ids e padrões. A conta foi LIDA do `assets/effects/lift.xml` do AM 5.0.281 e escrita de novo aqui; o
+  arquivo do AM não entra no repositório. A conferência é `tools/amcopiarfundo`: o efeito do AM rodado na GPU do
+  PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A camada passa a mostrar o que está ATRÁS dela (a textura `comp` do AM, a cena montada até ali), no formato
+    dela: o fundo × o alfa da camada. Sozinho parece não fazer nada; o ponto são os efeitos que vêm DEPOIS na
+    lista (Copiar fundo + Desfoque = vidro fosco no formato de um texto).
+  - Preencher (0 a 100%, padrão 0) NÃO enche o retângulo da camada: é a mistura entre o fundo copiado e a
+    PRÓPRIA camada. Em 0%, só o fundo; em 100%, a camada como entrou; no meio, as duas, em cor
+    pré-multiplicada — `mix(comp × alfa, camada, Preencher)`.
+  - Tudo em cor pré-multiplicada, como no AM: a camada e o fundo chegam pré-multiplicados em 8 bits (o premul do
+    Android, pelo mais perto, refeito aqui por `oitoBits`), a mistura sai pré-multiplicada e só no fim volta para
+    a cor reta do Nova. A mistura de duas cores pré-multiplicadas válidas nunca passa do alfa: aqui não existe a
+    luz acima do alfa da Cor Quente.
+  - O AM grava a mistura num alvo de 8 bits pré-multiplicado, e é ESSE arredondamento que vai à composição. Aqui
+    também: o passe 0 grava a conta do AM num buffer de 8 bits (`copia`, idêntico byte a byte ao alvo dele, como o
+    `quente` da Cor Quente) e só o passe final volta para a cor reta. Sem ele, a camada composta com alfa parcial
+    ficava até 2 níveis longe da do AM (o arredondamento da cor reta somado ao do alvo dele); com ele, 1.
+
+  NA TELA (`stage="screen"`), como o Ampliar o fundo: o AM lê a camada e o fundo no MESMO pixel da tela, depois
+  da transformação. Rodado no buffer da camada, uma camada girada copiava o fundo sem o giro; e os efeitos de
+  depois (o desfoque do vidro fosco) rodam sobre o fundo já na tela, como lá.
+
+  O "Copiar fundo" que o Nova tinha (`copy-background.xml`, até a 0.651) saiu do catálogo e continua abrindo os
+  projetos dele: o Preenchimento de lá enchia o retângulo da camada, que não é o que o AM faz.
+-->
+<effect
+    id="nova.effect.am-copy-background"
+    name="Copiar fundo"
+    name-en="Copy Background"
+    desc="Copia o fundo para a camada, transformando-a numa camada de ajuste: os efeitos aplicados depois agem no fundo coberto pelas partes opacas (o Copy Background do Alight Motion)."
+    desc-en="Copies the background into the layer, effectively turning it into an adjustment layer: effects applied after this act on the background pixels covered by the opaque parts of the layer (Alight Motion's Copy Background)."
+    category="stylize"
+    tags="copiar fundo,copy background,fundo,backdrop,vidro,fosco,janela,atras,lift,ajuste,alight motion"
+    stage="screen">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+        <texture id="copia" src="buffer" />
+
+        <tip text="Esse efeito copia os pixels de atrás dessa camada para camada atual. Use isso junto com outros efeitos para aplicá-los ao plano de fundo. Por exemplo, usar a Caixa de Desfoque após aplicar a Cópia do Plano de Fundo para desfocar o fundo."
+            text-en="This effect copies the pixels behind this layer into the current layer. Use this together with other effects to apply them to the background. For example, to use Box Blur after applying Copy Background to blur the background." />
+        <spinner id="fill" label="Preencher" default="0.0" min="0.0" max="1.0" step="0.01" ticks="0.5"
+            type="percent" />
+    </params>
+
+    <!-- Na vitrine, sobre o próprio fundo a camada some: a amostra mostra a mistura pela metade. -->
+    <!-- Na vitrine, a figura solta sobre a paisagem: o fundo copiado aparece na forma dela. (vitrine, 0.668.0) -->
+    <preview amostra="figura" fundo="paisagem">
+        <set param="fill" value="0.5" />
+    </preview>
+
+    <passes>
+        <pass target="copia" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve ao AM (ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// A cor reta do Nova pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android): o que a textura do AM guarda.
+// No opaco a cor já é o float da textura, bit a bit.
+vec4 doAm(vec4 c) {
+    if (c.a >= 1.0) return c;
+    vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+    return vec4(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b), c.a);
+}
+
+void main() {
+    if (acPass == 1) {
+        // A pré-multiplicada do AM, já em 8 bits, de volta para a cor reta do Nova.
+        vec4 q = texture(copia, acScreenNorm);
+        fragColor = q.a > 0.0 ? vec4(clamp(q.rgb / q.a, 0.0, 1.0), q.a) : vec4(0.0);
+        return;
+    }
+    // O fundo no pixel da tela (na tela, o `acTela` é a identidade).
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 fundo = doAm(texelFetch(comp, px, 0));
+
+    // O shader do AM: `mix(comp × texColor.a, texColor, fill)`, na pré-multiplicada.
+    vec4 texColor = doAm(texture(inputImg, acScreenNorm));
+    // O corte em 0..1 é o do alvo de 8 bits do AM; escrito aqui para o projeto de 32 bits sair igual.
+    fragColor = clamp(mix(fundo * texColor.a, texColor, fill), 0.0, 1.0);
+}
+    ]]></shader>
+</effect>

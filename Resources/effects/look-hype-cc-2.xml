@@ -1,0 +1,571 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O CC "Hype CC 2" do snow — o preset dele do After Effects (Magic Bullet Looks e
+  companhia), medido no próprio AE e remontado aqui. GERADO por
+  `tools/cc/gerar.py` (não editar à mão): a cor sai de LUTs 33³ exatas e cada
+  peça de lugar/vizinhança foi ajustada contra o render do AE, na ordem do preset:
+  lut › PEDG › diff › chab › lut › edgs.
+  64 passes; a pirâmide de cada peça segue a resolução (ajustada em 1080p).
+-->
+<effect
+    id="nova.effect.look.hype-cc-2"
+    name="Hype CC 2"
+    name-en="Hype CC 2"
+    desc="Correção de cor pronta (preset do snow)."
+    desc-en="Ready-made color grade (snow's preset)."
+    category="cc"
+    catalog="false"
+    tags="cc,color,cor,looks,grade,preset,hype-cc-2">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="atlas" src="image" files="looks/hype-cc-2.png" />
+        <texture id="x1" src="buffer" />
+        <texture id="g1" src="buffer" />
+        <texture id="f1_1" src="buffer" scale="0.5" />
+        <texture id="f1_2" src="buffer" scale="0.25" />
+        <texture id="f1_3" src="buffer" scale="0.125" />
+        <texture id="f1_4" src="buffer" scale="0.0625" />
+        <texture id="f1_5" src="buffer" scale="0.03125" />
+        <texture id="f1_6" src="buffer" scale="0.015625" />
+        <texture id="f1_7" src="buffer" scale="0.0078125" />
+        <texture id="f1_8" src="buffer" scale="0.00390625" />
+        <texture id="x2" src="buffer" />
+        <texture id="x2_1" src="buffer" scale="0.5" />
+        <texture id="x2_2" src="buffer" scale="0.25" />
+        <texture id="x2_3" src="buffer" scale="0.125" />
+        <texture id="x2_4" src="buffer" scale="0.0625" />
+        <texture id="x2_5" src="buffer" scale="0.03125" />
+        <texture id="x2_6" src="buffer" scale="0.015625" />
+        <texture id="x2_7" src="buffer" scale="0.0078125" />
+        <texture id="x2_8" src="buffer" scale="0.00390625" />
+        <texture id="g2" src="buffer" />
+        <texture id="f2_1" src="buffer" scale="0.5" />
+        <texture id="f2_2" src="buffer" scale="0.25" />
+        <texture id="f2_3" src="buffer" scale="0.125" />
+        <texture id="f2_4" src="buffer" scale="0.0625" />
+        <texture id="f2_5" src="buffer" scale="0.03125" />
+        <texture id="f2_6" src="buffer" scale="0.015625" />
+        <texture id="f2_7" src="buffer" scale="0.0078125" />
+        <texture id="f2_8" src="buffer" scale="0.00390625" />
+        <texture id="x3" src="buffer" />
+        <texture id="x3_1" src="buffer" scale="0.5" />
+        <texture id="x3_2" src="buffer" scale="0.25" />
+        <texture id="x3_3" src="buffer" scale="0.125" />
+        <texture id="x3_4" src="buffer" scale="0.0625" />
+        <texture id="x3_5" src="buffer" scale="0.03125" />
+        <texture id="x3_6" src="buffer" scale="0.015625" />
+        <texture id="x3_7" src="buffer" scale="0.0078125" />
+        <texture id="x3_8" src="buffer" scale="0.00390625" />
+        <texture id="g3" src="buffer" />
+        <texture id="f3_1" src="buffer" scale="0.5" />
+        <texture id="f3_2" src="buffer" scale="0.25" />
+        <texture id="f3_3" src="buffer" scale="0.125" />
+        <texture id="f3_4" src="buffer" scale="0.0625" />
+        <texture id="f3_5" src="buffer" scale="0.03125" />
+        <texture id="f3_6" src="buffer" scale="0.015625" />
+        <texture id="f3_7" src="buffer" scale="0.0078125" />
+        <texture id="f3_8" src="buffer" scale="0.00390625" />
+        <texture id="x5" src="buffer" />
+        <texture id="x5_1" src="buffer" scale="0.5" />
+        <texture id="x5_2" src="buffer" scale="0.25" />
+        <texture id="x5_3" src="buffer" scale="0.125" />
+        <texture id="x5_4" src="buffer" scale="0.0625" />
+        <texture id="x5_5" src="buffer" scale="0.03125" />
+        <texture id="x5_6" src="buffer" scale="0.015625" />
+        <texture id="x5_7" src="buffer" scale="0.0078125" />
+        <texture id="x5_8" src="buffer" scale="0.00390625" />
+        <texture id="g5" src="buffer" />
+        <texture id="f5_1" src="buffer" scale="0.5" />
+        <texture id="f5_2" src="buffer" scale="0.25" />
+        <texture id="f5_3" src="buffer" scale="0.125" />
+        <texture id="f5_4" src="buffer" scale="0.0625" />
+        <texture id="f5_5" src="buffer" scale="0.03125" />
+        <texture id="f5_6" src="buffer" scale="0.015625" />
+        <texture id="f5_7" src="buffer" scale="0.0078125" />
+        <slider id="uIntensidade" label="Intensidade" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="uGlow" label="Brilho" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="uDetalhe" label="Detalhe" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+    </params>
+
+    <passes>
+        <pass target="x1" />
+        <pass target="g1" />
+        <pass target="f1_1" />
+        <pass target="f1_2" />
+        <pass target="f1_3" />
+        <pass target="f1_4" />
+        <pass target="f1_5" />
+        <pass target="f1_6" />
+        <pass target="f1_7" />
+        <pass target="f1_8" />
+        <pass target="x2" />
+        <pass target="x2_1" />
+        <pass target="x2_2" />
+        <pass target="x2_3" />
+        <pass target="x2_4" />
+        <pass target="x2_5" />
+        <pass target="x2_6" />
+        <pass target="x2_7" />
+        <pass target="x2_8" />
+        <pass target="g2" />
+        <pass target="f2_1" />
+        <pass target="f2_2" />
+        <pass target="f2_3" />
+        <pass target="f2_4" />
+        <pass target="f2_5" />
+        <pass target="f2_6" />
+        <pass target="f2_7" />
+        <pass target="f2_8" />
+        <pass target="x3" />
+        <pass target="x3_1" />
+        <pass target="x3_2" />
+        <pass target="x3_3" />
+        <pass target="x3_4" />
+        <pass target="x3_5" />
+        <pass target="x3_6" />
+        <pass target="x3_7" />
+        <pass target="x3_8" />
+        <pass target="g3" />
+        <pass target="f3_1" />
+        <pass target="f3_2" />
+        <pass target="f3_3" />
+        <pass target="f3_4" />
+        <pass target="f3_5" />
+        <pass target="f3_6" />
+        <pass target="f3_7" />
+        <pass target="f3_8" />
+        <pass target="x5" />
+        <pass target="x5_1" />
+        <pass target="x5_2" />
+        <pass target="x5_3" />
+        <pass target="x5_4" />
+        <pass target="x5_5" />
+        <pass target="x5_6" />
+        <pass target="x5_7" />
+        <pass target="x5_8" />
+        <pass target="g5" />
+        <pass target="f5_1" />
+        <pass target="f5_2" />
+        <pass target="f5_3" />
+        <pass target="f5_4" />
+        <pass target="f5_5" />
+        <pass target="f5_6" />
+        <pass target="f5_7" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+// uIntensidade, uGlow e uDetalhe vêm dos <params> (o prelúdio declara).
+
+// Quantos níveis de pirâmide a imagem está acima ou abaixo de 1080 (o lado menor,
+// em pixels da camada): o ajuste foi feito em 1080p.
+float acDeltaNivel() {
+    vec2 tam = vec2(textureSize(inputImg, 0)) / max(acEscalaDePixel, 0.05);
+    return log2(max(min(tam.x, tam.y), 16.0) / 1080.0);
+}
+
+vec3 paraLuz(vec3 c) {
+    vec3 alto = pow(max(c + 0.055, 0.0) / 1.055, vec3(2.4));
+    return mix(c / 12.92, alto, step(vec3(0.04045), c));
+}
+
+vec3 paraTela(vec3 l) {
+    vec3 s = max(l, 0.0);
+    return mix(s * 12.92, 1.055 * pow(s, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), s));
+}
+
+// A LUT 33³ do atlas: 33 ladrilhos 33×33 lado a lado (x = b·33 + r, y = linha0 + g).
+vec3 lut(vec3 c, float linha0) {
+    vec2 tam = vec2(textureSize(atlas, 0));
+    vec3 p = clamp(c, 0.0, 1.0) * 32.0;
+    float b0 = floor(p.b);
+    float b1 = min(b0 + 1.0, 32.0);
+    float t = p.b - b0;
+    float v = (linha0 + p.g + 0.5) / tam.y;
+    vec3 a = texture(atlas, vec2((b0 * 33.0 + p.r + 0.5) / tam.x, v)).rgb;
+    vec3 d = texture(atlas, vec2((b1 * 33.0 + p.r + 0.5) / tam.x, v)).rgb;
+    return mix(a, d, t);
+}
+
+// A descida da pirâmide: tenda 4×4 (como o Deep Glow).
+vec3 descer(sampler2D origem) {
+    ivec2 tamI = textureSize(origem, 0);
+    vec2 p = acScreenNorm * vec2(tamI);
+    vec2 t0 = floor(p) - 2.0;
+    vec3 soma = vec3(0.0);
+    float pesos = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 t = t0 + vec2(float(i), float(j));
+            vec2 w = max(2.0 - abs(t + 0.5 - p), 0.0);
+            float peso = w.x * w.y;
+            soma += texelFetch(origem, clamp(ivec2(t), ivec2(0), tamI - 1), 0).rgb * peso;
+            pesos += peso;
+        }
+    }
+    return soma / max(pesos, 0.0001);
+}
+
+// O glow guarda LUZ (linear) em 8 bits com raiz — a mesma de Deep Glow — e com ruído.
+float ruidoDoPixel() {
+    return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+}
+vec4 guardar(vec3 luz) { return vec4(sqrt(max(luz, 0.0)) + ruidoDoPixel() / 255.0, 1.0); }
+vec3 abrir(vec3 g) { return g * g; }
+
+vec3 cortar(vec3 c, float limiar, float joelho) {
+    float vista = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float t = clamp((vista - limiar) / max(joelho, 0.0001), 0.0, 1.0);
+    return paraLuz(c) * (t * t * (3.0 - 2.0 * t));
+}
+
+vec4 descerComCorte(sampler2D origem, float limiar, float joelho) {
+    ivec2 tamI = textureSize(origem, 0);
+    vec2 p = acScreenNorm * vec2(tamI);
+    vec2 t0 = floor(p) - 2.0;
+    vec3 soma = vec3(0.0);
+    float pesos = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 t = t0 + vec2(float(i), float(j));
+            vec2 w = max(2.0 - abs(t + 0.5 - p), 0.0);
+            float peso = w.x * w.y;
+            soma += cortar(texelFetch(origem, clamp(ivec2(t), ivec2(0), tamI - 1), 0).rgb, limiar, joelho) * peso;
+            pesos += peso;
+        }
+    }
+    return guardar(soma / max(pesos, 0.0001));
+}
+
+vec4 descerLuz(sampler2D origem) {
+    ivec2 tamI = textureSize(origem, 0);
+    vec2 p = acScreenNorm * vec2(tamI);
+    vec2 t0 = floor(p) - 2.0;
+    vec3 soma = vec3(0.0);
+    float pesos = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 t = t0 + vec2(float(i), float(j));
+            vec2 w = max(2.0 - abs(t + 0.5 - p), 0.0);
+            float peso = w.x * w.y;
+            soma += abrir(texelFetch(origem, clamp(ivec2(t), ivec2(0), tamI - 1), 0).rgb) * peso;
+            pesos += peso;
+        }
+    }
+    return guardar(soma / max(pesos, 0.0001));
+}
+
+// A subida: B-spline cúbica em quatro leituras (o `lerLiso` do Deep Glow).
+vec3 lerLiso(sampler2D t, vec2 uv) {
+    vec2 tam = vec2(textureSize(t, 0));
+    vec2 p = uv * tam - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    vec2 f2 = f * f;
+    vec2 f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 g0 = w0 + w1;
+    vec2 g1 = w2 + w3;
+    vec2 a = (i - 1.0 + w1 / max(g0, 0.0001) + 0.5) / tam;
+    vec2 b = (i + 1.0 + w3 / max(g1, 0.0001) + 0.5) / tam;
+    return texture(t, vec2(a.x, a.y)).rgb * g0.x * g0.y
+         + texture(t, vec2(b.x, a.y)).rgb * g1.x * g0.y
+         + texture(t, vec2(a.x, b.y)).rgb * g0.x * g1.y
+         + texture(t, vec2(b.x, b.y)).rgb * g1.x * g1.y;
+}
+
+
+vec3 nivelF1_luz(float n, vec2 uv) {
+    n = clamp(n, 1.0, 8.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = abrir(lerLiso(f1_1, uv)) * (1.0 - t) + abrir(lerLiso(f1_2, uv)) * t;
+    if (a == 2.0) r = abrir(lerLiso(f1_2, uv)) * (1.0 - t) + abrir(lerLiso(f1_3, uv)) * t;
+    if (a == 3.0) r = abrir(lerLiso(f1_3, uv)) * (1.0 - t) + abrir(lerLiso(f1_4, uv)) * t;
+    if (a == 4.0) r = abrir(lerLiso(f1_4, uv)) * (1.0 - t) + abrir(lerLiso(f1_5, uv)) * t;
+    if (a == 5.0) r = abrir(lerLiso(f1_5, uv)) * (1.0 - t) + abrir(lerLiso(f1_6, uv)) * t;
+    if (a == 6.0) r = abrir(lerLiso(f1_6, uv)) * (1.0 - t) + abrir(lerLiso(f1_7, uv)) * t;
+    if (a == 7.0) r = abrir(lerLiso(f1_7, uv)) * (1.0 - t) + abrir(lerLiso(f1_8, uv)) * t;
+    if (a == 8.0) r = abrir(lerLiso(f1_8, uv)) * (1.0 - t);
+    return r;
+}
+
+vec3 popDe1(vec2 uv) {
+    vec3 x = texture(x1, uv).rgb;
+    vec3 g = x;
+    return clamp(g, 0.0, 1.0);
+}
+
+vec3 saida1(vec2 uv) {
+    vec3 lin = paraLuz(texture(g1, uv).rgb);
+    vec3 luz = uGlow * (vec3(0.077366, 0.000000, 0.246928) * nivelF1_luz(0.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.479596, 0.431177, 0.030133) * nivelF1_luz(1.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.482709, 0.484925, 0.545612) * nivelF1_luz(2.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.495168, 0.511022, 0.339306) * nivelF1_luz(4.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.191322, 0.204435, 0.384665) * nivelF1_luz(5.0 + 1.0 + acDeltaNivel(), uv));
+    lin += luz * (1.0 - lin);
+    return paraTela(lin);
+}
+
+vec3 nivelX2(float n, vec2 uv) {
+    n = clamp(n, 1.0, 8.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = lerLiso(x2_1, uv) * (1.0 - t) + lerLiso(x2_2, uv) * t;
+    if (a == 2.0) r = lerLiso(x2_2, uv) * (1.0 - t) + lerLiso(x2_3, uv) * t;
+    if (a == 3.0) r = lerLiso(x2_3, uv) * (1.0 - t) + lerLiso(x2_4, uv) * t;
+    if (a == 4.0) r = lerLiso(x2_4, uv) * (1.0 - t) + lerLiso(x2_5, uv) * t;
+    if (a == 5.0) r = lerLiso(x2_5, uv) * (1.0 - t) + lerLiso(x2_6, uv) * t;
+    if (a == 6.0) r = lerLiso(x2_6, uv) * (1.0 - t) + lerLiso(x2_7, uv) * t;
+    if (a == 7.0) r = lerLiso(x2_7, uv) * (1.0 - t) + lerLiso(x2_8, uv) * t;
+    if (a == 8.0) r = lerLiso(x2_8, uv) * (1.0 - t);
+    return r;
+}
+
+vec3 nivelF2_luz(float n, vec2 uv) {
+    n = clamp(n, 1.0, 8.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = abrir(lerLiso(f2_1, uv)) * (1.0 - t) + abrir(lerLiso(f2_2, uv)) * t;
+    if (a == 2.0) r = abrir(lerLiso(f2_2, uv)) * (1.0 - t) + abrir(lerLiso(f2_3, uv)) * t;
+    if (a == 3.0) r = abrir(lerLiso(f2_3, uv)) * (1.0 - t) + abrir(lerLiso(f2_4, uv)) * t;
+    if (a == 4.0) r = abrir(lerLiso(f2_4, uv)) * (1.0 - t) + abrir(lerLiso(f2_5, uv)) * t;
+    if (a == 5.0) r = abrir(lerLiso(f2_5, uv)) * (1.0 - t) + abrir(lerLiso(f2_6, uv)) * t;
+    if (a == 6.0) r = abrir(lerLiso(f2_6, uv)) * (1.0 - t) + abrir(lerLiso(f2_7, uv)) * t;
+    if (a == 7.0) r = abrir(lerLiso(f2_7, uv)) * (1.0 - t) + abrir(lerLiso(f2_8, uv)) * t;
+    if (a == 8.0) r = abrir(lerLiso(f2_8, uv)) * (1.0 - t);
+    return r;
+}
+
+vec3 popDe2(vec2 uv) {
+    vec3 x = texture(x2, uv).rgb;
+    vec3 g = x;
+    g = g + (nivelX2(float(5) + 1.0 + acDeltaNivel(), uv) - g) * texture(atlas, vec2((0.0 + clamp(uv.x * 16.0, 0.5, 16.0 - 0.5)) / 1089.0, (33.0 + clamp(uv.y * 9.0, 0.5, 9.0 - 0.5)) / 84.0)).rgb.r * uDetalhe;
+    vec3 n0 = nivelX2(0.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n1 = nivelX2(1.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n2 = nivelX2(2.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n3 = nivelX2(3.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n4 = nivelX2(4.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n5 = nivelX2(5.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n6 = nivelX2(6.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n7 = nivelX2(7.0 + 1.0 + acDeltaNivel(), uv);
+    g = g + uDetalhe * (-0.491080 * (g - n0) + 0.281711 * n0 * (1.0 - g) + -0.081028 * (g - n1) + -0.289321 * n1 * (1.0 - g) + 0.094705 * (g - n2) + 0.270649 * n2 * (1.0 - g) + -0.116794 * (g - n3) + -0.131191 * n3 * (1.0 - g) + 0.160749 * (g - n4) + -0.234975 * n4 * (1.0 - g) + -0.125022 * (g - n5) + 0.336709 * n5 * (1.0 - g) + 0.089504 * (g - n6) + -0.020792 * n6 * (1.0 - g) + -0.112472 * (g - n7) + -0.283891 * n7 * (1.0 - g));
+    return clamp(g, 0.0, 1.0);
+}
+
+vec3 saida2(vec2 uv) {
+    vec3 lin = paraLuz(texture(g2, uv).rgb);
+    vec3 luz = uGlow * (vec3(0.061586, 0.059513, 0.039698) * nivelF2_luz(0.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.058273, 0.060666, 0.103667) * nivelF2_luz(6.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.063450, 0.057892, 0.067370) * nivelF2_luz(7.0 + 1.0 + acDeltaNivel(), uv));
+    lin += luz;
+    return paraTela(lin);
+}
+
+vec3 nivelX3(float n, vec2 uv) {
+    n = clamp(n, 1.0, 8.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = lerLiso(x3_1, uv) * (1.0 - t) + lerLiso(x3_2, uv) * t;
+    if (a == 2.0) r = lerLiso(x3_2, uv) * (1.0 - t) + lerLiso(x3_3, uv) * t;
+    if (a == 3.0) r = lerLiso(x3_3, uv) * (1.0 - t) + lerLiso(x3_4, uv) * t;
+    if (a == 4.0) r = lerLiso(x3_4, uv) * (1.0 - t) + lerLiso(x3_5, uv) * t;
+    if (a == 5.0) r = lerLiso(x3_5, uv) * (1.0 - t) + lerLiso(x3_6, uv) * t;
+    if (a == 6.0) r = lerLiso(x3_6, uv) * (1.0 - t) + lerLiso(x3_7, uv) * t;
+    if (a == 7.0) r = lerLiso(x3_7, uv) * (1.0 - t) + lerLiso(x3_8, uv) * t;
+    if (a == 8.0) r = lerLiso(x3_8, uv) * (1.0 - t);
+    return r;
+}
+
+vec3 nivelF3_luz(float n, vec2 uv) {
+    n = clamp(n, 1.0, 8.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = abrir(lerLiso(f3_1, uv)) * (1.0 - t) + abrir(lerLiso(f3_2, uv)) * t;
+    if (a == 2.0) r = abrir(lerLiso(f3_2, uv)) * (1.0 - t) + abrir(lerLiso(f3_3, uv)) * t;
+    if (a == 3.0) r = abrir(lerLiso(f3_3, uv)) * (1.0 - t) + abrir(lerLiso(f3_4, uv)) * t;
+    if (a == 4.0) r = abrir(lerLiso(f3_4, uv)) * (1.0 - t) + abrir(lerLiso(f3_5, uv)) * t;
+    if (a == 5.0) r = abrir(lerLiso(f3_5, uv)) * (1.0 - t) + abrir(lerLiso(f3_6, uv)) * t;
+    if (a == 6.0) r = abrir(lerLiso(f3_6, uv)) * (1.0 - t) + abrir(lerLiso(f3_7, uv)) * t;
+    if (a == 7.0) r = abrir(lerLiso(f3_7, uv)) * (1.0 - t) + abrir(lerLiso(f3_8, uv)) * t;
+    if (a == 8.0) r = abrir(lerLiso(f3_8, uv)) * (1.0 - t);
+    return r;
+}
+
+vec3 popDe3(vec2 uv) {
+    vec3 x = texture(x3, uv).rgb;
+    vec3 g = x;
+    vec3 n0 = nivelX3(0.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n1 = nivelX3(1.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n2 = nivelX3(2.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n3 = nivelX3(3.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n4 = nivelX3(4.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n5 = nivelX3(5.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n6 = nivelX3(6.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n7 = nivelX3(7.0 + 1.0 + acDeltaNivel(), uv);
+    g = g + uDetalhe * (-0.108149 * n0 * (1.0 - g) + -0.148049 * (g - n1) + 0.125048 * n1 * (1.0 - g) + -0.015240 * (g - n2) + 0.006156 * n2 * (1.0 - g) + 0.053334 * (g - n3) + -0.047725 * n3 * (1.0 - g) + -0.036304 * (g - n4) + 0.020668 * n4 * (1.0 - g) + 0.015974 * (g - n5) + 0.002743 * n5 * (1.0 - g) + -0.005353 * (g - n6) + -0.002525 * n6 * (1.0 - g) + 0.000147 * (g - n7) + -0.000496 * n7 * (1.0 - g));
+    return clamp(g, 0.0, 1.0);
+}
+
+vec3 saida3(vec2 uv) {
+    vec3 lin = paraLuz(texture(g3, uv).rgb);
+    vec3 luz = uGlow * (vec3(0.007404, 0.000000, 0.004741) * nivelF3_luz(0.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.000000, 0.013359, 0.000000) * nivelF3_luz(2.0 + 1.0 + acDeltaNivel(), uv) + vec3(0.000000, 0.000172, 0.000000) * nivelF3_luz(5.0 + 1.0 + acDeltaNivel(), uv));
+    lin += luz * (1.0 - lin);
+    return paraTela(lin);
+}
+
+vec3 nivelX5(float n, vec2 uv) {
+    n = clamp(n, 1.0, 8.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = lerLiso(x5_1, uv) * (1.0 - t) + lerLiso(x5_2, uv) * t;
+    if (a == 2.0) r = lerLiso(x5_2, uv) * (1.0 - t) + lerLiso(x5_3, uv) * t;
+    if (a == 3.0) r = lerLiso(x5_3, uv) * (1.0 - t) + lerLiso(x5_4, uv) * t;
+    if (a == 4.0) r = lerLiso(x5_4, uv) * (1.0 - t) + lerLiso(x5_5, uv) * t;
+    if (a == 5.0) r = lerLiso(x5_5, uv) * (1.0 - t) + lerLiso(x5_6, uv) * t;
+    if (a == 6.0) r = lerLiso(x5_6, uv) * (1.0 - t) + lerLiso(x5_7, uv) * t;
+    if (a == 7.0) r = lerLiso(x5_7, uv) * (1.0 - t) + lerLiso(x5_8, uv) * t;
+    if (a == 8.0) r = lerLiso(x5_8, uv) * (1.0 - t);
+    return r;
+}
+
+vec3 nivelF5_luz(float n, vec2 uv) {
+    n = clamp(n, 1.0, 7.0);
+    float a = floor(n);
+    float t = n - a;
+    vec3 r = vec3(0.0);
+    if (a == 1.0) r = abrir(lerLiso(f5_1, uv)) * (1.0 - t) + abrir(lerLiso(f5_2, uv)) * t;
+    if (a == 2.0) r = abrir(lerLiso(f5_2, uv)) * (1.0 - t) + abrir(lerLiso(f5_3, uv)) * t;
+    if (a == 3.0) r = abrir(lerLiso(f5_3, uv)) * (1.0 - t) + abrir(lerLiso(f5_4, uv)) * t;
+    if (a == 4.0) r = abrir(lerLiso(f5_4, uv)) * (1.0 - t) + abrir(lerLiso(f5_5, uv)) * t;
+    if (a == 5.0) r = abrir(lerLiso(f5_5, uv)) * (1.0 - t) + abrir(lerLiso(f5_6, uv)) * t;
+    if (a == 6.0) r = abrir(lerLiso(f5_6, uv)) * (1.0 - t) + abrir(lerLiso(f5_7, uv)) * t;
+    if (a == 7.0) r = abrir(lerLiso(f5_7, uv)) * (1.0 - t);
+    return r;
+}
+
+vec3 popDe5(vec2 uv) {
+    vec3 x = texture(x5, uv).rgb;
+    vec3 g = x;
+    g = g + (nivelX5(float(2) + 1.0 + acDeltaNivel(), uv) - g) * texture(atlas, vec2((0.0 + clamp(uv.x * 16.0, 0.5, 16.0 - 0.5)) / 1089.0, (75.0 + clamp(uv.y * 9.0, 0.5, 9.0 - 0.5)) / 84.0)).rgb.r * uDetalhe;
+    vec3 n0 = nivelX5(0.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n1 = nivelX5(1.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n2 = nivelX5(2.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n3 = nivelX5(3.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n4 = nivelX5(4.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n5 = nivelX5(5.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n6 = nivelX5(6.0 + 1.0 + acDeltaNivel(), uv);
+    vec3 n7 = nivelX5(7.0 + 1.0 + acDeltaNivel(), uv);
+    g = g + uDetalhe * (-0.021098 * (g - n0) + -0.053571 * n0 * (1.0 - g) + -0.032640 * (g - n1) + -0.205480 * n1 * (1.0 - g) + 0.107687 * (g - n2) + 0.325533 * n2 * (1.0 - g) + -0.010054 * (g - n3) + -0.047182 * n3 * (1.0 - g) + 0.003454 * (g - n4) + 0.037880 * n4 * (1.0 - g) + -0.010003 * (g - n5) + -0.040980 * n5 * (1.0 - g) + 0.004843 * (g - n6) + 0.000712 * n6 * (1.0 - g) + -0.003670 * (g - n7) + -0.004329 * n7 * (1.0 - g));
+    return clamp(g, 0.0, 1.0);
+}
+
+vec3 saida5(vec2 uv) {
+    vec3 lin = paraLuz(texture(g5, uv).rgb);
+    vec3 luz = uGlow * (vec3(0.000307, 0.000168, 0.001838) * nivelF5_luz(4.0 + 1.0 + acDeltaNivel(), uv));
+    lin += luz;
+    return paraTela(lin);
+}
+
+vec3 antes1(vec2 uv) {
+    vec3 c = clamp(texture(inputImg, uv).rgb, 0.0, 1.0);
+    c = lut(c, 0.0);
+    return c;
+}
+
+vec3 antes2(vec2 uv) {
+    vec3 c = saida1(uv);
+    return c;
+}
+
+vec3 antes3(vec2 uv) {
+    vec3 c = saida2(uv);
+    return c;
+}
+
+vec3 antes5(vec2 uv) {
+    vec3 c = saida3(uv);
+    c = lut(c, 42.0);
+    return c;
+}
+
+vec3 fim(vec2 uv) {
+    vec3 c = saida5(uv);
+    return c;
+}
+
+void main() {
+    if (acPass == 0) { fragColor = vec4(antes1(acScreenNorm), 1.0); return; }
+    if (acPass == 1) { fragColor = vec4(popDe1(acScreenNorm), 1.0); return; }
+    if (acPass == 2) { fragColor = descerComCorte(g1, 0.000000, 0.150000); return; }
+    if (acPass == 3) { fragColor = descerLuz(f1_1); return; }
+    if (acPass == 4) { fragColor = descerLuz(f1_2); return; }
+    if (acPass == 5) { fragColor = descerLuz(f1_3); return; }
+    if (acPass == 6) { fragColor = descerLuz(f1_4); return; }
+    if (acPass == 7) { fragColor = descerLuz(f1_5); return; }
+    if (acPass == 8) { fragColor = descerLuz(f1_6); return; }
+    if (acPass == 9) { fragColor = descerLuz(f1_7); return; }
+    if (acPass == 10) { fragColor = vec4(antes2(acScreenNorm), 1.0); return; }
+    if (acPass == 11) { fragColor = vec4(descer(x2), 1.0); return; }
+    if (acPass == 12) { fragColor = vec4(descer(x2_1), 1.0); return; }
+    if (acPass == 13) { fragColor = vec4(descer(x2_2), 1.0); return; }
+    if (acPass == 14) { fragColor = vec4(descer(x2_3), 1.0); return; }
+    if (acPass == 15) { fragColor = vec4(descer(x2_4), 1.0); return; }
+    if (acPass == 16) { fragColor = vec4(descer(x2_5), 1.0); return; }
+    if (acPass == 17) { fragColor = vec4(descer(x2_6), 1.0); return; }
+    if (acPass == 18) { fragColor = vec4(descer(x2_7), 1.0); return; }
+    if (acPass == 19) { fragColor = vec4(popDe2(acScreenNorm), 1.0); return; }
+    if (acPass == 20) { fragColor = descerComCorte(g2, 0.000000, 0.150000); return; }
+    if (acPass == 21) { fragColor = descerLuz(f2_1); return; }
+    if (acPass == 22) { fragColor = descerLuz(f2_2); return; }
+    if (acPass == 23) { fragColor = descerLuz(f2_3); return; }
+    if (acPass == 24) { fragColor = descerLuz(f2_4); return; }
+    if (acPass == 25) { fragColor = descerLuz(f2_5); return; }
+    if (acPass == 26) { fragColor = descerLuz(f2_6); return; }
+    if (acPass == 27) { fragColor = descerLuz(f2_7); return; }
+    if (acPass == 28) { fragColor = vec4(vec3(antes3(0.5 + (acScreenNorm - 0.5) / 1.000000).r, antes3(acScreenNorm).g, antes3(0.5 + (acScreenNorm - 0.5) / 1.003000).b), 1.0); return; }
+    if (acPass == 29) { fragColor = vec4(descer(x3), 1.0); return; }
+    if (acPass == 30) { fragColor = vec4(descer(x3_1), 1.0); return; }
+    if (acPass == 31) { fragColor = vec4(descer(x3_2), 1.0); return; }
+    if (acPass == 32) { fragColor = vec4(descer(x3_3), 1.0); return; }
+    if (acPass == 33) { fragColor = vec4(descer(x3_4), 1.0); return; }
+    if (acPass == 34) { fragColor = vec4(descer(x3_5), 1.0); return; }
+    if (acPass == 35) { fragColor = vec4(descer(x3_6), 1.0); return; }
+    if (acPass == 36) { fragColor = vec4(descer(x3_7), 1.0); return; }
+    if (acPass == 37) { fragColor = vec4(popDe3(acScreenNorm), 1.0); return; }
+    if (acPass == 38) { fragColor = descerComCorte(g3, 0.000000, 0.150000); return; }
+    if (acPass == 39) { fragColor = descerLuz(f3_1); return; }
+    if (acPass == 40) { fragColor = descerLuz(f3_2); return; }
+    if (acPass == 41) { fragColor = descerLuz(f3_3); return; }
+    if (acPass == 42) { fragColor = descerLuz(f3_4); return; }
+    if (acPass == 43) { fragColor = descerLuz(f3_5); return; }
+    if (acPass == 44) { fragColor = descerLuz(f3_6); return; }
+    if (acPass == 45) { fragColor = descerLuz(f3_7); return; }
+    if (acPass == 46) { fragColor = vec4(antes5(acScreenNorm), 1.0); return; }
+    if (acPass == 47) { fragColor = vec4(descer(x5), 1.0); return; }
+    if (acPass == 48) { fragColor = vec4(descer(x5_1), 1.0); return; }
+    if (acPass == 49) { fragColor = vec4(descer(x5_2), 1.0); return; }
+    if (acPass == 50) { fragColor = vec4(descer(x5_3), 1.0); return; }
+    if (acPass == 51) { fragColor = vec4(descer(x5_4), 1.0); return; }
+    if (acPass == 52) { fragColor = vec4(descer(x5_5), 1.0); return; }
+    if (acPass == 53) { fragColor = vec4(descer(x5_6), 1.0); return; }
+    if (acPass == 54) { fragColor = vec4(descer(x5_7), 1.0); return; }
+    if (acPass == 55) { fragColor = vec4(popDe5(acScreenNorm), 1.0); return; }
+    if (acPass == 56) { fragColor = descerComCorte(g5, 0.600000, 0.150000); return; }
+    if (acPass == 57) { fragColor = descerLuz(f5_1); return; }
+    if (acPass == 58) { fragColor = descerLuz(f5_2); return; }
+    if (acPass == 59) { fragColor = descerLuz(f5_3); return; }
+    if (acPass == 60) { fragColor = descerLuz(f5_4); return; }
+    if (acPass == 61) { fragColor = descerLuz(f5_5); return; }
+    if (acPass == 62) { fragColor = descerLuz(f5_6); return; }
+    vec4 base = texture(inputImg, acScreenNorm);
+    fragColor = vec4(mix(base.rgb, fim(acScreenNorm), uIntensidade), base.a);
+}
+
+    ]]></shader>
+</effect>

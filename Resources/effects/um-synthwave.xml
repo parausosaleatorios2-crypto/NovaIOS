@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.synthwave"
+    name="Retrô Synthwave (Ultra Motion)"
+    name-en="Synthwave (Ultra Motion)"
+    desc="Grade neon em perspectiva + horizonte rosa atrás da camada."
+    desc-en="Neon perspective grid plus pink horizon behind the layer."
+    category="stylize"
+    tags="ultramotion,synthwave,retro,grid,neon,80s">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="density"   label="Densidade" default="12.0" min="2.0" max="40.0" step="0.5" />
+        <slider id="speed"     label="Velocidade" default="0.3" min="0.0" max="2.0" step="0.01" />
+        <slider id="horizon"   label="Horizonte" default="0.55" min="0.3" max="0.8" step="0.01" />
+        <slider id="intensity" label="Intensidade" default="0.8" min="0.0" max="1.5" step="0.02" />
+        <color  id="lineColor" label="Grade"     default="#ffff2fc8" />
+        <color  id="skyColor"  label="Céu"       default="#ff2b0f55" />
+    </params>
+
+    <!-- Na vitrine: o céu e a grade só desenham onde a camada é TRANSPARENTE (é um fundo), então a amostra
+         precisa ter margem vazia — senão o cartão sai igual e o laço sai parado. -->
+    <preview amostra="figura">
+        <set param="intensity" value="1.5" />
+        <set param="speed" value="0.9" />
+    </preview>
+
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    vec3 fundo = orig.rgb;
+
+    float y = acScreenNorm.y;
+    float x = acScreenNorm.x;
+
+    if (y < horizon) {
+        // céu
+        float grad = smoothstep(0.0, horizon, y);
+        vec3 ceu = mix(skyColor.rgb * 0.5, skyColor.rgb, grad);
+        fundo = mix(fundo, ceu, (1.0 - orig.a) * skyColor.a);
+    } else {
+        // chão em perspectiva
+        float z = (y - horizon) / (1.0 - horizon);
+        float profundidade = 1.0 / max(z, 1e-3);
+        float linhaY = fract((profundidade * 0.5) - acTime * speed * 2.0);
+        float lY = smoothstep(0.03, 0.0, abs(linhaY - 0.5) - 0.48);
+        float linhaX = fract((x - 0.5) * density * profundidade * 0.25);
+        float lX = smoothstep(0.03, 0.0, abs(linhaX - 0.5) - 0.48);
+        float grid = max(lX, lY);
+        vec3 grade = mix(skyColor.rgb * 0.3, lineColor.rgb, grid * lineColor.a);
+        fundo = mix(fundo, grade, (1.0 - orig.a) * intensity);
+    }
+    fragColor = vec4(fundo * (1.0 - orig.a) + orig.rgb * orig.a, max(orig.a, intensity * 0.5));
+}
+    ]]></shader>
+</effect>

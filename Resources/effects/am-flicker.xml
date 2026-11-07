@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CINTILAÇÃO — o Flicker do Alight Motion, quadro por quadro (0.576.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz o Cintilação 100% igual o alight motion", da série "100% iguais ao AM". Mesmos
+  parâmetros, ids, faixas, passos e padrões do `com.alightcreative.effects.flicker2` (o Flicker atual do AM 5.0.281;
+  um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM (`assets/effects/flicker2.xml` do APK
+  descompactado) e escrita de novo em `model/Cintilacao.kt`; o arquivo do AM não entra no repositório. A conferência
+  é `node tools/amcintilacao/referencia.js` → `CintilacaoAmTest`: o script do próprio AM e o Kotlin daqui, quadro a
+  quadro, com o ruído conferido contra o bytecode do APK (`tools/amcintilacao/confere_ruido.py`).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - A opacidade da camada é multiplicada por três fatores, cada um com um ruído simplex 3D do AM (o `AM.simplexNoise`
+    dos scripts, com a tabela torta dele): o tremido é irregular, sem ciclo que se repita.
+  - Base Tempo (o padrão): o ruído anda com os ciclos da Frequência ÷ 4. Base Posição: o ruído é lido no lugar da
+    camada na cena (px do canto, ÷ 500, vezes a Frequência) — e, como no AM, a Frequência ali também é a dos ciclos
+    acumulados, então o tremido anda com o tempo mesmo com a camada parada (no primeiro instante, todo lugar dá o
+    mesmo).
+  - A Intensidade pesa igual nos três fatores (o script lê a metade dela uma vez só): a camada NUNCA chega à opacidade
+    cheia dela — com o padrão (0,75) anda entre ~3% e ~66% da opacidade dela (o teto da conta é 81%); com 1, entre
+    ~0,1% e ~56%; até com 0,01 ela fica em ~98%. Só com 0 a camada fica intacta.
+  - A Semente troca o tremido (o terceiro eixo do ruído). A Frequência é do tipo "hz" do AM: com quadro-chave, o
+    tremido só acelera, sem pular.
+  - O relógio é o do AM: cada quadro é avaliado no começo dele em milissegundos inteiros (`quadro · 100000 ÷ fphs`)
+    e o tempo da camada em float.
+  - Os passos são os do AM (sem `step` lá: a potência de 10 abaixo de faixa ÷ 100, e no máximo a do mínimo): 0,01,
+    0,01 e 0,1. O AM escreve "Freqüência" (a grafia antiga); aqui é "Frequência". O valor aparece como "7.00Hz".
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele multiplica a opacidade da camada. Quem executa é
+  o compositor (`SceneRenderer.opacidadeDaCamada`, o caminho do Piscar e da Opacidade do pulso, na ordem da lista), no
+  relógio do AM. O shader abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+
+  A Cintilação ANTIGA do AM (`com.alightcreative.effects.flicker`, "deprecated") é o `am-flicker-legacy.xml`, fora
+  do catálogo.
+-->
+<effect
+    id="nova.effect.am-flicker"
+    name="Cintilação"
+    name-en="Flicker"
+    desc="A camada oscila aleatoriamente, ajustando a opacidade de forma automática ao longo do tempo (o Flicker do Alight Motion)."
+    desc-en="Randomly flickers the layer by automatically adjusting the opacity over time (Alight Motion's Flicker)."
+    category="opacity"
+    stage="transform"
+    tags="cintilação,cintilar,tremeluzir,piscar,falha,glitch,opacidade,visibilidade,aleatório,automático,flicker,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="7.0" min="0.05" max="10.0" step="0.01" type="hz" />
+        <spinner id="mag" label="Intensidade" default="0.75" min="0.0" max="1.0" step="0.01" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="10.0" step="0.1" />
+        <selector id="basis" label="Base" style="radio" options="Tempo|Posição" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

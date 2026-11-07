@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   HACHURA (CROSS-HATCH)
+  ============================================================================
+
+  O desenho a lápis: linhas finas cruzando a imagem, mais densas onde o pixel
+  é escuro, mais esparsas onde é claro. A "ilustração antiga" clássica.
+
+  ============================================================================
+   COMO A LUMA VIRA LINHAS
+  ============================================================================
+
+  A ideia é da ilustração técnica: luma ALTA vira papel branco; a cada queda
+  de luma, entra uma CAMADA de linhas num ângulo diferente. Quatro camadas
+  (0°, 45°, 90°, 135°) chegam no quase-preto. A sobreposição das direções é o
+  que dá a sensação de sombra 3D.
+
+  Cada camada é feita com um `fract` no eixo rotacionado: `sin(50 * eixo)`
+  posiciona a linha, `step` ou `smoothstep` desenha a espessura. A rotação é
+  um giro 2D clássico.
+
+  ============================================================================
+   POR QUE 50 ONDAS, E NÃO UM NÚMERO MÁGICO
+  ============================================================================
+
+  A frequência (50 aqui) controla QUANTAS linhas por tela. Menos linhas: desenho
+  grosso. Mais linhas: desenho de caneta técnica. O parâmetro `density` escala
+  isso — o autor do take decide o estilo.
+-->
+<effect
+    id="nova.effect.cross-hatch"
+    name="Hachura"
+    name-en="Cross-hatch"
+    desc="Desenho a lápis: linhas cruzando a imagem, mais densas no escuro."
+    desc-en="Pencil drawing: crossing lines, denser where it's dark."
+    category="stylize"
+    tags="hachura,cross-hatch,lápis,desenho,pencil,sketch,ilustração">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="paperColor" label="Cor do papel" default="#F5F0E0FF" />
+        <color id="inkColor" label="Cor do traço" default="#1A1A1AFF" />
+        <slider id="density" label="Densidade das linhas"
+                default="50.0" min="10.0" max="200.0" step="1.0" snap="0.0" />
+        <slider id="thickness" label="Espessura"
+                default="0.7" min="0.1" max="2.0" step="0.05" snap="0.0" />
+        <slider id="strength" label="Mistura"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais linhas pra ler como lápis. -->
+    <preview>
+        <set param="density" value="80.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** A linha num eixo girado por `graus`: 1 na linha, 0 fora dela. */
+float linhaEm(vec2 p, float graus, float frequencia) {
+    float a = radians(graus);
+    float eixo = p.x * cos(a) - p.y * sin(a);
+    // `sin(frequencia * eixo)` oscila entre -1 e 1; a linha é onde o valor passa de um limiar.
+    float onda = sin(frequencia * eixo);
+    return smoothstep(0.95 - 0.05 * thickness, 1.0, onda);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    float l = luma(original.rgb);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+    float freq = density;
+
+    // Quatro camadas, cada uma entra num patamar de luma.
+    // Luma > 0.75: só papel. 0.5-0.75: uma camada. 0.25-0.5: duas. 0.0-0.25: três. <0: quatro.
+    float traco = 0.0;
+    if (l < 0.75) traco = max(traco, linhaEm(p, 0.0, freq));
+    if (l < 0.55) traco = max(traco, linhaEm(p, 45.0, freq));
+    if (l < 0.35) traco = max(traco, linhaEm(p, 90.0, freq));
+    if (l < 0.15) traco = max(traco, linhaEm(p, 135.0, freq));
+
+    vec3 desenho = mix(paperColor.rgb, inkColor.rgb, traco);
+
+    vec3 cor = mix(original.rgb, desenho, strength);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

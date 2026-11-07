@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_code
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-code"
+    name="Code (NV)"
+    name-en="Code (NV)"
+    desc="NodeVideo Asset Store effect 'code', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'code', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="texture0" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <color id="_color" label="Color" default="#FFFFFFFF" />
+        <slider id="_scale" label="Scale" default="0.5" min="0" max="2" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+int u_xlati1;
+vec3 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec2 u_xlat7;
+vec2 u_xlat13;
+vec4 TempArray0[12];
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    TempArray0[0].x = 9.52882956e-44;
+    TempArray0[1].x = 1.14906474e-43;
+    TempArray0[2].x = 8.82818033e-44;
+    TempArray0[3].x = 9.6689594e-44;
+    TempArray0[4].x = 0.0;
+    TempArray0[5].x = 1.40129846e-45;
+    TempArray0[6].x = 7.56701171e-44;
+    TempArray0[7].x = 5.18480432e-44;
+    TempArray0[8].x = 7.14662217e-44;
+    TempArray0[9].x = 2.94272678e-44;
+    TempArray0[10].x = intBitsToFloat(int(0xFFFFFFE5u));
+    TempArray0[11].x = 5.04467447e-44;
+    u_xlat1.xy = _resolution.xy * vec2(_scale);
+    u_xlat13.xy = u_xlat1.xy * acScreenNorm.xy;
+    u_xlat13.xy = u_xlat13.xy * vec2(0.125, 0.0625);
+    u_xlat2.xy = ceil(u_xlat13.xy);
+    u_xlat2.xy = u_xlat2.xy * vec2(8.0, 16.0);
+    u_xlat1.xy = u_xlat2.xy / u_xlat1.xy;
+    u_xlat2.xyz = texture(inputImg, u_xlat1.xy).xyz;
+    u_xlat1.x = dot(u_xlat2.xyz, vec3(0.300000012, 0.589999974, 0.109999999));
+    u_xlat1.x = u_xlat1.x * 12.0;
+    u_xlati1 = int(u_xlat1.x);
+    u_xlat1.x = TempArray0[u_xlati1].x;
+    u_xlati1 = floatBitsToInt(u_xlat1.x) + 140;
+    u_xlatb2.xy = greaterThanEqual(u_xlat13.xyxx, (-u_xlat13.xyxx)).xy;
+    u_xlat7.xy = fract(abs(u_xlat13.xy));
+    {
+        vec2 hlslcc_movcTemp = u_xlat7;
+        hlslcc_movcTemp.x = (u_xlatb2.x) ? u_xlat7.x : (-u_xlat7.x);
+        hlslcc_movcTemp.y = (u_xlatb2.y) ? u_xlat7.y : (-u_xlat7.y);
+        u_xlat7 = hlslcc_movcTemp;
+    }
+    u_xlat7.xy = u_xlat7.xy * vec2(8.0, 16.0) + vec2(4.0, 0.0);
+    u_xlat1.x = float(u_xlati1);
+    u_xlat1.xw = u_xlat1.xx * vec2(0.0625, 0.00390625);
+    u_xlat1.xy = u_xlat7.xy * vec2(0.00390625, 0.00390625) + u_xlat1.xw;
+    u_xlat1.x = texture(texture0, u_xlat1.xy).x;
+    u_xlat1.y = u_xlat0.w;
+    u_xlat1 = u_xlat1.xxxy * _color;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

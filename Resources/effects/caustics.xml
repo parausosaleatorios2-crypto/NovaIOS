@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CÁUSTICAS (LUZ SUBAQUÁTICA)
+  ============================================================================
+
+  Os padrões de luz que se formam no fundo de uma piscina quando o sol bate na
+  água mexida: linhas brilhantes que se cruzam, se abrem e se fecham, numa
+  dança lenta.
+
+  ============================================================================
+   DE ONDE SAEM AS LINHAS
+  ============================================================================
+
+  Cáusticas de verdade acontecem porque a superfície da água age como mil
+  lentes pequenas, concentrando raios de sol em LINHAS onde a luz converge.
+  Simular raytracing disso num shader é fora de cogitação.
+
+  O truque padrão é o de Shane (`pixelshop`): dois campos de ruído Voronoi-like,
+  animados em tempos levemente diferentes, somados com SINAL — o produto
+  escalar entre eles acentua onde as linhas cruzam. O resultado parece com
+  cáusticas de água rasa o suficiente pra enganar o olho por 5 segundos.
+
+  ============================================================================
+   O QUE MISTURA SOBRE A IMAGEM
+  ============================================================================
+
+  Cáustica é LUZ. A mistura sobre a imagem é por SCREEN, e nunca por normal
+  (que esconderia o fundo). A cor padrão é um branco levemente cianotado — a
+  cor da luz do sol filtrada pela água.
+-->
+<effect
+    id="nova.effect.caustics"
+    name="Cáusticas"
+    name-en="Caustics"
+    desc="Padrões de luz subaquática dançando sobre a imagem."
+    desc-en="Underwater light patterns dancing over the image."
+    category="procedural"
+    tags="cáusticas,água,subaquático,piscina,luz,ondas,sol">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="scale" label="Escala"
+                default="6.0" min="1.0" max="40.0" step="0.5" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="0.4" min="0.0" max="3.0" step="0.05" snap="0.0" />
+        <slider id="intensity" label="Intensidade"
+                default="1.0" min="0.0" max="3.0" step="0.05" snap="0.0" />
+        <slider id="detail" label="Camadas"
+                default="4" min="1" max="8" step="1" type="integer" />
+        <color id="lightColor" label="Cor da luz" default="#DFF4FFFF" />
+    </params>
+
+    <!-- Na vitrine, intensidade maior pra ver o padrão. -->
+    <preview>
+        <set param="intensity" value="2.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAXIMO_DE_CAMADAS = 8;
+const float TAU = 6.2831853;
+
+/**
+ * As cáusticas pelo método de Shane: para cada camada, um ponto que gira num
+ * círculo pequeno vira a semente de uma distância ao ponto mais próximo —
+ * acumulando por camada e normalizando pelo número delas.
+ */
+float causticas(vec2 uv, float t, int camadas) {
+    vec2 p = uv;
+    float soma = 0.0;
+    float amplitude = 1.0;
+    float peso = 0.0;
+
+    for (int i = 0; i < MAXIMO_DE_CAMADAS; i++) {
+        if (i >= camadas) break;
+        float fi = float(i);
+        // Cada camada rotaciona num ângulo diferente: dá a sensação de várias ondas cruzando.
+        float ang = TAU * fi / float(max(camadas, 1));
+        vec2 centro = 0.5 + vec2(cos(ang + t), sin(ang + t)) * 0.3;
+        vec2 d = p - centro;
+        // 1 − |cos| dá linhas brilhantes onde a distância ao centro é múltiplo da fase.
+        float linha = abs(cos(length(d) * 15.0 - t * 2.0));
+        linha = 1.0 - linha;
+        soma += linha * amplitude;
+        peso += amplitude;
+        amplitude *= 0.75;
+    }
+    return soma / max(peso, 1e-4);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y) * scale * 0.2;
+    float t = acTime * speed;
+    int n = clamp(int(detail + 0.5), 1, MAXIMO_DE_CAMADAS);
+
+    float linhas = causticas(p, t, n);
+
+    // Concentra as linhas: quem está fraco vira zero, quem está forte vira forte.
+    linhas = pow(linhas, 3.0) * intensity;
+
+    vec3 luz = lightColor.rgb * linhas;
+
+    // Screen: a luz nunca escurece pixel claro.
+    vec3 cor = 1.0 - (1.0 - original.rgb) * (1.0 - luz);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

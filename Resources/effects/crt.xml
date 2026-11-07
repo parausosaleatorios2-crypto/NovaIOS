@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.crt"
+    name="Tela antiga (CRT)"
+    name-en="CRT Screen"
+    desc="Linhas de varredura, curvatura de tubo e sangramento de cor."
+    desc-en="Scanlines, curvature and phosphor glow of an old tube screen."
+    category="stylize"
+    blend="true"
+    tags="retrô,vhs,crt,scanline,glitch,anos 90">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="scanlines" label="Linhas" default="240.0" min="20.0" max="900.0" step="10.0" />
+        <slider id="scanDepth" label="Força das linhas" default="0.35" min="0.0" max="1.0" step="0.01" />
+        <slider id="curvature" label="Curvatura" default="0.12" min="0.0" max="0.6" step="0.01" snap="0.0" />
+        <slider id="bleed" label="Sangramento de cor" default="1.5" min="0.0" max="10.0" step="0.1" snap="0.0" />
+        <slider id="flicker" label="Tremida" default="0.04" min="0.0" max="0.3" step="0.01" snap="0.0" />
+        <slider id="vignette" label="Vinheta" default="0.35" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    // Curvatura de tubo: empurra as bordas para fora a partir do centro.
+    if (curvature > 0.0) {
+        vec2 centered = uv * 2.0 - 1.0;
+        vec2 offset = centered.yx * centered.yx * centered * curvature;
+        uv = (centered + offset) * 0.5 + 0.5;
+
+        // Fora do tubo não há imagem. Preto opaco, e não transparente: uma TV
+        // desligada tem moldura, não tem buraco.
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+            fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+        }
+    }
+
+    // Sangramento: os três canhões de cor do tubo nunca alinhavam direito.
+    vec2 shift = vec2(bleed * acEscalaDePixel, 0.0) * acTexelSize;
+    vec4 base = texture(inputImg, uv);
+    float r = texture(inputImg, uv + shift).r;
+    float b = texture(inputImg, uv - shift).b;
+    vec3 rgb = vec3(r, base.g, b);
+
+    // Linhas de varredura.
+    float line = sin(uv.y * scanlines * 3.14159265);
+    rgb *= 1.0 - scanDepth * (0.5 + 0.5 * line) * 0.5;
+
+    // Tremida do sincronismo vertical, ligada ao tempo.
+    rgb *= 1.0 - flicker * (0.5 + 0.5 * sin(acTime * 47.0));
+
+    // Vinheta do tubo.
+    vec2 fromCenter = (uv - 0.5) * 2.0;
+    float dist = length(fromCenter * vec2(acAspect, 1.0));
+    rgb *= 1.0 - vignette * smoothstep(0.6, 1.6, dist);
+
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), base.a);
+}
+
+    ]]></shader>
+</effect>

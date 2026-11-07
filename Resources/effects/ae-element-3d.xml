@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ELEMENT 3D — o plugin da Video Copilot, lido de dentro do .aex
+  ============================================================================
+
+  Pedido do snow (24/10/2026): "comece a fazer o element 3d 100% igual". O plano por fases está em
+  `docs/PLANO-ELEMENT-3D.md` e as ferramentas em `tools/element3d`.
+
+  DE ONDE VEIO: tudo lido do `Element.aex` 2.2.2192 e conferido contra as funções dele emuladas.
+  - a geometria é a extrusão do plugin (`model/element3d/ExtrusaoDoElement`, com o caminho achatado, o
+    Spike Filter, as tampas pelo libtess do GLU, a parede e o bevel), igual bit a bit em 30 casos;
+  - as letras saem do arquivo da fonte (`FonteOpenType`) no mesmo formato que o AE entrega ao Element;
+  - o shader é o DO PLUGIN: os pedaços de GLSL que o `.aex` guarda em texto, montados como o
+    `RenderManager::CompileShader` monta e traduzidos para GLSL ES 3.00 (`assets/element3d`, gerados);
+  - os seis blocos uniformes vêm das funções do plugin portadas linha a linha: material, render, luzes,
+    matrizes (conferidos byte a byte) e os dois do objeto.
+
+  O QUE AINDA NÃO ESTÁ (ver `docs/PENDENCIAS-DOS-EFEITOS-AE.md`, seção "Element 3D"): não há IBL
+  (ambiente), sombra, AO nem os passes de tela (glow, DOF, FXAA), e a conversão de unidades do Element
+  (World Position, Particle Size) não está medida: o texto desenha no espaço da camada. Multi-Object e
+  Deform (0.788.0) desenham com as contas do plugin; o ponto de partida do sorteio e a escala do deform
+  são nossos (ver PENDENCIAS).
+
+  COMO RODA: `stage="element3d"`, como a Extrusão 3D — não é um shader sobre imagem, é uma malha com
+  câmera e luz, então quem o executa é o compositor (`SceneRenderer.element3D`, `render/ElementNaCamada`,
+  `render/PasseDoElement`). O `<shader>` abaixo é só uma cópia fiel da entrada, para o caso de algum
+  caminho que não conhece a bandeira executá-lo.
+-->
+<effect
+    id="nova.effect.aeelement"
+    name="Element 3D"
+    name-en="Element 3D"
+    desc="O texto em 3D de verdade do Element: extrusão com bisel, material e luz, com a câmera da composição."
+    desc-en="Real 3D text from Element: extrusion with bevel, material and lighting, seen by the composition camera."
+    category="stylize"
+    stage="element3d"
+    layer="text"
+    tags="element 3d,element,video copilot,texto 3d,extrusão,bisel,bevel,3d,volume,metal,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          O ambiente (o "Environment" das Render Settings do Element): uma camada com a imagem equiretangular
+          (360°) vira o cubemap pré-filtrado do plugin (`IblDoElementNaGpu`, os shaders `052` e `047` dele) — é o
+          reflexo e a luz indireta do material Physical. Sem camada, o ambiente fica apagado, como no Element com o
+          mapa faltando. Os mapas da Video Copilot não vão no app: quem tem os arquivos importa a imagem como camada.
+        -->
+        <texture id="ambiente" src="layer" group="Ambiente 360°" label="Mapa de ambiente (360°)" empty="transparent" />
+
+        <!--
+          ======================= A extrusão =======================
+
+          Os campos do "Extrusion Model" da cena. Os padrões são os do construtor do modelo no plugin
+          (`tools/element3d/cena_padrao.py`): Extrude 1, Bevel Size 0,5, Bevel Depth 1, Curve 1,
+          Segments 3.
+        -->
+        <slider id="extrude" label="Profundidade"
+                default="1.0" min="0.0" max="100.0" step="0.1" snap="1.0" />
+        <slider id="bevelSize" group="Bisel" label="Tamanho"
+                default="0.5" min="0.0" max="100.0" step="0.05" snap="0.5" />
+        <slider id="bevelDepth" group="Bisel" label="Profundidade do bisel"
+                default="1.0" min="-100.0" max="100.0" step="0.05" snap="1.0" />
+        <slider id="bevelCurve" group="Bisel" label="Curva"
+                default="1.0" min="-1.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="bevelSegments" group="Bisel" label="Segmentos"
+                default="3.0" min="0.0" max="32.0" step="1.0" snap="3.0" />
+
+        <!--
+          ======================= O material =======================
+
+          A cor entra na etiqueta 510 da cena (o `diffuseColor` do Standard Shader); a conversão em bloco
+          do shader é a do plugin (`BlocoDoMaterial`, igual à função dele em 322 casos).
+        -->
+        <color id="diffuseColor" group="Material" label="Cor" default="#FFFFFF" />
+        <!-- na unidade da cena (o importador copia o valor do preset cru): o "3D Text 1" usa 1 e 0,5 -->
+        <slider id="specular" group="Material" label="Especular"
+                default="1.0" min="0.0" max="10.0" step="0.05" snap="1.0" />
+        <slider id="shininess" group="Material" label="Brilho especular"
+                default="0.5" min="0.0" max="10.0" step="0.05" snap="0.5" />
+
+        <!--
+          ======================= A luz =======================
+
+          Os conjuntos de luz do "Add Lighting" são os 21 que o plugin monta em `0x1800a9dc0`, extraídos
+          para `assets/element3d/luzes.bin`; os nomes são os dele. "Nenhuma" com as luzes da composição
+          desligadas deixa o Element com a luz padrão dele.
+        -->
+        <selector id="lighting" group="Luz" label="Iluminação" default="1"
+                  options="Nenhuma|Single Light|Clean Blue|Warm|Spot|Spot Blue|Sun|Sun Set|Basic|Dramatic|Cinema|Stylized|360|Product|Aqua|Underwater|Natural|Dark|Red|100 Ambient|SSS" />
+        <slider id="lightBrightness" group="Luz" label="Brilho da luz"
+                default="100.0" min="0.0" max="1000.0" step="1.0" snap="100.0" />
+        <switch id="compLights" group="Luz" label="Usar as luzes da composição" default="true" />
+
+        <!--
+          ======================= A saída =======================
+
+          O Gamma de Output › Sampling &amp; Aliasing: é o argumento com que o plugin monta o bloco do
+          material, então mexer nele muda a cor como no AE.
+        -->
+        <slider id="gamma" group="Saída" label="Gama"
+                default="2.2" min="1.0" max="4.0" step="0.05" snap="2.2" />
+
+        <!--
+          ======================= Multi-Object (Group 1 › Particle Look) =======================
+
+          Cada letra é um objeto (com "Separate Objects" na cena): tamanho, rotação, deslocamento, espalhamento e
+          ruído por objeto. A conta é a do plugin (`MultiObjetoDoElement`, `0x18005f0c0`, igual bit a bit em 300
+          casos); os sorteios são o `rand()` dele. Ids do Element entre parênteses no `SceneRenderer`.
+        -->
+        <switch id="moEnable" group="Multi-Object" label="Multi-Object" default="true" />
+        <slider id="moSize" group="Multi-Object" label="Tamanho do objeto"
+                default="1.0" min="0.0" max="100.0" step="0.01" snap="1.0" />
+        <slider id="moSizeRandom" group="Multi-Object" label="Tamanho aleatório"
+                default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="moRotX" group="Multi-Object" label="Rotação X" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="moRotY" group="Multi-Object" label="Rotação Y" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="moRotZ" group="Multi-Object" label="Rotação Z" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <selector id="moRotOrder" group="Multi-Object" label="Ordem da rotação" default="0"
+                  options="XYZ|XZY|YXZ|YZX|ZXY|ZYX" />
+        <slider id="moRotRandom" group="Multi-Object" label="Rotação aleatória" type="angle"
+                default="0.0" min="0.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="moDisplace" group="Multi-Object" label="Afastar do centro"
+                default="0.0" min="-100.0" max="100.0" step="0.01" snap="0.0" />
+        <slider id="moDisplaceRandom" group="Multi-Object" label="Afastamento aleatório"
+                default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="moScatter" group="Multi-Object" label="Espalhar"
+                default="0.0" min="0.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="moNoise" group="Multi-Object" label="Ruído na posição"
+                default="0.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="moNoiseEvolution" group="Multi-Object" label="Evolução do ruído" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="moNoiseScale" group="Multi-Object" label="Escala do ruído"
+                default="1.0" min="0.0" max="100.0" step="0.01" snap="1.0" />
+
+        <!--
+          ======================= Deform (Group 1 › Particle Look) =======================
+
+          O shader `064` do próprio plugin (twist, bend, taper e noise), rodado por transform feedback como no AE
+          (`render/PasseDoDeformDoElement`). Os campos vêm de `LeitorDosGrupos` (igual byte a byte à função do
+          plugin em 41 casos).
+        -->
+        <switch id="deform" group="Deformar" label="Deformar" default="true" />
+        <switch id="twist" group="Deformar" label="Torcer" default="true" />
+        <slider id="twistX" group="Deformar" label="Torção X" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="twistY" group="Deformar" label="Torção Y" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="twistZ" group="Deformar" label="Torção Z" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <switch id="bend" group="Deformar" label="Curvar" default="false" />
+        <selector id="bendAxis" group="Deformar" label="Eixo da curva" default="0" options="X|Y|Z" />
+        <slider id="bendAngle" group="Deformar" label="Ângulo da curva" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="bendDirection" group="Deformar" label="Direção da curva" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <switch id="bendCenter" group="Deformar" label="Curvar pelo centro" default="false" />
+        <switch id="taper" group="Deformar" label="Afunilar" default="false" />
+        <slider id="taperAmount" group="Deformar" label="Afunilamento"
+                default="0.0" min="-1.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="taperCurve" group="Deformar" label="Curva do afunilamento"
+                default="0.0" min="-4.0" max="4.0" step="0.01" snap="0.0" />
+        <switch id="taperSymmetrical" group="Deformar" label="Afunilar simétrico" default="false" />
+        <switch id="noise" group="Deformar" label="Ruído" default="false" />
+        <selector id="noiseMethod" group="Deformar" label="Tipo de ruído" default="0"
+                  options="Noise|Distortion|3D Distortion" />
+        <slider id="noiseIntensity" group="Deformar" label="Intensidade do ruído"
+                default="0.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="noiseScale" group="Deformar" label="Escala do ruído da malha"
+                default="100.0" min="0.0" max="1000.0" step="1.0" snap="100.0" />
+        <slider id="noiseEvolution" group="Deformar" label="Evolução do ruído da malha" type="angle"
+                default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+
+        <!--
+          ======================= Animation Engine =======================
+
+          O texto vai do Start Group até as partículas do Finish Group conforme a "Animação" (0 a 100%), cada letra
+          no seu tempo: a ordem pelo tipo (direção, distância a um ponto, sorteio, ordem das formas), o Smoothness
+          (quanto os tempos se sobrepõem), o Randomness e o Ease. Sem modelo no grupo final (os presets de texto),
+          o texto encolhe até sumir. As contas são as do plugin (`AnimacaoDoElement`, `0x18005ba30` e
+          `0x180056ed0`, iguais bit a bit). Time Delay, direção e ponto do Radial vêm do preset (bloco
+          "parametros").
+        -->
+        <switch id="aeEnable" group="Animation Engine" label="Animar entre grupos" default="false" />
+        <selector id="aeStartGroup" group="Animation Engine" label="Grupo inicial" default="0" options="1|2|3|4|5" />
+        <selector id="aeFinishGroup" group="Animation Engine" label="Grupo final" default="1" options="1|2|3|4|5" />
+        <slider id="aeAnimation" group="Animation Engine" label="Animação"
+                default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <selector id="aeType" group="Animation Engine" label="Ordem das letras" default="1"
+                  options="Uniform|Directional|Radial|Random|Shape Order" />
+        <slider id="aeSmoothness" group="Animation Engine" label="Suavidade entre letras"
+                default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="aeRandomness" group="Animation Engine" label="Aleatoriedade"
+                default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <selector id="aeEase" group="Animation Engine" label="Suavização" default="1"
+                  options="Off|Ease|Ease-In|Ease-Out" />
+        <switch id="aeDisconnect" group="Animation Engine" label="Cada letra no seu tempo" default="true" />
+        <slider id="aeSeed" group="Animation Engine" label="Semente"
+                default="5000.0" min="0.0" max="100000.0" step="1.0" snap="5000.0" />
+    </params>
+
+    <!--
+      ======================= Predefinições =======================
+
+      Looks do que o efeito JÁ faz: geometria (extrusão e bisel), material (cor, especular) e o conjunto de luz
+      do "Add Lighting". Sem IBL não há reflexo de ambiente, então nada aqui tenta parecer metal polido — isso
+      entra quando o IBL entrar (ver `docs/PENDENCIAS-DOS-EFEITOS-AE.md`).
+    -->
+    <presets>
+        <preset id="bisel-fundo" name="🔶 Bisel fundo" name-en="🔶 Deep Bevel">
+            <value param="extrude" value="3.0" />
+            <value param="bevelSize" value="2.0" />
+            <value param="bevelDepth" value="2.0" />
+            <value param="bevelSegments" value="8" />
+            <value param="lighting" value="1" />
+        </preset>
+        <preset id="aresta-viva" name="📐 Aresta viva" name-en="📐 Hard Edge">
+            <value param="extrude" value="2.0" />
+            <value param="bevelSize" value="0.1" />
+            <value param="bevelCurve" value="0.0" />
+            <value param="bevelSegments" value="0" />
+        </preset>
+        <preset id="dourado" name="🏆 Dourado" name-en="🏆 Gold">
+            <value param="extrude" value="2.0" />
+            <value param="bevelSize" value="1.0" />
+            <value param="bevelSegments" value="6" />
+            <value param="diffuseColor" value="#FFC24D" />
+            <value param="specular" value="70.0" />
+            <value param="shininess" value="45.0" />
+            <value param="lighting" value="3" />
+        </preset>
+        <preset id="cinema" name="🎬 Luz de cinema" name-en="🎬 Cinema Light">
+            <value param="lighting" value="10" />
+            <value param="lightBrightness" value="120.0" />
+            <value param="specular" value="40.0" />
+        </preset>
+        <preset id="dramatico" name="🌒 Dramático" name-en="🌒 Dramatic">
+            <value param="lighting" value="9" />
+            <value param="specular" value="80.0" />
+            <value param="shininess" value="30.0" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

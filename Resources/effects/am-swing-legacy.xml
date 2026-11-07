@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BALANÇO (ANTIGO) — o Swing antigo do Alight Motion (0.547.0), FORA DO CATÁLOGO
+  ============================================================================
+
+  O `com.alightcreative.effects.swing` do AM 5.0.281: marcado "deprecated" lá (não aparece mais na lista de
+  efeitos), mas os projetos antigos ainda o trazem — existe aqui para a importação cair num efeito com a MESMA
+  conta. O de hoje é o `am-swing.xml` (o `swing2`); leia o comentário dele.
+
+  A única diferença para o de hoje: a Frequência daqui não é do tipo "hz". O script recebe a frequência DO
+  INSTANTE e faz `tempo da camada (0 a 1) × duração × frequência`. Sem quadro-chave dá no mesmo; com
+  quadro-chave na Frequência, a camada pula (o porquê de o AM ter trocado). E a Fase se chama "Fase Inicial".
+  A conta é a de `model/Balanco.kt` (`ID_ANTIGO`), conferida no `BalancoAmTest` contra o script do AM.
+-->
+<effect
+    id="nova.effect.am-swing-legacy"
+    name="Balanço (antigo)"
+    name-en="Swing (legacy)"
+    desc="O Balanço antigo do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Swing, from projects made before its current version."
+    category="distort"
+    stage="transform"
+    catalog="false"
+    tags="balanço,swing,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="2.0" min="0.1" max="16.0" step="0.01"
+            ticks="1.0,2.0,4.0,8.0" />
+        <spinner id="a1" label="Ângulo 1" default="-30.0" min="-180.0" max="180.0" step="0.1"
+            ticks="-180.0,-135.0,-90.0,-45.0,0.0,45.0,90.0,135.0,180.0" type="angle" />
+        <spinner id="a2" label="Ângulo 2" default="30.0" min="-180.0" max="180.0" step="0.1"
+            ticks="-180.0,-135.0,-90.0,-45.0,0.0,45.0,90.0,135.0,180.0" type="angle" />
+        <spinner id="phase" label="Fase Inicial" default="0.0" min="0.0" max="2.0" step="0.01" ticks="1.0" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

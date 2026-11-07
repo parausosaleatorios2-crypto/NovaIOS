@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Distort_polar_coordinates
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-distort-polar-coordinates"
+    name="Effect Distort Polar Coordinates (NV)"
+    name-en="Effect Distort Polar Coordinates (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Distort_polar_coordinates', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Distort_polar_coordinates', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_conversion_type" type="integer" label="Conversion Type" default="0" min="0" max="1" step="1" />
+        <slider id="_interpolation" label="Interpolation" default="1" min="0" max="1" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec2 u_xlatb1;
+vec2 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec2 u_xlat6;
+bool u_xlatb6;
+bvec2 u_xlatb12;
+float u_xlat13;
+float u_xlat18;
+bool u_xlatb18;
+bool u_xlatb19;
+void main()
+{
+    u_xlat0.xy = vec2(_viewport_ratio.y, _viewport_ratio.x) * vec2(0.5, 0.5);
+    u_xlat6.xy = acScreenNorm.yx * vec2(_viewport_ratio.y, _viewport_ratio.x) + (-u_xlat0.xy);
+    u_xlat18 = dot(u_xlat6.xy, u_xlat6.xy);
+    u_xlat18 = sqrt(u_xlat18);
+    u_xlat0.x = u_xlat18 / u_xlat0.x;
+    u_xlat1.y = (-u_xlat0.x) + 1.0;
+    u_xlat0.x = min(abs(u_xlat6.y), abs(u_xlat6.x));
+    u_xlat18 = max(abs(u_xlat6.y), abs(u_xlat6.x));
+    u_xlat18 = float(1.0) / u_xlat18;
+    u_xlat0.x = u_xlat18 * u_xlat0.x;
+    u_xlat18 = u_xlat0.x * u_xlat0.x;
+    u_xlat13 = u_xlat18 * 0.0208350997 + -0.0851330012;
+    u_xlat13 = u_xlat18 * u_xlat13 + 0.180141002;
+    u_xlat13 = u_xlat18 * u_xlat13 + -0.330299497;
+    u_xlat18 = u_xlat18 * u_xlat13 + 0.999866009;
+    u_xlat13 = u_xlat18 * u_xlat0.x;
+    u_xlatb19 = abs(u_xlat6.y)<abs(u_xlat6.x);
+    u_xlat13 = u_xlat13 * -2.0 + 1.57079637;
+    u_xlat13 = u_xlatb19 ? u_xlat13 : float(0.0);
+    u_xlat0.x = u_xlat0.x * u_xlat18 + u_xlat13;
+    u_xlatb18 = u_xlat6.y<(-u_xlat6.y);
+    u_xlat18 = u_xlatb18 ? -3.14159274 : float(0.0);
+    u_xlat0.x = u_xlat18 + u_xlat0.x;
+    u_xlat18 = min(u_xlat6.y, u_xlat6.x);
+    u_xlat6.x = max(u_xlat6.y, u_xlat6.x);
+    u_xlatb12.x = u_xlat18<(-u_xlat18);
+    u_xlatb6 = u_xlat6.x>=(-u_xlat6.x);
+    u_xlatb6 = u_xlatb6 && u_xlatb12.x;
+    u_xlat0.x = (u_xlatb6) ? (-u_xlat0.x) : u_xlat0.x;
+    u_xlat0.xy = u_xlat0.xx + vec2(-1.57079637, 4.71238899);
+    u_xlatb12.x = u_xlat0.x<0.0;
+    u_xlat0.x = (u_xlatb12.x) ? u_xlat0.y : u_xlat0.x;
+    u_xlat1.x = u_xlat0.x * 0.159154937;
+    u_xlat0.xy = acScreenNorm.xy * vec2(6.28318548, -1.0) + vec2(-3.14159274, 1.0);
+    u_xlat0.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat2.x = cos(u_xlat0.x);
+    u_xlat0.x = sin(u_xlat0.x);
+    u_xlat2.x = u_xlat0.y * u_xlat2.x;
+    u_xlat2.y = u_xlat0.x * u_xlat0.y;
+    u_xlat0.xy = u_xlat2.xy / vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat0.xy = u_xlat0.xy + vec2(0.5, 0.5);
+    u_xlat0.xy = (int(_conversion_type) != 0) ? u_xlat0.xy : u_xlat1.xy;
+    u_xlat0.xy = u_xlat0.xy + (-acScreenNorm.xy);
+    u_xlat0.xy = vec2(vec2(_interpolation, _interpolation)) * u_xlat0.xy + acScreenNorm.xy;
+    u_xlatb12.xy = lessThan(u_xlat0.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb1.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.xyxx).xy;
+    u_xlatb12.x = u_xlatb12.x || u_xlatb1.x;
+    u_xlatb12.x = u_xlatb12.y || u_xlatb12.x;
+    u_xlatb12.x = u_xlatb1.y || u_xlatb12.x;
+    u_xlat1 = texture(inputImg, u_xlat0.xy);
+    u_xlat0.x = (u_xlatb12.x) ? 0.0 : 1.0;
+    u_xlat1.w = u_xlat0.x * u_xlat1.w;
+    if(int(_use_inner_mask) != 0) {
+        u_xlat0 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

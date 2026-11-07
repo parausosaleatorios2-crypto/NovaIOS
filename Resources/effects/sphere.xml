@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ESFERA
+  ============================================================================
+
+  A camada enrolada numa bola que gira — e, no outro modo, uma foto 360°
+  desenrolada como se a câmera estivesse dentro dela.
+
+  ============================================================================
+   POR QUE UMA ESFERA CABE NUM SHADER E UM CUBO NÃO
+  ============================================================================
+
+  Nosso motor é 2D com profundidade: não há malha, não há buffer de
+  profundidade, não há triângulo. Extrudar uma caixa ou um toro exigiria os três.
+  A esfera é a exceção, e o motivo é bonito: **ela é a única forma cuja
+  interseção com um raio tem solução fechada trivial**.
+
+  Para cada pixel, um raio parte do olho na direção da tela. Se ele acerta a
+  esfera, a conta devolve o ponto — e do ponto sai a latitude e a longitude, que
+  são as coordenadas da textura. Sem malha, sem triângulo, sem profundidade.
+
+  ============================================================================
+   A ILUMINAÇÃO NÃO É ENFEITE
+  ============================================================================
+
+  Uma esfera texturizada sem sombreamento parece um círculo com a imagem
+  entortada — o olho não lê volume. O termo difuso (quanto a superfície encara a
+  luz) é o que transforma o círculo em bola, e custa um produto escalar.
+-->
+<effect
+    id="nova.effect.sphere"
+    name="Esfera"
+    name-en="Sphere"
+    desc="Enrola a camada numa esfera que gira — ou desenrola uma foto 360°."
+    desc-en="Wraps the layer on a spinning sphere — or unwraps a 360 photo."
+    category="distort"
+    tags="esfera,3d,globo,360,vr,planeta,bola"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="mode" label="Modo" default="0"
+                  options="Enrolar na esfera|Ver de dentro (360°)" />
+        <slider id="radius" label="Tamanho"
+                default="0.35" min="0.05" max="1.0" step="0.005" />
+        <slider id="spin" label="Girar"
+                default="0.0" min="-720.0" max="720.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="tilt" label="Inclinar"
+                default="0.0" min="-90.0" max="90.0" step="1.0" type="angle" snap="0.0" />
+
+        <!-- ============================ Posição ============================ -->
+        <point id="center" group="Posição" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="autoSpin" group="Posição" label="Girar sozinha (voltas/s)"
+                default="0.0" min="-2.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="fov" group="Posição" label="Campo de visão (360°)"
+                default="90.0" min="20.0" max="170.0" step="1.0" type="angle" />
+
+        <!-- ================================ Luz ============================ -->
+        <slider id="shading" group="Luz" label="Sombreamento"
+                default="0.7" min="0.0" max="1.5" step="0.01" snap="0.0" />
+        <slider id="lightAngle" group="Luz" label="Ângulo da luz"
+                default="135.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="rim" group="Luz" label="Luz de contorno"
+                default="0.3" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <switch id="keepLayer" group="Luz" label="Manter a camada em volta" default="false" />
+    </params>
+
+    <!-- Na vitrine, a miniatura ANDA (fase 5, 0.669.0): o padrão é parado; com isto o laço de 1,3 s mostra o movimento. -->
+    <preview>
+        <set param="autoSpin" value="0.75" />
+    </preview>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+vec3 girarY(vec3 v, float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+}
+
+vec3 girarX(vec3 v, float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+}
+
+/** Latitude e longitude viram coordenada de textura equirretangular. */
+vec2 paraEquirretangular(vec3 dir) {
+    float u = atan(dir.z, dir.x) / (2.0 * PI) + 0.5;
+    float v = acos(clamp(dir.y, -1.0, 1.0)) / PI;
+    return vec2(u, v);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    float volta = (spin / 360.0 + acTime * autoSpin) * 2.0 * PI;
+    float inclinacao = tilt * PI / 180.0;
+
+    if (mode == 1) {
+        // ----------------------------------------------------- ver de dentro
+        //
+        // A câmera está no centro da esfera e olha para fora. O raio é montado
+        // a partir do campo de visão, e a direção dele já é a coordenada.
+        vec2 tela = (acScreenNorm - 0.5) * vec2(acAspect, 1.0) * 2.0;
+        float f = tan(fov * PI / 360.0);
+        vec3 raio = normalize(vec3(tela.x * f, -tela.y * f, 1.0));
+        raio = girarX(raio, inclinacao);
+        raio = girarY(raio, volta);
+
+        fragColor = texture(inputImg, paraEquirretangular(raio));
+        return;
+    }
+
+    // --------------------------------------------------- enrolar na esfera
+    vec2 p = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    float d = length(p) / max(radius, 1e-4);
+
+    if (d > 1.0) {
+        // Fora da bola: ou fica a camada, ou fica nada.
+        fragColor = keepLayer ? original : vec4(original.rgb, 0.0);
+        return;
+    }
+
+    // O ponto da esfera que este pixel enxerga. `z` sai de x²+y²+z²=1 — é a
+    // interseção do raio com a esfera, resolvida de cabeça.
+    vec3 ponto = vec3(p / max(radius, 1e-4), sqrt(max(1.0 - d * d, 0.0)));
+
+    vec3 naEsfera = girarX(ponto, inclinacao);
+    naEsfera = girarY(naEsfera, volta);
+
+    vec2 uv = paraEquirretangular(normalize(naEsfera));
+    vec3 cor = texture(inputImg, uv).rgb;
+
+    // O sombreamento é o que faz o círculo virar bola. `ponto` já é a normal da
+    // superfície: numa esfera de raio 1 centrada na origem, as duas são a mesma
+    // coisa — e isso economiza a conta inteira.
+    float ang = lightAngle * PI / 180.0;
+    vec3 luz = normalize(vec3(cos(ang), -sin(ang), 0.75));
+    float difuso = max(dot(ponto, luz), 0.0);
+    cor *= mix(1.0, 0.25 + 0.75 * difuso, shading);
+
+    // Luz de contorno: a borda da esfera acende, como todo objeto redondo
+    // iluminado por trás. É o detalhe que descola a bola do fundo.
+    float contorno = pow(1.0 - ponto.z, 3.0) * rim;
+    cor += contorno;
+
+    // Uma borda suave de um pixel e meio, senão a bola sai serrilhada.
+    float suave = 1.0 - smoothstep(1.0 - 1.5 / max(acResolution.y * radius, 1.0), 1.0, d);
+    float alfa = suave;
+
+    if (keepLayer) {
+        float saidaAlfa = alfa + original.a * (1.0 - alfa);
+        vec3 saidaCor = saidaAlfa > 0.0
+            ? (cor * alfa + original.rgb * original.a * (1.0 - alfa)) / saidaAlfa
+            : vec3(0.0);
+        fragColor = vec4(saidaCor, saidaAlfa);
+    } else {
+        fragColor = vec4(cor, alfa);
+    }
+}
+
+    ]]></shader>
+</effect>

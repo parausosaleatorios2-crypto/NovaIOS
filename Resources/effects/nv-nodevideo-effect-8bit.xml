@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_8bit
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-8bit"
+    name="Effect 8Bit (NV)"
+    name-en="Effect 8Bit (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_8bit', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_8bit', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_Dithering" label="Dithering" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_Downsampling" type="integer" label="Downsampling" default="0" min="0" max="10" step="1" />
+        <slider id="_Opacity" label="Opacity" default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+// A paleta: no Node quem manda é o C# (AE8bit), que o conversor não leu. Aqui, 8 cores fixas (0.910.0):
+// preto, branco, vermelho, verde, azul, amarelo, ciano e magenta. O _PaletteLab está no mesmo espaço em que o
+// shader mede o pixel, e o _PaletteRGB sai do polinômio do fim exatamente na cor da paleta.
+const vec4 _PaletteLab[8] = vec4[8](
+    vec4(0.000000, 0.000000, 0.000000, 0.0),
+    vec4(1.000000, 0.000000, 0.000000, 0.0),
+    vec4(0.742167, 0.118595, 0.044449, 0.0),
+    vec4(0.832900, -0.119291, 0.086311, 0.0),
+    vec4(0.731392, -0.003779, -0.114853, 0.0),
+    vec4(0.926321, -0.021422, 0.116286, 0.0),
+    vec4(0.859916, -0.075349, -0.044032, 0.0),
+    vec4(0.775400, 0.107526, -0.070557, 0.0));
+const vec4 _PaletteRGB[8] = vec4[8](
+    vec4(0.000000, 0.000000, 0.000000, 1.0),
+    vec4(1.000000, 1.000000, 1.000000, 1.0),
+    vec4(0.944883, 0.537258, 0.537258, 1.0),
+    vec4(0.537258, 0.882901, 0.537258, 1.0),
+    vec4(0.537258, 0.647091, 0.944883, 1.0),
+    vec4(0.973871, 0.914612, 0.537258, 1.0),
+    vec4(0.537258, 0.882901, 0.944883, 1.0),
+    vec4(0.882901, 0.595398, 0.882901, 1.0));
+vec4 ImmCB_0[4];
+
+vec4 u_xlat0;
+vec4 u_xlat1;
+int u_xlati1;
+uvec2 u_xlatu1;
+bool u_xlatb1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat7;
+int u_xlati7;
+vec2 u_xlat13;
+bool u_xlatb13;
+float u_xlat19;
+int int_bitfieldInsert(int base, int insert, int offset, int bits) {
+    uint mask = uint(~(int(~0) << uint(bits)) << uint(offset));
+    return int((uint(base) & ~mask) | ((uint(insert) << uint(offset)) & mask));
+}
+
+void main()
+{
+ImmCB_0[0] = vec4(-0.5,0.0,0.0,0.0);
+ImmCB_0[1] = vec4(0.0,0.0,0.0,0.0);
+ImmCB_0[2] = vec4(0.25,0.0,0.0,0.0);
+ImmCB_0[3] = vec4(-0.25,0.0,0.0,0.0);
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1.xy = acScreenNorm.xy * _resolution.xy;
+    u_xlat13.x = float(int(_Downsampling));
+    u_xlat1.xy = u_xlat1.xy / u_xlat13.xx;
+    u_xlatu1.xy = uvec2(u_xlat1.xy);
+    u_xlat2.xy = vec2(u_xlatu1.xy);
+    u_xlat2.xy = u_xlat2.xy + vec2(0.5, 0.5);
+    u_xlat13.xy = u_xlat13.xx * u_xlat2.xy;
+    u_xlat13.xy = u_xlat13.xy / _resolution.xy;
+    u_xlati7 = int(int_bitfieldInsert(0, int(u_xlatu1.y), 1 & int(0x1F), 1));
+    u_xlati1 = int(int_bitfieldInsert(u_xlati7, int(u_xlatu1.x), 0 & int(0x1F), 1));
+    u_xlat2 = texture(inputImg, u_xlat13.xy);
+    u_xlat1.xyz = ImmCB_0[u_xlati1].xxx * vec3(_Dithering) + u_xlat2.xyz;
+    u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+    u_xlat19 = dot(vec3(0.412221462, 0.536332548, 0.0514459945), u_xlat1.xyz);
+    u_xlat3.x = dot(vec3(0.211903498, 0.680699527, 0.10739696), u_xlat1.xyz);
+    u_xlat1.x = dot(vec3(0.0883024633, 0.28171885, 0.629978716), u_xlat1.xyz);
+    u_xlat4.x = log2(u_xlat19);
+    u_xlat4.y = log2(u_xlat3.x);
+    u_xlat4.z = log2(u_xlat1.x);
+    u_xlat1.xyz = u_xlat4.xyz * vec3(0.333333343, 0.333333343, 0.333333343);
+    u_xlat1.xyz = exp2(u_xlat1.xyz);
+    u_xlat3.x = dot(vec3(0.210454255, 0.793617785, -0.00407204684), u_xlat1.xyz);
+    u_xlat3.y = dot(vec3(1.9779985, -2.42859221, 0.45059371), u_xlat1.xyz);
+    u_xlat3.z = dot(vec3(0.0259040371, 0.782771766, -0.808675766), u_xlat1.xyz);
+    u_xlat1.xyz = u_xlat3.xyz + (-_PaletteLab[0].xyz);
+    u_xlat1.x = dot(u_xlat1.xyz, u_xlat1.xyz);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[1].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb13 = u_xlat7.x<u_xlat1.x;
+    u_xlat4.xyz = (bool(u_xlatb13)) ? _PaletteRGB[1].xyz : _PaletteRGB[0].xyz;
+    u_xlat1.x = min(u_xlat7.x, u_xlat1.x);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[2].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb13 = u_xlat7.x<u_xlat1.x;
+    u_xlat4.xyz = (bool(u_xlatb13)) ? _PaletteRGB[2].xyz : u_xlat4.xyz;
+    u_xlat1.x = min(u_xlat7.x, u_xlat1.x);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[3].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb13 = u_xlat7.x<u_xlat1.x;
+    u_xlat4.xyz = (bool(u_xlatb13)) ? _PaletteRGB[3].xyz : u_xlat4.xyz;
+    u_xlat1.x = min(u_xlat7.x, u_xlat1.x);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[4].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb13 = u_xlat7.x<u_xlat1.x;
+    u_xlat4.xyz = (bool(u_xlatb13)) ? _PaletteRGB[4].xyz : u_xlat4.xyz;
+    u_xlat1.x = min(u_xlat7.x, u_xlat1.x);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[5].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb13 = u_xlat7.x<u_xlat1.x;
+    u_xlat4.xyz = (bool(u_xlatb13)) ? _PaletteRGB[5].xyz : u_xlat4.xyz;
+    u_xlat1.x = min(u_xlat7.x, u_xlat1.x);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[6].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb13 = u_xlat7.x<u_xlat1.x;
+    u_xlat4.xyz = (bool(u_xlatb13)) ? _PaletteRGB[6].xyz : u_xlat4.xyz;
+    u_xlat1.x = min(u_xlat7.x, u_xlat1.x);
+    u_xlat7.xyz = u_xlat3.xyz + (-_PaletteLab[7].xyz);
+    u_xlat7.x = dot(u_xlat7.xyz, u_xlat7.xyz);
+    u_xlatb1 = u_xlat7.x<u_xlat1.x;
+    u_xlat1.xyz = (bool(u_xlatb1)) ? _PaletteRGB[7].xyz : u_xlat4.xyz;
+    u_xlat3.xyz = u_xlat1.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat3.xyz = u_xlat1.xyz * u_xlat3.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat2.xyz = u_xlat1.xyz * u_xlat3.xyz;
+    u_xlat1 = (-u_xlat0) + u_xlat2;
+    u_xlat1 = vec4(vec4(_Opacity, _Opacity, _Opacity, _Opacity)) * u_xlat1 + u_xlat0;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

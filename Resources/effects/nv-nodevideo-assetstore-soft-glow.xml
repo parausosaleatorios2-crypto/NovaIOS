@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_soft_glow
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-soft-glow"
+    name="Soft Glow (NV)"
+    name-en="Soft Glow (NV)"
+    desc="NodeVideo Asset Store effect 'soft_glow', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'soft_glow', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- O _bluredTex é o desfoque que o C# faz (passes 0 e 1). -->
+        <texture id="blurH" src="buffer" />
+        <texture id="bluredTex" src="buffer" />
+        <!-- O _spread o C# lê (a quantidade do desfoque; padrão e faixa do Node) e o shader não. -->
+        <slider id="_spread" label="Spread" default="0.2" min="0" max="1" step="0.01" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_brightness" label="Brightness" default="1" min="0" max="2" step="0.01" />
+        <slider id="_blend" label="Blend" default="0.5" min="0" max="1" step="0.01" />
+        <color id="_color" label="Color" default="#FFFF9992" />
+        <slider id="_highlights" label="Highlights" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_contrast" label="Contrast" default="0.4" min="0" max="1" step="0.01" />
+    </params>
+
+    <passes>
+        <pass target="blurH" />
+        <pass target="bluredTex" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// O desfoque do C# (0.915.0): o AESoftGlow chama RenderCommand.DoGaussianBlur(quantidade = _spread) e manda o resultado
+// como _bluredTex. A gaussiana do Node (node-gaussian-blur.xml): meio-lado = quantidade x 0,0475 x a diagonal da
+// composicao em px da METADE, sigma = meio-lado x 0,4660. Aqui na resolucao cheia, separavel, em cor pre-multiplicada;
+// o passe 1 devolve a cor reta, como a camada chega aos outros efeitos do Node portados.
+vec4 desfoqueDoNode(sampler2D t, vec2 eixo, bool entrada) {
+    float sigma = 2.0 * (_spread) * 0.0475 * length(acTamanhoDaTela) * 0.4660 * acEscalaDePixel;
+    vec2 passo = eixo / vec2(textureSize(t, 0));
+    int raio = sigma < 0.05 ? 0 : min(int(ceil(sigma * 3.0)), 64);
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int i = -64; i <= 64; i++) {
+        if (i < -raio || i > raio) continue;
+        float w = raio == 0 ? 1.0 : exp(-0.5 * float(i * i) / (sigma * sigma));
+        vec4 c = texture(t, clamp(acScreenNorm + passo * float(i), 0.0, 1.0));
+        soma += w * (entrada ? vec4(c.rgb * c.a, c.a) : c);
+        pesos += w;
+    }
+    vec4 r = soma / pesos;
+    return entrada ? r : (r.a > 1e-5 ? vec4(r.rgb / r.a, r.a) : vec4(0.0));
+}
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec3 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat8;
+float u_xlat19;
+void main()
+{
+    if (acPass == 0) { fragColor = desfoqueDoNode(inputImg, vec2(1.0, 0.0), true); return; }
+    if (acPass == 1) { fragColor = desfoqueDoNode(blurH, vec2(0.0, 1.0), false); return; }
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1.xyz = texture(bluredTex, acScreenNorm.xy).xyz;
+    u_xlat1.xyz = u_xlat1.xyz * vec3(_brightness);
+    u_xlat1.xyz = min(u_xlat1.xyz, vec3(1.0, 1.0, 1.0));
+    u_xlat19 = dot(u_xlat1.xyz, vec3(0.212599993, 0.715200007, 0.0722000003));
+    u_xlat19 = u_xlat19 * _brightness;
+    u_xlat19 = min(u_xlat19, 1.0);
+    u_xlat2.xyz = vec3(u_xlat19) * _color.xyz + (-u_xlat1.xyz);
+    u_xlat1.xyz = vec3(vec3(_blend, _blend, _blend)) * u_xlat2.xyz + u_xlat1.xyz;
+    u_xlat2.x = u_xlat19 * _highlights;
+    u_xlat8.xyz = (-u_xlat1.xyz) + vec3(u_xlat19);
+    u_xlat1.xyz = u_xlat2.xxx * u_xlat8.xyz + u_xlat1.xyz;
+    u_xlat2.xyz = u_xlat1.xyz + vec3(-1.0, -1.0, -1.0);
+    u_xlat2.xyz = vec3(vec3(_contrast, _contrast, _contrast)) * u_xlat2.xyz + vec3(1.0, 1.0, 1.0);
+    u_xlat3.xyz = u_xlat0.xyz / u_xlat0.www;
+    u_xlat3.xyz = (-u_xlat3.xyz) + vec3(1.0, 1.0, 1.0);
+    u_xlat1.xyz = (-u_xlat1.xyz) * u_xlat2.xyz + vec3(1.0, 1.0, 1.0);
+    u_xlat1.xyz = (-u_xlat3.xyz) * u_xlat1.xyz + vec3(1.0, 1.0, 1.0);
+    u_xlat1.w = 1.0;
+    u_xlat1 = u_xlat0.wwww * u_xlat1;
+    u_xlat1 = clamp(u_xlat1, 0.0, 1.0);
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

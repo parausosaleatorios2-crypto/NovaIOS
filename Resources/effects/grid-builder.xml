@@ -1,0 +1,538 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CONSTRUTOR DE GRADE — a extensão Grid Builder do After Effects, como UM efeito (0.426.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "agora faz a extensão grid builder, primeiro olha o que ela faz e
+  tals porém faça de uma maneira mais fácil de usar porque a extensão aqui é algo muito
+  complicado... e faça pra ser um efeito no catálogo de efeitos".
+
+  O QUE A EXTENSÃO FAZ (lido nas expressões que ela mesma escreve — tools/gridbuilder/benchmark):
+  pega as camadas selecionadas, cria um nulo de controle 3D no centro e põe uma expressão na
+  posição, na escala, na orientação e na opacidade de CADA camada. Cada camada vira uma célula de
+  uma formação: grade retangular, círculo, esfera ou caminho, com giro, escala por posição,
+  profundidade, embaralhar e deslocamento aleatório. Um modo "Morph" passa de uma formação para
+  outra, e a aba "Proximity" faz um nulo mexer nas células que estão perto dele.
+
+  POR QUE AQUI É MAIS FÁCIL: lá são um painel, um nulo de controle, um pseudo-efeito por formação
+  e quatro expressões por camada; trocar de formação é outro botão, e o Morph outro conjunto de
+  cinco efeitos. Aqui é UM efeito numa camada: a imagem dela vira todas as células (e até quatro
+  outras camadas entram em rodízio), a formação é um menu, e a transição entre duas formações são
+  dois controles. Nada de selecionar, criar, vincular ou atualizar.
+
+  AS CONTAS SÃO AS DA EXTENSÃO (v2.0.2): o lugar de cada célula nas quatro formações, a ordem dos
+  giros (X, depois Y, depois Z), o escalonamento, a escala por posição (ordem, direção e onda, com
+  a curva de cada formação), a profundidade com âncora e a esfera de Fibonacci que gira até a
+  célula em foco. Conferido contra o After Effects com a própria extensão: 27 casos, silhueta
+  idêntica em 24 e 0,09% no pior, cor a 0,31% no pior (tools/gridbuilder/benchmark/LEIAME.md).
+
+  O QUE É DIFERENTE, DE PROPÓSITO:
+  - Os tamanhos são em % da largura da camada (lá são pixels), para a prévia reduzida e qualquer
+    resolução darem a mesma imagem.
+  - Embaralhar e Aleatório usam outro sorteio (o da extensão depende de conta em 64 bits que a
+    GPU não faz igual): o efeito é o mesmo, a ordem sorteada não.
+  - "Caminho" tem as quatro formas prontas (elipse, retângulo, polígono, estrela); a quinta de lá,
+    seguir uma máscara desenhada, não entrou.
+  - A Proximidade daqui é um ponto só, com conta própria (não medida na extensão).
+  - A onda da escala por posição mede a distância no lugar real das células em todas as formações
+    (lá só existe na grade e no caminho).
+
+  A câmera: sem câmera na composição, a padrão do AE (zoom de 50 mm = 1,3889 × a largura). Com
+  câmera, o efeito obedece a ela, como o Voxel Sorter e o Vox Pattern. Como todo efeito, ele
+  desenha dentro do quadro da camada: numa foto pequena a grade é cortada na borda dela — o jeito
+  certo é aplicar numa camada do tamanho da composição (ou somar o "Expandir bordas").
+-->
+<effect
+    id="nova.effect.gridbuilder"
+    name="Construtor de grade"
+    name-en="Grid Builder"
+    desc="Espalha cópias da camada (e de outras) em grade, círculo, esfera ou caminho, em 3D, com giro, escala por posição e transição entre formações."
+    desc-en="Spreads copies of the layer (and of others) into a grid, circle, sphere or path in 3D, with twist, scale by position and morphing between formations."
+    category="stylize"
+    tags="grid builder,grid,grade,galeria,gallery,mosaico,clonar,cloner,repetir,copias,cópias,esfera,sphere,radial,circulo,círculo,caminho,path,morph,3d,fotos,parede,wall,carrossel,carousel">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="shape" group="Formação" label="Formato" default="0" options="Grade|Círculo|Esfera|Caminho" />
+        <slider id="count" group="Formação" label="Quantidade" type="integer" default="9.0" min="1.0" max="100.0" step="1.0" snap="9.0" />
+        <slider id="cellSize" group="Formação" label="Tamanho de cada cópia" default="25.0" min="1.0" max="200.0" step="0.5" snap="25.0,100.0" />
+        <slider id="columns" group="Formação" label="Colunas" type="integer" default="3.0" min="1.0" max="100.0" step="1.0" snap="3.0" />
+        <slider id="spacingX" group="Formação" label="Espaço na horizontal" default="30.0" min="-500.0" max="500.0" step="0.5" snap="30.0,0.0" />
+        <slider id="spacingY" group="Formação" label="Espaço na vertical" default="30.0" min="-500.0" max="500.0" step="0.5" snap="30.0,0.0" />
+        <slider id="radius" group="Formação" label="Raio" default="20.0" min="0.0" max="500.0" step="0.5" snap="20.0" />
+        <point id="center" group="Formação" label="Centro" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" />
+        <slider id="opacity" group="Formação" label="Opacidade" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+
+        <texture id="imagem2" src="layer" group="Outras imagens" label="Imagem 2" empty="transparent" />
+        <texture id="imagem3" src="layer" group="Outras imagens" label="Imagem 3" empty="transparent" />
+        <texture id="imagem4" src="layer" group="Outras imagens" label="Imagem 4" empty="transparent" />
+        <texture id="imagem5" src="layer" group="Outras imagens" label="Imagem 5" empty="transparent" />
+
+        <selector id="pathShape" group="Caminho" label="Forma" default="0" options="Elipse|Retângulo|Polígono|Estrela" showIf="shape=3" />
+        <slider id="pathHeight" group="Caminho" label="Altura" default="100.0" min="0.0" max="500.0" step="1.0" snap="100.0" showIf="shape=3" />
+        <slider id="polygonPoints" group="Caminho" label="Lados do polígono" type="integer" default="3.0" min="3.0" max="100.0" step="1.0" snap="3.0" showIf="shape=3" />
+        <slider id="pathProgress" group="Caminho" label="Andar pelo caminho" default="0.0" min="-1000.0" max="1000.0" step="0.5" snap="0.0" showIf="shape=3" />
+        <slider id="pathSpread" group="Caminho" label="Espalhar" default="100.0" min="-1000.0" max="1000.0" step="0.5" snap="100.0" showIf="shape=3" />
+        <slider id="trimStart" group="Caminho" label="Começo" default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0" showIf="shape=3" />
+        <slider id="trimEnd" group="Caminho" label="Fim" default="100.0" min="0.0" max="100.0" step="0.5" snap="100.0" showIf="shape=3" />
+
+        <slider id="focus" group="Esfera" label="Trazer para a frente a cópia nº" default="1.0" min="1.0" max="100.0" step="0.01" snap="1.0" showIf="shape=2" />
+
+        <selector id="morphTo" group="Transição" label="Virar" default="0" options="Nada|Grade|Círculo|Esfera|Caminho" />
+        <slider id="morphAmount" group="Transição" label="Quanto já virou" default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0,100.0" showIf="morphTo!=0" />
+
+        <selector id="orientation" group="Giro" label="Virar as cópias" default="0" options="De frente|Para a câmera|Para o centro|Seguir a formação" />
+        <slider id="gridRotation" group="Giro" label="Girar a formação" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="twistX" group="Giro" label="Girar cada cópia em X" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="twistY" group="Giro" label="Girar cada cópia em Y" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="twistZ" group="Giro" label="Girar cada cópia em Z" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="stagger" group="Giro" label="Escalonar o giro" type="angle" default="0.0" min="-1080.0" max="1080.0" step="1.0" snap="0.0" />
+        <selector id="staggerAxis" group="Giro" label="Eixo do escalonamento" default="0" options="XYZ|X|Y|Z|XY|XZ|YZ" />
+
+        <slider id="scaleFront" group="Escala por posição" label="Escala no começo" default="0.0" min="-100.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="scaleBack" group="Escala por posição" label="Escala no fim" default="0.0" min="-100.0" max="1000.0" step="1.0" snap="0.0" />
+        <selector id="scaleMode" group="Escala por posição" label="Seguir" default="0" options="A ordem|Uma direção|Uma onda" />
+        <slider id="scaleDirection" group="Escala por posição" label="Direção" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" showIf="scaleMode=1" />
+        <slider id="rippleFocus" group="Escala por posição" label="A onda nasce na cópia nº" default="1.0" min="1.0" max="100.0" step="0.01" snap="1.0" showIf="scaleMode=2" />
+        <slider id="scaleFalloff" group="Escala por posição" label="Alcance" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" showIf="scaleMode!=0" />
+
+        <slider id="zDepth" group="Profundidade" label="Distância entre as cópias" default="0.0" min="-500.0" max="500.0" step="0.5" snap="0.0" />
+        <slider id="zAnchor" group="Profundidade" label="A cópia que fica no lugar" type="integer" default="1.0" min="1.0" max="100.0" step="1.0" snap="1.0" />
+
+        <slider id="shuffle" group="Aleatório" label="Embaralhar" type="integer" default="0.0" min="0.0" max="10000.0" step="1.0" snap="0.0" />
+        <slider id="randomOffset" group="Aleatório" label="Tirar do lugar" default="0.0" min="0.0" max="500.0" step="0.5" snap="0.0" />
+        <slider id="randomSeed" group="Aleatório" label="Semente" type="integer" default="0.0" min="0.0" max="10000.0" step="1.0" snap="0.0" />
+
+        <switch id="proxOn" group="Proximidade" label="Ligar" default="false" />
+        <point id="proxPoint" group="Proximidade" label="Ponto" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" showIf="proxOn=true" />
+        <slider id="proxRadius" group="Proximidade" label="Alcance" default="25.0" min="0.0" max="500.0" step="0.5" snap="25.0" showIf="proxOn=true" />
+        <slider id="proxFalloff" group="Proximidade" label="Suavidade" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" showIf="proxOn=true" />
+        <slider id="proxScale" group="Proximidade" label="Escala perto do ponto" default="50.0" min="-100.0" max="1000.0" step="1.0" snap="0.0" showIf="proxOn=true" />
+        <slider id="proxOpacity" group="Proximidade" label="Opacidade perto do ponto" default="0.0" min="-100.0" max="0.0" step="1.0" snap="0.0" showIf="proxOn=true" />
+        <slider id="proxPush" group="Proximidade" label="Afastar do ponto" default="0.0" min="-200.0" max="200.0" step="0.5" snap="0.0" showIf="proxOn=true" />
+        <slider id="proxLift" group="Proximidade" label="Trazer para a frente" default="0.0" min="-200.0" max="200.0" step="0.5" snap="0.0" showIf="proxOn=true" />
+    </params>
+
+    <preview>
+        <set param="cellSize" value="30.0" />
+        <set param="radius" value="40.0" />
+        <set param="morphTo" value="2" />
+        <set param="morphAmount" value="0.0" ate="100.0" />
+    </preview>
+
+    <shader><![CDATA[
+const float FOCO = 1.3889;          // o zoom da câmera padrão do AE (50 mm), em larguras do quadro
+const int MAXIMO = 100;             // o teto de cópias
+const int CAMADAS = 6;              // quantas cópias sobrepostas num mesmo pixel são compostas
+const float PI = 3.14159265358979;
+
+// O que vale para o quadro inteiro (montado uma vez no main).
+vec2 R;                 // o tamanho da camada, em px
+float N;                // quantas cópias
+float gRot;             // o giro da formação, em rad
+float colunas;
+vec2 espaco;            // px
+float raioPx;           // px
+vec2 raioDoCaminho;     // px
+mat3 giroDaEsfera;      // a esfera girada até a cópia em foco
+
+// ---------------------------------------------------------------------------------- sorteio
+
+uint misturar(uint x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
+/** Um número de 0 a 1 para o par (a, b) de inteiros não negativos. */
+float acaso(float a, float b) {
+    return float(misturar(uint(a) * 0x9E3779B9U + misturar(uint(b) + 0x1234567U)) >> 8) / 16777216.0;
+}
+
+// ---------------------------------------------------------------------------------- formações
+
+mat3 girarX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
+mat3 girarY(float a) { float c = cos(a), s = sin(a); return mat3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
+mat3 girarZ(float a) { float c = cos(a), s = sin(a); return mat3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0); }
+/** O resto de `a / b` para inteiros guardados em float (o `mod` da GPU erra em múltiplos exatos). */
+float resto(float a, float b) { return a - b * floor((a + 0.5) / b); }
+vec2 girar2(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(p.x * c - p.y * s, p.x * s + p.y * c); }
+
+/** O ponto `u` (0..1) do caminho, sem o giro da formação — as quatro formas prontas da extensão. */
+vec2 pontoDoCaminho(float u) {
+    vec2 s = raioDoCaminho;
+    if (pathShape == 0) {
+        float a = u * 2.0 * PI - PI / 2.0;
+        return vec2(cos(a), sin(a)) * s;
+    }
+    if (pathShape == 1) {
+        if (s.x + s.y <= 0.0) return vec2(0.0);
+        float pX = s.x / (2.0 * (s.x + s.y)), pY = s.y / (2.0 * (s.x + s.y));
+        if (u < pX) return vec2(-s.x + (u / pX) * 2.0 * s.x, -s.y);
+        if (u < pX + pY) return vec2(s.x, -s.y + ((u - pX) / pY) * 2.0 * s.y);
+        if (u < 2.0 * pX + pY) return vec2(s.x - ((u - pX - pY) / pX) * 2.0 * s.x, s.y);
+        return vec2(-s.x, s.y - ((u - 2.0 * pX - pY) / pY) * 2.0 * s.y);
+    }
+    if (pathShape == 2) {
+        float P = max(3.0, floor(polygonPoints + 0.5));
+        float seg = u * P, idx = floor(seg), f = seg - idx;
+        float a1 = idx * 2.0 * PI / P - PI / 2.0, a2 = (idx + 1.0) * 2.0 * PI / P - PI / 2.0;
+        return mix(vec2(cos(a1), sin(a1)) * s, vec2(cos(a2), sin(a2)) * s, f);
+    }
+    // a estrela de cinco pontas (a ponta de dentro na metade do raio)
+    float seg = u * 10.0, idx = floor(seg), f = seg - idx;
+    float r1 = resto(idx, 2.0) < 0.5 ? 1.0 : 0.5, r2 = resto(idx + 1.0, 2.0) < 0.5 ? 1.0 : 0.5;
+    float a1 = idx * PI / 5.0 - PI / 2.0, a2 = (idx + 1.0) * PI / 5.0 - PI / 2.0;
+    return mix(vec2(cos(a1), sin(a1)) * s * r1, vec2(cos(a2), sin(a2)) * s * r2, f);
+}
+
+/** Onde a cópia `i` está no caminho (0..1), já com Espalhar, Andar e o trecho Começo–Fim. */
+float noCaminho(float i, float mais) {
+    float bruto = (i / N) * (pathSpread / 100.0) + pathProgress / 100.0 + mais;
+    return trimStart / 100.0 + mod(bruto, 1.0) * (trimEnd - trimStart) / 100.0;
+}
+
+/** Um ponto da esfera de Fibonacci de `N` pontos (raio 1), antes do giro até o foco. */
+vec3 naEsfera(float i) {
+    float phi = acos(1.0 - 2.0 * (i + 0.5) / N);
+    float theta = PI * (1.0 + sqrt(5.0)) * i;
+    return vec3(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi));
+}
+
+/** O quatérnio (w, x, y, z) que leva a direção `v` para a frente (0, 0, -1). */
+vec4 ateAFrente(vec3 v) {
+    float ang = acos(clamp(-v.z, -1.0, 1.0));
+    vec2 eixo = vec2(-v.y, v.x);
+    float len = length(eixo);
+    eixo = len > 0.0001 ? eixo / len : vec2(1.0, 0.0);
+    return vec4(cos(ang / 2.0), eixo * sin(ang / 2.0), 0.0);
+}
+
+/** A esfera gira para a cópia em foco ficar de frente; valor quebrado = a meio caminho entre duas. */
+mat3 montarGiroDaEsfera() {
+    float F = clamp(focus - 1.0, 0.0, N - 1.0);
+    float a = floor(F), b = min(N - 1.0, a + 1.0), t = F - a;
+    vec4 qA = ateAFrente(naEsfera(a)), qB = ateAFrente(naEsfera(b));
+    float d = dot(qA, qB);
+    if (d < 0.0) { d = -d; qB = -qB; }
+    vec4 q;
+    if (d > 0.9999) q = mix(qA, qB, t);
+    else { float th = acos(d), s = sin(th); q = (sin((1.0 - t) * th) * qA + sin(t * th) * qB) / s; }
+    q /= length(q);
+    float w = q.x, x = q.y, y = q.z, z = q.w;
+    return mat3(
+        1.0 - 2.0 * y * y - 2.0 * z * z, 2.0 * x * y + 2.0 * z * w, 2.0 * x * z - 2.0 * y * w,
+        2.0 * x * y - 2.0 * z * w, 1.0 - 2.0 * x * x - 2.0 * z * z, 2.0 * y * z + 2.0 * x * w,
+        2.0 * x * z + 2.0 * y * w, 2.0 * y * z - 2.0 * x * w, 1.0 - 2.0 * x * x - 2.0 * y * y);
+}
+
+/** O lugar da cópia `i` na formação `f`, em px a partir do centro (sem profundidade nem sorteio). */
+vec3 lugar(int f, float i) {
+    if (f == 0) {
+        float linhas = max(ceil(N / colunas), 1.0);
+        vec2 d = (vec2(resto(i, colunas), floor((i + 0.5) / colunas)) - (vec2(colunas, linhas) - 1.0) / 2.0) * espaco;
+        return vec3(girar2(d, gRot), 0.0);
+    }
+    if (f == 1) {
+        float a = resto(i, colunas) * (2.0 * PI / colunas) + gRot - PI / 2.0;
+        return vec3(cos(a), sin(a), 0.0) * raioPx;
+    }
+    if (f == 2) {
+        vec3 p = giroDaEsfera * (naEsfera(i) * raioPx);
+        return vec3(girar2(p.xy, gRot), p.z);
+    }
+    return vec3(girar2(pontoDoCaminho(noCaminho(i, 0.0)), gRot), 0.0);
+}
+
+/** A profundidade por cópia (a esfera não tem: ela já é o Z). */
+float fundo(int f, float i) { return f == 2 ? 0.0 : (i - (floor(zAnchor + 0.5) - 1.0)) * zDepth / 100.0 * R.x; }
+
+/** Quanto a cópia `i` está "no fim" (0 = começo, 1 = fim) para a escala por posição — a conta de cada formação. */
+float posicaoNaEscala(int f, float i, vec3 p) {
+    float t = N > 1.0 ? i / (N - 1.0) : 0.0;
+    float F = clamp(scaleFalloff, 0.0, 100.0) / 100.0;
+    if (scaleMode == 1) {
+        float dir = radians(scaleDirection + 90.0);
+        vec2 v = vec2(cos(dir), sin(dir));
+        float proj = dot(p.xy, v), maxProj;
+        if (f == 0) {
+            vec2 meio = (vec2(colunas, max(ceil(N / colunas), 1.0)) - 1.0) / 2.0 * espaco;
+            maxProj = abs(meio.x * cos(dir - gRot)) + abs(meio.y * sin(dir - gRot));
+        } else if (f == 3) {
+            maxProj = length(raioDoCaminho * v);
+        } else {
+            maxProj = raioPx;
+        }
+        if (maxProj <= 0.0) maxProj = 1.0;
+        float x = (proj / maxProj + 1.0) / 2.0;
+        if (f == 0) {
+            float W = max(0.01, F * 2.0);
+            t = (x - (1.0 - W)) / W;
+        } else {
+            float ini, fim;
+            if (F <= 0.01) { ini = 0.99; fim = 1.0; }
+            else if (F >= 0.99) { ini = -0.1; fim = 0.0; }
+            else if (F < 0.5) { ini = 1.0 - F * 2.0; fim = 1.0; }
+            else { ini = 0.0; fim = 1.0 - (F - 0.5) * 2.0; }
+            t = (x - ini) / (fim - ini);
+        }
+    } else if (scaleMode == 2) {
+        float alvo = clamp(rippleFocus - 1.0, 0.0, N - 1.0);
+        float a = floor(alvo), b = min(N - 1.0, a + 1.0);
+        vec3 foco = mix(lugar(f, a), lugar(f, b), alvo - a);
+        if (f == 3) {
+            // medido: no caminho a onda mede a distância com as cópias espalhadas de ponta a ponta
+            // (i / (N - 1)), sem o trecho Começo–Fim — não no lugar onde elas estão desenhadas
+            float passo = (pathSpread / 100.0) / max(N - 1.0, 1.0), ini = pathProgress / 100.0;
+            vec2 fa = pontoDoCaminho(mod(a * passo + ini, 1.0)), fb = pontoDoCaminho(mod(b * passo + ini, 1.0));
+            foco = vec3(girar2(mix(fa, fb, alvo - a), gRot), 0.0);
+            p = vec3(girar2(pontoDoCaminho(mod(i * passo + ini, 1.0)), gRot), 0.0);
+        }
+        float maior;
+        if (f == 0) maior = length((vec2(colunas, max(ceil(N / colunas), 1.0)) - 1.0) * espaco) / 2.0;
+        else if (f == 3) maior = length(raioDoCaminho);
+        else maior = raioPx;
+        float maxD = max(0.001, F * maior * 2.0);
+        float amt = 1.0 - clamp(distance(p, foco) / maxD, 0.0, 1.0);
+        t = 1.0 - amt * amt * (3.0 - 2.0 * amt);
+    }
+    t = clamp(t, 0.0, 1.0);
+    if (f == 0) return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    if (f == 1) return t;
+    return t * t * (3.0 - 2.0 * t);
+}
+
+/** Para onde a cópia está virada ANTES do giro dela: as colunas são os eixos X, Y e Z da cópia. */
+mat3 base(int f, float i, vec3 p, mat3 daCamera) {
+    if (orientation == 1) return daCamera;
+    if (orientation == 0) return mat3(1.0);
+    if (f == 2) {
+        // esfera: "Para o centro" olha para dentro, "Seguir a formação" para fora
+        vec3 dir = orientation == 3 ? -p : p;
+        float len = length(dir);
+        vec3 z = len > 0.0 ? dir / len : vec3(0.0, 0.0, 1.0);
+        vec3 cima = abs(z.y) > 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        vec3 x = cross(cima, z);
+        float lx = length(x);
+        x = lx > 0.0 ? x / lx : vec3(1.0, 0.0, 0.0);
+        return mat3(x, cross(z, x), z);
+    }
+    float ang;
+    if (f == 3 && orientation == 3) {
+        // caminho: a cópia acompanha a direção do traço
+        vec2 a = girar2(pontoDoCaminho(noCaminho(i, 0.0)), gRot);
+        vec2 b = girar2(pontoDoCaminho(noCaminho(i, 0.001)), gRot);
+        if (a == b) a = girar2(pontoDoCaminho(noCaminho(i, -0.001)), gRot);
+        ang = atan(b.y - a.y, b.x - a.x);
+    } else if (f == 0 && orientation == 3) {
+        return mat3(1.0);
+    } else {
+        ang = atan(p.y, p.x) + PI / 2.0;
+    }
+    float c = cos(ang), s = sin(ang);
+    return mat3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0);
+}
+
+// ---------------------------------------------------------------------------------- imagem
+
+vec4 imagem(int qual, vec2 uv) {
+    if (qual == 1) return texture(imagem2, uv);
+    if (qual == 2) return texture(imagem3, uv);
+    if (qual == 3) return texture(imagem4, uv);
+    if (qual == 4) return texture(imagem5, uv);
+    return texture(inputImg, uv);
+}
+
+/** A imagem `qual` no ponto `uv`, pré-multiplicada, com a média de `n × n` toques quando ela está reduzida. */
+vec4 amostra(int qual, vec2 uv, vec2 passo, int n) {
+    vec4 soma = vec4(0.0);
+    for (int a = 0; a < 3; a++) {
+        if (a >= n) break;
+        for (int b = 0; b < 3; b++) {
+            if (b >= n) break;
+            vec2 q = uv + (vec2(float(a), float(b)) + 0.5 - float(n) / 2.0) * passo / float(n);
+            vec4 c = imagem(qual, clamp(q, 0.0, 1.0));
+            soma += vec4(c.rgb * c.a, c.a);
+        }
+    }
+    return soma / float(n * n);
+}
+
+// ---------------------------------------------------------------------------------- câmera
+
+/** O raio do pixel `uv`: de onde sai e para onde vai, em px da camada (X direita, Y baixo, Z para longe). */
+void raio(vec2 uv, out vec3 o, out vec3 d) {
+    if (acCamera3D == 1) {
+        vec2 tela = acTela(uv);
+        vec4 longe = acCameraInvVP * vec4(tela.x * 2.0 - 1.0, 1.0 - tela.y * 2.0, 1.0, 1.0);
+        o = acCameraOlho * acEscalaDePixel;
+        d = (longe.xyz / longe.w - acCameraOlhoNova) * acEscalaDePixel;
+    } else {
+        o = vec3(0.5 * R, -FOCO * R.x);
+        d = vec3(uv * R, 0.0) - o;
+    }
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    R = vec2(textureSize(inputImg, 0));
+    N = clamp(floor(count + 0.5), 1.0, float(MAXIMO));
+    gRot = radians(gridRotation);
+    colunas = max(1.0, floor(columns + 0.5));
+    espaco = vec2(spacingX * R.x, spacingY * R.y) / 100.0;
+    raioPx = radius / 100.0 * R.x;
+    raioDoCaminho = raioPx * vec2(1.0, pathHeight / 100.0);
+    giroDaEsfera = mat3(1.0);
+
+    int formaA = shape;
+    int formaB = morphTo == 0 ? shape : morphTo - 1;
+    float vira = morphTo == 0 || formaB == formaA ? 0.0 : clamp(morphAmount / 100.0, 0.0, 1.0);
+    if (formaA == 2 || (vira > 0.0 && formaB == 2)) giroDaEsfera = montarGiroDaEsfera();
+
+    // As imagens em rodízio: a camada, e as outras que foram escolhidas.
+    int quais[5];
+    int nImagens = 1;
+    quais[0] = 0;
+    if (textureSize(imagem2, 0).x > 1) { quais[nImagens] = 1; nImagens++; }
+    if (textureSize(imagem3, 0).x > 1) { quais[nImagens] = 2; nImagens++; }
+    if (textureSize(imagem4, 0).x > 1) { quais[nImagens] = 3; nImagens++; }
+    if (textureSize(imagem5, 0).x > 1) { quais[nImagens] = 4; nImagens++; }
+
+    // Embaralhar: uma permutação das vagas (Fisher–Yates), como na extensão.
+    int vaga[MAXIMO];
+    int n = int(N);
+    float emb = floor(shuffle + 0.5);
+    if (emb > 0.0 && n > 1) {
+        for (int a = 0; a < MAXIMO; a++) vaga[a] = a;
+        for (int a = MAXIMO - 1; a > 0; a--) {
+            if (a >= n) continue;
+            int b = min(int(floor(acaso(emb, float(a)) * float(a + 1))), a);
+            int t = vaga[a]; vaga[a] = vaga[b]; vaga[b] = t;
+        }
+    }
+
+    vec3 o, d, o2, dx;
+    raio(uv, o, d);
+    raio(uv + vec2(1.0 / R.x, 0.0), o2, dx);
+    float porPixel = length(dx - d);            // quanto o raio abre de um pixel para o vizinho
+    vec3 dn = normalize(d);
+
+    // Os eixos da câmera (para "Para a câmera"): sem câmera, a vista é de frente.
+    mat3 daCamera = mat3(1.0);
+    if (acCamera3D == 1) {
+        vec3 a, b, c, lixo;
+        raio(vec2(0.5, 0.5), lixo, a);
+        raio(vec2(0.5, 0.5) + vec2(1.0 / R.x, 0.0), lixo, b);
+        raio(vec2(0.5, 0.5) + vec2(0.0, 1.0 / R.y), lixo, c);
+        vec3 z = normalize(a), x = normalize(b - a);
+        x = normalize(x - z * dot(x, z));
+        daCamera = mat3(x, cross(z, x), z);
+    }
+
+    vec3 centro = vec3(center * R, 0.0);
+    vec3 pontoProx = vec3(proxPoint * R, 0.0) - centro;
+    vec2 celula = R * cellSize / 100.0;        // o tamanho de uma cópia com escala 100%
+    vec3 eixos = vec3(
+        staggerAxis == 0 || staggerAxis == 1 || staggerAxis == 4 || staggerAxis == 5 ? 1.0 : 0.0,
+        staggerAxis == 0 || staggerAxis == 2 || staggerAxis == 4 || staggerAxis == 6 ? 1.0 : 0.0,
+        staggerAxis == 0 || staggerAxis == 3 || staggerAxis == 5 || staggerAxis == 6 ? 1.0 : 0.0);
+
+    float ts[CAMADAS];
+    vec4 cs[CAMADAS];
+    for (int k = 0; k < CAMADAS; k++) { ts[k] = 1e30; cs[k] = vec4(0.0); }
+
+    for (int c = 0; c < MAXIMO; c++) {
+        if (c >= n) break;
+        float i = emb > 0.0 && n > 1 ? float(vaga[c]) : float(c);
+
+        // o lugar
+        vec3 pA = lugar(formaA, i);
+        pA.z += fundo(formaA, i);
+        vec3 p = pA;
+        vec3 pB = pA;
+        if (vira > 0.0) {
+            pB = lugar(formaB, i);
+            pB.z += fundo(formaB, i);
+            p = mix(pA, pB, vira);
+        }
+        if (randomOffset > 0.0) {
+            float chave = floor(randomSeed + 0.5) * 131.0 + 7.0;
+            p += (vec3(acaso(chave, i * 3.0), acaso(chave, i * 3.0 + 1.0), acaso(chave, i * 3.0 + 2.0)) - 0.5) * randomOffset / 100.0 * R.x;
+        }
+
+        // a escala por posição
+        float m = 1.0;
+        if (scaleFront != 0.0 || scaleBack != 0.0) {
+            float t = posicaoNaEscala(formaA, i, pA);
+            if (vira > 0.0) t = mix(t, posicaoNaEscala(formaB, i, pB), vira);
+            m = max(1.0 + (1.0 - t) * scaleFront / 100.0 + t * scaleBack / 100.0, 0.0);
+        }
+        float opac = opacity / 100.0;
+
+        // a proximidade
+        if (proxOn) {
+            float alcance = max(proxRadius / 100.0 * R.x, 0.001);
+            float dist = distance(p, pontoProx);
+            float perto = 1.0 - smoothstep(alcance * (1.0 - proxFalloff / 100.0) - 0.0001, alcance, dist);
+            m = max(m * (1.0 + perto * proxScale / 100.0), 0.0);
+            opac *= clamp(1.0 + perto * proxOpacity / 100.0, 0.0, 1.0);
+            vec3 para = p - pontoProx;
+            float lp = length(para.xy);
+            if (lp > 0.0001) p.xy += para.xy / lp * perto * proxPush / 100.0 * R.x;
+            p.z -= perto * proxLift / 100.0 * R.x;
+        }
+        if (m <= 0.0 || opac <= 0.0) continue;
+
+        // longe do raio? nem monta o giro
+        vec3 mundo = centro + p;
+        vec3 ate = mundo - o;
+        float aoLongo = dot(ate, dn);
+        float alcanceDaCopia = 0.5 * length(celula) * m + 2.0;
+        if (dot(ate, ate) - aoLongo * aoLongo > alcanceDaCopia * alcanceDaCopia) continue;
+
+        // para onde a cópia está virada
+        mat3 B = base(formaA, i, p, daCamera);
+        if (vira > 0.0) {
+            mat3 B2 = base(formaB, i, p, daCamera);
+            vec3 z = normalize(mix(B[2], B2[2], vira));
+            vec3 x = mix(B[0], B2[0], vira);
+            x = normalize(x - z * dot(x, z));
+            B = mat3(x, cross(z, x), z);
+        }
+        float degrau = N > 1.0 ? i / (N - 1.0) : 0.0;
+        vec3 g = radians(vec3(twistX, twistY, twistZ) + stagger * eixos * degrau);
+        mat3 F = B * (girarZ(g.z) * girarY(g.y) * girarX(g.x));
+
+        // o raio no plano da cópia
+        float den = dot(d, F[2]);
+        if (abs(den) < 1e-7) continue;
+        float t = dot(ate, F[2]) / den;
+        if (t <= 0.0) continue;
+        vec3 q = o + d * t - mundo;
+        vec2 local = vec2(dot(q, F[0]), dot(q, F[1]));
+        vec2 tam = celula * m;
+        float px = t * porPixel;                                   // um pixel da tela, em px do mundo, ali
+        vec2 borda = clamp((0.5 * tam - abs(local)) / max(px, 1e-4) + 0.5, 0.0, 1.0);
+        float cobre = borda.x * borda.y;
+        if (cobre <= 0.0) continue;
+
+        vec2 uvC = local / tam + 0.5;
+        float reduz = px / max(cellSize / 100.0 * m, 1e-4);        // texels da imagem por pixel da tela
+        int toques = reduz > 3.0 ? 3 : reduz > 1.3 ? 2 : 1;
+        vec4 cor = amostra(quais[c - (c / nImagens) * nImagens], uvC, vec2(reduz) / R, toques) * cobre * opac;
+        if (cor.a <= 0.002) continue;
+
+        // guarda entre as mais próximas (no empate, a primeira cópia fica por cima)
+        for (int k = 0; k < CAMADAS; k++) {
+            if (t < ts[k]) {
+                for (int j = CAMADAS - 1; j > k; j--) { ts[j] = ts[j - 1]; cs[j] = cs[j - 1]; }
+                ts[k] = t; cs[k] = cor;
+                break;
+            }
+        }
+    }
+
+    // da frente para trás
+    vec4 saida = vec4(0.0);
+    for (int k = 0; k < CAMADAS; k++) saida += cs[k] * (1.0 - saida.a);
+    fragColor = saida.a > 0.0 ? vec4(saida.rgb / saida.a, saida.a) : vec4(0.0);
+}
+]]></shader>
+</effect>

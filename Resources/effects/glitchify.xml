@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Glitchify (Cinema Spice, `CSpice Glitchify`) — a conta do plugin.
+
+  O efeito é código de CPU (`Glitchify_1.0.0.aex`): a conta foi LIDA no binário e conferida contra o
+  After Effects (`tools/glitchify/benchmark`, LEIAME.md) pixel a pixel — 0 diferença em 126 quadros: o motor
+  de ruído, o Channel Glitch (os 9 canais do Split, os 8 do Scale), o Color Glitch, o Pixel Streak, o Glitch
+  Block nas três direções, o padrão inteiro sem o Slice e o preset "furys glitchify"; mais 30 do Transform
+  Glitch (posição inteira, recorte, os wiggles, Overlay, Composite Over, escala 50% e −100%); e mais 26 do
+  Compression Glitch, do Fill Gaps e da Transition.
+
+  `stage="glitchify"`: o efeito roda NA cadeia, mas na CPU — o `PasseDoGlitchify` lê o buffer, faz a conta de
+  `model/Glitchify.kt` e sobe o resultado. Este `<shader>` é só a cópia da entrada.
+
+  Position e Crop são pontos de 0 a 1 da camada; o plugin os recebe em px da camada (o conversor divide os px
+  do AE pelo tamanho da composição). Num preset feito em outro tamanho, o AE usa os px como estão e desloca a
+  imagem; aqui o ponto acompanha a camada — igual ao AE numa camada do tamanho em que o preset foi lido.
+
+  O que NÃO é igual (o efeito roda como se estivesse desligado; o conversor avisa): o Glitch Slice (é
+  compressão WebP de verdade, com o libwebp 0.4.1 que vem dentro do plugin).
+  Perto, mas não igual: a mistura com transparência parcial (a borda de uma posição quebrada ou de uma
+  escala, a Opacity do Transform abaixo de 100%, a Transition com Softness: o alfa exato, a cor a 1 ou 2
+  níveis), a escala fora de
+  50% e −100% (1 nível em até 3% dos pixels) e as misturas fora de Normal, Overlay e Divide (este só a
+  100%), que seguem a fórmula de livro.
+  Os menus Transfer Mode e Channel não têm os separadores do AE. Na prévia em meia resolução o efeito roda
+  sobre a imagem menor (os tamanhos em pixel do plugin pesam o dobro); a exportação é na resolução cheia.
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.glitchify"
+    name="Glitchify"
+    name-en="Glitchify"
+    desc="O Glitchify da Cinema Spice: canais deslocados e esticados, bytes em cascata, pixels ordenados e blocos fora do lugar, igual ao After Effects."
+    desc-en="Cinema Spice's Glitchify: shifted and stretched channels, cascading bytes, sorted pixels and misplaced blocks, as in After Effects."
+    category="distort"
+    stage="glitchify"
+    tags="glitch,glitchify,cinema spice,cspice,falha,datamosh,pixel sort,channel,canal,bloco,block,digital,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="amount" label="Glitchify Amount" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="speed" label="Glitchify Speed" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="seed" label="Random Seed" type="integer" default="0" min="0" max="32768" step="1" />
+
+        <slider id="completion" group="Transition" label="Completion" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="softness" group="Transition" label="Softness" default="10.0" min="0.0" max="100.0" step="1.0" snap="10.0" />
+        <selector id="transitionChannel" group="Transition" label="Channel" default="5"
+                  options="Red|Green|Blue|Alpha|Luminance|Lightness|Hue|Saturation|Noise" />
+
+        <slider id="transformSpeed" group="Transform Glitch" label="Speed" default="1.0" min="0.0" max="100.0" step="0.1" snap="1.0" />
+        <point id="position" group="Transform Glitch" label="Position" defaultX="0.5" defaultY="0.5"
+               min="-2.0" max="3.0" unit="px" />
+        <slider id="positionWiggle" group="Transform Glitch" label="Position Wiggle" default="0.0" min="0.0" max="30000.0" step="1.0" snap="0.0" />
+        <slider id="scale" group="Transform Glitch" label="Scale" default="100.0" min="-30000.0" max="30000.0" step="1.0" snap="100.0" />
+        <slider id="scaleWiggle" group="Transform Glitch" label="Scale Wiggle" default="0.0" min="0.0" max="30000.0" step="1.0" snap="0.0" />
+        <point id="cropTopLeft" group="Transform Glitch" label="Crop" defaultX="0.0" defaultY="0.0"
+               min="-2.0" max="3.0" unit="px" />
+        <point id="cropBottomRight" group="Transform Glitch" label="Crop (bottom right)" defaultX="1.0" defaultY="1.0"
+               min="-2.0" max="3.0" unit="px" />
+        <slider id="cropWiggle" group="Transform Glitch" label="Crop Wiggle" default="0.0" min="0.0" max="30000.0" step="1.0" snap="0.0" />
+        <slider id="opacity" group="Transform Glitch" label="Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <selector id="transferMode" group="Transform Glitch" label="Transfer Mode" default="0"
+                  options="Normal|Copy|Behind|In Front|Darken|Multiply|Color Burn|Classic Color Burn|Linear Burn|Darker Color|Add|Lighten|Screen|Color Dodge|Classic Color Dodge|Linear Dodge|Lighter Color|Overlay|Soft Light|Hard Light|Linear Light|Vivid Light|Pin Light|Hard Mix|Difference|Classic Difference|Exclusion|Subtract|Divide|Hue|Saturation|Color|Luminosity|Stencil Alpha|Stencil Luma|Silhouette Alpha|Silhouette Luma|Additive Premultiply|Alpha Add" />
+        <switch id="compositeOver" group="Transform Glitch" label="Composite Over" default="false" />
+
+        <switch id="channelEnable" group="Channel Glitch" label="Enable" default="true" />
+        <selector id="splitChannel" group="Channel Glitch" label="Split Channel" default="7"
+                  options="Red-Cyan|Green-Magenta|Blue-Yellow|Y'|Cb|Cr|Hue|Saturation|Value" />
+        <slider id="splitH" group="Channel Glitch" label="Horizontal Amount" default="50.0" min="-100.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="splitV" group="Channel Glitch" label="Vertical Amount" default="0.0" min="-100.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="splitSpeed" group="Channel Glitch" label="Split Speed Multiplier" default="0.0" min="0.0" max="10.0" step="0.1" snap="0.0" />
+        <slider id="scaleAmount" group="Channel Glitch" label="Scale" default="30.0" min="-800.0" max="800.0" step="1.0" snap="30.0" />
+        <selector id="scaleChannel" group="Channel Glitch" label="Scale Channel" default="0"
+                  options="Luma|Lightness|Hue|Saturation|Red|Green|Blue|Alpha" />
+        <switch id="scaleVertical" group="Channel Glitch" label="Vertical" default="false" />
+        <slider id="scaleOffset" group="Channel Glitch" label="Offset" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="scaleSpeed" group="Channel Glitch" label="Scale Speed Multiplier" default="3.0" min="0.0" max="10.0" step="0.1" snap="3.0" />
+        <switch id="fillGaps" group="Channel Glitch" label="Fill Gaps" default="false" />
+        <selector id="channelMode" group="Channel Glitch" label="Transfer Mode" default="0"
+                  options="Normal|Copy|Behind|In Front|Darken|Multiply|Color Burn|Classic Color Burn|Linear Burn|Darker Color|Add|Lighten|Screen|Color Dodge|Classic Color Dodge|Linear Dodge|Lighter Color|Overlay|Soft Light|Hard Light|Linear Light|Vivid Light|Pin Light|Hard Mix|Difference|Classic Difference|Exclusion|Subtract|Divide|Hue|Saturation|Color|Luminosity|Stencil Alpha|Stencil Luma|Silhouette Alpha|Silhouette Luma|Additive Premultiply|Alpha Add" />
+
+        <switch id="colorEnable" group="Color Glitch" label="Enable" default="true" />
+        <slider id="colorOffset" group="Color Glitch" label="Offset" default="20.0" min="0.0" max="100.0" step="0.1" snap="20.0" />
+        <slider id="colorAmount" group="Color Glitch" label="Amount" default="80.0" min="0.0" max="100.0" step="1.0" snap="80.0" />
+        <slider id="colorOpacity" group="Color Glitch" label="Opacity" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <selector id="colorMode" group="Color Glitch" label="Transfer Mode" default="0"
+                  options="Normal|Copy|Behind|In Front|Darken|Multiply|Color Burn|Classic Color Burn|Linear Burn|Darker Color|Add|Lighten|Screen|Color Dodge|Classic Color Dodge|Linear Dodge|Lighter Color|Overlay|Soft Light|Hard Light|Linear Light|Vivid Light|Pin Light|Hard Mix|Difference|Classic Difference|Exclusion|Subtract|Divide|Hue|Saturation|Color|Luminosity|Stencil Alpha|Stencil Luma|Silhouette Alpha|Silhouette Luma|Additive Premultiply|Alpha Add" />
+
+        <switch id="imageEnable" group="Image Glitch" label="Enable" default="true" />
+        <slider id="streak" group="Image Glitch" label="Pixel Streak" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <switch id="verticalSort" group="Image Glitch" label="Vertical Sort" default="false" />
+        <slider id="blockAmount" group="Image Glitch" label="Block Amount" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="blockSpeed" group="Image Glitch" label="Block Speed Multiplier" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="blockWidth" group="Image Glitch" label="Horizontal Size" default="150.0" min="0.0" max="100000.0" step="1.0" snap="150.0" />
+        <slider id="blockHeight" group="Image Glitch" label="Vertical Size" default="50.0" min="0.0" max="100000.0" step="1.0" snap="50.0" />
+        <selector id="blockDirection" group="Image Glitch" label="Direction" default="0"
+                  options="Horizontal|Vertical|Horizontal and Vertical" />
+        <selector id="blockMode" group="Image Glitch" label="Block Transfer Mode" default="17"
+                  options="Normal|Copy|Behind|In Front|Darken|Multiply|Color Burn|Classic Color Burn|Linear Burn|Darker Color|Add|Lighten|Screen|Color Dodge|Classic Color Dodge|Linear Dodge|Lighter Color|Overlay|Soft Light|Hard Light|Linear Light|Vivid Light|Pin Light|Hard Mix|Difference|Classic Difference|Exclusion|Subtract|Divide|Hue|Saturation|Color|Luminosity|Stencil Alpha|Stencil Luma|Silhouette Alpha|Silhouette Luma|Additive Premultiply|Alpha Add" />
+
+        <switch id="compressionEnable" group="Compression Glitch" label="Enable" default="false" />
+        <slider id="compressionMultiplier" group="Compression Glitch" label="Multiplier" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="ditherAmount" group="Compression Glitch" label="Dither Amount" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="jpegAmount" group="Compression Glitch" label="JPEG Amount" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+
+        <switch id="showNoise" group="Advanced" label="Show noise engine" default="false" />
+        <slider id="gain" group="Advanced" label="Gain" default="1.5" min="0.0" max="5.0" step="0.05" snap="1.5" />
+        <slider id="lacunarity" group="Advanced" label="Lacunarity" default="10.0" min="0.0" max="30.0" step="0.1" snap="10.0" />
+        <slider id="octaves" group="Advanced" label="Octaves" type="integer" default="2" min="0" max="16" step="1" />
+        <switch id="repeatEdge" group="Advanced" label="Repeat Edge Pixels" default="true" />
+        <switch id="sigmoid" group="Advanced" label="Sigmoidal Steps" default="false" />
+        <slider id="quantization" group="Advanced" label="Quantization Steps" default="2.0" min="1.0" max="64.0" step="1.0" snap="2.0" />
+        <switch id="useNoise" group="Advanced" label="Use Noise" default="true" />
+        <slider id="noiseCutoff" group="Advanced" label="Noise Cutoff" type="integer" default="50" min="0" max="100" step="1" />
+        <slider id="grouping" group="Advanced" label="Grouping Factor" default="5.0" min="0.0" max="1000.0" step="0.1" snap="5.0" />
+        <slider id="wiggleSteps" group="Advanced" label="Wiggle Quantization Steps" default="2.0" min="1.0" max="64.0" step="1.0" snap="2.0" />
+
+        <!-- Vêm do AE e ficam guardados, mas o app ainda não os faz (ver o topo). -->
+        <slider id="sliceAmount" label="Glitch Slice Amount" default="50.0" min="0.0" max="100.0" step="1.0" hidden="true" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoGlitchify` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   FORMA (CÍRCULO, ELIPSE, RETÂNGULO)
+  ============================================================================
+
+  Gera uma forma geométrica dentro da camada: círculo, elipse ou retângulo, com
+  preenchimento, borda e suavidade de quina. Serve de placeholder, de vinheta
+  (invertido) e de recorte simples sem precisar de máscara vetorial.
+
+  ============================================================================
+   UMA FÓRMULA, TRÊS FORMAS
+  ============================================================================
+
+  Os três se desenham pela mesma pergunta — "a que distância este pixel está
+  do limite da forma" — mudando só a fórmula.
+
+  - ELIPSE: `length((p - centro) / raio) - 1`. Negativo = dentro, positivo = fora,
+    zero exato = na borda. Com `raio.x == raio.y` vira um círculo.
+  - RETÂNGULO ARREDONDADO: a famosa SDF do Inigo Quilez — toma a distância ao
+    ponto mais próximo da caixa e subtrai o raio do canto. Com raio 0, canto reto;
+    com raio = metade do menor lado, vira o estádio (o círculo).
+
+  Um `smoothstep` sobre essa distância dá a anti-serrilhação e a suavidade da
+  borda. Essa é a técnica padrão de UI em shader, e serve aqui também.
+-->
+<effect
+    id="nova.effect.shape"
+    name="Forma"
+    name-en="Shape"
+    desc="Círculo, elipse ou retângulo arredondado, com preenchimento e borda."
+    desc-en="Circle, ellipse or rounded rectangle with fill and outline."
+    category="procedural"
+    tags="forma,círculo,elipse,retângulo,shape,preenchimento,vinheta,gerador">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="kind" style="dropdown" label="Tipo" default="0">
+            <choice value="0" label="Círculo" />
+            <choice value="1" label="Elipse" />
+            <choice value="2" label="Retângulo" />
+        </selector>
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="sizeX" label="Largura"
+                default="0.4" min="0.01" max="1.5" step="0.005" snap="0.0" />
+        <slider id="sizeY" label="Altura"
+                default="0.4" min="0.01" max="1.5" step="0.005" snap="0.0" />
+        <slider id="cornerRadius" label="Arredondar (retângulo)"
+                default="0.04" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="softness" label="Suavidade da borda"
+                default="0.003" min="0.0" max="0.05" step="0.001" snap="0.0" />
+
+        <!-- ============================== Pintura ========================== -->
+        <color id="fillColor" group="Pintura" label="Preenchimento" default="#FFFFFFFF" />
+        <color id="outlineColor" group="Pintura" label="Borda" default="#000000FF" />
+        <slider id="outlineWidth" group="Pintura" label="Espessura da borda"
+                default="0.0" min="0.0" max="0.2" step="0.002" snap="0.0" />
+        <switch id="invert" group="Pintura" label="Inverter (buraco)" default="false" />
+    </params>
+
+    <!-- Na vitrine, laço de círculo pequeno → grande. -->
+    <preview>
+        <set param="sizeX" value="0.2" ate="0.6" />
+        <set param="sizeY" value="0.2" ate="0.6" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** SDF do retângulo arredondado (Inigo Quilez): negativo dentro, positivo fora. */
+float sdfRetangulo(vec2 p, vec2 metade, float raio) {
+    vec2 q = abs(p) - metade + vec2(raio);
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - raio;
+}
+
+/** SDF da elipse por fórmula aproximada (precisa o bastante para pintar com AA). */
+float sdfElipse(vec2 p, vec2 raio) {
+    vec2 r = max(raio, vec2(1e-5));
+    float d = length(p / r);
+    // Projeta para pseudo-distância em unidades da menor dimensão: isso dá uma
+    // gradiente aproveitável para o smoothstep da borda.
+    return (d - 1.0) * min(r.x, r.y);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    vec2 metade = vec2(sizeX, sizeY) * 0.5;
+
+    float d;
+    if (kind == 1) {
+        // elipse: raios independentes em x e y
+        d = sdfElipse(p, metade);
+    } else if (kind == 2) {
+        // retângulo: canto arredondado opcional
+        d = sdfRetangulo(p, metade, min(cornerRadius, min(metade.x, metade.y)));
+    } else {
+        // círculo: distância ao centro menos o raio
+        d = length(p) - min(metade.x, metade.y);
+    }
+
+    float suave = max(softness, 1e-4);
+
+    // Dentro da forma = 1, fora = 0, transição no raio `softness`.
+    float dentro = 1.0 - smoothstep(-suave, suave, d);
+
+    // Anel da borda: um smoothstep sobre a distância assinada entre -w e 0.
+    float anel = smoothstep(outlineWidth + suave, outlineWidth - suave, d)
+               - smoothstep(0.0 + suave, 0.0 - suave, d);
+    anel = clamp(anel, 0.0, 1.0);
+
+    float dentroPintado = dentro;
+    if (invert) dentroPintado = 1.0 - dentro;
+
+    // A forma pinta sobre a imagem; a borda por cima da forma.
+    vec4 comPreench = mix(original, vec4(fillColor.rgb, fillColor.a), dentroPintado * fillColor.a);
+    vec4 final_ = mix(comPreench, vec4(outlineColor.rgb, outlineColor.a), anel * outlineColor.a);
+
+    fragColor = final_;
+}
+
+    ]]></shader>
+</effect>

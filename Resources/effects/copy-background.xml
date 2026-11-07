@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COPIAR FUNDO
+  ============================================================================
+
+  A camada passa a mostrar O QUE ESTÁ ATRÁS DELA, no formato dela. Sozinho isso
+  parece não fazer nada (a camada fica invisível sobre o próprio fundo); o
+  ponto é o que vem DEPOIS na lista de efeitos:
+
+  - Copiar fundo + Desfoque gaussiano: vidro fosco no formato de um texto ou de
+    uma forma;
+  - Copiar fundo + Inverter: o texto mostra o fundo em negativo;
+  - Copiar fundo + Deslocar/Ondulação: uma lente que distorce o que passa atrás.
+
+  É o "Copiar fundo" do Alight Motion, com o mesmo controle: o preenchimento.
+
+  ## Preenchimento
+
+  Em 0%, o fundo aparece só onde a camada tem pixel — o recorte dela. Em 100%,
+  o fundo enche o retângulo inteiro da camada, inclusive a parte transparente.
+  É o que se quer quando a camada é só uma "janela" e o formato não importa.
+
+  ## O limite, declarado
+
+  O fundo é lido no espaço da COMPOSIÇÃO, e o efeito roda com a camada ainda
+  parada no espaço dela. Numa camada movida ou girada o fundo copiado não
+  acompanha o giro — é o mesmo limite de todo efeito que lê o fundo aqui (o
+  vidro líquido, por exemplo). Numa camada no lugar, os dois espaços coincidem.
+
+  DESDE A 0.652.0 FORA DO CATÁLOGO: o Copiar fundo do catálogo é o `am-copy-background.xml`,
+  o do Alight Motion conta por conta (lá, o Preencher mistura o fundo com a própria camada, não
+  enche o retângulo). Este continua abrindo os projetos que já o usam.
+-->
+<effect
+    id="nova.effect.copybackground"
+    name="Copiar fundo (Nova, até a 0.651)"
+    name-en="Copy Background (Nova, up to 0.651)"
+    catalog="false"
+    desc="A camada mostra o que está atrás dela. Combine com desfoque, inversão ou distorção para agir só no fundo."
+    desc-en="Copies the pixels behind the layer into it, so the next effects act on the background."
+    category="stylize"
+    tags="copiar fundo,copy background,fundo,backdrop,vidro,fosco,janela,atras,lift">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="fundoImg" src="backdrop" />
+
+        <slider id="fill" label="Preenchimento"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    // O fundo está na TELA e a camada não: sem a ponte, mover a camada faz o
+    // efeito copiar o pedaço errado da cena. Ver `acTela` no prelúdio.
+    vec4 fundo = texture(fundoImg, acTela(acScreenNorm));
+
+    // O formato vem da camada; a cor, do fundo. Onde o fundo é transparente
+    // (camada mais de baixo sobre fundo vazio), não há o que copiar.
+    float formato = mix(camada.a, 1.0, clamp(fill, 0.0, 1.0));
+    fragColor = vec4(fundo.rgb, formato * fundo.a);
+}
+
+    ]]></shader>
+</effect>

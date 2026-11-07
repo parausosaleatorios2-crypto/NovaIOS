@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MÁSCARA DE NITIDEZ — o Unsharp Mask do After Effects, medido (0.432.0)
+  ============================================================================
+
+  A técnica clássica: borra uma cópia, tira a cópia borrada do original (o "detalhe" que o
+  desfoque perdeu) e soma esse detalhe de volta, amplificado. Domínio público, ensinada em
+  qualquer curso de processamento de imagem.
+
+  O QUE FOI MEDIDO (tools/after-effects/presets/nitidez, 07/10/2026), para os presets do snow
+  converterem com os mesmos números:
+
+  - Unsharp Mask do AE (`ADBE Unsharp Mask2`): saída = entrada + (Amount/100) · (entrada − gauss).
+    O gaussiano tem σ = 0,775 · Radius + 0,4 px (medido de Radius 0,5 a 150). É o "Gaussiano" daqui:
+    o Raio é o Radius de lá, e o Ganho é o Amount / 100.
+  - Unsharp Mask do BCC (`BCC3Unsharp Mask`): o desfoque é de CAIXA (a média de um quadrado), não
+    gaussiano — o realce chega mais longe da borda e cai em linha reta. É a "Caixa" daqui: o Raio é
+    a meia-largura do quadrado, em px.
+
+  Antes desta versão o desfoque tinha 9 amostras e o Raio ia só até 20, com σ ≈ Raio / 2. Os presets
+  usam Radius 50 a 150 (contraste local, não só nitidez fina), então o desfoque passou a ter três
+  degraus de resolução — inteira, 1/4 e 1/16 — e o passe final lê o que serve para o alcance pedido.
+  ⚠️ Projeto antigo com este efeito fica com o desfoque ~1,6× mais largo para o mesmo Raio.
+
+  O Threshold é o de sempre daqui (a energia do detalhe abaixo dele não é amplificada); o do AE não
+  foi medido — os presets usam 0.
+-->
+<effect
+    id="nova.effect.unsharpmask"
+    name="Máscara de nitidez"
+    name-en="Unsharp Mask"
+    desc="Realce de nitidez e de contraste local: ganho, raio e threshold, com os números do Unsharp Mask do After Effects."
+    desc-en="Sharpening and local contrast: amount, radius and threshold, with the same numbers as After Effects' Unsharp Mask."
+    category="stylize"
+    blend="true"
+    tags="nitidez,detalhe,foco,sharpen,unsharp,mask,realce,contraste local,clarity,after effects,bcc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Os três degraus do desfoque: resolução inteira, 1/4 e 1/16. -->
+        <texture id="quarto" src="buffer" scale="0.25" />
+        <texture id="dezesseis" src="buffer" scale="0.0625" />
+        <texture id="ah" src="buffer" />
+        <texture id="av" src="buffer" />
+        <texture id="bh" src="buffer" scale="0.25" />
+        <texture id="bv" src="buffer" scale="0.25" />
+        <texture id="ch" src="buffer" scale="0.0625" />
+        <texture id="cv" src="buffer" scale="0.0625" />
+
+        <slider id="amount" label="Ganho" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="radius" label="Raio" default="2.0" min="0.1" max="250.0" step="0.1" ticks="0.1,5.0,20.0,50.0,150.0,250.0" />
+        <slider id="threshold" label="Threshold" default="0.0" min="0.0" max="0.25" step="0.005" snap="0.0" />
+        <selector id="kernel" label="Desfoque" default="0" options="Gaussiano|Caixa" />
+    </params>
+
+    <!-- Na vitrine, a nitidez padrão não aparece a 64 dp: forte. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="amount" value="5.0" />
+        <set param="radius" value="8.0" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="quarto" />     <!-- 0: a imagem a 1/4 -->
+        <pass target="dezesseis" />  <!-- 1: a imagem a 1/16 -->
+        <pass target="ah" />         <!-- 2, 3: o desfoque na resolução inteira -->
+        <pass target="av" />
+        <pass target="bh" />         <!-- 4, 5: a 1/4 -->
+        <pass target="bv" />
+        <pass target="ch" />         <!-- 6, 7: a 1/16 -->
+        <pass target="cv" />
+        <pass />                     <!-- 8: original + (original − borrado) · ganho -->
+    </passes>
+
+    <shader><![CDATA[
+const int METADE = 16;                 // 33 amostras por eixo
+
+/** O raio em px do BUFFER (a prévia reduzida encolhe junto). */
+float raioPx() { return max(radius, 0.0) * acEscalaDePixel; }
+
+/** O σ do gaussiano, em px do buffer. Medido no Unsharp Mask do AE: 0,775 · Radius + 0,4. */
+float sigmaPx() { return (0.775 * max(radius, 0.0) + 0.4) * acEscalaDePixel; }
+
+/** Até onde o desfoque alcança, em px: três σ no gaussiano, a meia-largura na caixa. */
+float alcancePx() { return kernel == 1 ? raioPx() + 0.5 : 3.0 * sigmaPx(); }
+
+/** Em que degrau o desfoque roda: 0 = resolução inteira, 1 = 1/4, 2 = 1/16. */
+int degrau() {
+    float a = alcancePx();
+    return a <= 16.0 ? 0 : (a <= 64.0 ? 1 : 2);
+}
+
+/** O peso de uma amostra a `d` px (do buffer) do centro, que cobre `largura` px. */
+float peso(float d, float largura) {
+    if (kernel == 1) {
+        // a parte do intervalo [d − largura/2, d + largura/2] que cai dentro da caixa
+        float m = raioPx() + 0.5;
+        return max(min(d + 0.5 * largura, m) - max(d - 0.5 * largura, -m), 0.0);
+    }
+    float s = sigmaPx();
+    return exp(-0.5 * d * d / (s * s));
+}
+
+/** Um eixo do desfoque: 33 amostras de `fonte`, cujos texels valem `escala` px do buffer. */
+vec4 borrar(sampler2D fonte, vec2 uv, vec2 eixo, float escala) {
+    vec2 texel = 1.0 / vec2(textureSize(fonte, 0));
+    // um texel por amostra; se o alcance pede mais que 16 texels, as amostras se afastam
+    float passo = max(1.0, alcancePx() / escala / float(METADE));
+    vec4 soma = vec4(0.0);
+    float total = 0.0;
+    for (int i = -METADE; i <= METADE; i++) {
+        float t = float(i) * passo;
+        float p = peso(t * escala, passo * escala);
+        soma += texture(fonte, uv + eixo * texel * t) * p;
+        total += p;
+    }
+    return soma / max(total, 1e-6);
+}
+
+/** Reduz `fonte` a 1/4: a média dos 4 × 4 px que viram um (quatro leituras bilineares). */
+vec4 reduzir(sampler2D fonte, vec2 uv) {
+    vec2 t = 1.0 / vec2(textureSize(fonte, 0));
+    return 0.25 * (texture(fonte, uv + t * vec2(-1.0, -1.0)) + texture(fonte, uv + t * vec2(1.0, -1.0)) +
+                   texture(fonte, uv + t * vec2(-1.0, 1.0)) + texture(fonte, uv + t * vec2(1.0, 1.0)));
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    int d = degrau();
+    if (acPass == 0) { fragColor = d >= 1 ? reduzir(inputImg, uv) : vec4(0.0); return; }
+    if (acPass == 1) { fragColor = d == 2 ? reduzir(quarto, uv) : vec4(0.0); return; }
+    // Só o degrau em uso trabalha; os outros saem na primeira linha.
+    if (acPass == 2) { fragColor = d == 0 ? borrar(inputImg, uv, vec2(1.0, 0.0), 1.0) : vec4(0.0); return; }
+    if (acPass == 3) { fragColor = d == 0 ? borrar(ah, uv, vec2(0.0, 1.0), 1.0) : vec4(0.0); return; }
+    if (acPass == 4) { fragColor = d == 1 ? borrar(quarto, uv, vec2(1.0, 0.0), 4.0) : vec4(0.0); return; }
+    if (acPass == 5) { fragColor = d == 1 ? borrar(bh, uv, vec2(0.0, 1.0), 4.0) : vec4(0.0); return; }
+    if (acPass == 6) { fragColor = d == 2 ? borrar(dezesseis, uv, vec2(1.0, 0.0), 16.0) : vec4(0.0); return; }
+    if (acPass == 7) { fragColor = d == 2 ? borrar(ch, uv, vec2(0.0, 1.0), 16.0) : vec4(0.0); return; }
+
+    vec4 original = texture(inputImg, uv);
+    vec4 borrado = d == 0 ? texture(av, uv) : (d == 1 ? texture(bv, uv) : texture(cv, uv));
+
+    // O "detalhe": o que o desfoque perdeu. Onde a imagem já era lisa, isto é quase zero — é
+    // assim que a máscara realça borda sem "chapar" áreas planas.
+    vec3 detalhe = original.rgb - borrado.rgb;
+
+    // O limiar olha para a ENERGIA do detalhe (o maior desvio entre os três canais): abaixo
+    // dele a diferença é ruído/granulação, e o pixel fica intocado.
+    float energia = max(max(abs(detalhe.r), abs(detalhe.g)), abs(detalhe.b));
+    vec3 resultado = energia > threshold ? original.rgb + detalhe * amount : original.rgb;
+
+    fragColor = vec4(clamp(resultado, 0.0, 1.0), original.a);
+}
+    ]]></shader>
+</effect>

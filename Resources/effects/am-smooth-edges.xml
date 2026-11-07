@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BORDAS LISAS — o Smooth Edges do Alight Motion, conta por conta (0.538.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "pode fazer agora o efeito bordas lisas 100% parecido com o do alight
+  motion", o terceiro da série (depois de `am-contour-lines.xml` e `am-contour-gradient.xml`). Mesmos
+  parâmetros, ids e padrões do `com.alightcreative.effects.smoothedges`. A conta foi LIDA do efeito do
+  AM 5.0.281 (`smoothedges.xml` e o `gaussianblur.xml` que ele chama, do APK descompactado) e escrita
+  de novo; os arquivos do AM não entram no repositório. Conferência: `tools/amcontour/comparar.py bordas`.
+
+  O que o efeito faz:
+
+  1. O ALFA da camada é desfocado pelo Desfoque gaussiano do próprio AM, que roda dentro deste efeito
+     com a MESMA Intensidade (o mapa de parâmetros passa inteiro para o efeito de dentro): reduzido à
+     metade, gaussiana na horizontal e na vertical com meio-lado = Intensidade · 1,14 / 24 · diagonal da
+     imagem em pixels, e de volta ao tamanho cheio. Cada passo guardado em 8 bits, como no AM.
+  2. O alfa novo é esse desfoque cortado num degrau suave em 0,5 (de 0,5 − d a 0,5 + d, com
+     d = 0,05 ÷ (1 + Intensidade)²): canto vira curva, ponta fina some, buraco pequeno fecha.
+  3. A COR vem de dois "rastros": cada pixel olha para os dois lados, na horizontal e na vertical, até
+     Intensidade · 5 % da imagem, e põe por baixo dele o que achou (o mais perto do centro por cima).
+     Duas passadas. Assim a borda que cresce para fora tem a cor da camada, e não preto. O número de
+     amostras sai do tamanho do PROJETO (`acScreenSize` do AM = composição; aqui, buffer ÷
+     `acEscalaDePixel`) e a distância é em fração da imagem; abaixo de ~2 px de alcance (o padrão 0,02
+     numa composição de 1080) o rastro não tem amostra nenhuma e a cor é a da própria camada.
+  4. "Máscara para camada": sem rastro; a camada só perde alfa (o degrau multiplica a própria camada).
+
+  O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. Por isso o passe 0 guarda a camada
+  pré-multiplicada (o mesmo buffer de 8 bits que o AM recebe) e todos os passes leem dele, com o filtro
+  da própria GPU, como no AM; só a saída volta para o alfa reto.
+
+  Os passes (AM → aqui): o efeito de dentro do AM (4 passes, buffers com downsample="2") são os passes
+  1 a 4; o hstreak e o vstreak dele, 5 e 6; a saída, 7.
+
+  Para cima é +t no AM (o espaço dele tem t = 0 embaixo); aqui depende de como a entrada chega
+  (`acEntradaDePe`). O rastro não é simétrico (fica de fora a primeira ponta, a de baixo/esquerda).
+-->
+<effect
+    id="nova.effect.am-smooth-edges"
+    name="Bordas lisas"
+    name-en="Smooth Edges"
+    desc="Arredonda e alisa as bordas das partes opacas da camada, sem mudar a cor de dentro (o Smooth Edges do Alight Motion)."
+    desc-en="Rounds and smooths the edges of the layer's opaque parts without changing the colors inside (Alight Motion's Smooth Edges)."
+    category="stylize"
+    tags="bordas,borda,lisas,suavizar,arredondar,serrilhado,alfa,matte,smooth,edges,choke,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- O desfoque gaussiano do AM, em meia resolução. -->
+        <texture id="downImg" src="buffer" scale="0.5" />
+        <texture id="blurH" src="buffer" scale="0.5" />
+        <texture id="blurV" src="buffer" scale="0.5" />
+        <!-- Os buffers do próprio efeito, com os nomes do AM. -->
+        <texture id="hblur" src="buffer" />
+        <texture id="hstreak" src="buffer" />
+        <texture id="vstreak" src="buffer" />
+
+        <spinner id="strength" label="Intensidade" default="0.02" min="0.0" max="2.0" step="0.01" />
+        <switch id="maskToLayer" label="Máscara para camada" default="false" />
+    </params>
+
+
+
+
+    <passes>
+        <pass target="pre" />
+        <pass target="downImg" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass target="hblur" />
+        <pass target="hstreak" />
+        <pass target="vstreak" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+
+// A gaussiana de meio-lado `lado` (em pixels de `img`), com os pesos tirados um do outro por
+// multiplicação e duas amostras juntas numa leitura (a posição entre elas pelo peso), como no AM:
+// sigma = lado ÷ 2,146 (a ponta fica em 10 % do centro).
+vec4 desfocar(sampler2D img, vec2 passo, float lado) {
+    if (strength <= 0.0) return vec4(0.0);
+    float sigma = lado / 2.14596602;
+    highp vec3 g;
+    g.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    g.y = exp(-0.5 / (sigma * sigma));
+    g.z = g.y * g.y;
+    vec4 soma = texture(img, acScreenNorm) * g.x;
+    highp float total = g.x;
+    for (float i = 1.0; i <= lado; i += 2.0) {
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p0 = g.x;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p1 = g.x;
+        float par = p0 + p1;
+        float d = (i * p0 + (i + 1.0) * p1) / par;
+        soma += texture(img, acScreenNorm - d * passo) * par;
+        soma += texture(img, acScreenNorm + d * passo) * par;
+    }
+    return soma / total;
+}
+
+// O meio-lado do desfoque de dentro: Intensidade · 1,14 / 24 da diagonal da imagem cheia.
+float ladoDoDesfoque() {
+    return strength / 2.0 * 1.14 / 4.0 / 3.0 * length(vec2(textureSize(pre, 0)));
+}
+
+// Um rastro num eixo: de −dist/2 a +dist/2 em fração da imagem (sem a primeira ponta), cada amostra
+// por baixo das que estão mais perto do centro. `projeto` = o lado da composição neste eixo.
+vec4 rastro(sampler2D img, vec2 eixo, float projeto) {
+    float texel = 1.0 / projeto;
+    float dist = strength * 0.05;
+    int n = int(clamp(dist / texel, 1.01, 100.01));
+    vec4 c = vec4(0.0);
+    for (int i = 1; i < n; i++) {
+        float d = dist * (float(i) / float(n - 1) - 0.5);
+        vec4 a = texture(img, acScreenNorm + eixo * d);
+        if (d < 0.0) {
+            c = c * (1.0 - a.a) + a;
+        } else {
+            c = a * (1.0 - c.a) + c;
+        }
+    }
+    return c;
+}
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    return baixo * (1.0 - cima.a) + cima;
+}
+
+// Uma passada: o rastro horizontal e o vertical de `img`, por baixo da camada.
+vec4 rastros(sampler2D img) {
+    // O tamanho da composição (o `acScreenSize` do AM): o buffer na escala da exportação.
+    vec2 projeto = acResolution / acEscalaDePixel;
+    float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+    vec4 cx = rastro(img, vec2(1.0, 0.0), projeto.x);
+    vec4 cy = rastro(img, vec2(0.0, cima), projeto.y);
+    return sobre(sobre(cx, cy), texture(pre, acScreenNorm));
+}
+
+void main() {
+    if (acPass == 0) {
+        vec4 c = texture(inputImg, acScreenNorm);
+        fragColor = vec4(c.rgb * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = texture(pre, acScreenNorm);
+        return;
+    }
+    if (acPass == 2) {
+        vec2 passo = vec2(1.0 / vec2(textureSize(downImg, 0)).x, 0.0);
+        fragColor = desfocar(downImg, passo, ladoDoDesfoque());
+        return;
+    }
+    if (acPass == 3) {
+        // O passo aponta para CIMA na tela, como o +t do AM: a soma do par (o de baixo primeiro) fica na mesma
+        // ordem do AM com a entrada de qualquer lado. Invertida, a soma em float muda 1 nível no alfa desfocado,
+        // e o degrau estreito da Intensidade alta faz disso até 129 níveis num pixel.
+        float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+        vec2 passo = vec2(0.0, cima / vec2(textureSize(blurH, 0)).y);
+        vec4 r = desfocar(blurH, passo, ladoDoDesfoque());
+        fragColor = strength <= 0.0 ? texture(pre, acScreenNorm) : r;
+        return;
+    }
+    if (acPass == 4) {
+        fragColor = texture(blurV, acScreenNorm);
+        return;
+    }
+    // "Máscara para camada": sem rastro (a saída não lê estes dois).
+    if (acPass == 5) {
+        if (maskToLayer) fragColor = vec4(0.0);
+        else fragColor = rastros(pre);
+        return;
+    }
+    if (acPass == 6) {
+        if (maskToLayer) fragColor = vec4(0.0);
+        else fragColor = rastros(hstreak);
+        return;
+    }
+
+    float alfa = texture(hblur, acScreenNorm).a;
+    vec4 base = maskToLayer ? texture(pre, acScreenNorm) : texture(vstreak, acScreenNorm);
+    float d = 0.05 / ((1.0 + strength) * (1.0 + strength));
+    vec4 saida = base * smoothstep(0.5 - d, 0.5 + d, alfa);
+    fragColor = saida.a > 0.0 ? vec4(saida.rgb / saida.a, saida.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

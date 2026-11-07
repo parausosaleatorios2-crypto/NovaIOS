@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand__blend_mode_masking
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-blend-mode-masking"
+    name="Rendercommand  Blend Mode Masking (NV)"
+    name-en="Rendercommand  Blend Mode Masking (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand__blend_mode_masking', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand__blend_mode_masking', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="g_OverlayTex" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="1" step="1" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+bvec2 u_xlatb3;
+vec4 u_xlat4;
+vec3 u_xlat5;
+vec3 u_xlat6;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1 = texture(g_OverlayTex, acScreenNorm.xy);
+    u_xlat2 = u_xlat0 * u_xlat1;
+    u_xlatb3.xy = equal(ivec4(int(_blend_mode)), ivec4(1, 2, 0, 0)).xy;
+    u_xlat4.xyz = u_xlat0.xyz + u_xlat1.xyz;
+    u_xlat5.xyz = (-u_xlat1.xyz) + vec3(1.0, 1.0, 1.0);
+    u_xlat6.xyz = (-u_xlat0.xyz) + vec3(1.0, 1.0, 1.0);
+    u_xlat5.xyz = (-u_xlat5.xyz) * u_xlat6.xyz + vec3(1.0, 1.0, 1.0);
+    u_xlat4.xyz = (u_xlatb3.y) ? u_xlat4.xyz : u_xlat5.xyz;
+    u_xlat4.w = u_xlat0.w;
+    u_xlat3 = (u_xlatb3.x) ? u_xlat2 : u_xlat4;
+    u_xlat2.xyz = u_xlat1.xyz;
+    u_xlat1 = (int(_blend_mode) != 0) ? u_xlat3 : u_xlat2;
+    if(int(_use_inner_mask) == 0) {
+        fragColor = u_xlat1;
+        return;
+    }
+    u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+    u_xlat1 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+    u_xlat3 = texture(Mask, acScreenNorm.xy);
+    u_xlat4 = (-u_xlat3) + vec4(1.0, 1.0, 1.0, 1.0);
+    u_xlat0 = u_xlat0 * u_xlat4;
+    u_xlat0 = u_xlat1 * u_xlat3 + u_xlat0;
+    u_xlat1.x = u_xlat3.x * u_xlat0.w;
+    fragColor.w = (u_xlatb2.y) ? u_xlat1.x : u_xlat0.w;
+    fragColor.xyz = u_xlat0.xyz;
+    return;
+}
+    ]]></shader>
+</effect>

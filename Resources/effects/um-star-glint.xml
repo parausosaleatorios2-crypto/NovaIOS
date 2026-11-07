@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.starglint"
+    name="Cintilação Estelar (Ultra Motion)"
+    name-en="Star Glint (Ultra Motion)"
+    desc="Cruz de luz sobre os brilhos — 4, 6 ou 8 pontas."
+    desc-en="Light cross on highlights — 4, 6 or 8 points."
+    category="stylize"
+    tags="ultramotion,glint,star,streak,glow,light">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="threshold" label="Limiar"    default="0.75" min="0.0" max="1.0" step="0.01" />
+        <slider id="reach"     label="Comprimento" default="0.12" min="0.0" max="0.4" step="0.005" />
+        <slider id="points"    label="Pontas"    default="4" min="2" max="8" step="1" type="integer" />
+        <slider id="rotation"  label="Giro"      default="0.0" min="0.0" max="360.0" step="1.0" />
+        <slider id="intensity" label="Intensidade" default="1.2" min="0.0" max="4.0" step="0.05" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+vec3 amostrar(vec2 uv, vec2 dir, float len) {
+    vec3 soma = vec3(0.0);
+    float pt = 0.0;
+    for (int i = 0; i <= 32; i++) {
+        float t = float(i) / 32.0;
+        float w = pow(1.0 - t, 1.5);
+        vec3 c = texture(inputImg, uv + dir * len * t).rgb;
+        // o parâmetro len vem da chamada abaixo
+
+        float l = dot(c, LUMA);
+        float k = smoothstep(threshold, threshold + 0.1, l);
+        soma += c * k * w;
+        pt += w;
+    }
+    return soma / pt;
+}
+
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    int n = clamp(int(points), 2, 8);
+    float base = radians(rotation);
+    vec3 somaStreak = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+        if (i >= n) break;
+        float ang = base + 3.14159 * float(i) / float(n);
+        vec2 dir = vec2(cos(ang), sin(ang));
+        dir.x /= acAspect;
+        somaStreak += amostrar(acScreenNorm, dir, reach) + amostrar(acScreenNorm, -dir, reach);
+    }
+    fragColor = vec4(orig.rgb + somaStreak * intensity / float(n), orig.a);
+}
+    ]]></shader>
+</effect>

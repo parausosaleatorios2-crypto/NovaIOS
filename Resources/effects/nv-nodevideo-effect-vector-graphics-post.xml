@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_vector_graphics_post
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-vector-graphics-post"
+    name="Effect Vector Graphics Post (NV)"
+    name-en="Effect Vector Graphics Post (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_vector_graphics_post', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_vector_graphics_post', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    fragColor = (-u_xlat0) + vec4(1.0, 1.0, 1.0, 1.0);
+    return;
+}
+    ]]></shader>
+</effect>

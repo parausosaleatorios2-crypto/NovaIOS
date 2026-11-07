@@ -1,0 +1,190 @@
+//
+//  Compositor.swift
+//  NovaEngine
+//
+//  Monta um quadro da composicao: desenha cada camada visivel na ordem,
+//  aplica a cadeia de efeitos de cada uma e mescla no buffer da composicao.
+//
+
+import Metal
+import MetalKit
+import simd
+import os
+
+public protocol LayerContentProvider: AnyObject {
+    /// Devolve a textura do conteudo de uma camada num instante.
+    /// Video vem do decodificador; imagem e texto vem de cache.
+    func texture(for layer: Layer, at mediaTime: Float,
+                 device: MTLDevice) throws -> MTLTexture?
+}
+
+public final class Compositor {
+
+    private let renderer: EffectRenderer
+    private let device: MTLDevice
+    private let queue: MTLCommandQueue
+    private let pool: TexturePool
+    private let log = Logger(subsystem: "com.novavision.editor", category: "Compositor")
+
+    private var blendPipelines: [BlendMode: MTLRenderPipelineState] = [:]
+    private let library: MTLLibrary
+
+    public weak var contentProvider: LayerContentProvider?
+
+    /// Erros de camadas individuais num quadro. O quadro sai mesmo assim —
+    /// uma camada quebrada nao pode derrubar o preview inteiro.
+    public private(set) var lastFrameWarnings: [String] = []
+
+    public init(renderer: EffectRenderer) throws {
+        self.renderer = renderer
+        self.device = renderer.device
+        guard let q = device.makeCommandQueue() else { throw RenderError.noDevice }
+        self.queue = q
+        self.pool = TexturePool(device: device)
+        guard let l = (try? device.makeDefaultLibrary(bundle: .main)) ?? device.makeDefaultLibrary()
+        else { throw RenderError.libraryMissing("default.metallib") }
+        self.library = l
+    }
+
+    // MARK: pipeline de mescla
+
+    private func blendPipeline(_ mode: BlendMode) throws -> MTLRenderPipelineState {
+        if let p = blendPipelines[mode] { return p }
+        guard let vert = library.makeFunction(name: "nova_fullscreen_vertex"),
+              let frag = library.makeFunction(name: "nova_blend_fragment") else {
+            throw RenderError.functionMissing("nova_blend_fragment", effect: "compositor")
+        }
+        let d = MTLRenderPipelineDescriptor()
+        d.label = "blend.\(mode.rawValue)"
+        d.vertexFunction = vert
+        d.fragmentFunction = frag
+        d.colorAttachments[0].pixelFormat = renderer.workingFormat
+        // A mescla em si acontece no shader (precisa dos 28 modos do AE),
+        // entao o estagio fixo so faz "over" com alfa pre-multiplicado.
+        d.colorAttachments[0].isBlendingEnabled = true
+        d.colorAttachments[0].rgbBlendOperation = .add
+        d.colorAttachments[0].alphaBlendOperation = .add
+        d.colorAttachments[0].sourceRGBBlendFactor = .one
+        d.colorAttachments[0].sourceAlphaBlendFactor = .one
+        d.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        do {
+            let p = try device.makeRenderPipelineState(descriptor: d)
+            blendPipelines[mode] = p
+            return p
+        } catch {
+            throw RenderError.pipelineFailed("blend", underlying: error.localizedDescription)
+        }
+    }
+
+    // MARK: quadro
+
+    public struct BlendUniforms {
+        var mode: Int32 = 0
+        var opacity: Float = 1
+        var layerToScreen = matrix_identity_float4x4
+        var layerSize = SIMD2<Float>(1, 1)
+        var screenSize = SIMD2<Float>(1, 1)
+    }
+
+    /// Desenha um quadro da composicao. A textura devolvida sai do pool interno.
+    public func renderFrame(_ comp: Composition, at time: Float,
+                            registry: EffectRegistry? = nil,
+                            manifests: [String: EffectManifest] = [:]) async throws -> MTLTexture {
+        lastFrameWarnings = []
+        let w = comp.width, h = comp.height
+        let output = try pool.obtain(width: w, height: h, format: renderer.workingFormat)
+
+        guard let cb = queue.makeCommandBuffer() else {
+            throw RenderError.encoderFailed("command buffer do quadro")
+        }
+        cb.label = "frame @\(time)s"
+
+        // Limpa com a cor de fundo da composicao.
+        let clear = MTLRenderPassDescriptor()
+        clear.colorAttachments[0].texture = output
+        clear.colorAttachments[0].loadAction = .clear
+        let bg = comp.backgroundColor
+        clear.colorAttachments[0].clearColor =
+            MTLClearColor(red: Double(bg.x), green: Double(bg.y),
+                          blue: Double(bg.z), alpha: Double(bg.w))
+        clear.colorAttachments[0].storeAction = .store
+        cb.makeRenderCommandEncoder(descriptor: clear)?.endEncoding()
+
+        for layer in comp.visibleLayers(at: time) {
+            do {
+                try drawLayer(layer, comp: comp, time: time,
+                              into: output, cb: cb, manifests: manifests)
+            } catch {
+                let msg = "\(layer.name): \(error.localizedDescription)"
+                lastFrameWarnings.append(msg)
+                log.error("camada falhou — \(msg, privacy: .public)")
+            }
+        }
+
+        cb.commit()
+        cb.waitUntilCompleted()
+        if let e = cb.error {
+            pool.recycle(output)
+            throw RenderError.encoderFailed(e.localizedDescription)
+        }
+        return output
+    }
+
+    private func drawLayer(_ layer: Layer, comp: Composition, time: Float,
+                           into output: MTLTexture, cb: MTLCommandBuffer,
+                           manifests: [String: EffectManifest]) throws {
+        guard let provider = contentProvider else { return }
+        let mt = layer.mediaTime(at: time)
+        guard var tex = try provider.texture(for: layer, at: mt, device: device) else { return }
+
+        // Cadeia de efeitos da camada.
+        let worldMatrix = comp.worldMatrix(of: layer, at: time)
+        var owned: MTLTexture? = nil
+        for fx in layer.effects where fx.enabled {
+            guard let m = manifests[fx.effectID] else {
+                lastFrameWarnings.append("efeito \(fx.effectID) nao carregado")
+                continue
+            }
+            let input = EffectRenderer.Input(
+                content: tex,
+                comp: output,
+                layerSize: layer.size ?? SIMD2(Float(tex.width), Float(tex.height)),
+                layerCenter: SIMD2(Float(tex.width)/2, Float(tex.height)/2),
+                pixelScale: 1,
+                time: time,
+                frameDuration: comp.frameDuration)
+            let result = try renderer.render(m, input: input,
+                                             values: fx.values(at: time, manifest: m),
+                                             into: cb)
+            if let o = owned { renderer.release(o) }
+            owned = result
+            tex = result
+        }
+        defer { if let o = owned { renderer.release(o) } }
+
+        // Mescla no buffer da composicao.
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = output
+        rp.colorAttachments[0].loadAction = .load
+        rp.colorAttachments[0].storeAction = .store
+        guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else {
+            throw RenderError.encoderFailed("encoder de mescla")
+        }
+        enc.label = "blend \(layer.name)"
+        enc.setRenderPipelineState(try blendPipeline(layer.blendMode))
+
+        var u = BlendUniforms()
+        u.mode = Int32(BlendMode.allCases.firstIndex(of: layer.blendMode) ?? 0)
+        u.opacity = layer.transform.alpha(at: time)
+        u.layerToScreen = worldMatrix
+        u.layerSize = SIMD2(Float(tex.width), Float(tex.height))
+        u.screenSize = comp.size
+        withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        enc.setFragmentTexture(tex, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        enc.endEncoding()
+    }
+
+    public func release(_ t: MTLTexture) { pool.recycle(t) }
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.ghost"
+    name="Fantasma Duplo (Blurrr)"
+    name-en="Ghost Double (Blurrr)"
+    desc="Duas cópias deslocadas e semi-transparentes — fantasma."
+    desc-en="Two offset semi-transparent copies — ghost."
+    category="blur"
+    tags="blurrr,ghost,fantasma,duplo,double,offset,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="offset" label="Deslocamento" default="0.02" min="0.0" max="0.1" step="0.001" />
+        <slider id="angle"  label="Ângulo" default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="mistura" label="Mistura" default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+void main() {
+    float a = angle * PI / 180.0;
+    vec2 d = vec2(cos(a), sin(a)) * offset;
+    d.x /= max(acAspect, 1e-4);
+    vec4 o  = texture(inputImg, acScreenNorm);
+    vec4 l  = texture(inputImg, acScreenNorm - d);
+    vec4 r  = texture(inputImg, acScreenNorm + d);
+    vec4 dupla = (l + r) * 0.5;
+    fragColor = mix(o, dupla, mistura);
+}
+    ]]></shader>
+</effect>

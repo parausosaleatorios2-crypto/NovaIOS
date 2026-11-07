@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   INVERTER (AM) — o Invert do Alight Motion, conta por conta (0.541.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora o inverter 100% igual o do alight motion", o sexto da série "100%
+  iguais ao AM". Mesmos parâmetros, mesmos ids e mesmos padrões do `com.alightcreative.effects.invert`
+  (um projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281
+  (`assets/effects/invert.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no
+  repositório. A conferência é `tools/aminverter`: o efeito do AM rodado na GPU do PC ao lado deste.
+
+  O "Inverter" que já existia (`invert.xml`) tem outras opções (um canal só, alfa, luminância, matiz) e
+  o "Invert (AE)" tem as treze do After Effects; ESTE é o do AM: três chaves, uma por canal.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Três chaves, Inverter vermelho / verde / azul, todas ligadas no padrão. O alfa nunca muda.
+  - O AM trabalha em cor PRÉ-MULTIPLICADA (p = cor × alfa) e cada canal ligado vira alfa − p. Na cor
+    reta do Nova é a mesma conta dividida pelo alfa: (alfa − cor × alfa) ÷ alfa = 1 − cor. Ou seja, o
+    negativo da cor, sem escurecer a borda suave nem pintar o que é transparente (no AM, onde o alfa é
+    0, a cor pré-multiplicada fica 0; aqui a cor reta fica invisível debaixo do alfa 0).
+  - O resultado sai igual nos dois; a diferença é só o arredondamento de 8 bits da cor pré-multiplicada
+    (o AM) × reta (o Nova) no alfa parcial.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-invert"
+    name="Inverter (AM)"
+    name-en="Invert (AM)"
+    desc="Inverte, cada um por si, os canais vermelho, verde e azul da camada (o Invert do Alight Motion)."
+    desc-en="Inverts the red, green and blue channels of the layer, each one on its own (Alight Motion's Invert)."
+    category="color"
+    tags="inverter,negativo,invert,canal,vermelho,verde,azul,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <switch id="invertRed" label="Inverter vermelho" default="true" />
+        <switch id="invertGreen" label="Inverter verde" default="true" />
+        <switch id="invertBlue" label="Inverter azul" default="true" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    vec4 c = texture(inputImg, acScreenNorm);
+    // O AM faz alfa − (cor × alfa) na pré-multiplicada; na cor reta é 1 − cor. O alfa fica como está.
+    if (invertRed) c.r = 1.0 - c.r;
+    if (invertGreen) c.g = 1.0 - c.g;
+    if (invertBlue) c.b = 1.0 - c.b;
+    fragColor = c;
+}
+    ]]></shader>
+</effect>

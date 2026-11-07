@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Aparar ou espalhar o recorte.
+
+  Mexe só no alfa: negativo come a borda para dentro, positivo empurra para
+  fora. É a ferramenta de conserto de recorte — a que salva um chroma key com
+  franja verde, uma borda serrilhada ou um recorte que ficou um fio largo.
+
+  No espalhar existe um detalhe que separa o efeito útil do inútil: a área nova
+  não tem cor nenhuma. Se o efeito só aumentasse o alfa, apareceria uma borda
+  preta em volta de tudo. Por isso ele leva junto a cor da amostra que ganhou —
+  a borda cresce com a cor do objeto, que é o que se espera.
+-->
+<effect
+    id="nova.effect.choker"
+    name="Aparar recorte"
+    name-en="Matte Choker"
+    desc="Come ou espalha a borda do alfa. Conserta recorte e franja."
+    desc-en="Shrinks or spreads the alpha edge to clean up a key."
+    category="matte"
+    tags="alfa,recorte,matte,choker,erodir,dilatar,franja,borda,chroma">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="amount" label="Aparar / espalhar"
+                default="-2.0" min="-40.0" max="40.0" step="0.5" snap="0.0" />
+
+        <!-- Escondida (pedido do snow, 25/09/2026): sempre no máximo agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <slider id="quality" label="Amostras" hidden="true"
+                default="32.0" min="4.0" max="32.0" step="1.0" type="integer" />
+
+        <slider id="softness" label="Suavidade"
+                default="0.06" min="0.0" max="0.5" step="0.005" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, a borda da figura solta mostra o aparar; o padrão (-2) é fino demais. (vitrine, 0.668.0) -->
+    <preview amostra="figura">
+        <set param="amount" value="-15.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAX_SAMPLES = 32;
+const float TAU = 6.28318530718;
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    if (amount == 0.0) {
+        fragColor = color;
+        return;
+    }
+
+    int samples = clamp(int(quality + 0.5), 4, MAX_SAMPLES);
+    float radius = abs(amount);
+    bool spreading = amount > 0.0;
+
+    float extreme = color.a;
+    vec3 carried = color.rgb;
+
+    for (int i = 0; i < MAX_SAMPLES; i++) {
+        if (i >= samples) break;
+        float angle = float(i) / float(samples) * TAU;
+        // Em pixels da COMPOSIÇÃO (`acEscalaDePixel`): a prévia reduzida fica do tamanho da exportação (0.516.0).
+        vec2 uv = acScreenNorm + vec2(cos(angle), sin(angle)) * (radius * acEscalaDePixel) * acTexelSize;
+        vec4 texel = texture(inputImg, clamp(uv, 0.0, 1.0));
+
+        if (spreading) {
+            if (texel.a > extreme) {
+                extreme = texel.a;
+                carried = texel.rgb;
+            }
+        } else {
+            extreme = min(extreme, texel.a);
+        }
+    }
+
+    float alpha = extreme;
+    if (softness > 0.0) {
+        alpha = smoothstep(0.5 - softness, 0.5 + softness, alpha);
+    }
+
+    // Ao aparar, a cor não muda: só some alfa. Ao espalhar, a cor vem da
+    // amostra vencedora, senão a borda nova nasceria preta.
+    fragColor = vec4(spreading ? carried : color.rgb, alpha);
+}
+
+    ]]></shader>
+</effect>

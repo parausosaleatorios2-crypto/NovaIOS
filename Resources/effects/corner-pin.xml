@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fixar cantos.
+
+  Prega os quatro cantos da camada em quatro pontos escolhidos. É como se coloca
+  uma imagem na tela de um celular filmado, num outdoor, num quadro na parede.
+
+  ## A conta, e o limite dela
+
+  Para cada pixel do resultado é preciso achar DE ONDE ele vem — ou seja, inverter
+  o mapeamento. A ida é uma interpolação bilinear entre os quatro cantos; a volta
+  é resolvida por iteração de Newton, partindo do próprio ponto como palpite e
+  corrigindo o erro seis vezes.
+
+  Vale ser honesto sobre a diferença: a perspectiva de verdade é uma
+  **homografia**, com divisão por profundidade, e ela não é a mesma coisa que
+  interpolar bilinearmente. Numa inclinação forte, uma linha reta desenhada dentro
+  da camada sai levemente curvada aqui, onde numa homografia sairia reta.
+
+  Por que assim, então: a homografia exige montar e inverter uma matriz 3x3 a
+  partir dos quatro cantos, e isso é conta de CPU — o sistema de efeitos deste
+  motor só entrega os parâmetros declarados direto ao shader, sem passo de
+  preparação em Kotlin. Para colar uma imagem numa tela de celular filmada, que é
+  99% do uso, a diferença é invisível. Se um dia incomodar, o caminho é dar ao
+  manifesto um jeito de calcular valores derivados antes do shader.
+-->
+<effect
+    id="nova.effect.cornerpin"
+    name="Fixar cantos"
+    name-en="Corner Pin"
+    desc="Prega os quatro cantos da camada em pontos escolhidos."
+    desc-en="Drags the four corners — fits the layer onto a surface."
+    category="distort"
+    tags="cantos,corner pin,perspectiva,tela,outdoor,mockup,colar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="topLeft" label="Canto superior esquerdo" defaultX="0.1" defaultY="0.1" />
+        <point id="topRight" label="Canto superior direito" defaultX="0.9" defaultY="0.15" />
+        <point id="bottomRight" label="Canto inferior direito" defaultX="0.9" defaultY="0.85" />
+        <point id="bottomLeft" label="Canto inferior esquerdo" defaultX="0.1" defaultY="0.9" />
+        <switch id="showOutside" label="Mostrar fora do quadrilátero" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+const int STEPS = 6;
+
+/** Onde o ponto (u,v) do quadrado unitário cai, depois de pregar os cantos. */
+vec2 mapForward(vec2 uv) {
+    vec2 top = mix(topLeft, topRight, uv.x);
+    vec2 bottom = mix(bottomLeft, bottomRight, uv.x);
+    return mix(top, bottom, uv.y);
+}
+
+void main() {
+    // Palpite inicial: o próprio ponto. Para quadriláteros próximos de um
+    // retângulo isso já está quase certo, e as iterações fecham a conta.
+    vec2 guess = acScreenNorm;
+
+    for (int i = 0; i < STEPS; i++) {
+        vec2 landed = mapForward(guess);
+        vec2 error = landed - acScreenNorm;
+
+        // Jacobiano por diferença finita: como o ponto de chegada se move quando
+        // se mexe em u e em v. Duas colunas, medidas na hora.
+        vec2 dU = mapForward(guess + vec2(0.001, 0.0)) - landed;
+        vec2 dV = mapForward(guess + vec2(0.0, 0.001)) - landed;
+        dU /= 0.001;
+        dV /= 0.001;
+
+        float det = dU.x * dV.y - dU.y * dV.x;
+        if (abs(det) < 1e-7) break;
+
+        // Passo de Newton: corrige o palpite pelo inverso do Jacobiano.
+        guess -= vec2(
+            (dV.y * error.x - dV.x * error.y) / det,
+            (-dU.y * error.x + dU.x * error.y) / det
+        );
+    }
+
+    bool outside = guess.x < 0.0 || guess.x > 1.0 || guess.y < 0.0 || guess.y > 1.0;
+    if (outside && !showOutside) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    fragColor = texture(inputImg, clamp(guess, 0.0, 1.0));
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.mirror"
+    name="Espelho e caleidoscópio"
+    name-en="Mirror and Kaleidoscope"
+    desc="Espelha a camada ou repete em fatias radiais."
+    desc-en="Mirrors the image across an axis, or into slices."
+    category="distort"
+    tags="espelho,caleidoscópio,simetria,repetir">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <selector id="mode" label="Modo" default="0"
+                  options="Espelhar horizontal|Espelhar vertical|Quadrantes|Caleidoscópio" />
+        <slider id="slices" label="Fatias" default="6" min="2" max="24" step="1" type="integer" />
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="rotation" label="Rotação" default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+
+const float TAU = 6.28318530718;
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    if (mode == 0) {
+        // Reflete a metade esquerda na direita.
+        uv.x = center.x - abs(uv.x - center.x);
+    } else if (mode == 1) {
+        uv.y = center.y - abs(uv.y - center.y);
+    } else if (mode == 2) {
+        uv = center - abs(uv - center);
+    } else {
+        // Caleidoscópio: converte para coordenada polar, dobra o ângulo dentro
+        // de uma fatia, e volta. O `abs` no ângulo dobrado é o que cria o
+        // espelhamento dentro de cada fatia — sem ele as fatias ficam iguais e
+        // giradas, o que parece um leque e não um caleidoscópio.
+        vec2 p = (uv - center) * vec2(acAspect, 1.0);
+        float angle = atan(p.y, p.x) + radians(rotation);
+        float radius = length(p);
+
+        // `max(slices, 2.0)` e nao `max(slices, 2)`: TODO slider vira
+        // `uniform float`, inclusive o de type="integer" — o `2` inteiro nao
+        // casava com nenhuma sobrecarga e o shader inteiro deixava de compilar.
+        // Este efeito estava quebrado desde que nasceu, e so apareceu quando os
+        // shaders passaram a ser compilados no `./gradlew test`.
+        float slice = TAU / max(slices, 2.0);
+        angle = mod(angle, slice);
+        angle = abs(angle - slice * 0.5);
+
+        p = vec2(cos(angle), sin(angle)) * radius;
+        uv = center + p / vec2(acAspect, 1.0);
+    }
+
+    // Depois de dobrar as coordenadas é comum sair do intervalo válido.
+    // Refletir de volta (em vez de cortar) mantém a imagem contínua.
+    uv = abs(uv);
+    uv = mix(uv, 2.0 - uv, step(1.0, uv));
+
+    fragColor = texture(inputImg, clamp(uv, 0.0, 1.0));
+}
+
+    ]]></shader>
+</effect>

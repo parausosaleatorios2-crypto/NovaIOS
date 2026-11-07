@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE DE MOVIMENTO (AM) — o Motion Blur do Alight Motion, conta por conta (0.635.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "proximo efeito agora 100% igual o do alight motion", da série "100% iguais ao AM".
+  Escolhido por ser o efeito sem par mais usado nas cenas do AM (30 vezes; mais 7 da versão antiga). Mesmos
+  parâmetros, ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.motionblur4` do AM 5.0.281
+  (`assets/effects/motionblur4.xml` do APK descompactado; o arquivo do AM não entra no repositório). Conferido
+  rodando o shader do próprio AM na GPU do PC ao lado deste (`tools/amdesfoquemov`).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Não tem direção nem distância: o motor do AM mede quanto a camada ANDOU, GIROU e CRESCEU do quadro anterior
+    para este (Mover e Transformar, a mãe, e os efeitos que mexem na camada — Oscilar, Agitação automática,
+    Balanço, Tamanho do pulso) e o efeito borra a camada nesse movimento. Parada, ela sai intacta. A conta da
+    velocidade está em `model/VelocidadeDoAm.kt` (no primeiro quadro o AM extrapola para trás: a camada que já
+    entra andando também borra).
+  - Três passes, um em cima do outro, na ordem dos grupos do AM: o GIRO (cada pixel é a média de amostras num arco
+    em volta do pivô da camada, do tamanho do giro do quadro), a ESCALA (amostras numa reta que sai do pivô, mais
+    longa longe dele) e a POSIÇÃO (amostras numa reta na direção do movimento, centrada no pixel). Até 100 amostras
+    por passe, uma por pixel de deslocamento (na maior medida da tela). Sintonia multiplica as três.
+  - Posição, Escala e Ângulo ligam e desligam cada passe. O script do AM (`animate`) só liga um passe quando o
+    movimento dele passa de 0,0001; sem nenhum, o motor tira o efeito e a camada passa como está.
+  - Roda NA TELA, depois de mover, girar e escalar a camada (o rastro sai da caixa dela), sobre a camada
+    PRÉ-multiplicada, com o filtro linear da GPU e os buffers do meio em 8 bits, como o AM.
+
+  O que é do Nova e não do AM:
+  - A ponte para a tela do Nova (a do Virar Camada): o `acLayerToScreen` do AM é a `acCamadaParaTela` com o Y da
+    camada invertido; o `acLayerNorm`, a volta dela. A velocidade, o giro, a escala por quadro e o pivô chegam do
+    renderizador (`acVelocidadeDoAm`, `acGiroPorQuadroDoAm`, `acEscalaPorQuadroDoAm`, `acPivoDoAm`).
+  - A camada chega reta e é pré-multiplicada no primeiro passe (`pre`); a saída volta reta.
+  - O nome leva "(AM)": o Nova já tem um Desfoque de movimento (o do After Effects, com obturador).
+-->
+<effect
+    id="nova.effect.am-motion-blur"
+    name="Desfoque de movimento (AM)"
+    name-en="Motion Blur (AM)"
+    desc="Simula o desfoque de movimento, desfocando com base na posição, rotação e escala da animação do quadro-chave das configurações de mover e transformar da camada, bem como o movimento de alguns outros efeitos compatíveis com o desfoque de movimento (o Motion Blur do Alight Motion)."
+    desc-en="Simulates motion blur by blurring the layer based on position, rotation, and scale keyframe animation from the layer's Move &amp; Transform settings, as well as motion from certain other effects that are compatible with motion blur (Alight Motion's Motion Blur)."
+    category="blur"
+    tags="desfoque,movimento,borrão,rastro,velocidade,automático,motion blur,essenciais,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A camada pré-multiplicada (o que o AM recebe) e a saída de cada passe, em 8 bits como os buffers dele. -->
+        <texture id="pre" src="buffer" />
+        <texture id="giro" src="buffer" />
+        <texture id="escala" src="buffer" />
+
+        <tip text="Para usar: Anime a camada usando Mover e Transformar (o desfoque será aplicado automaticamente)."
+            text-en="To use: Animate the layer using Move &amp; Transform (blur will be applied automatically)." />
+        <slider id="tune" label="Sintonia" default="1.0" min="0.0" max="4.0" step="0.1" snap="1.0" ticks="1.0" />
+        <switch id="usePos" label="Posição" default="true" />
+        <switch id="useScale" label="Escala" default="true" />
+        <switch id="useAngle" label="Ângulo" default="true" />
+    </params>
+
+    <passes>
+        <pass target="pre" />
+        <pass target="giro" />
+        <pass target="escala" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// ------------------------------------------------------------------ a ponte para a tela do Nova
+
+// O `(vec4(uv, 0, 1) * acLayerToScreen).xy` do AM: a coordenada da camada (Y para cima) levada ao buffer (o Y volta
+// para baixo) e, na tela, pela `acCamadaParaTela` (sem a divisão da perspectiva quando ela é afim, como a matriz do
+// AM); no filho de grupo, a própria UV do buffer.
+vec2 camadaParaTelaDoAm(vec2 uv) {
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 b = 0.5 + (vec2(uv.x, 1.0 - uv.y) - 0.5) * conteudo / acTamanhoDaTela;
+    if (acParaTela != mat3(1.0)) return b;
+    vec3 c = acCamadaParaTela * vec3(b, 1.0);
+    bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+    return afim ? c.xy : c.xy / c.z;
+}
+
+// O `acLayerNorm` do AM: o pixel na tela levado à coordenada da camada (o retângulo do conteúdo de 0 a 1), com o Y
+// para CIMA.
+vec2 camadaDoPixelAm() {
+    vec3 c = inverse(acCamadaParaTela) * vec3(acTela(acScreenNorm), 1.0);
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 st = 0.5 + (c.xy / c.z - 0.5) * acTamanhoDaTela / conteudo;
+    return vec2(st.x, 1.0 - st.y);
+}
+
+// ------------------------------------------------------------------ o script do AM (`animate`)
+
+// Cada passe só roda quando o movimento dele passa de 0,0001 (e a chave dele está ligada).
+bool giroLigado() { return useAngle && abs(acGiroPorQuadroDoAm) > 0.0001; }
+bool escalaLigada() { return useScale && abs(acEscalaPorQuadroDoAm) > 0.0001; }
+bool posicaoLigada() { return usePos && (abs(acVelocidadeDoAm.x) > 0.0001 || abs(acVelocidadeDoAm.y) > 0.0001); }
+
+// Um buffer do mesmo tamanho, pixel por pixel (no meio do texel o filtro linear devolve o próprio texel).
+vec4 copia(sampler2D img) { return texture(img, acScreenNorm); }
+
+// ------------------------------------------------------------------ os três grupos do AM, na ordem dele
+
+// Grupo 0: o GIRO.
+vec4 passeDoGiro(sampler2D img) {
+    float angle = abs(acGiroPorQuadroDoAm*tune);
+    float cx = 0.5 + acPivoDoAm.x/acTamanhoDaCamada.x;
+    float cy = 0.5 - acPivoDoAm.y/acTamanhoDaCamada.y;
+    vec2 image_size = vec2(textureSize(img, 0));
+    float maxF = max(acTamanhoDaTela.x, acTamanhoDaTela.y);
+    vec2 texelSize = 1.0 / vec2(maxF, maxF);
+    vec2 center = camadaParaTelaDoAm(vec2(cx,cy));
+    vec2 v = acScreenNorm.st - center;
+    v.y *= image_size.y / image_size.x;
+    float r = length(v);
+    float d = 6.283185*r;
+    float l = d*angle/360.0;
+    float a = angle * 0.0174533;
+    float amin = a/2.0;
+    float speed = l/texelSize.x;
+    int nSamples = int(clamp(speed, 1.01, 100.01));
+    vec4 outColor = texture(img,acScreenNorm.st);
+    for(int i=1; i<nSamples; i++ ) {
+        float sampleAngle = -amin + a * float(i)/float(nSamples);
+        float s = sin(sampleAngle);
+        float c = cos(sampleAngle);
+        mat2 rot = mat2(c, -s, s, c);
+        vec2 temp = v*rot;
+        temp.y = temp.y * image_size.x / image_size.y;
+        outColor += texture(img, center + temp);
+    }
+    return outColor/float(nSamples);
+}
+
+// Grupo 1: a ESCALA.
+vec4 passeDaEscala(sampler2D img) {
+    vec2 image_size = vec2(textureSize(img, 0));
+    float maxF = max(acTamanhoDaTela.x, acTamanhoDaTela.y);
+    vec2 texelSize = 1.0 / vec2(maxF, maxF);
+    float cx = 0.5 + acPivoDoAm.x/acTamanhoDaCamada.x;
+    float cy = 0.5 - acPivoDoAm.y/acTamanhoDaCamada.y;
+    vec2 center = vec2(cx,cy);
+    vec2 v = acScreenNorm.st - camadaParaTelaDoAm(center);
+    v.y *= image_size.y / image_size.x;
+    float speed = abs(acEscalaPorQuadroDoAm*tune) / 2.0;
+    speed *= length( camadaDoPixelAm() - center ); // Adaptive
+    int nSamples = int(clamp(speed, 1.01, 100.01));
+    vec4 outColor = texture(img,acScreenNorm.st);
+    vec2 vnorm = normalize(v)*length(texelSize)*speed;
+    for(int i=1; i<nSamples; i++ ) {
+        vec2 offset = vnorm * (float(i) / float(nSamples - 1) - 0.5);
+        offset.y = offset.y * image_size.x / image_size.y;
+        outColor += texture(img, acScreenNorm.st-offset);
+    }
+    return outColor/float(nSamples);
+}
+
+// Grupo 2: a POSIÇÃO.
+vec4 passeDaPosicao(sampler2D img) {
+    vec2 image_size = vec2(textureSize(img, 0));
+    float maxF = max(acTamanhoDaTela.x, acTamanhoDaTela.y);
+    vec2 texelSize = 1.0 / vec2(maxF, maxF);
+    vec2 velocity = acVelocidadeDoAm*tune / acTamanhoDaTela;
+    float speed = length(velocity / texelSize);
+    int nSamples = int(clamp(speed, 1.01, 100.01));
+    vec4 outColor = texture(img,acScreenNorm.st);
+    for(int i=1; i<nSamples; i++ ) {
+        vec2 offset = velocity * (float(i) / float(nSamples - 1) - 0.5);
+        offset.y = offset.y * image_size.x / image_size.y;
+        outColor += texture(img, acScreenNorm.st-offset);
+    }
+    return outColor/float(nSamples);
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada pré-multiplicada, como a textura do AM.
+        vec4 c = copia(inputImg);
+        fragColor = vec4(c.rgb * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = giroLigado() ? passeDoGiro(pre) : copia(pre);
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = escalaLigada() ? passeDaEscala(giro) : copia(giro);
+        return;
+    }
+    // Sem nenhum passe ligado o AM tira o efeito da lista: a camada passa como está.
+    if (!giroLigado() && !escalaLigada() && !posicaoLigada()) {
+        fragColor = copia(inputImg);
+        return;
+    }
+    vec4 p = posicaoLigada() ? passeDaPosicao(escala) : copia(escala);
+    fragColor = p.a > 0.0 ? vec4(min(p.rgb / p.a, vec3(1.0)), p.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

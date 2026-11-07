@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Model_break_window_light
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-model-break-window-light"
+    name="Model Break Window Light (NV)"
+    name-en="Model Break Window Light (NV)"
+    desc="NodeVideo effect 'NodeVideo/Model_break_window_light', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Model_break_window_light', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Cube" src="content" empty="transparent" />
+        <color id="_WorldSpaceLightPos0" label="Worldspacelightpos0" default="#FFFFFFFF" />
+        <color id="_LightColor0" label="Lightcolor0" default="#FFFFFFFF" />
+        <color id="_SpecColor" label="Speccolor" default="#FFFFFFFF" />
+        <slider id="_Shininess" label="Shininess" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <color id="_reflection_color" label="Reflection Color" default="#FFFFFFFF" />
+        <slider id="_intensity" label="Intensity" default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+vec4 u_xlat1;
+mediump vec3 u_xlat16_1;
+mediump vec3 u_xlat16_2;
+vec3 u_xlat3;
+mediump vec3 u_xlat16_6;
+float u_xlat12;
+mediump float u_xlat16_13;
+void main()
+{
+    u_xlat0.xyz = (-vs_TEXCOORD3.xyz) + _WorldSpaceCameraPos.xyz;
+    u_xlat12 = dot(u_xlat0.xyz, u_xlat0.xyz);
+    u_xlat12 = inversesqrt(u_xlat12);
+    u_xlat16_1.xyz = u_xlat0.xyz * vec3(u_xlat12) + _WorldSpaceLightPos0.xyz;
+    u_xlat16_13 = dot(u_xlat16_1.xyz, u_xlat16_1.xyz);
+    u_xlat16_13 = inversesqrt(u_xlat16_13);
+    u_xlat16_1.xyz = vec3(u_xlat16_13) * u_xlat16_1.xyz;
+    u_xlat16_1.x = dot(vs_TEXCOORD2.xyz, u_xlat16_1.xyz);
+    u_xlat16_1.x = max(u_xlat16_1.x, 0.0);
+    u_xlat0.x = log2(u_xlat16_1.x);
+    u_xlat16_1.x = _Shininess * 128.0;
+    u_xlat0.x = u_xlat0.x * u_xlat16_1.x;
+    u_xlat0.x = exp2(u_xlat0.x);
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat0.x = u_xlat0.x * u_xlat1.w;
+    u_xlat16_2.xyz = _LightColor0.xyz * _SpecColor.xyz;
+    u_xlat0.xyz = u_xlat0.xxx * u_xlat16_2.xyz;
+    u_xlat16_2.x = dot(vs_TEXCOORD2.xyz, _WorldSpaceLightPos0.xyz);
+    u_xlat16_2.x = max(u_xlat16_2.x, 0.0);
+    u_xlat3.xyz = u_xlat1.xyz * vs_COLOR0.xyz;
+    u_xlat12 = u_xlat1.w * _intensity;
+    fragColor.w = u_xlat12;
+    u_xlat16_6.xyz = u_xlat3.xyz * _LightColor0.xyz;
+    u_xlat0.xyz = u_xlat16_6.xyz * u_xlat16_2.xxx + u_xlat0.xyz;
+    u_xlat16_2.xyz = u_xlat3.xyz * vs_TEXCOORD4.xyz + u_xlat0.xyz;
+    u_xlat0.xyz = texture(Cube, vs_TEXCOORD1.xyz).xyz;
+    fragColor.xyz = u_xlat0.xyz * _reflection_color.xyz + u_xlat16_2.xyz;
+    return;
+}
+    ]]></shader>
+</effect>

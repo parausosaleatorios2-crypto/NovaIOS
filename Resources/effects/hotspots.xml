@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PONTOS DE LUZ (HOTSPOTS)
+  ============================================================================
+
+  Acha as regiões mais luminosas da imagem e devolve SÓ elas, com a cor que
+  elas já tinham. É o conceito do S_Hotspots da Boris FX Sapphire, sem IA e sem
+  CPU: tudo em shader, e nada volta da GPU para a CPU.
+
+  Serve a três usos, e o efeito nasceu para os três:
+
+    1. como resultado final: só os realces, sobre o que estiver atrás;
+    2. como matte: um recorte de "onde está a luz", para alimentar outro efeito
+       (Definir matte lê o alfa ou o brilho dele);
+    3. como FONTE de luz: Hotspots por baixo de Brilho, Raios de luz ou
+       qualquer outro efeito — a pilha de efeitos da camada já encadeia, e o
+       que sai daqui é o que o de cima recebe.
+
+  ============================================================================
+   EM QUE ISTO É DIFERENTE DE "EXTRAIR"
+  ============================================================================
+
+  `extract.xml` recorta por uma FAIXA de brilho (ponto de preto e de branco, uma
+  maciez para cada lado): é uma seleção de pixels por critério. Este aqui faz
+  UMA pergunta — "onde está a luz?" — e por isso tem o que uma seleção não tem:
+  borrão ANTES da detecção (para os pontinhos se juntarem em manchas), um
+  brilho integrado, e um limiar que se deixa puxar por uma cor.
+
+  ============================================================================
+   O CAMINHO, PASSE A PASSE
+  ============================================================================
+
+    0. borrão horizontal da entrada        → `hBlur`
+    1. borrão vertical                     → `vBlur`
+    2. luminância → limiar → suavidade →   → `hot`
+       cor → saturação (com máscara externa e alfa)
+    3. borrão horizontal do resultado      → `glowH`   (só se o brilho > 0)
+    4. borrão vertical                     → `glowV`
+    5. brilho, opacidade e a saída (cor / matte)
+
+  Os passes 0 e 1 (borrão da entrada) e 3 e 4 (brilho integrado) devolvem
+  vazio quando o controle deles está em zero — e o passe que vem depois nem os
+  lê. Sobra o custo de um passe vazio, não o de treze leituras por pixel.
+
+  ============================================================================
+   O QUE FOI FEITO DIFERENTE DO DOCUMENTO DE ESPECIFICAÇÃO, E POR QUÊ
+  ============================================================================
+
+  **Alfa reto, não pré-multiplicado.** O compositor deste motor trabalha com cor
+  NÃO pré-multiplicada (ver `EngineShaders`). O documento escreve
+  `saída.rgb = original * máscara` e `saída.a = máscara`; aqui isso descontaria
+  a máscara duas vezes na hora de compor (a cor já multiplicada, e depois o alfa
+  de novo) e escureceria toda borda suave. A saída é `rgb = a cor`,
+  `a = a máscara`. Os buffers INTERMEDIÁRIOS, esses sim, guardam cor
+  pré-multiplicada — é o que faz o borrão não puxar a cor de pixel transparente.
+
+  **Sem HDR.** Os buffers do motor são RGBA8: nada acima de 1,0 sobrevive de um
+  passe ao outro, e nem ao destino. Não é uma escolha deste efeito, é o formato
+  do motor. O Brilho, por isso, multiplica a ENERGIA (cor × cobertura) e
+  reparte o resultado entre cor e alfa: nas bordas ele engrossa a mancha, no
+  miolo ele clareia a cor até estourar. É o mais próximo de "brilho acima de 1"
+  que cabe em 8 bits, e ele só é aplicado NO ÚLTIMO PASSE — o borrão do brilho
+  integrado enxerga o resultado antes de ele ser multiplicado.
+
+  **O borrão é em pixels de uma composição de 1080 de lado curto.** Em pixels
+  de tela, a prévia (renderizada em metade da resolução) mostraria um borrão
+  duas vezes mais largo que o do arquivo exportado. Escalado pelo tamanho do
+  alvo, "Desfoque 10" é o mesmo desenho na prévia, no export e em 4K.
+
+  **Sem meia resolução por passe.** O documento pede downsample antes do
+  borrão. O motor não tem passe em resolução própria; a economia equivalente já
+  existe globalmente (a prévia cai para metade durante a reprodução e o
+  arraste) e as 13 leituras por passe têm espaçamento proporcional ao raio, então
+  o custo NÃO cresce com o desfoque.
+
+  **Predefinições dentro do shader.** O sistema de efeitos não tem
+  predefinição por manifesto. A lista "Predefinição" SOBREPÕE Limiar, Suavidade,
+  Desfoque, Brilho e Saturação enquanto não estiver em "Personalizado" — os
+  controles ficam parados no valor em que estavam, para voltar a eles é só
+  escolher "Personalizado".
+
+  **Fora, de propósito:** Auto Light Point, Auto Lens Flare e Highlight Tracking
+  (o próprio documento os separa, como ferramentas futuras) e o limiar
+  adaptativo do V4.
+-->
+<effect
+    id="nova.effect.hotspots"
+    name="Pontos de luz"
+    name-en="Hotspots"
+    desc="Acha as regiões mais luminosas e devolve só elas, com a cor original. Saída em cor ou em matte."
+    desc-en="Detects the brightest regions and outputs only those, keeping their color. Color or matte output."
+    category="stylize"
+    blend="mode"
+    tags="hotspots,pontos de luz,realces,highlights,luz,brilho,limiar,threshold,matte,sapphire,bloom,fonte de luz"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hBlur" src="buffer" />
+        <texture id="vBlur" src="buffer" />
+        <texture id="hot" src="buffer" />
+        <texture id="glowH" src="buffer" />
+        <texture id="glowV" src="buffer" />
+        <texture id="maskImg" src="layer" label="Máscara externa (camada)" />
+
+        <selector id="preset" label="Predefinição (sobrepõe os controles de baixo)" default="0"
+                  options="Personalizado|Realces suaves|Realces fortes|Fonte de bloom|Só luz" />
+
+        <selector id="mode" label="Saída" default="0"
+                  options="Cor|Matte (alfa)|Matte (preto e branco)" />
+
+        <slider id="threshold" label="Limiar"
+                default="0.75" min="0.0" max="1.0" step="0.01" snap="0.75" />
+        <slider id="softness" label="Suavidade"
+                default="0.05" min="0.0" max="0.5" step="0.005" snap="0.05" />
+        <slider id="blur" label="Desfoque da entrada"
+                default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="brightness" group="Aparência" label="Brilho"
+                default="1.0" min="0.0" max="5.0" step="0.05" snap="1.0" ticks="0.0,1.0,2.5,5.0" />
+        <slider id="saturation" group="Aparência" label="Saturação"
+                default="1.0" min="0.0" max="3.0" step="0.05" snap="1.0" />
+        <slider id="opacity" group="Aparência" label="Opacidade"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <switch id="colorFromBlur" group="Aparência" label="Cor tirada da imagem borrada" default="false" />
+
+        <slider id="glowAmount" group="Brilho integrado" label="Quantidade"
+                default="0.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="glowRadius" group="Brilho integrado" label="Raio"
+                default="30.0" min="1.0" max="100.0" step="1.0" />
+
+        <switch id="addColorEnabled" group="Limiar por cor" label="Ligar" default="false" />
+        <color id="addColor" group="Limiar por cor" label="Cor" default="#FF3B30" />
+        <slider id="addColorAmount" group="Limiar por cor" label="Quanto (+ entra mais fácil, − mais difícil)"
+                default="0.3" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="addColorRadius" group="Limiar por cor" label="Alcance da cor"
+                default="0.35" min="0.02" max="1.0" step="0.01" />
+
+        <switch id="linearLuma" group="Avançado" label="Luminância em luz linear" default="false" />
+        <switch id="useMask" group="Avançado" label="Usar a máscara externa" default="false" />
+        <switch id="invertMask" group="Avançado" label="Inverter a máscara externa" default="false" />
+    </params>
+
+    <passes>
+        <pass target="hBlur" />
+        <pass target="vBlur" />
+        <pass target="hot" />
+        <pass target="glowH" />
+        <pass target="glowV" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+// Rec.709 — os mesmos pesos de `extract.xml` e `luma-key.xml`.
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// Treze leituras por passe, de -6 a +6. O sigma é de duas leituras, então as
+// pontas (±6) caem a três sigmas do centro — o mesmo corte de uma gaussiana de
+// verdade. O espaçamento entre leituras é o raio dividido por seis: cresce com
+// o desfoque, e por isso o custo por pixel é sempre o mesmo, de raio 1 a 100.
+// Espaçamento igual a meio sigma é denso o bastante para não deixar "pente".
+const int METADE = 6;
+
+struct Ajustes {
+    float limiar;
+    float suavidade;
+    float borrao;
+    float brilho;
+    float saturacao;
+};
+
+// As predefinições do documento de especificação. Personalizado (0) devolve os
+// controles como estão.
+Ajustes ajustes() {
+    if (preset == 1) return Ajustes(0.70, 0.10, 8.0, 1.0, 1.0);   // realces suaves
+    if (preset == 2) return Ajustes(0.85, 0.05, 3.0, 1.5, 1.1);   // realces fortes
+    if (preset == 3) return Ajustes(0.65, 0.15, 10.0, 1.2, 1.0);  // fonte de bloom
+    if (preset == 4) return Ajustes(0.90, 0.03, 2.0, 1.0, 1.0);   // só luz
+    return Ajustes(threshold, softness, blur, brightness, saturation);
+}
+
+// Pixels de uma composição de 1080 de lado curto. Ver o cabeçalho.
+float escalaDePixel() {
+    return min(acResolution.x, acResolution.y) / 1080.0;
+}
+
+// Cor pré-multiplicada -> cor reta. Sem a guarda, alfa 0 dividiria por zero e o
+// NaN viraria pixel preto ou branco aleatório, conforme o driver.
+vec3 desmultiplicar(vec4 cor) {
+    return cor.a > 0.0001 ? cor.rgb / cor.a : vec3(0.0);
+}
+
+// sRGB -> luz linear, a curva exata (com o trecho reto perto do preto).
+vec3 paraLinear(vec3 cor) {
+    vec3 baixo = cor / 12.92;
+    vec3 alto = pow((max(cor, vec3(0.0)) + 0.055) / 1.055, vec3(2.4));
+    return mix(alto, baixo, step(cor, vec3(0.04045)));
+}
+
+// Uma direção do borrão gaussiano separável. SAI pré-multiplicado: é a única
+// forma de o borrão não misturar a cor "escondida" de um pixel transparente com
+// a dos vizinhos. `deEntrada` diz que a textura ainda é cor reta (a camada
+// original) e precisa ser pré-multiplicada na leitura; os buffers intermediários
+// já são.
+vec4 borrar(sampler2D tex, vec2 direcao, float raioPx, bool deEntrada) {
+    vec2 passoUv = direcao * acTexelSize * (raioPx / float(METADE));
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int i = -METADE; i <= METADE; i++) {
+        float x = float(i);
+        float peso = exp(-0.125 * x * x);   // -x²/(2·σ²), com σ = 2
+        vec4 leitura = texture(tex, acScreenNorm + passoUv * x);
+        if (deEntrada) leitura.rgb *= leitura.a;
+        soma += leitura * peso;
+        pesos += peso;
+    }
+    return soma / pesos;
+}
+
+void main() {
+    Ajustes aj = ajustes();
+    float escala = escalaDePixel();
+    float raioDeEntrada = aj.borrao * escala;
+    bool temBorrao = raioDeEntrada >= 0.5;
+
+    // ---------------------------------------------- 0 e 1: borrão da entrada
+    if (acPass == 0) {
+        if (!temBorrao) { fragColor = vec4(0.0); return; }
+        fragColor = borrar(inputImg, vec2(1.0, 0.0), raioDeEntrada, true);
+        return;
+    }
+    if (acPass == 1) {
+        if (!temBorrao) { fragColor = vec4(0.0); return; }
+        fragColor = borrar(hBlur, vec2(0.0, 1.0), raioDeEntrada, false);
+        return;
+    }
+
+    // ------------------------------------------------ 2: a detecção em si
+    if (acPass == 2) {
+        vec4 original = texture(inputImg, acScreenNorm);
+
+        // Sem desfoque a detecção lê a imagem crua: passar pelo buffer
+        // pré-multiplicado de 8 bits só perderia precisão nos alfas baixos.
+        vec3 borrada = original.rgb;
+        if (temBorrao) borrada = desmultiplicar(texture(vBlur, acScreenNorm));
+
+        vec3 paraMedir = borrada;
+        if (linearLuma) paraMedir = paraLinear(paraMedir);
+        float luz = dot(paraMedir, LUMA);
+
+        // "Limiar por cor": perto da cor escolhida o limiar desce (a cor entra
+        // mais fácil) ou sobe (mais difícil), com queda suave — sem a queda a
+        // fronteira da cor viraria um contorno duro na máscara.
+        float limiar = aj.limiar;
+        if (addColorEnabled) {
+            float distanciaDaCor = distance(borrada, addColor.rgb);
+            float influencia = 1.0 - smoothstep(0.0, max(addColorRadius, 0.01), distanciaDaCor);
+            limiar -= addColorAmount * influencia;
+        }
+
+        // A suavidade nunca é zero: smoothstep com as duas bordas iguais é
+        // indefinido, e o degrau resultante é serrilhado na máscara.
+        float suave = max(aj.suavidade, 0.004);
+        float mascara = smoothstep(limiar - suave, limiar + suave, luz);
+
+        // Máscara externa: a luminância da outra camada, vezes o alfa dela (o
+        // mesmo "pré-multiplicar" de `set-matte.xml`, que é o padrão do After
+        // Effects). Sem camada escolhida, a textura cai no próprio conteúdo.
+        if (useMask) {
+            vec4 externa = texture(maskImg, acScreenNorm);
+            float valor = dot(externa.rgb, LUMA) * externa.a;
+            mascara *= invertMask ? 1.0 - valor : valor;
+        }
+
+        // Pixel transparente nunca gera realce (PNG, texto, recorte).
+        mascara *= original.a;
+
+        // A cor do realce: a da imagem original (ou a do borrão, se pedido),
+        // com a saturação ajustada pela luminância. Nunca negativa — saturação
+        // acima de 1 empurra o canal mais fraco para baixo de zero.
+        vec3 cor = (temBorrao && colorFromBlur) ? borrada : original.rgb;
+        float cinza = dot(cor, LUMA);
+        cor = max(mix(vec3(cinza), cor, aj.saturacao), vec3(0.0));
+
+        // PRÉ-MULTIPLICADO, de novo: é o formato que o borrão do brilho
+        // integrado precisa. O último passe desmultiplica.
+        fragColor = vec4(clamp(cor * mascara, 0.0, 1.0), mascara);
+        return;
+    }
+
+    // ------------------------------------------- 3 e 4: brilho integrado
+    if (acPass == 3) {
+        if (glowAmount <= 0.0) { fragColor = vec4(0.0); return; }
+        fragColor = borrar(hot, vec2(1.0, 0.0), glowRadius * escala, false);
+        return;
+    }
+    if (acPass == 4) {
+        if (glowAmount <= 0.0) { fragColor = vec4(0.0); return; }
+        fragColor = borrar(glowH, vec2(0.0, 1.0), glowRadius * escala, false);
+        return;
+    }
+
+    // ------------------------------------------------------- 5: a saída
+    vec4 nucleo = texture(hot, acScreenNorm);
+    vec4 halo = (glowAmount > 0.0) ? texture(glowV, acScreenNorm) : vec4(0.0);
+
+    // Cobertura total: a máscara mais a do brilho. Sem limitar ainda — o
+    // Brilho multiplica a energia antes do corte.
+    float cobertura = nucleo.a + halo.a * glowAmount;
+
+    // ----- Matte (alfa): branco puro, e a máscara vai no alfa. É o que o
+    // "Definir matte" lê como Alfa — e como Luminância com "pré-multiplicar"
+    // ligado (o padrão), porque branco × alfa é a própria máscara.
+    if (mode == 1) {
+        fragColor = vec4(1.0, 1.0, 1.0, clamp(cobertura, 0.0, 1.0) * opacity);
+        return;
+    }
+
+    // ----- Matte (preto e branco): a máscara na cor, opaca onde a camada era.
+    // É o que se OLHA, e o que serve de luminância sem pré-multiplicar.
+    if (mode == 2) {
+        float silhueta = texture(inputImg, acScreenNorm).a;
+        fragColor = vec4(vec3(clamp(cobertura, 0.0, 1.0) * opacity), silhueta);
+        return;
+    }
+
+    // ----- Cor. Aqui o Brilho entra. Ele multiplica a ENERGIA — cor vezes
+    // cobertura — e a divisão dela por uma cobertura já multiplicada devolve a
+    // cor reta: nas bordas (energia baixa) o resultado é alfa maior com a
+    // mesma cor; no miolo (alfa já 1) a cor clareia até estourar.
+    float alfa = clamp(cobertura * aj.brilho, 0.0, 1.0);
+    vec3 energia = (nucleo.rgb + halo.rgb * glowAmount) * aj.brilho;
+    vec3 rgb = alfa > 0.0001 ? clamp(energia / alfa, 0.0, 1.0) : vec3(0.0);
+
+    fragColor = vec4(rgb, alfa * opacity);
+}
+
+    ]]></shader>
+</effect>

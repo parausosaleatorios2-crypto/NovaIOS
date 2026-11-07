@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/UI_shapes
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-ui-shapes"
+    name="Ui Shapes (NV)"
+    name-en="Ui Shapes (NV)"
+    desc="NodeVideo effect 'NodeVideo/UI_shapes', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/UI_shapes', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_Radius" label="Radius" default="1.0" min="0.0" max="10.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+mediump vec2 u_xlat16_0;
+float u_xlat1;
+float u_xlat3;
+float u_xlat5;
+void main()
+{
+    u_xlat16_0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat16_0.xy = u_xlat16_0.xy + u_xlat16_0.xy;
+    u_xlat1 = dot(u_xlat16_0.xy, u_xlat16_0.xy);
+    u_xlat1 = sqrt(u_xlat1);
+    u_xlat1 = u_xlat1 + (-_Radius);
+    u_xlat3 = dFdx(u_xlat1);
+    u_xlat5 = dFdy(u_xlat1);
+    u_xlat3 = abs(u_xlat5) + abs(u_xlat3);
+    u_xlat1 = (-u_xlat3) * 0.5 + u_xlat1;
+    u_xlat3 = float(1.0) / (-u_xlat3);
+    u_xlat1 = u_xlat3 * u_xlat1;
+    u_xlat1 = clamp(u_xlat1, 0.0, 1.0);
+    u_xlat3 = u_xlat1 * -2.0 + 3.0;
+    u_xlat1 = u_xlat1 * u_xlat1;
+    u_xlat0.w = u_xlat1 * u_xlat3;
+    u_xlat0.x = float(1.0);
+    u_xlat0.y = float(1.0);
+    u_xlat0.z = float(1.0);
+    fragColor = u_xlat0 * vs_COLOR0;
+    return;
+}
+    ]]></shader>
+</effect>

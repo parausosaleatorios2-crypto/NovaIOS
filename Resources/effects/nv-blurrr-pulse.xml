@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.pulse"
+    name="Pulso (Blurrr)"
+    name-en="Pulse (Blurrr)"
+    desc="Zoom pulsando no tempo da camada — batida contínua."
+    desc-en="Zoom pulsing on the layer's time — steady beat."
+    category="motion"
+    tags="blurrr,pulse,pulso,beat,zoom,motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount" label="Intensidade" default="0.04" min="0.0" max="0.3" passo="0.002" />
+        <slider id="rate"   label="Velocidade"  default="2.0"  min="0.1" max="12.0" passo="0.1" />
+        <slider id="samples" label="Amostras"   default="14"   min="4"   max="32"  step="1" type="integer" />
+        <point  id="center" label="Centro"      default-x="0.5" default-y="0.5" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    int n = clamp(int(samples), 4, 32);
+    float pulso = 0.5 + 0.5 * sin(acTime * rate * 6.2831853);
+    float s = amount * pulso;
+    if (s <= 0.0) { fragColor = texture(inputImg, acScreenNorm); return; }
+
+    vec2 p = acScreenNorm - center;
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i <= 32; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n);
+        vec2 u = center + p * (1.0 - s * t);
+        soma += texture(inputImg, u);
+    }
+    fragColor = soma / float(n + 1);
+}
+    ]]></shader>
+</effect>

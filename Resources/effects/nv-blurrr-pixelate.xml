@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.pixelate"
+    name="Pixelado Suave (Blurrr)"
+    name-en="Soft Pixelate (Blurrr)"
+    desc="Blocos quadrados com borda suave entre eles."
+    desc-en="Square blocks with a soft edge between them."
+    category="blur"
+    tags="blurrr,pixel,pixelate,mosaico,bloco,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="size"     label="Tamanho do bloco" default="24.0" min="2.0" max="200.0" step="1.0" />
+        <slider id="softness" label="Suavidade" default="0.2" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec2 res = vec2(acAspect, 1.0);
+    vec2 cell = vec2(size) * acTexelSize * acEscalaDePixel;
+    vec2 q = floor(acScreenNorm / cell) * cell + cell * 0.5;
+
+    vec4 bloco = texture(inputImg, q);
+    vec4 real  = texture(inputImg, acScreenNorm);
+
+    // suaviza misturando a cor do bloco com a original pela distância ao centro
+    vec2 f = fract(acScreenNorm / cell) - 0.5;
+    float d = max(abs(f.x), abs(f.y));
+    float k = smoothstep(0.5 - softness * 0.5, 0.5, d);
+    fragColor = mix(bloco, real, k * softness);
+}
+    ]]></shader>
+</effect>

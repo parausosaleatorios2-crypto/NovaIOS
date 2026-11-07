@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore/ripple — o Ripple (simples) do Node Video (classe NodeVideo.AE.AERipple), portado do il2cpp
+  (05/11/2026).
+
+  O que o Node faz (AERipple::Init e ::Render, em tools/nodedeslocamento/il2cpp/desmontar.py; a definição `_Ripple`
+  do data.unity3d):
+  - Init: três Texture2D de 2048 x 1 (Alpha8, com mipmaps, Clamp, Trilinear), o texel i = a curva em i / 2048. As
+    curvas são as três AnimationCurve gravadas na definição `_Ripple` (4, 7 e 9 chaves, com tangentes; as 11 chaves
+    do .ctor são só o padrão do campo, que o Unity troca pelo gravado ao carregar);
+  - Render: _Drop1 = (_position.x x proporção, _position.y, 0), _Reflection = _color (SetGlobalColor: em luz linear),
+    _Params1 = (proporção, 1, 1, 0), _Params2 = (1, 1 / proporção, _strength, _intensity), com a proporção =
+    ResWidth / ResHeight; _GradTex = a textura da curva 1 se _count = 1, da 2 se _count = 2, senão da 3;
+  - o programa único do shader: a onda é a curva em (_evolution - distância à gota); o gradiente dela desloca a
+    camada (espelhada na borda) e a força dele puxa a cor para _Reflection.
+
+  Padrões e faixas da definição: _count 3 (1..3), _evolution 0,5 (0..2), _position (0,5; 0,5), _color 0,443 cinza,
+  _strength 1 (0..1,5), _intensity 0,1 (0,01..1, sem trava).
+
+  No Nova: a curva é calculada no shader (Hermite com as tangentes, como o AnimationCurve.Evaluate), sem o degrau
+  de 8 bits nem o mipmap da textura do Node. A onda usa a DIFERENÇA de duas leituras da curva, e o arredondamento da
+  textura (e de como cada GPU monta e escolhe o mipmap) desloca a imagem em até ~1 pixel: imitar a textura texel a
+  texel e o trilinear na GPU do PC não chegou mais perto do Node (média de 1,8 nível contra 1,6 da curva lisa numa
+  foto de alto contraste). A camada é lida com o filtro em luz linear, como o RT sRGB do Node (o texture() comum, em
+  sRGB, mudava as bordas em até 50 níveis).
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-ripple"
+    name="Ripple (NV)"
+    name-en="Ripple (NV)"
+    desc="Uma gota na camada: ondas que saem de um ponto e refletem a cor escolhida (Ripple simples do Node Video)."
+    desc-en="A drop on the layer: waves spreading from a point, reflecting the chosen color (Node Video's simple Ripple)."
+    category="nodevideo"
+    stage="screen"
+    tags="nodevideo,nv,unity,asset-store,ripple,ondas,onda,agua,water,gota,drop">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_count" type="integer" label="Count" default="3" min="1" max="3" step="1" />
+        <slider id="_evolution" label="Evolution" default="0.5" min="0" max="2" step="0.01" />
+        <point id="_position" label="Position" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" />
+        <color id="_color" label="Color" default="#FF717171" />
+        <slider id="_strength" label="Strength" default="1" min="0" max="1.5" step="0.01" />
+        <slider id="_intensity" label="Intensity" default="0.1" min="0.01" max="1" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// Os RTs do Node: luz linear, cor pré-multiplicada.
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 nvGama(vec3 l) { return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
+vec4 nvNode(vec4 c) { return vec4(nvLinear(c.rgb) * c.a, c.a); }
+vec4 nvNova(vec4 p) {
+    if (p.a <= 0.0) return vec4(0.0);
+    return vec4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
+}
+
+// As três curvas da definição `_Ripple`: (tempo, valor, tangente de entrada, de saída). A 1ª nas chaves 0..3, a 2ª
+// nas 4..10, a 3ª nas 11..19.
+const vec4 NV_CHAVES[20] = vec4[20](
+    vec4(0.0, 0.5, 0.0, 0.0), vec4(0.28238839, 0.99386597, -0.15917036, -0.15917036),
+    vec4(0.65961272, 0.17230801, -0.09240737, -0.09240737), vec4(0.99, 0.5, 0.0, 0.0),
+
+    vec4(0.0, 0.5, 0.0, 0.0), vec4(0.13742243, 0.98442906, -1.05466390, -1.05466390),
+    vec4(0.29294750, 0.10813284, -0.05129616, -0.05129616), vec4(0.48154014, 0.79211539, 0.05180347, 0.05180347),
+    vec4(0.62171835, 0.29824442, 0.00806891, 0.00806891), vec4(0.82213598, 0.62234515, 0.03460672, 0.03460672),
+    vec4(0.99, 0.5, 0.0, 0.0),
+
+    vec4(0.0, 0.5, 0.0, 0.0), vec4(0.10906921, 0.98910040, -0.04458912, -0.04458912),
+    vec4(0.26105016, 0.11401385, 0.11808521, 0.11808521), vec4(0.37284696, 0.80622840, 0.09440441, 0.09440441),
+    vec4(0.51656520, 0.28599104, -0.05980305, -0.05980305), vec4(0.64492840, 0.59532881, -0.00247780, -0.00247780),
+    vec4(0.74847257, 0.39532873, 0.07517300, 0.07517300), vec4(0.87567478, 0.56090033, -0.02498654, -0.02498654),
+    vec4(0.99, 0.5, 0.0, 0.0)
+);
+
+// AERipple::Render: _count 1 e 2 escolhem a 1ª e a 2ª textura; qualquer outro valor, a 3ª.
+int nvQual() { int c = int(_count); return c == 1 ? 0 : (c == 2 ? 1 : 2); }
+
+// AnimationCurve.Evaluate (weightedMode 0, pré e pós presos).
+float nvCurva(float t) {
+    int q = nvQual();
+    int ini = q == 0 ? 0 : (q == 1 ? 4 : 11);
+    int n = q == 0 ? 4 : (q == 1 ? 7 : 9);
+    if (t <= NV_CHAVES[ini].x) return NV_CHAVES[ini].y;
+    if (t >= NV_CHAVES[ini + n - 1].x) return NV_CHAVES[ini + n - 1].y;
+    for (int j = 0; j < 8; j++) {
+        if (j >= n - 1) break;
+        vec4 k0 = NV_CHAVES[ini + j];
+        vec4 k1 = NV_CHAVES[ini + j + 1];
+        if (t > k1.x) continue;
+        float dt = k1.x - k0.x;
+        float s = (t - k0.x) / dt;
+        float s2 = s * s;
+        float s3 = s2 * s;
+        return (2.0 * s3 - 3.0 * s2 + 1.0) * k0.y + (s3 - 2.0 * s2 + s) * dt * k0.w
+             + (-2.0 * s3 + 3.0 * s2) * k1.y + (s3 - s2) * dt * k1.z;
+    }
+    return NV_CHAVES[ini + n - 1].y;
+}
+
+// texture(_GradTex, (x, 0)).w: a curva no lugar (Clamp). O Node lê a textura de 8 bits com mipmap (Trilinear), que
+// alisa o degrau dos 8 bits; a curva sem degrau fica tão perto dele quanto imitar o mipmap (ver o topo do arquivo).
+float nvGradTex(float x) { return clamp(nvCurva(clamp(x, 0.0, 2047.0 / 2048.0)), 0.0, 1.0); }
+
+// texture(_SourceTex, uv) do Node: o RT da camada em sRGB de 8 bits, que a GPU filtra em luz linear (pré-multiplicada,
+// Clamp + Bilinear). O filtro é feito à mão sobre os 4 texels já em luz linear: com o deslocamento fracionário em
+// toda a imagem, filtrar a cor sRGB (o texture() comum) mudava as bordas em até 50 níveis.
+vec4 nvFonte(vec2 uv) {
+    ivec2 n = textureSize(inputImg, 0);
+    vec2 q = uv * vec2(n) - 0.5;
+    vec2 i = floor(q);
+    vec2 f = q - i;
+    ivec2 a = clamp(ivec2(i), ivec2(0), n - 1);
+    ivec2 b = clamp(ivec2(i) + 1, ivec2(0), n - 1);
+    vec4 c00 = nvNode(texelFetch(inputImg, a, 0));
+    vec4 c10 = nvNode(texelFetch(inputImg, ivec2(b.x, a.y), 0));
+    vec4 c01 = nvNode(texelFetch(inputImg, ivec2(a.x, b.y), 0));
+    vec4 c11 = nvNode(texelFetch(inputImg, b, 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+void main()
+{
+    vec2 vs_TEXCOORD0 = acScreenNorm;
+    // O lugar da gota no uv da composição, Y para cima (no buffer de camada chega com o Y para baixo).
+    vec2 pos = acEntradaDePe == 1 ? _position : vec2(_position.x, 1.0 - _position.y);
+    float proporcao = acTamanhoDaTela.x / acTamanhoDaTela.y;   // ResWidth / ResHeight
+    vec3 _Drop1 = vec3(pos.x * proporcao, pos.y, 0.0);
+    vec4 _Reflection = vec4(nvLinear(_color.rgb), _color.a);
+    vec4 _Params1 = vec4(proporcao, 1.0, 1.0, 0.0);
+    vec4 _Params2 = vec4(1.0, 1.0 / proporcao, _strength, _intensity);
+
+    // O programa do Node, conta por conta.
+    vec4 u_xlat0;
+    vec4 u_xlat1;
+    bvec2 u_xlatb1;
+    vec4 u_xlat2;
+    vec2 u_xlat12;
+    vec2 u_xlat13;
+    bvec2 u_xlatb13;
+    vec2 u_xlat14;
+    float u_xlat6;
+    float u_xlat18;
+    u_xlat0.xy = vs_TEXCOORD0.yx * _Params1.yx;
+    u_xlat1 = vs_TEXCOORD0.xyxy * _Params1.xyxy + (-_Drop1.xyxy);
+    u_xlat12.x = dot(u_xlat1.xy, u_xlat1.xy);
+    u_xlat12.x = sqrt(u_xlat12.x);
+    u_xlat2.x = (-u_xlat12.x) * _Params1.z + _evolution;
+    u_xlat12.x = nvGradTex(u_xlat2.x);
+    u_xlat12.x = u_xlat12.x + -0.5;
+    u_xlat12.x = u_xlat12.x + u_xlat12.x;
+    u_xlat1.xw = u_xlat1.zw + vec2(0.00999999978, 0.00999999978);
+    u_xlat1.yz = u_xlat0.xy + (-_Drop1.yx);
+    u_xlat0.x = dot(u_xlat1.xy, u_xlat1.xy);
+    u_xlat0.x = sqrt(u_xlat0.x);
+    u_xlat14.x = (-u_xlat0.x) * _Params1.z + _evolution;
+    u_xlat0.x = nvGradTex(u_xlat14.x);
+    u_xlat0.x = u_xlat0.x + -0.5;
+    u_xlat0.x = u_xlat0.x * 2.0 + (-u_xlat12.x);
+    u_xlat18 = dot(u_xlat1.zw, u_xlat1.zw);
+    u_xlat18 = sqrt(u_xlat18);
+    u_xlat1.x = (-u_xlat18) * _Params1.z + _evolution;
+    u_xlat18 = nvGradTex(u_xlat1.x);
+    u_xlat18 = u_xlat18 + -0.5;
+    u_xlat0.y = u_xlat18 * 2.0 + (-u_xlat12.x);
+    u_xlat12.xy = u_xlat0.xy * _Params2.xy;
+    u_xlat12.xy = u_xlat12.xy * _Params2.zz;
+    u_xlat12.xy = u_xlat12.xy * vec2(0.200000003, 0.200000003) + vs_TEXCOORD0.xy;
+    u_xlatb1.xy = lessThan(u_xlat12.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb13.xy = lessThan(vec4(1.0, 1.0, 1.0, 1.0), u_xlat12.xyxy).xy;
+    u_xlat2.xy = fract(u_xlat12.xy);
+    u_xlat2.xy = (-u_xlat2.xy) + vec2(1.0, 1.0);
+    u_xlat13.x = (u_xlatb13.x) ? u_xlat2.x : u_xlat12.x;
+    u_xlat13.y = (u_xlatb13.y) ? u_xlat2.y : u_xlat12.y;
+    u_xlat12.x = (u_xlatb1.x) ? (-u_xlat12.x) : u_xlat13.x;
+    u_xlat12.y = (u_xlatb1.y) ? (-u_xlat12.y) : u_xlat13.y;
+    u_xlat1 = nvFonte(u_xlat12.xy);
+    u_xlat0.x = dot(u_xlat0.xy, u_xlat0.xy);
+    u_xlat0.x = sqrt(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * _Params2.w;
+    u_xlat0.x = u_xlat0.x * 3.0;
+    u_xlat6 = u_xlat0.x * u_xlat0.x;
+    u_xlat0.x = u_xlat6 * u_xlat0.x;
+    u_xlat2 = (-u_xlat1) + _Reflection;
+    u_xlat0 = u_xlat0.xxxx * u_xlat2 + u_xlat1;
+    fragColor = nvNova(clamp(u_xlat0, 0.0, 1.0));
+}
+    ]]></shader>
+</effect>

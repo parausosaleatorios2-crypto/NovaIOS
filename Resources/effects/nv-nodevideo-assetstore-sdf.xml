@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_sdf
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-sdf"
+    name="Sdf (NV)"
+    name-en="Sdf (NV)"
+    desc="NodeVideo Asset Store effect 'sdf', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'sdf', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="texture0" src="content" empty="transparent" />
+    </params>
+
+    <shader><![CDATA[
+// tempo do Node ligado ao motor (tools/nodevideo/ligar_tempo.py)
+#define _cur_time acTime
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+vec2 u_xlat3;
+bool u_xlatb3;
+vec3 u_xlat4;
+float u_xlat5;
+vec2 u_xlat6;
+float u_xlat10;
+float u_xlat11;
+vec2 u_xlat12;
+bool u_xlatb12;
+float u_xlat13;
+vec2 u_xlat14;
+float u_xlat15;
+float u_xlat16;
+float u_xlat17;
+float u_xlat18;
+bool u_xlatb18;
+void main()
+{
+    u_xlat0.x = texture(inputImg, acScreenNorm.xy).x;
+    u_xlat0.xy = u_xlat0.xx * vec2(2.0, 2.0) + vec2(-1.0, -1.00600004);
+    u_xlat0.x = 0.0149999997 / u_xlat0.x;
+    u_xlat0.x = log2(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * 1.29999995;
+    u_xlat0.x = exp2(u_xlat0.x);
+    u_xlat5 = u_xlat0.y * -333.333344;
+    u_xlat5 = clamp(u_xlat5, 0.0, 1.0);
+    u_xlat10 = u_xlat5 * -2.0 + 3.0;
+    u_xlat5 = u_xlat5 * u_xlat5;
+    u_xlat5 = u_xlat5 * u_xlat10;
+    u_xlat0.xzw = u_xlat0.xxx * vec3(1.0, 0.0500000007, 0.300000012);
+    u_xlat0.xyz = vec3(u_xlat5) * vec3(10.0, 10.0, 10.0) + u_xlat0.xzw;
+    u_xlat1.xz = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat15 = _resolution.x / _resolution.y;
+    u_xlat1.y = u_xlat15 * u_xlat1.x;
+    u_xlat1.xw = u_xlat1.yz * vec2(4.0, 4.0);
+    u_xlat2.xyz = vec3(vec3(_cur_time, _cur_time, _cur_time)) * vec3(1.60000002, 1.70000005, 0.720000029);
+    u_xlat2.xw = u_xlat1.yz * vec2(2.79999995, 2.79999995) + (-u_xlat2.xx);
+    u_xlat3.xy = u_xlat2.xw;
+    u_xlat15 = 2.0;
+    u_xlat4.x = 0.0;
+    u_xlat13 = 1.0;
+    while(true){
+        u_xlatb18 = u_xlat13>=6.0;
+        if(u_xlatb18){break;}
+        u_xlat14.xy = u_xlat3.xy * vec2(0.00999999978, 0.00999999978);
+        u_xlat18 = texture(texture0, u_xlat14.xy).x;
+        u_xlat18 = u_xlat18 + -0.5;
+        u_xlat18 = u_xlat18 + u_xlat18;
+        u_xlat18 = abs(u_xlat18) / u_xlat15;
+        u_xlat4.x = u_xlat18 + u_xlat4.x;
+        u_xlat15 = u_xlat15 + u_xlat15;
+        u_xlat3.xy = u_xlat3.xy + u_xlat3.xy;
+        u_xlat13 = u_xlat13 + 1.0;
+    }
+    u_xlat6.xy = u_xlat1.yz * vec2(2.79999995, 2.79999995) + u_xlat2.yy;
+    u_xlat2.xy = u_xlat6.xy;
+    u_xlat15 = 2.0;
+    u_xlat4.y = 0.0;
+    u_xlat17 = 1.0;
+    while(true){
+        u_xlatb3 = u_xlat17>=6.0;
+        if(u_xlatb3){break;}
+        u_xlat3.xy = u_xlat2.xy * vec2(0.00999999978, 0.00999999978);
+        u_xlat3.x = texture(texture0, u_xlat3.xy).x;
+        u_xlat3.x = u_xlat3.x + -0.5;
+        u_xlat3.x = u_xlat3.x + u_xlat3.x;
+        u_xlat3.x = abs(u_xlat3.x) / u_xlat15;
+        u_xlat4.y = u_xlat3.x + u_xlat4.y;
+        u_xlat15 = u_xlat15 + u_xlat15;
+        u_xlat2.xy = u_xlat2.xy + u_xlat2.xy;
+        u_xlat17 = u_xlat17 + 1.0;
+    }
+    u_xlat6.xy = u_xlat4.xy + vec2(-0.5, -0.5);
+    u_xlat1.xy = u_xlat6.xy * vec2(0.75999999, 0.75999999) + u_xlat1.xw;
+    u_xlat3.x = cos(u_xlat2.z);
+    u_xlat2.x = sin(u_xlat2.z);
+    u_xlat4.x = (-u_xlat2.x);
+    u_xlat4.y = u_xlat3.x;
+    u_xlat15 = dot(u_xlat4.yx, u_xlat1.xy);
+    u_xlat4.z = u_xlat2.x;
+    u_xlat1.x = dot(u_xlat4.zy, u_xlat1.xy);
+    u_xlat2.x = u_xlat15;
+    u_xlat2.y = u_xlat1.x;
+    u_xlat6.x = float(2.0);
+    u_xlat11 = float(0.0);
+    u_xlat16 = float(1.0);
+    while(true){
+        u_xlatb12 = u_xlat16>=6.0;
+        if(u_xlatb12){break;}
+        u_xlat12.xy = u_xlat2.xy * vec2(0.00999999978, 0.00999999978);
+        u_xlat12.x = texture(texture0, u_xlat12.xy).x;
+        u_xlat12.x = u_xlat12.x + -0.5;
+        u_xlat12.x = u_xlat12.x + u_xlat12.x;
+        u_xlat12.x = abs(u_xlat12.x) / u_xlat6.x;
+        u_xlat11 = u_xlat11 + u_xlat12.x;
+        u_xlat6.x = u_xlat6.x + u_xlat6.x;
+        u_xlat2.xy = u_xlat2.xy + u_xlat2.xy;
+        u_xlat16 = u_xlat16 + 1.0;
+    }
+    u_xlat0.xyz = u_xlat0.xyz * vec3(u_xlat11);
+    u_xlat0.xyz = log2(u_xlat0.xyz);
+    u_xlat0.xyz = u_xlat0.xyz * vec3(0.899999976, 0.899999976, 0.899999976);
+    u_xlat0.xyz = exp2(u_xlat0.xyz);
+    fragColor.xyz = u_xlat0.xyz * vec3(u_xlat11);
+    fragColor.w = 1.0;
+    return;
+}
+    ]]></shader>
+</effect>

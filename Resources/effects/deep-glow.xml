@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ===========================================================================
+   LUZ PROFUNDA — o glow que parece luz, e não imagem borrada por cima
+  ===========================================================================
+
+  O "Brilho" que já existe aqui (glow.xml) é a receita curta: corta o que passa
+  do limiar, borra uma vez, soma de volta. Funciona, e é o que quase todo editor
+  de celular faz. Este é a receita LONGA, e a diferença não é sutil — são duas
+  escolhas de arquitetura, e o glow comum erra as duas.
+
+  ===========================================================================
+   MECANISMO 1 — somar pixel não é somar luz
+  ===========================================================================
+
+  O número guardado num arquivo de 8 bits NÃO é a luz: é a luz codificada em
+  sRGB, uma curva de mais ou menos x^(1/2.2). Borrar é tirar média, e tirar
+  média de valores codificados dá a resposta errada.
+
+  A conta, com um pixel branco (1.0) e um preto (0.0) lado a lado:
+
+      média certa, em luz linear     0.500 lin  →  0.735 em sRGB
+      o que o blur em gamma devolve  0.500 sRGB →  0.214 em luz
+      energia que sobrou             0.214 / 0.500 = 42,8 %
+
+  Ou seja: **57 % da luz do halo é jogada fora** em cada passe de blur feito no
+  espaço errado. É isso que faz o glow comum parecer fraco e sujo, e é por isso
+  que aumentar a intensidade não conserta — só amplifica um halo que já perdeu
+  a energia.
+
+  Aqui tudo acontece em luz linear, do limiar até a soma final.
+
+  ===========================================================================
+   MECANISMO 2 — uma gaussiana não consegue ser 1/r²
+  ===========================================================================
+
+  Luz de verdade cai com o inverso do quadrado da distância: núcleo muito
+  intenso e uma cauda que nunca termina direito. Uma gaussiana tem UM sigma —
+  ou é apertada (e não tem cauda) ou é larga (e não tem núcleo). Não existe
+  ajuste de raio que dê as duas coisas.
+
+  A saída é somar várias, em escalas dobradas: r, 2r, 4r, 8r. A soma acompanha
+  a curva do inverso do quadrado por quase toda a extensão. O núcleo vem das
+  escalas curtas, a cauda das longas — e é a cauda que o olho lê como "tem uma
+  fonte de luz de verdade ali".
+
+  Essas escalas moram numa PIRÂMIDE (0.179): a luz desce para 1/2, 1/4, 1/8…
+  até 1/256 da camada, cada nível feito do anterior com um filtro de tenda
+  4×4. Cada nível é um desfoque de raio dobrado, e a soma final lê os níveis
+  com interpolação B-spline cúbica — lisa, sem degrau. As quatro escalas (r,
+  2r, 4r, 8r) caem entre dois níveis e se dividem entre eles, então o Raio
+  anda contínuo.
+
+  Até a 0.178 as escalas eram borrões de 9 e 17 amostras em resolução cheia,
+  cada uma A PARTIR da anterior, com o passo crescendo com o raio. Com raio
+  alto o passo passava de 12 px já na primeira escala — maior que a borda de
+  uma forma lisa — e o halo saía em degraus retangulares, "quadriculado" (o
+  print do snow de 22/09, num quadrado). Na pirâmide nenhum filtro pula
+  pixel: quem anda longe é a resolução que cai.
+
+  ===========================================================================
+   MECANISMO 3 — o passo que quase todo mundo esquece
+  ===========================================================================
+
+  Somar luz em linear estoura acima de 1.0, e o monitor corta em 1.0. Sem
+  comprimir essa faixa antes de voltar para sRGB, o glow linear fica PIOR que o
+  em gamma: chapa tudo de branco liso. É provavelmente o que faz muita gente
+  concluir que "glow linear não funciona".
+
+  A compressão daqui não é um tonemap global (que escureceria a imagem inteira,
+  inclusive onde não há brilho nenhum). Ela gasta só o ESPAÇO QUE FALTA até o
+  branco, exponencialmente: onde a imagem já é branca, nada muda; onde é escura,
+  o halo tem a faixa inteira para crescer sem nunca chapar.
+
+  ===========================================================================
+   O custo
+  ===========================================================================
+
+  Nove passes e oito buffers, mas só o primeiro tem metade da resolução: a
+  pirâmide inteira soma um terço dos pixels da camada. É mais barato que a
+  versão antiga (dez passes em resolução cheia) e alcança bem mais longe.
+-->
+<effect
+    id="nova.effect.deepglow"
+    name="Luz profunda"
+    name-en="Deep Glow"
+    desc="Glow em luz linear, somado em quatro escalas. Halo com núcleo quente e cauda longa, como luz de verdade."
+    desc-en="Linear-light bloom summed over four scales: hot core, long tail."
+    category="stylize"
+    blend="mode"
+    tags="glow,bloom,deep glow,luz,brilho,néon,linear,halo">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          A pirâmide: a luz que passou do limiar em 1/2 da camada, e cada nível
+          seguinte com metade do lado do anterior. O nível k é um desfoque de
+          uns 0,76 × 2^k px.
+        -->
+        <texture id="p1" src="buffer" scale="0.5" />
+        <texture id="p2" src="buffer" scale="0.25" />
+        <texture id="p3" src="buffer" scale="0.125" />
+        <texture id="p4" src="buffer" scale="0.0625" />
+        <texture id="p5" src="buffer" scale="0.03125" />
+        <texture id="p6" src="buffer" scale="0.015625" />
+        <texture id="p7" src="buffer" scale="0.0078125" />
+        <texture id="p8" src="buffer" scale="0.00390625" />
+
+        <!-- Os padrões são os do print do snow (22/09): limiar baixo, raio e força altos. -->
+        <slider id="limiar" label="Threshold" default="0.08" min="0.0" max="1.0"
+                step="0.01" snap="0.5" ticks="0.0,0.5,1.0" />
+        <slider id="raio" label="Raio" default="48.0" min="1.0" max="120.0" step="0.5" snap="48.0" />
+        <slider id="intensidade" label="Intensidade" default="2.9" min="0.0" max="6.0"
+                step="0.05" snap="1.0" />
+
+        <slider id="cauda" group="Forma da luz" label="Cauda" default="0.5"
+                min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="joelho" group="Forma da luz" label="Suavidade do corte" default="0.15"
+                min="0.01" max="0.5" step="0.01" />
+
+        <color id="cor" group="Cor e saída" label="Cor da luz" default="#FFFFFF" />
+        <slider id="dispersao" group="Cor e saída" label="Dispersão" default="0.0"
+                min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <switch id="comprimir" group="Cor e saída" label="Comprimir estouros" default="true" />
+        <switch id="soLuz" group="Cor e saída" label="Mostrar só a luz" default="false" />
+    </params>
+
+    <preview amostra="foto" />
+
+    <passes>
+        <pass target="p1" /> <!-- 0: limiar com joelho, em luz linear, já descendo para 1/2 -->
+        <pass target="p2" /> <!-- 1..7: cada nível do anterior, tenda 4×4 -->
+        <pass target="p3" />
+        <pass target="p4" />
+        <pass target="p5" />
+        <pass target="p6" />
+        <pass target="p7" />
+        <pass target="p8" />
+        <pass />             <!-- 8: soma os níveis sobre a imagem -->
+    </passes>
+
+    <shader><![CDATA[
+
+// ===========================================================================
+//  Luz e pixel
+// ===========================================================================
+//
+// `paraLuz` desfaz a curva do sRGB; `paraTela` refaz. Entre as duas, tudo que
+// acontece é luz — somar, borrar e tirar média valem as regras da física.
+//
+// A fórmula é a do padrão, com o trecho reto perto do zero. A aproximação
+// `pow(c, 2.2)` erraria justamente nas sombras, que é onde a cauda do halo mora.
+
+vec3 paraLuz(vec3 c) {
+    vec3 alto = pow(max(c + 0.055, 0.0) / 1.055, vec3(2.4));
+    vec3 baixo = c / 12.92;
+    return mix(baixo, alto, step(vec3(0.04045), c));
+}
+
+vec3 paraTela(vec3 l) {
+    vec3 seguro = max(l, 0.0);
+    vec3 alto = 1.055 * pow(seguro, vec3(1.0 / 2.4)) - 0.055;
+    vec3 baixo = seguro * 12.92;
+    return mix(baixo, alto, step(vec3(0.0031308), seguro));
+}
+
+// ===========================================================================
+//  Guardar luz em 8 bits sem perder a cauda
+// ===========================================================================
+//
+// Os buffers são RGBA de 8 bits. Guardar luz linear neles desperdiça quase toda
+// a precisão nas sombras — e a cauda do halo é toda sombra. A raiz quadrada
+// devolve precisão ao escuro, e quem lê desfaz a raiz antes de somar: a conta
+// acontece em luz linear do mesmo jeito.
+//
+// Por isso a DESCIDA lê texel a texel (`texelFetch`) e abre cada um antes de
+// somar — a média da GPU entre dois texels seria a média das raízes, e numa
+// borda dura isso come metade da luz. Na SUBIDA os níveis já são lisos na
+// escala deles, e a média das raízes vizinhas é praticamente a raiz da média.
+
+// Ruído de um pixel ("interleaved gradient noise"): somado ANTES de gravar em 8
+// bits, troca os degraus da cauda por um grão invisível — era a "qualidade
+// péssima" do print do snow (28/09/2026): o halo em faixas.
+float ruidoDoPixel() {
+    return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+}
+
+vec4 guardar(vec4 luz) {
+    return vec4(sqrt(max(luz.rgb, 0.0)) + ruidoDoPixel() / 255.0, max(luz.a, 0.0));
+}
+
+vec4 abrir(vec4 guardado) {
+    return vec4(guardado.rgb * guardado.rgb, guardado.a);
+}
+
+// ===========================================================================
+//  A descida
+// ===========================================================================
+//
+// Cada texel do nível novo é a média com peso de TENDA dos 4×4 texels da
+// origem em volta dele (1, 3, 3, 1 de cada lado quando a razão é 2). Tenda,
+// e não caixa 2×2: a caixa deixa o nível com cantos, e os cantos viram
+// quadrados no halo. Os pesos saem da distância, então a conta vale também
+// onde o buffer travou no mínimo de 8 px e a razão não é 2.
+
+/** O que passa do limiar num texel da imagem, em luz linear. */
+vec4 brilhoDoTexel(ivec2 t) {
+    ivec2 tam = textureSize(inputImg, 0);
+    vec4 c = texelFetch(inputImg, clamp(t, ivec2(0), tam - 1), 0);
+
+    // A luminância do CORTE é medida em sRGB, de propósito: o limiar tem que
+    // responder ao que se vê na tela. Corte suave, nunca duro: um degrau
+    // serrilha a borda do halo e ela PISCA quando a cena se move.
+    float visto = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float quanto = smoothstep(limiar, min(limiar + joelho, 1.0), visto) * c.a;
+    // Abaixo do limiar não há luz: pula a conversão (três `pow`) — o mesmo zero,
+    // mais barato. São 16 texels por pixel da descida (otimização de 01/10/2026).
+    if (quanto <= 0.0) return vec4(0.0);
+
+    // A cor do motor é RETA: um pixel transparente ainda guarda uma cor (num PNG recortado, a do fundo que foi
+    // apagado). Sem pesar pelo alfa, essa cor invisível acendia o halo — e o fundo apagado voltava em volta da
+    // silhueta, em degraus (relato do snow, 23/10/2026, export em PNG). Pesada, a luz é pré-multiplicada.
+    // O alfa vai junto: sem isso o brilho não vaza para fora da silhueta da
+    // camada, que é metade da graça.
+    return vec4(paraLuz(c.rgb) * quanto, quanto);
+}
+
+vec4 descerDaImagem() {
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    vec2 p = acScreenNorm * tam;
+    vec2 t0 = floor(p) - 2.0;
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 t = t0 + vec2(float(i), float(j));
+            vec2 w = max(2.0 - abs(t + 0.5 - p), 0.0);
+            float peso = w.x * w.y;
+            soma += brilhoDoTexel(ivec2(t)) * peso;
+            pesos += peso;
+        }
+    }
+    return guardar(soma / max(pesos, 0.0001));
+}
+
+vec4 descer(sampler2D origem) {
+    ivec2 tamI = textureSize(origem, 0);
+    vec2 p = acScreenNorm * vec2(tamI);
+    vec2 t0 = floor(p) - 2.0;
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 t = t0 + vec2(float(i), float(j));
+            vec2 w = max(2.0 - abs(t + 0.5 - p), 0.0);
+            float peso = w.x * w.y;
+            ivec2 ti = clamp(ivec2(t), ivec2(0), tamI - 1);
+            soma += abrir(texelFetch(origem, ti, 0)) * peso;
+            pesos += peso;
+        }
+    }
+    return guardar(soma / max(pesos, 0.0001));
+}
+
+// ===========================================================================
+//  A subida: B-spline cúbica com quatro leituras
+// ===========================================================================
+//
+// Ler um nível de 1/64 com a bilinear da GPU mostra o losango de cada texel.
+// A B-spline cúbica é lisa até a segunda derivada — não há canto nenhum para o
+// olho achar — e sai em quatro leituras bilineares: cada par de texels
+// vizinhos vira uma leitura só, no ponto em que a bilinear dá a proporção
+// certa entre os dois.
+
+vec4 lerLiso(sampler2D t, vec2 uv) {
+    vec2 tam = vec2(textureSize(t, 0));
+    vec2 p = uv * tam - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    vec2 f2 = f * f;
+    vec2 f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 g0 = w0 + w1;
+    vec2 g1 = w2 + w3;
+    vec2 a = (i - 1.0 + w1 / max(g0, 0.0001) + 0.5) / tam;
+    vec2 b = (i + 1.0 + w3 / max(g1, 0.0001) + 0.5) / tam;
+    return abrir(texture(t, vec2(a.x, a.y))) * g0.x * g0.y
+         + abrir(texture(t, vec2(b.x, a.y))) * g1.x * g0.y
+         + abrir(texture(t, vec2(a.x, b.y))) * g0.x * g1.y
+         + abrir(texture(t, vec2(b.x, b.y))) * g1.x * g1.y;
+}
+
+// ===========================================================================
+//  O peso de cada nível
+// ===========================================================================
+//
+// As quatro escalas de antes (desvios de uns 0,5r, 1,1r, 2,3r e 4,6r, com
+// r = Raio) continuam sendo a forma da luz: "Cauda" é a razão da queda entre
+// elas, e a soma dos pesos é 1 — mudar a forma não muda o brilho total, e um
+// projeto antigo continua com o mesmo tamanho de halo, só que liso.
+//
+// Cada escala cai entre dois níveis da pirâmide (em escala logarítmica) e se
+// divide entre eles. Por isso o Raio anda contínuo, sem saltar de nível em nível.
+
+void pesosDosNiveis(out float w[8]) {
+    for (int k = 0; k < 8; k++) w[k] = 0.0;
+    float queda = mix(0.25, 0.9, cauda);
+    vec4 p = vec4(1.0, queda, queda * queda, queda * queda * queda);
+    p /= max(p.x + p.y + p.z + p.w, 0.001);
+    // O Raio é em pixels da COMPOSIÇÃO: na prévia reduzida (arrastando) o buffer
+    // tem menos pixels, e sem esta conta o halo ficava maior e mais forte ao
+    // mexer e encolhia ao soltar (relato do snow, 28/09/2026).
+    vec4 s = raio * max(acEscalaDePixel, 0.05) * vec4(0.5, 1.1, 2.3, 4.6);
+    for (int j = 0; j < 4; j++) {
+        float nivel = clamp(log2(max(s[j], 0.01) / 0.76), 1.0, 8.0) - 1.0;
+        float baixo = floor(nivel);
+        float f = nivel - baixo;
+        int k = int(baixo);
+        w[k] += p[j] * (1.0 - f);
+        if (k < 7) w[k + 1] += p[j] * f;
+    }
+}
+
+/** A luz somada dos níveis, num ponto. */
+vec4 luzEm(vec2 uv, float w[8]) {
+    vec4 l = vec4(0.0);
+    if (w[0] > 0.0) l += lerLiso(p1, uv) * w[0];
+    if (w[1] > 0.0) l += lerLiso(p2, uv) * w[1];
+    if (w[2] > 0.0) l += lerLiso(p3, uv) * w[2];
+    if (w[3] > 0.0) l += lerLiso(p4, uv) * w[3];
+    if (w[4] > 0.0) l += lerLiso(p5, uv) * w[4];
+    if (w[5] > 0.0) l += lerLiso(p6, uv) * w[5];
+    if (w[6] > 0.0) l += lerLiso(p7, uv) * w[6];
+    if (w[7] > 0.0) l += lerLiso(p8, uv) * w[7];
+    return l;
+}
+
+// ===========================================================================
+//  A compressão dos estouros
+// ===========================================================================
+//
+// Não é um tonemap global (que escureceria o que não tem brilho nenhum). O
+// halo gasta, exponencialmente, só o ESPAÇO QUE FALTA até o branco:
+//
+//     saída = base + espaço · (1 − e^(−luz / espaço))
+//
+// Para luz pequena isso é a própria soma; só o exagero é que curva.
+//
+// A conta ACIMA descreve a IDEIA; a de baixo já não é mais por canal. Até a
+// 0.276 era `vec3 espaco = 1-base; base + espaco*(1-exp(-luz/espaco))`, canal
+// a canal — bom para o uso comum daqui (um toque de luz sobre uma foto que já
+// tem cor própria, raramente forte o bastante para saturar). Mas o snow passou
+// a empilhar este efeito SOBRE o Cósmico (`cosmico.xml`), cuja saída já é
+// bem clara e saturada por si só — e aí cada canal convergindo para 1.0
+// sozinho lava a PROPORÇÃO entre eles, que é o que carrega o matiz: um
+// magenta forte (0.85, 0.10, 0.55) recebendo um halo branco virava (1.00,
+// 0.67, 0.94) — quase branco. Mesma causa, mesmo remédio já aplicado no
+// Cósmico (25/09/2026): comprimir só a LUMINÂNCIA e escalar a cor BRUTA
+// inteira por ela — a proporção r:g:b nunca muda. O mesmo magenta, no mesmo
+// teste, fica (1.18, 0.67, 0.98) antes do clamp final — ainda reconhecível
+// como magenta, não uma mancha branca. Verificado num teste numérico (Node)
+// antes de mexer aqui.
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+vec3 comprimirNoEspaco(vec3 base, vec3 luz) {
+    float lumaBase = dot(base, LUMA);
+    float luzLuma = dot(luz, LUMA);
+    float espaco = max(1.0 - lumaBase, 0.001);
+    float lumaComprimida = lumaBase + espaco * (1.0 - exp(-luzLuma / espaco));
+    vec3 corBruta = base + luz;
+    float lumaBruta = max(dot(corBruta, LUMA), 0.0001);
+    return corBruta * (lumaComprimida / lumaBruta);
+}
+
+void main() {
+    if (acPass == 0) { fragColor = descerDaImagem(); return; }
+    if (acPass == 1) { fragColor = descer(p1); return; }
+    if (acPass == 2) { fragColor = descer(p2); return; }
+    if (acPass == 3) { fragColor = descer(p3); return; }
+    if (acPass == 4) { fragColor = descer(p4); return; }
+    if (acPass == 5) { fragColor = descer(p5); return; }
+    if (acPass == 6) { fragColor = descer(p6); return; }
+    if (acPass == 7) { fragColor = descer(p7); return; }
+
+    // ------------------------------------------------------- 8: a soma final
+    vec4 base = texture(inputImg, acScreenNorm);
+    float w[8];
+    pesosDosNiveis(w);
+    vec4 luz = luzEm(acScreenNorm, w);
+
+    // Dispersão: o halo se separa em cor conforme se afasta do centro, como uma
+    // lente barata faz com luz forte. Vermelho para fora, azul para dentro.
+    if (dispersao > 0.001) {
+        vec2 desvio = (acScreenNorm - vec2(0.5)) * dispersao * 0.04;
+        vec4 quente = luzEm(acScreenNorm + desvio, w);
+        vec4 fria = luzEm(acScreenNorm - desvio, w);
+        luz = vec4(quente.r, luz.g, fria.b, luz.a);
+    }
+
+    vec3 halo = luz.rgb * cor.rgb * intensidade;
+
+    // Onde a camada é opaca, a luz soma sobre ela (como sempre foi); onde é transparente, só a luz — sobre o
+    // vazio, não sobre a cor escondida do pixel. As duas se juntam pelo alfa da camada, em cor pré-multiplicada,
+    // e o alfa de saída é o do Unmult do Deep Glow do AE (`deep-glow-ae.xml`): screen(alfa da camada, maior canal
+    // da luz). Sem halo, a camada sai idêntica — borda semitransparente inclusive. No PNG, a luz sobre o
+    // transparente vira cor com alfa, e não um bloco opaco.
+    float ab = soLuz ? 0.0 : base.a;
+    float ruido = ruidoDoPixel() / 255.0;
+    vec3 sobreACamada = paraTela(comprimir ? comprimirNoEspaco(paraLuz(base.rgb), halo) : (paraLuz(base.rgb) + halo));
+    vec3 soALuz = clamp(paraTela(comprimir ? comprimirNoEspaco(vec3(0.0), halo) : halo) + ruido, 0.0, 1.0);
+    vec3 pre = clamp(sobreACamada + ruido, 0.0, 1.0) * ab + soALuz * (1.0 - ab);
+    float alfa = 1.0 - (1.0 - ab) * (1.0 - max(soALuz.r, max(soALuz.g, soALuz.b)));
+
+    fragColor = alfa > 0.0 ? vec4(min(pre / alfa, vec3(1.0)), alfa) : vec4(0.0);
+}
+
+    ]]></shader>
+</effect>

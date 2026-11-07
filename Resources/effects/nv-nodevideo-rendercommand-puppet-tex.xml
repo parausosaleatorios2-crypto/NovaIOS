@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_puppet_tex
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-puppet-tex"
+    name="Rendercommand Puppet Tex (NV)"
+    name-en="Rendercommand Puppet Tex (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_puppet_tex', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_puppet_tex', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_opacity" label="Opacity" default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+bool u_xlatb0;
+float u_xlat3;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat3 = u_xlat0.w * _opacity;
+    fragColor.xyz = u_xlat0.xyz;
+    u_xlatb0 = u_xlat3<0.0399999991;
+    fragColor.w = (u_xlatb0) ? 0.0 : u_xlat3;
+    return;
+}
+    ]]></shader>
+</effect>

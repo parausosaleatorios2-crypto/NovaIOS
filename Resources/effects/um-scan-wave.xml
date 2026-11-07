@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.scanwave"
+    name="Onda Varredura (Ultra Motion)"
+    name-en="Scan Wave (Ultra Motion)"
+    desc="Faixa clara que varre a tela — radar, hud, holograma."
+    desc-en="Bright band sweeping the screen — radar, HUD, hologram."
+    category="stylize"
+    tags="ultramotion,scan,wave,radar,hologram,hud">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="speed"  label="Velocidade" default="0.4" min="0.0" max="3.0" step="0.05" />
+        <slider id="width"  label="Largura"    default="0.08" min="0.01" max="0.4" step="0.005" />
+        <slider id="angle"  label="Direção"    default="90.0" min="0.0" max="180.0" step="1.0" />
+        <color  id="tint"   label="Cor da onda" default="#ff8cfaff" />
+        <slider id="gain"   label="Brilho"     default="0.6" min="0.0" max="2.0" step="0.02" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    float a = radians(angle);
+    vec2 n = vec2(cos(a), sin(a));
+    float t = dot(acScreenNorm - 0.5, n) + 0.5;
+    float pos = fract(acTime * speed);
+    float d = abs(t - pos);
+    d = min(d, 1.0 - d);
+    float faixa = smoothstep(width, 0.0, d);
+    vec3 cor = orig.rgb + tint.rgb * faixa * gain * tint.a;
+    fragColor = vec4(cor, orig.a);
+}
+    ]]></shader>
+</effect>

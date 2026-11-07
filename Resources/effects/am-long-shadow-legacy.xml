@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SOMBRA LONGA (AM, versão 1) — o `longshadow` do Alight Motion (0.644.0)
+  ============================================================================
+
+  A versão antiga da Sombra longa que o AM 5.0.281 ainda abre (`assets/effects/longshadow.xml`, marcada
+  `deprecated`), para os projetos feitos com ela caírem na mesma conta. Fora do catálogo; o de hoje é o
+  `am-long-shadow.xml` (ver o comentário de lá: os parâmetros, a busca, a cor e a ponte para a tela são os mesmos).
+  A diferença, lida do XML do AM: o deslocamento é multiplicado por `acPreviewSize ÷ getTexSize(inputImg.size)` (o
+  tamanho da renderização ÷ o da camada na tela: o mesmo número, 1) e o X é SEMPRE corrigido pela proporção da tela
+  (× altura ÷ largura) — numa tela em pé a sombra horizontal sai mais longa que a vertical; o de hoje corrige o lado
+  maior.
+-->
+<effect
+    id="nova.effect.am-long-shadow-legacy"
+    name="Sombra longa (AM, versão 1)"
+    name-en="Long Shadow (AM, version 1)"
+    desc="Renderiza longas sombras paralelas que se estendem a partir das partes opacas da camada (o Long Shadow do Alight Motion)."
+    desc-en="Renders long parallel shadows extending from opaque parts of the layer (Alight Motion's Long Shadow)."
+    category="color"
+    tags="sombra,sombra longa,long shadow,sombra projetada,flat,3d,pop,alight motion"
+    stage="screen"
+    screen-scale="safe"
+    catalog="false">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+        <!-- `<spinner>` como no AM: o `readSpinnerParam` dele lê `ticks` (as marcas claras) e não lê `snap`. -->
+        <spinner id="size" label="Tamanho" default="0.15" min="0.0" max="1.0" step="0.001" />
+        <spinner id="angle" label="Ângulo" default="45.0" min="0.0" max="3600.0" step="0.5" type="angle"
+            ticks="0.0,45.0,90.0,135.0,180.0,225.0,270.0,315.0,360.0" />
+        <color id="color" label="Cor" default="#FF000000" />
+        <spinner id="alpha" label="Alfa" default="0.1" min="0.0" max="1.0" step="0.001" type="percent" />
+        <spinner id="solidity" label="Solidez" default="1.0" min="0.0" max="1.0" step="0.001" type="percent" />
+        <spinner id="fill" label="Preencher" default="1.0" min="0.0" max="1.0" step="0.001" type="percent"
+            ticks="0.5" />
+        <spinner id="fade" label="Desaparecer" default="0.0" min="0.0" max="1.0" step="0.001" type="percent" />
+        <selector id="fadeType" label="Tipo de Desaparecimento" style="radio" options="Exato|Ângulo|Eixo X|Eixo Y"
+            default="0" />
+    </params>
+
+    <shader><![CDATA[
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta do `acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
+vec2 daTela(vec2 t) {
+    vec3 c = inverse(acParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+// O alfa da camada num ponto da tela do AM. Na tela o buffer É a tela; no filho de grupo, fora do buffer não há
+// camada (o AM a desenha na tela do grupo).
+float alfaNaTela(vec2 t) {
+    if (acEntradaDePe == 1) return texture(inputImg, t).a;
+    vec2 uv = daTela(t);
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+    return texture(inputImg, uv).a;
+}
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM em cor reta (a do Anel (AM)). O alvo de 8 bits do AM corta abaixo de 0 e acima de
+// 1. O comum (cor ≤ alfa) é só dividir. Com a cor acima do alfa (uma Cor com alfa abaixo de 1), a composição do AM
+// SOMA a luz ao fundo (`p + fundo·(1 − op·alfa)`): este pixel leva junto o fundo dele, com o menor alfa `a` em que
+// a cor reta `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1 — a composição Normal do Nova dá o mesmo com
+// qualquer opacidade da camada, até a soma passar de 1.
+vec4 paraReta(vec4 p) {
+    p = clamp(p, 0.0, 1.0);
+    // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
+    vec4 q = floor(p * 255.0 + 0.5) / 255.0;
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return p.a > 0.0 ? vec4(min(p.rgb / p.a, vec3(1.0)), p.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+float projectAndClampDist(vec2 a, vec2 b) {
+    return clamp(dot(a,b)/dot(b,b),0.0,1.0);
+}
+
+void main() {
+    // O `acScreenNorm` do AM: a UV da tela com t = 0 EMBAIXO. Na tela (`stage="screen"`) a entrada já é a tela, de
+    // pé; no filho de grupo, o `acTela` leva o buffer à tela do grupo (também de pé).
+    vec2 tela = acEntradaDePe == 1 ? acScreenNorm : acTela(acScreenNorm);
+    vec2 acScreenSize = acTamanhoDaTela;
+    // O `acLayerCenterNorm` do AM (`ssl/W.render`): o location em px da tela (Y para baixo) ÷ a tela, Y para cima.
+    vec2 acLayerCenterNorm = vec2(acCentroDaCamadaPx.x / acScreenSize.x,
+                                  (acScreenSize.y - acCentroDaCamadaPx.y) / acScreenSize.y);
+
+    // A conta do AM, linha por linha. O `getTexSize(inputImg.size)` é o tamanho da camada na tela, em pixels da
+    // renderização (a prévia reduzida inclusive).
+    vec2 imgSize = vec2(textureSize(inputImg, 0));
+    // O `acPreviewSize` do AM: o tamanho da renderização (o do buffer da tela, a prévia reduzida inclusive).
+    vec2 acPreviewSize = imgSize;
+    vec2 texelSize = 1.0 / imgSize;
+    float rad = angle * 0.0174533;
+    vec2 velocity = vec2(cos(rad)*size,-sin(rad)*size);
+    velocity *= acPreviewSize/imgSize;
+    velocity.x *= acScreenSize.y / acScreenSize.x;
+    float speed = length(velocity / texelSize);
+    int nSamples = int(clamp(speed, 1.01, 500.01));
+    float maxAlpha = 0.0;
+    float accumAlpha = 0.0;
+    int minDist = nSamples;
+    vec4 baseColor = camadaNoPonto(acEntradaDePe == 1 ? tela : daTela(tela));
+    for(int i=1; i<nSamples; i++ ) {
+        vec2 offset = velocity * (float(i) / float(nSamples - 1));
+        vec2 sampleCoord = tela-offset;
+        float insideTexture = step(0.0,sampleCoord.x) * step(sampleCoord.x,1.0) * step(0.0,sampleCoord.y) * step(sampleCoord.y,1.0);
+        // (desempenho, 0.805.0) A amostra anda em linha reta: saiu da tela, não volta, e cada passo dali em
+        // diante soma zero (o max, o minDist e o acúmulo ficam iguais) — o resto do laço não muda nada.
+        if (insideTexture == 0.0) break;
+        float sampAlpha = alfaNaTela(sampleCoord) * insideTexture;
+        maxAlpha = max(maxAlpha, sampAlpha);
+        if( sampAlpha > 0.5 ) {
+            minDist = min(minDist,i);
+        }
+        float adjAlpha = sampAlpha*solidity*0.25;
+        accumAlpha = adjAlpha + accumAlpha*(1.0-adjAlpha);
+        // Com Solidez 1 (o padrão) o resultado é o maxAlpha, e o minDist já é o da 1ª amostra acima de 0,5:
+        // chegou a 1, nada mais muda.
+        if (solidity == 1.0 && maxAlpha >= 1.0) break;
+    }
+    float resultAlpha = mix(accumAlpha,maxAlpha,solidity);
+    float dist = 0.0;
+    if( fadeType==0 ) {
+        dist = float(minDist)/float(nSamples);
+    } else if( fadeType==1 ) {
+        dist = projectAndClampDist(tela-acLayerCenterNorm,velocity);
+    } else if( fadeType==2 ) {
+        dist = abs((tela-acLayerCenterNorm).x) / abs(velocity.x);
+    } else if( fadeType==3 ) {
+        dist = abs((tela-acLayerCenterNorm).y) / abs(velocity.y);
+    }
+    fragColor = paraReta(mix(color * alpha * (1.0-dist*fade) * resultAlpha, baseColor, baseColor.a * fill));
+}
+    ]]></shader>
+</effect>

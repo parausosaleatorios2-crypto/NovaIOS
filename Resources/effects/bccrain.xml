@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC RAIN — o BCC Rain (Boris Continuum) do After Effects (0.401.0)
+  ============================================================================
+
+  Pedido do snow (04/10/2026): "bcc rain agora". MEDIDO no plugin do AE dele (matchName
+  "BCC3Rain"), numa instância separada do AE: 682 quadros em 16 bits, um controle por vez, quase
+  tudo sobre preto, e cada risco medido por componentes ligados (quantos, comprimento, largura,
+  ângulo, brilho, passo entre quadros) — tools/bccrain/benchmark/. A comp dele usa os valores de
+  fábrica do plugin, que são os padrões daqui.
+
+  O QUE FOI MEDIDO (L = largura do quadro; os tamanhos do plugin escalam com ela, não com a altura):
+
+  - Cada gota é um RISCO reto: o caminho dela em 1/30 s. Passo por quadro = Rain Speed × L/3360
+    (300 → 57 px em 640 de largura), e o risco tem esse comprimento × Size (negativo encolhe em
+    linha reta, −50 = metade; positivo estica rápido, +50 = 5,4×).
+  - Rain Angle: graus a partir da vertical, caindo para a direita.
+  - Quantidade: 6 × Rain Amount gotas num quadro 16:9 com Rain Speed 300 — o que é fixo é quantas
+    nascem por segundo, então mais rápidas = menos gotas no quadro. Tile Width maior espalha.
+  - Rain Depth: gotas perto são mais rápidas e compridas, as de longe mais lentas e curtas (com
+    200: de 0,8× a 1,2× e além); a largura e o brilho não mudam.
+  - Através do risco: uma linha de ~1 px (σ 0,46 px) borrada por Blur (σ ≈ Blur até 1, ≈ 0,75 × Blur
+    daí em diante, × (L/640)^0,72). O borrão espalha a luz: o pico cai de 1 para 0,5 com o Blur
+    0,75 de fábrica.
+  - Drop Shape: Streak = brilho igual de ponta a ponta; Tapered = cresce até o meio e volta.
+  - Brightness Variance negativo: cada gota sorteia o brilho entre 1 − |valor|% e 1 (−50 de
+    fábrica: 0,5 a 1). Positivo não muda nada no plugin.
+  - Opacity: a opacidade do risco vai com (Opacity%)^0,77 (20 → 0,29; 50 → 0,6).
+  - Composição: fonte·(1 − a) + cor·brilho·a, onde a é a opacidade do risco SEM o sorteio de
+    brilho; o alfa da camada não muda.
+  - Particle Lifespan: as gotas nascem ~0,17·L acima do quadro e somem depois de `Lifespan`
+    quadros de queda (com 25 cobrem o quadro; com 5 só a metade de cima).
+  - Speed / Direction Variance: velocidade entre 0,1× e 1,2× com 200; direção em ±valor/2,7 graus.
+
+  As gotas NÃO são as do plugin (o sorteio dele não é público): batem a contagem, o comprimento,
+  a largura, o ângulo, o brilho e a velocidade. Ver o LEIAME do benchmark para os números.
+
+  Fora: Generation Width (aqui a chuva cobre o quadro por igual), Composite on Alpha, Composite
+  Layer / Depth, Color Source Layer, os respingos (Interaction) e o PixelChooser / Mocha.
+-->
+<effect
+    id="nova.effect.bccrain"
+    name="BCC Rain"
+    name-en="BCC Rain"
+    desc="A chuva do BCC Rain do After Effects (Boris Continuum): riscos de chuva com profundidade, ângulo, velocidade e desfoque."
+    desc-en="After Effects' BCC Rain (Boris Continuum): rain streaks with depth, angle, speed and blur."
+    category="generate"
+    tags="bcc rain,rain,chuva,boris,continuum,bcc,particulas,partículas,particles,tempestade,storm,clima,weather,garoa">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="chuva" src="buffer" scale="1.0" />
+        <texture id="bh" src="buffer" scale="1.0" />
+        <texture id="bv" src="buffer" scale="1.0" />
+
+        <slider id="rainAmount" label="Rain Amount" default="25.0" min="0.0" max="1000.0" step="1.0" snap="25.0" />
+        <slider id="rainAngle" label="Rain Angle" type="angle" default="15.0" min="-80.0" max="80.0" step="1.0" snap="0.0,15.0" />
+        <slider id="rainSpeed" label="Rain Speed" default="300.0" min="0.0" max="3000.0" step="5.0" snap="300.0" />
+        <slider id="rainDepth" label="Rain Depth" default="200.0" min="0.0" max="300.0" step="1.0" snap="200.0" />
+        <slider id="blur" label="Blur" default="0.75" min="0.0" max="50.0" step="0.05" snap="0.75" />
+        <point id="panXY" label="Pan XY" defaultX="0.5" defaultY="1.0" min="-1.0" max="2.0" />
+        <slider id="randomSeed" label="Random Seed" type="integer" default="0.0" min="-3200.0" max="3200.0" step="1.0" />
+
+        <color id="color" group="Raindrops" label="Color" default="#FFFFFFFF" />
+        <slider id="size" group="Raindrops" label="Size" default="0.0" min="-100.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="opacity" group="Raindrops" label="Opacity" default="20.0" min="0.0" max="100.0" step="1.0" snap="20.0" />
+        <slider id="brightnessVariance" group="Raindrops" label="Brightness Variance" default="-50.0" min="-100.0" max="100.0" step="1.0" snap="-50.0,0.0" />
+        <selector id="dropShape" group="Raindrops" label="Drop Shape" default="0" options="Streak|Tapered" />
+
+        <slider id="lifespan" group="System" label="Particle Lifespan" default="25.0" min="0.0" max="300.0" step="1.0" snap="25.0" />
+        <slider id="tileWidth" group="System" label="Tile Width" default="120.0" min="20.0" max="1000.0" step="1.0" snap="120.0" />
+        <slider id="speedVariance" group="System" label="Speed Variance" default="0.0" min="0.0" max="200.0" step="1.0" snap="0.0" />
+        <slider id="directionVariance" group="System" label="Direction Variance" default="0.0" min="0.0" max="90.0" step="1.0" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, a chuva padrão é rala e transparente: forte. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="rainAmount" value="300.0" />
+        <set param="opacity" value="70.0" />
+    </preview>
+
+    <passes>
+        <pass target="chuva" />   <!-- 0: os riscos (R = brilho × opacidade, A = opacidade) -->
+        <pass target="bh" />      <!-- 1: Blur, gaussiano em X -->
+        <pass target="bv" />      <!-- 2: Blur, Y -->
+        <pass />                  <!-- 3: a chuva sobre a camada -->
+    </passes>
+
+    <shader><![CDATA[
+const int CAMADAS = 6;
+
+float h2(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+/** A largura do quadro, em pixels do buffer: é a régua do plugin. */
+float largura() { return acResolution.x; }
+/** A linha da gota tem ~1 px da COMPOSIÇÃO em qualquer resolução (σ 0,46: a energia medida de um risco). */
+float sigmaDaLinha() { return 0.46 * acEscalaDePixel; }
+/** O Blur cresce com a largura, mas devagar (medido em 640, 1280 e 1618: (L/640)^0,72). */
+float sigmaDoBlur() {
+    return blur * (0.7 + 0.42 * exp(-blur / 2.5)) * pow(largura() / (640.0 * acEscalaDePixel), 0.72) * acEscalaDePixel;
+}
+
+/** Uma camada de riscos paralelos: (brilho × opacidade, opacidade) no pixel. */
+vec2 camada(vec2 px, float n) {
+    float L = largura();
+    float sem = randomSeed * 0.713 + n * 37.0;
+    // Direction Variance: ±valor/2,7 graus (desvio medido 3,2° / 8,6° / 16,5° com 15 / 45 / 90), uma fatia por camada.
+    float fatia = ((n + h2(vec2(n, sem + 3.0))) / float(CAMADAS)) * 2.0 - 1.0;
+    float ang = radians(rainAngle + directionVariance / 2.7 * fatia);
+    vec2 d = vec2(sin(ang), cos(ang));                 // para onde a gota cai
+    vec2 o = vec2(d.y, -d.x);
+    float ao = dot(px, d), at = dot(px, o);
+
+    float fatorDeTamanho = size < 0.0 ? 1.0 + size / 100.0 : pow(1.0 + size / 100.0, 4.2);
+    float passo = rainSpeed * L / 3360.0;              // pixels por quadro de 1/30 s
+    // 6 × Amount gotas por quadro 16:9 (= 10,67 × Amount por L²) com a velocidade de fábrica. O que
+    // é fixo é quantas NASCEM por segundo: mais rápidas, menos gotas no quadro ao mesmo tempo.
+    float densidade = 10.67 * rainAmount * min(120.0 / max(tileWidth, 1.0), 1.15) * 300.0 / max(rainSpeed, 10.0) / (L * L);
+    // Chuva inclinada demora mais para cruzar o quadro: mais gotas à vista (medido em 45° e 75°).
+    densidade *= pow(max(cos(radians(rainAngle)), 0.05), -0.8) / pow(cos(radians(15.0)), -0.8);
+    float periodo = max(0.25 * L, 1.6 * passo * 1.6 * fatorDeTamanho);
+    float faixa = 0.02 * L;
+    float p = densidade * faixa * periodo / float(CAMADAS);
+    if (p > 1.0) { faixa = max(faixa / p, 2.0 * acEscalaDePixel); p = 1.0; }
+
+    vec2 soma = vec2(0.0);
+    float s0 = sigmaDaLinha();
+    for (int k = -1; k <= 1; k++) {
+        float f = floor(at / faixa) + float(k);
+        float u = h2(vec2(f, sem));
+        // Profundidade: perto = mais rápido e comprido; Speed Variance: até 80% mais lento.
+        float escala = 1.0 / (1.0 + rainDepth / 200.0 * (-0.28 + 0.6 * pow(u, 0.75)));
+        float variacao = max(1.0 + speedVariance / 200.0 * (-0.9 + 1.1 * h2(vec2(f, sem + 5.0))), 0.05);
+        escala *= variacao;
+        float vel = passo * escala * 30.0;             // px/s
+        float comp = max(passo * escala * fatorDeTamanho, 0.0) + 1.2 * acEscalaDePixel;
+        float s = ao - vel * acTime + h2(vec2(f, sem + 9.0)) * periodo;
+        float c = floor(s / periodo);
+        if (h2(vec2(f * 1.31 + c * 7.77, sem + c)) >= p / sqrt(variacao)) continue;   // as lentas ficam mais tempo no quadro
+        float centro = (c + 0.5) * periodo + (h2(vec2(c, f + sem)) - 0.5) * max(periodo - comp, 0.0);
+        float t = (s - centro) / (0.5 * comp);         // −1 = a ponta de cima, +1 = a de baixo
+        float bordaPx = (1.0 - abs(t)) * 0.5 * comp;
+        if (bordaPx <= -1.0) continue;
+        float aoLongo = dropShape == 0 ? clamp(bordaPx + 0.5, 0.0, 1.0) : clamp(1.0 - abs(t), 0.0, 1.0);
+        float x = at - (f + 0.5 + (h2(vec2(f, c + sem + 2.0)) - 0.5) * 0.7) * faixa;
+        float perfil = exp(-0.5 * x * x / (s0 * s0)) * aoLongo;
+        float brilho = 1.0 - clamp(-brightnessVariance, 0.0, 100.0) / 100.0 * h2(vec2(c + 0.5, f + sem));
+        soma = max(soma, perfil * vec2(brilho, 1.0));
+    }
+    return soma;
+}
+
+vec4 borrar(bool deChuva, vec2 eixo) {
+    float sigma = sigmaDoBlur();
+    vec2 uv = acScreenNorm;
+    if (sigma < 0.05) return deChuva ? texture(chuva, uv) : texture(bh, uv);
+    float passo = max(1.0, ceil(3.0 * sigma / 20.0));
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int n = -20; n <= 20; n++) {
+        float dd = float(n) * passo;
+        if (abs(dd) > 3.0 * sigma + 0.5) continue;
+        float w = exp(-0.5 * dd * dd / (sigma * sigma));
+        vec2 q = uv + eixo * dd * acTexelSize;
+        soma += w * (deChuva ? texture(chuva, q) : texture(bh, q));
+        pesos += w;
+    }
+    return soma / max(pesos, 1e-6);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    if (acPass == 0) {
+        vec2 px = (uv - (panXY - vec2(0.5, 1.0))) * acResolution;
+        // As gotas nascem ~0,17·L acima do quadro e vivem `lifespan` quadros de queda.
+        float alcance = -0.17 * largura() + rainSpeed * largura() / 3360.0 * lifespan * cos(radians(rainAngle));
+        vec2 soma = vec2(0.0);
+        if (rainAmount > 0.0 && rainSpeed > 0.0 && px.y < alcance) {
+            for (int n = 0; n < CAMADAS; n++) {
+                vec2 c = camada(px, float(n));
+                soma = soma + c * (1.0 - soma.y);       // uma gota por cima da outra
+            }
+        }
+        // Guardado com folga: o borrão espalha, e o pico de uma linha de 1 px cabe em 8 bits.
+        fragColor = vec4(soma.x, 0.0, 0.0, soma.y);
+        return;
+    }
+    if (acPass == 1) { fragColor = borrar(true, vec2(1.0, 0.0)); return; }
+    if (acPass == 2) { fragColor = borrar(false, vec2(0.0, 1.0)); return; }
+
+    vec4 fonte = texture(inputImg, uv);
+    vec4 g = texture(bv, uv);
+    float op = pow(clamp(opacity / 100.0, 0.0, 1.0), 0.77);
+    float a = clamp(g.a * op, 0.0, 1.0);
+    fragColor = vec4(clamp(fonte.rgb * (1.0 - a) + color.rgb * g.r * op, 0.0, 1.0), fonte.a);
+}
+]]></shader>
+</effect>

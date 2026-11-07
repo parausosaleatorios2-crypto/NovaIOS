@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rastros: puxa um rastro das partes claras da imagem, em três formatos.
+
+  A mesma ideia de `anamorphic-streak.xml` (cada pixel pergunta "tem algo
+  brilhante perto de mim, NESTE caminho?" e acumula com peso caindo pela
+  distância) — só que aqui o caminho muda com o modo: reto num eixo fixo
+  (Linear), girando em torno de um centro (Giro) ou encolhendo/esticando
+  na direção do centro (Zoom) — as mesmas duas trajetórias de
+  `radial-blur.xml`, só que aqui só as partes claras deixam rastro, o
+  resto passa batido.
+-->
+<effect
+    id="nova.effect.streaks"
+    name="Rastros"
+    name-en="Streaks"
+    desc="Puxa um rastro de luz das partes claras — reto, girando ou em zoom."
+    desc-en="Streaks light from the bright parts of the image — linear, spin or zoom."
+    category="stylize"
+    blend="true"
+    tags="rastro,streak,giro,zoom,linear,luz,brilho,trilha,estrela">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="mode" label="Formato" options="Linear|Giro|Zoom" default="0" />
+
+        <point id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="angle" label="Direção (linear)"
+                default="0.0" min="-90.0" max="90.0" step="1.0" type="angle" snap="0.0" />
+
+        <slider id="threshold" label="Threshold de brilho"
+                default="0.75" min="0.0" max="1.0" step="0.01" />
+        <slider id="strength" label="Intensidade do rastro"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <!-- Escondida (pedido do snow, 25/09/2026): sempre no máximo agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <slider id="quality" label="Amostras" hidden="true"
+                default="48.0" min="4.0" max="48.0" step="1.0" type="integer" />
+        <slider id="intensity" label="Ganho"
+                default="1.0" min="0.0" max="4.0" step="0.05" snap="1.0" />
+
+        <color id="streakColor" label="Cor" default="#FFFFFF" />
+    </params>
+
+    <!-- Na vitrine, só o sol passa do limite padrão: limite baixo, rastro forte. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="threshold" value="0.35" />
+        <set param="strength" value="1.0" />
+        <set param="intensity" value="3.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+const int MAX_SAMPLES = 48;
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    int samples = clamp(int(quality + 0.5), 2, MAX_SAMPLES);
+
+    vec2 toCenter = acScreenNorm - center;
+    float rad = radians(angle);
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 axis = vec2(cos(rad), sin(rad)) * acTexelSize * (strength * 700.0 * acEscalaDePixel);
+
+    vec3 streak = vec3(0.0);
+    float weightSum = 0.0;
+
+    for (int i = 0; i < MAX_SAMPLES; i++) {
+        if (i >= samples) break;
+        // Vai dos dois lados a partir do pixel: o rastro se estende pra
+        // frente e pra trás no caminho, como o Risco anamórfico já faz.
+        float t = (float(i) / float(samples - 1)) * 2.0 - 1.0;
+
+        vec2 uv;
+        if (mode == 1) {
+            // Giro: a amostra gira em torno do centro — mesma trajetória do
+            // modo "Giro" de `radial-blur.xml`.
+            float ang = strength * 1.5708 * t;
+            float c = cos(ang);
+            float s = sin(ang);
+            uv = center + mat2(c, -s, s, c) * toCenter;
+        } else if (mode == 2) {
+            // Zoom: a amostra anda na direção do centro (ou se afasta, do
+            // lado negativo de t) — mesma trajetória do modo "Zoom".
+            uv = center + toCenter * (1.0 - strength * t);
+        } else {
+            // Linear: acumula ao longo de um eixo fixo.
+            uv = acScreenNorm + axis * t;
+        }
+
+        vec4 texel = texture(inputImg, clamp(uv, 0.0, 1.0));
+        float luma = dot(texel.rgb, vec3(0.299, 0.587, 0.114)) * texel.a;
+        float bright = smoothstep(threshold, min(threshold + 0.2, 1.0), luma);
+
+        // Peso caindo com a distância: sem isso o rastro tem a mesma força
+        // na ponta e no meio, e parece uma barra em vez de um brilho.
+        float weight = 1.0 - abs(t);
+        streak += texel.rgb * bright * weight;
+        weightSum += weight;
+    }
+
+    streak *= intensity / max(weightSum, 0.0001);
+
+    // Somado: luz se acumula por cima. Misturar deixaria a imagem lavada
+    // em vez de acesa.
+    vec3 result = original.rgb + streak * streakColor.rgb * streakColor.a;
+    fragColor = vec4(clamp(result, 0.0, 1.0), original.a);
+}
+
+    ]]></shader>
+</effect>

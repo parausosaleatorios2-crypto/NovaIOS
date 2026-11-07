@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.film_grain" name="Film Grain" desc="Animated monochrome grain with size and shadow/highlight response. The finishing touch on any grade." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/film_grain.png"
+        tags="retro,grain,film,noise,analog" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Grain" />
+<spinner id="amount" default="0.35" min="0.0" max="1.0" step="0.01" label="Amount" />
+<spinner id="size" default="1.5" min="0.5" max="6.0" step="0.1" label="Grain Size" />
+<switch id="animate" default="true" label="Animate" />
+<spinner id="shadowBias" default="0.4" min="0.0" max="1.0" step="0.01" label="Shadow Bias" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float t = animate ? floor(acTime * 24.0) : 0.0;
+  vec2 gp = floor(uv * acScreenSize / max(size, 0.5)) + t * 13.0;
+  float n = gmHash(gp) - 0.5;
+  float l = gmLum(c);
+  float resp = mix(1.0, 1.0 - l, shadowBias);
+  vec3 col = c + n * amount * resp * mixAmt;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

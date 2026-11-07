@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_tex_source_flow
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-tex-source-flow"
+    name="Rendercommand Tex Source Flow (NV)"
+    name-en="Rendercommand Tex Source Flow (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_tex_source_flow', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_tex_source_flow', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tex_source" src="content" empty="transparent" />
+        <color id="_tex_size" label="Tex Size" default="#FFFFFFFF" />
+        <color id="_viewport_ratio" label="Viewport Ratio" default="#FFFFFFFF" />
+        <slider id="_tex_rotation" type="integer" label="Tex Rotation" default="0" min="-180" max="180" step="1" />
+        <slider id="_is_image_asset" type="integer" label="Is Image Asset" default="0" min="0" max="1" step="1" />
+        <slider id="_strength" label="Strength" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_debug_view" type="integer" label="Debug View" default="0" min="0" max="10" step="1" />
+        <slider id="_start_pos" label="Start Pos" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_end_pos" label="End Pos" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_crop_offset" label="Crop Offset" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_ratio" label="Ratio" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+highp  vec4 phase0_Input0_1;
+
+vec4 u_xlat0;
+bvec2 u_xlatb0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat6;
+float u_xlat7;
+vec2 u_xlat12;
+bool u_xlatb12;
+vec2 u_xlat13;
+bvec2 u_xlatb13;
+float u_xlat18;
+bool u_xlatb18;
+void main()
+{
+    phase0_Input0_1 = vec4(acScreenNorm, vs_TEXCOORD1);
+    u_xlatb0.xy = equal(ivec4(ivec4(_tex_rotation, _tex_rotation, _tex_rotation, _tex_rotation)), ivec4(90, 270, 0, 0)).xy;
+    u_xlatb12 = u_xlatb0.y || u_xlatb0.x;
+    u_xlat18 = (-_viewport_ratio.y) + _viewport_ratio.x;
+    u_xlatb18 = abs(u_xlat18)<0.00100000005;
+    u_xlatb1 = _ratio>=1.0;
+    u_xlat7 = (-_start_pos) + _end_pos;
+    u_xlat2 = phase0_Input0_1.ywxz * vec4(u_xlat7) + vec4(vec4(_start_pos, _start_pos, _start_pos, _start_pos));
+    u_xlat3 = phase0_Input0_1 + vec4(vec4(_crop_offset, _crop_offset, _crop_offset, _crop_offset));
+    u_xlat4.xz = u_xlat3.xz;
+    u_xlat4.yw = u_xlat2.xy;
+    u_xlat3.xz = u_xlat2.zw;
+    u_xlat1 = (bool(u_xlatb1)) ? u_xlat4 : u_xlat3;
+    u_xlatb2.x = _viewport_ratio.y<_viewport_ratio.x;
+    u_xlat5 = (bool(u_xlatb12)) ? u_xlat4 : u_xlat3;
+    u_xlat4 = (bool(u_xlatb12)) ? u_xlat3 : u_xlat4;
+    u_xlat3 = u_xlat5;
+    u_xlat2 = (u_xlatb2.x) ? u_xlat4 : u_xlat3;
+    u_xlat1 = (bool(u_xlatb18)) ? u_xlat1 : u_xlat2;
+    u_xlat1 = u_xlat1 + vec4(-0.5, -0.5, -0.5, -0.5);
+    u_xlat2 = u_xlat1.xyxy / _tex_size.yxxy;
+    u_xlat12.xy = (bool(u_xlatb12)) ? u_xlat2.xy : u_xlat2.zw;
+    u_xlat1.xy = u_xlat1.zw / _tex_size.xy;
+    u_xlat1.xy = u_xlat1.xy + vec2(0.5, 0.5);
+    u_xlat12.xy = u_xlat12.xy + vec2(0.5, 0.5);
+    u_xlatb13.xy = greaterThanEqual(u_xlat1.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb2.xy = greaterThanEqual(vec4(1.0, 1.0, 0.0, 0.0), u_xlat1.xyxx).xy;
+    u_xlatb13.x = u_xlatb13.x && u_xlatb2.x;
+    u_xlatb13.x = u_xlatb13.y && u_xlatb13.x;
+    u_xlatb13.x = u_xlatb2.y && u_xlatb13.x;
+    if(u_xlatb13.x){
+        u_xlat1.xy = texture(inputImg, u_xlat1.xy).xy;
+        u_xlat2.yz = u_xlat1.xy + vec2(-0.501960814, -0.501960814);
+        u_xlatb13.x = _is_image_asset!=1;
+        u_xlat2.w = (u_xlatb13.x) ? (-u_xlat2.z) : u_xlat2.z;
+        u_xlatb13.x = _ProjectionParams.x<0.0;
+        u_xlat3.y = (u_xlatb13.x) ? (-u_xlat2.y) : u_xlat2.y;
+        u_xlat2.x = (u_xlatb13.x) ? (-u_xlat2.w) : u_xlat2.w;
+        u_xlatb13.x = _tex_rotation==180;
+        u_xlat13.xy = (u_xlatb13.x) ? (-u_xlat2.yw) : u_xlat2.yw;
+        u_xlat13.xy = (u_xlatb0.y) ? u_xlat2.xy : u_xlat13.xy;
+        u_xlat3.x = u_xlat2.w;
+        u_xlat0.xy = (u_xlatb0.x) ? u_xlat3.xy : u_xlat13.xy;
+        u_xlat0.xy = u_xlat0.xy * vec2(vec2(_strength, _strength));
+        u_xlat12.xy = (-u_xlat0.xy) * vec2(0.5, 0.5) + u_xlat12.xy;
+    } else {
+        u_xlat1.x = float(0.5);
+        u_xlat1.y = float(0.5);
+    }
+    u_xlatb0.xy = greaterThanEqual(u_xlat12.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlat0.x = u_xlatb0.x ? float(1.0) : 0.0;
+    u_xlat0.y = u_xlatb0.y ? float(1.0) : 0.0;
+;
+    u_xlat13.xy = (-u_xlat12.xy) + vec2(1.0, 1.0);
+    u_xlatb13.xy = greaterThanEqual(u_xlat13.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlat13.x = u_xlatb13.x ? float(1.0) : 0.0;
+    u_xlat13.y = u_xlatb13.y ? float(1.0) : 0.0;
+;
+    u_xlat2 = texture(tex_source, u_xlat12.xy);
+    u_xlat2 = u_xlat0.xxxx * u_xlat2;
+    u_xlat2 = u_xlat13.xxxx * u_xlat2;
+    u_xlat0 = u_xlat0.yyyy * u_xlat2;
+    u_xlat2 = u_xlat13.yyyy * u_xlat0;
+    u_xlatb0.x = 0<_debug_view;
+    u_xlat12.xy = u_xlat1.xy + vec2(-0.501960814, -0.501960814);
+    u_xlat12.x = dot(u_xlat12.xy, u_xlat12.xy);
+    u_xlat12.x = sqrt(u_xlat12.x);
+    u_xlat6 = u_xlat0.y * u_xlat13.y + u_xlat12.x;
+    fragColor.y = (u_xlatb0.x) ? u_xlat6 : u_xlat2.y;
+    fragColor.xzw = u_xlat2.xzw;
+    return;
+}
+    ]]></shader>
+</effect>

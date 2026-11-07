@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Blur_Bokeh
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blur-bokeh"
+    name="Effect Blur Bokeh (NV)"
+    name-en="Effect Blur Bokeh (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Blur_Bokeh', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Blur_Bokeh', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_blur_radius" label="Blur Radius" default="0.5" min="0" max="10" step="0.01" />
+        <point id="_threshold" label="Threshold" defaultX="0" defaultY="1" vetor="true" />
+        <slider id="_gain" label="Gain" default="1" min="0" max="10" step="0.01" />
+        <point id="_blur_dir" label="Blur Dir" defaultX="0.5" defaultY="0.5" />
+        <slider id="_samples" type="integer" label="Samples" default="32" min="1" max="128" step="1" />
+        <slider id="_enable_highlight" type="integer" label="Enable Highlight" default="1" min="0" max="1" step="1" />
+        <slider id="_angle" label="Angle" default="0" min="0" max="360" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// tempo do Node ligado ao motor (tools/nodevideo/ligar_tempo.py)
+#define _cur_time acTime
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec2 u_xlat1;
+vec4 u_xlat2;
+int u_xlati3;
+vec4 u_xlat4;
+vec3 u_xlat5;
+vec3 u_xlat9;
+bool u_xlatb9;
+float u_xlat11;
+vec2 u_xlat12;
+vec2 u_xlat13;
+float u_xlat17;
+void main()
+{
+    u_xlat0.x = _angle * 0.0174532942;
+    u_xlat1.x = sin(u_xlat0.x);
+    u_xlat2.x = cos(u_xlat0.x);
+    u_xlat0.x = sin((-u_xlat0.x));
+    u_xlat0.y = u_xlat2.x;
+    u_xlat2.x = dot(u_xlat0.yx, _blur_dir.xy);
+    u_xlat0.z = u_xlat1.x;
+    u_xlat2.y = dot(u_xlat0.zy, _blur_dir.xy);
+    u_xlat0.x = dot(u_xlat2.xy, u_xlat2.xy);
+    u_xlat0.x = inversesqrt(u_xlat0.x);
+    u_xlat0.xy = u_xlat0.xx * u_xlat2.xy;
+    u_xlat0.xy = u_xlat0.xy / vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat12.x = _blur_radius * 0.0500000007;
+    u_xlat1.xy = (-u_xlat12.xx) * u_xlat0.xy + acScreenNorm.xy;
+    u_xlat0.xy = u_xlat12.xx * u_xlat0.xy + acScreenNorm.xy;
+    u_xlat0.xy = (-u_xlat1.xy) + u_xlat0.xy;
+    u_xlat12.xy = vec2(ivec2(int(_samples), int(_enable_highlight)));
+    u_xlat0.xy = u_xlat0.xy / u_xlat12.xx;
+    u_xlat1.xy = u_xlat0.xy * vec2(0.5, 0.5) + u_xlat1.xy;
+    u_xlat13.x = fract(_cur_time);
+    u_xlat13.xy = u_xlat13.xx + acScreenNorm.xy;
+    u_xlat13.xy = u_xlat13.xy * vec2(5.39870024, 5.44210005);
+    u_xlat13.xy = fract(u_xlat13.xy);
+    u_xlat2.xy = u_xlat13.xy + vec2(21.5351009, 14.3136997);
+    u_xlat2.x = dot(u_xlat13.yx, u_xlat2.xy);
+    u_xlat13.xy = u_xlat13.xy + u_xlat2.xx;
+    u_xlat13.x = u_xlat13.y * u_xlat13.x;
+    u_xlat13.x = u_xlat13.x * 95.4307022;
+    u_xlat13.x = fract(u_xlat13.x);
+    u_xlat13.x = u_xlat13.x + -0.5;
+    u_xlat1.xy = u_xlat13.xx * u_xlat0.xy + u_xlat1.xy;
+    u_xlat2.x = float(0.0);
+    u_xlat2.y = float(0.0);
+    u_xlat2.z = float(0.0);
+    u_xlat2.w = float(0.0);
+    u_xlat13.xy = u_xlat1.xy;
+    for(int u_xlati_loop_1 = 0 ; u_xlati_loop_1<int(_samples) ; u_xlati_loop_1++)
+    {
+        u_xlat4 = texture(inputImg, u_xlat13.xy);
+        u_xlat4 = u_xlat4 * u_xlat4;
+        u_xlat9.x = dot(u_xlat4.xyz, u_xlat4.xyz);
+        u_xlat9.x = inversesqrt(u_xlat9.x);
+        u_xlat9.xyz = u_xlat9.xxx * u_xlat4.xyz;
+        u_xlat9.xyz = u_xlat9.xyz * vec3(_threshold.y, _threshold.y, _threshold.y);
+        u_xlat9.xyz = min(u_xlat9.xyz, u_xlat4.xyz);
+        u_xlat9.xyz = u_xlat9.xyz * vec3(0.908999979, 0.908999979, 0.908999979);
+        u_xlat5.x = max(u_xlat9.z, u_xlat9.y);
+        u_xlat5.x = max(u_xlat9.x, u_xlat5.x);
+        u_xlat11 = u_xlat5.x + (-_threshold.xxyx.y);
+        u_xlat5.z = u_xlat11 + 9.99999975e-05;
+        u_xlat5.xz = max(u_xlat5.xz, vec2(9.99999975e-05, 0.0));
+        u_xlat17 = min(u_xlat5.z, 0.000199999995);
+        u_xlat17 = u_xlat17 * u_xlat17;
+        u_xlat17 = u_xlat17 * 2000.00012;
+        u_xlat11 = max(u_xlat11, u_xlat17);
+        u_xlat9.xyz = u_xlat9.xyz * vec3(u_xlat11);
+        u_xlat9.xyz = u_xlat9.xyz / u_xlat5.xxx;
+        u_xlat9.xyz = max(u_xlat9.xyz, vec3(0.0, 0.0, 0.0));
+        u_xlat9.xyz = u_xlat9.xyz * u_xlat4.xyz;
+        u_xlat9.xyz = u_xlat9.xyz * vec3(vec3(_gain, _gain, _gain));
+        u_xlat9.xyz = u_xlat12.yyy * u_xlat9.xyz;
+        u_xlat9.xyz = u_xlat9.xyz * vec3(_blur_radius);
+        u_xlat4.xyz = u_xlat9.xyz * vec3(2.0, 2.0, 2.0) + u_xlat4.xyz;
+        u_xlat2 = u_xlat2 + u_xlat4;
+        u_xlat13.xy = u_xlat0.xy + u_xlat13.xy;
+    }
+    u_xlat0 = u_xlat2 / u_xlat12.xxxx;
+    fragColor = sqrt(u_xlat0);
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,35 @@
+// ---------------------------------------------------------------------------
+// Capa ao vento
+// origem : assets/effects/capa-ao-vento.xml
+// id     : nova.effect.capaaovento
+// passes : 1
+// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// ---------------------------------------------------------------------------
+#include <metal_stdlib>
+#include "NovaEngineUniforms.h"
+#include "NovaShaderHelpers.h"
+using namespace metal;
+
+struct capa_ao_ventoParams {
+    float ventoX;
+    float ventoY;
+    float ventoZ;
+    float forca;
+    float rajadas;
+    float pano;
+};
+
+fragment float4 fx_capa_ao_vento(
+    NovaVertexOut       in   [[stage_in]],
+    constant EngineUniforms& eng [[buffer(0)]],
+    constant capa_ao_ventoParams&  u    [[buffer(1)]],
+    sampler             __nv_smp [[sampler(0)]],
+    texture2d<float> inputImg [[texture(0)]])
+{
+    float4 __nv_fragCoord = in.position;
+    float2 __nv_pointCoord = in.uv;
+    float4 __nv_out = float4(0.0);
+
+    __nv_out = inputImg.sample(__nv_smp, in.acScreenNorm);
+    return __nv_out;
+}

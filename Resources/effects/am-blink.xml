@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PISCAR — o Blink do Alight Motion, quadro por quadro (0.563.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faça agora 100% igual o efeito piscar do alight motion", da série "100% iguais ao
+  AM". Mesmo parâmetro, mesmo id, faixa, passo e padrão do `com.alightcreative.effects.blink2` (o Blink atual do AM
+  5.0.281; um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM (`assets/effects/blink2.xml`
+  do APK descompactado) e escrita de novo em `model/Piscar.kt`; o arquivo do AM não entra no repositório. A
+  conferência é `node tools/ampiscar/referencia.js` → `PiscarAmTest`: o script do próprio AM e o Kotlin daqui,
+  quadro a quadro.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Na primeira metade de cada ciclo a camada aparece como é; na segunda, a opacidade vira 0:
+      se (ciclos % 1 > 0,5)  opacidade = 0
+    Com o padrão (2), a camada aparece 0,25 s e some 0,25 s, duas vezes por segundo, começando acesa. Com o resto
+    EXATAMENTE em 0,5 ela ainda aparece (o teste é "maior que").
+  - A Frequência é do tipo "hz" do AM: o script recebe os CICLOS ACUMULADOS desde o começo da camada, então com
+    quadro-chave a camada só passa a piscar mais depressa, sem pular (a mesma soma do Oscilar, do Balanço e do
+    Tamanho do pulso).
+  - O relógio é o do AM: cada quadro é avaliado no começo dele em milissegundos inteiros (`quadro · 100000 ÷ fphs`)
+    e o tempo da camada em float — é isso que decide em que quadro a camada some (a 30 fps com 3 Hz, o AM ainda
+    mostra o quadro 5, que o começo do quadro em µs já apagaria).
+  - O passo é o que o AM dá a um `<spinner>` sem `step` (`UserParamParserKt.readSpinnerParam`): 0,1. O AM escreve
+    "Freqüência" (a grafia antiga); aqui é "Frequência", como no Balanço e no Tamanho do pulso. O valor aparece
+    como "2.00Hz", como lá.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele zera a opacidade da camada. Quem executa é o
+  compositor (`SceneRenderer.opacidadeDaCamada` → `model/Piscar.kt`), em todo lugar onde a opacidade da camada
+  conta (o desenho, o grupo, o Repetir (AM)). Numa camada de AJUSTE (0.735.0) o que pisca é a cena de baixo, inteira
+  (`SceneRenderer.opacidadeDoAmNoAjuste`): a opacidade do ajuste continua sendo a força dos efeitos dele. O shader
+  abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+
+  O Piscar ANTIGO do AM (`com.alightcreative.effects.blink`, "deprecated") é o `am-blink-legacy.xml`, fora do
+  catálogo.
+-->
+<effect
+    id="nova.effect.am-blink"
+    name="Piscar"
+    name-en="Blink"
+    desc="Ajusta a opacidade da camada de maneira automática, alternando entre seu valor normal e zero ao longo do tempo (o Blink do Alight Motion)."
+    desc-en="Automatically adjusts the opacity of the layer, alternating between its normal value and zero over time (Alight Motion's Blink)."
+    category="opacity"
+    stage="transform"
+    tags="piscar,pisca,piscando,pisca-pisca,blink,flash,aparecer,sumir,opacidade,visibilidade,automático,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="2.0" min="0.1" max="16.0" step="0.1" type="hz" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

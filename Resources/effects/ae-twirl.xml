@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TWIRL — o efeito nativo do After Effects, lido do plugin e medido (0.457.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "faz ai o Twirl". O "Redemoinho" que já existia é um desenho próprio
+  da Nova (queda em smoothstep, alcance em fração da altura); ESTE é a conta do Twirl do AE, para os
+  presets converterem com os valores deles.
+
+  DE ONDE VEIO (tools/twirl/benchmark, 60 renders em 16 bpc + o desmonte do Twirl.aex):
+
+  - R = ceil(Twirl Radius% · DIAGONAL da camada) px; o giro só vai até 0,875 · R;
+  - a distância ao centro é a do plugin: em 1/16 de px, por uma tabela de hipotenusas com o índice
+    cortado (fica até 0,3% abaixo da de verdade), e o centro vale meio px adiante (o plugin conta
+    em índices de pixel);
+  - o giro em d é Angle · f(d' / (0,875 · R)): f é uma função interna do AE (medida: a tabela
+    abaixo, 65 pontos), e d' anda de meio em meio px com só METADE da interpolação até o ponto
+    seguinte — é uma escadinha, e ela aparece;
+  - cada pixel lê a MÉDIA de um quadrado da imagem, de meia largura 0,5 + 0,5 · f(|2d/R − 1|) ·
+    |Angle em radianos| (até 16 px): é o que amacia o miolo do redemoinho.
+
+  QUANTO BATE: o modelo em numpy fica a 0,01 px do AE (mediana) e a menos de 1 nível (de 255) em
+  99% dos pixels de uma foto. Ver tools/twirl/benchmark/LEIAME.md para o shader e o que sobra.
+
+  APROXIMADO: a f é medida (erro de 2 em 100 mil), não lida; nos pixels da BORDA da camada o AE
+  trata a área que cai fora de outro jeito; área lida com mais de 5 px de meia largura (Angle acima
+  de ~520°) vira 12 x 12 amostras.
+-->
+<effect
+    id="nova.effect.aetwirl"
+    name="Twirl (AE)"
+    name-en="Twirl (AE)"
+    desc="O Twirl do After Effects: torce a imagem em volta de um ponto, com Angle, Twirl Radius e Twirl Center."
+    desc-en="After Effects' Twirl: twists the image around a point, with Angle, Twirl Radius and Twirl Center."
+    category="distort"
+    tags="twirl,redemoinho,torcer,espiral,giro,vortice,after effects,distort">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="angle" label="Angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="twirlRadius" label="Twirl Radius" default="30.0" min="0.0" max="100.0" step="0.1" />
+        <point id="twirlCenter" label="Twirl Center" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0°) não torce nada: meia volta e pouco. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="angle" value="300.0" />
+        <set param="twirlRadius" value="45.0" />
+    </preview>
+
+    <shader><![CDATA[
+// f(u), u de 0 a 1 em 64 passos — medida no After Effects (tools/twirl/benchmark/curva.py).
+const float QUEDA[65] = float[65](
+    1.000000, 0.999349, 0.997412, 0.994209, 0.989755, 0.984066, 0.977159, 0.969054,
+    0.959776, 0.949355, 0.937826, 0.925225, 0.911598, 0.896989, 0.881447, 0.865025,
+    0.847776, 0.829754, 0.811017, 0.791621, 0.771624, 0.751084, 0.730061, 0.708613,
+    0.686799, 0.664680, 0.642312, 0.619756, 0.597068, 0.574305, 0.551522, 0.528773,
+    0.506109, 0.483579, 0.461231, 0.439109, 0.417255, 0.395707, 0.374501, 0.353670,
+    0.333244, 0.313252, 0.293718, 0.274664, 0.256111, 0.238076, 0.220574, 0.203619,
+    0.187220, 0.171385, 0.156119, 0.141425, 0.127303, 0.113750, 0.100762, 0.088332,
+    0.076454, 0.065120, 0.054322, 0.044053, 0.034302, 0.025055, 0.016290, 0.007964,
+    0.000000);
+
+/** f(u) pela tabela, com Catmull-Rom; antes de 0 a curva é espelhada, depois de 1 vale 0. */
+float queda(float u) {
+    if (u >= 1.0) return 0.0;
+    float x = max(u, 0.0) * 64.0;
+    int i = min(int(floor(x)), 63);
+    float t = x - float(i);
+    float p1 = QUEDA[i], p2 = QUEDA[i + 1];
+    float p0 = i == 0 ? QUEDA[1] : QUEDA[i - 1];
+    float p3 = i == 63 ? 2.0 * QUEDA[64] - QUEDA[63] : QUEDA[i + 2];
+    return 0.5 * (2.0 * p1 + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t * t * t);
+}
+
+/** A distância como o plugin a calcula: 1/16 de px, maior · hipotenusa(1, índice/256), com o índice cortado. */
+float distancia(vec2 dd) {
+    int a = abs(int(floor(dd.x * 16.0)));
+    int b = abs(int(floor(dd.y * 16.0)));
+    int maior = max(a, b), menor = min(a, b);
+    if (maior == 0) return 0.0;
+    if (maior >= 32768) return floor(length(vec2(float(a), float(b))) + 0.5) / 16.0;
+    float r = float((menor << 8) / maior) / 256.0;
+    int hip = int(floor(16384.0 * sqrt(1.0 + r * r) + 0.5));
+    return float((hip * maior) >> 14) / 16.0;
+}
+
+/** Um texel da imagem, pré-multiplicado; fora dela, transparente. */
+vec4 texel(ivec2 p, ivec2 tamanho) {
+    if (p.x < 0 || p.y < 0 || p.x >= tamanho.x || p.y >= tamanho.y) return vec4(0.0);
+    vec4 c = texelFetch(inputImg, p, 0);
+    return vec4(c.rgb * c.a, c.a);
+}
+
+/** A média (pré-multiplicada) do retângulo [a, b] da imagem, em texels: exata até 12 texels de lado. */
+vec4 media(vec2 a, vec2 b, ivec2 tamanho) {
+    ivec2 de = ivec2(floor(a));
+    ivec2 n = ivec2(floor(b)) - de + 1;
+    vec4 soma = vec4(0.0);
+    if (n.x <= 12 && n.y <= 12) {
+        for (int j = 0; j < 12; j++) {
+            if (j >= n.y) break;
+            float py = float(de.y + j);
+            float wy = max(min(py + 1.0, b.y) - max(py, a.y), 0.0);
+            for (int i = 0; i < 12; i++) {
+                if (i >= n.x) break;
+                float px = float(de.x + i);
+                float wx = max(min(px + 1.0, b.x) - max(px, a.x), 0.0);
+                soma += texel(ivec2(de.x + i, de.y + j), tamanho) * (wx * wy);
+            }
+        }
+        return soma / ((b.x - a.x) * (b.y - a.y));
+    }
+    // área grande: 12 x 12 amostras no meio de cada fatia
+    for (int j = 0; j < 12; j++) {
+        for (int i = 0; i < 12; i++) {
+            vec2 p = mix(a, b, (vec2(float(i), float(j)) + 0.5) / 12.0);
+            soma += texel(ivec2(floor(p)), tamanho);
+        }
+    }
+    return soma / 144.0;
+}
+
+void main() {
+    // Tudo em px da COMPOSIÇÃO; a leitura volta para os texels do buffer no fim.
+    float escala = acEscalaDePixel;
+    vec2 tamanho = acResolution / escala;
+    // o centro chega como fração da camada: 200 px vira 199,99999, e isso também mudaria o degrau — volta para 1/1024 de px
+    vec2 centro = floor(twirlCenter * tamanho * 1024.0 + 0.5) / 1024.0;
+    // o plugin conta em índices de pixel: o centro do pixel (i, j) é o ponto (i, j). O índice sai de `floor`, e não da
+    // coordenada interpolada: a distância é cortada em 1/16 de px, e um erro de 0,00001 ali muda o degrau
+    vec2 dd = floor(acScreenNorm * acResolution) / escala + (0.5 / escala - 0.5) - centro;
+
+    float R = ceil(twirlRadius * 0.01 * length(tamanho) - 1.0e-4);
+    float d = distancia(dd);
+    float voltas = radians(angle);
+    if (R <= 0.0 || d > R || voltas == 0.0) { fragColor = texture(inputImg, acScreenNorm); return; }
+
+    // a tabela do plugin anda de meio em meio px, e ele interpola só metade do caminho até a entrada seguinte
+    float meio = floor(2.0 * d);
+    float dq = (meio + 0.5 * (2.0 * d - meio)) * 0.5;
+    float giro = -voltas * queda(dq / (0.875 * R));
+    float c = cos(giro), s = sin(giro);
+    vec2 lido = vec2(dd.x * c - dd.y * s, dd.y * c + dd.x * s) + centro + 0.5;
+
+    float meiaLargura = min(0.5 * queda(abs(2.0 * d / R - 1.0)) * abs(voltas) + 0.5, 16.0);
+    vec4 m = media((lido - meiaLargura) * escala, (lido + meiaLargura) * escala, ivec2(acResolution + 0.5));
+    fragColor = m.a > 0.0 ? vec4(m.rgb / m.a, m.a) : vec4(0.0);
+}
+
+    ]]></shader>
+</effect>

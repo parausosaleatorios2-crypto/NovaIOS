@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TILT-SHIFT (MINIATURA)
+  ============================================================================
+
+  O "efeito maquete": uma faixa horizontal da imagem fica nítida e o resto
+  borra, como numa macrofotografia de brinquedo. Vem da lente real de mesmo
+  nome, que desloca o plano de foco — o cérebro lê a profundidade de campo
+  curta como objeto pequeno.
+
+  ============================================================================
+   O FOCO É UMA MÁSCARA, NÃO UM MAPA DE PROFUNDIDADE
+  ============================================================================
+
+  Um blur de verdade seguindo a cena precisa de depth map. Aqui o truque é
+  mais simples e é o que o olho entrega: uma faixa de nitidez centrada em
+  `focus`, com altura `band`, e fora dela a imagem vai borrando. A distância
+  vertical à faixa vira o RAIO do blur daquele pixel.
+
+  ============================================================================
+   O BLUR É UM BOX EM 9 AMOSTRAS, NÃO GAUSSIANO DE DUAS PASSADAS
+  ============================================================================
+
+  Um blur gaussiano separável é dois passes e qualidade impecável. Este efeito
+  cabe em um passe só: 9 amostras numa cruz (horizontal + vertical) escaladas
+  por raio. Vira "quase gaussiano" perceptualmente até ~10 px, que é a faixa em
+  que tilt-shift é usado.
+-->
+<effect
+    id="nova.effect.tilt-shift"
+    name="Tilt-shift (miniatura)"
+    name-en="Tilt-shift"
+    desc="Faixa nítida com o resto borrando: o efeito de miniatura."
+    desc-en="Sharp band with the rest blurring: the miniature effect."
+    category="blur"
+    tags="tilt,shift,miniatura,maquete,desfoque,foco,faixa">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="focus" label="Centro da faixa"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="band" label="Largura da faixa nítida"
+                default="0.2" min="0.02" max="0.9" step="0.01" snap="0.0" />
+        <slider id="softness" label="Transição"
+                default="0.15" min="0.0" max="0.5" step="0.01" snap="0.0" />
+        <slider id="maxBlur" label="Desfoque máximo (px)"
+                default="10.0" min="0.5" max="40.0" step="0.5" snap="0.0" />
+        <slider id="angleDeg" label="Ângulo (°)"
+                default="0.0" min="-90.0" max="90.0" step="1.0" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, faixa estreita pra deixar a maquete evidente. -->
+    <preview>
+        <set param="band" value="0.12" />
+        <set param="maxBlur" value="14.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+/**
+ * A distância ao plano da faixa nítida, projetada no eixo perpendicular à faixa.
+ * `angleDeg` gira a faixa — 0° deixa horizontal, 90° vertical.
+ */
+float distanciaAoFoco(vec2 uv) {
+    vec2 centro = vec2(0.5, focus);
+    vec2 d = uv - centro;
+    float a = radians(angleDeg);
+    // Eixo perpendicular à faixa: a faixa segue cos/sin, a normal segue −sin/cos.
+    vec2 normal = vec2(-sin(a), cos(a));
+    return abs(dot(d, normal));
+}
+
+/**
+ * 9 amostras em cruz (5 horizontais + 5 verticais, o centro conta duas vezes).
+ * Dá um box blur aproximado controlado por `raioPx`.
+ */
+vec4 borrar(vec2 uv, float raioPx) {
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    vec2 passo = raioPx / tam;
+
+    vec4 soma = vec4(0.0);
+    soma += texture(inputImg, uv + vec2(-passo.x, 0.0));
+    soma += texture(inputImg, uv + vec2(passo.x, 0.0));
+    soma += texture(inputImg, uv + vec2(-passo.x * 0.5, 0.0));
+    soma += texture(inputImg, uv + vec2(passo.x * 0.5, 0.0));
+    soma += texture(inputImg, uv + vec2(0.0, -passo.y));
+    soma += texture(inputImg, uv + vec2(0.0, passo.y));
+    soma += texture(inputImg, uv + vec2(0.0, -passo.y * 0.5));
+    soma += texture(inputImg, uv + vec2(0.0, passo.y * 0.5));
+    soma += texture(inputImg, uv) * 2.0;
+
+    return soma / 10.0;
+}
+
+void main() {
+    float distancia = distanciaAoFoco(acScreenNorm);
+
+    // Fora da banda nítida, o raio cresce com a distância, limitado em `maxBlur`.
+    float inicioDaFalta = band * 0.5;
+    float fimDaTransicao = inicioDaFalta + max(softness, 1e-4);
+    float t = smoothstep(inicioDaFalta, fimDaTransicao, distancia);
+    float raio = t * maxBlur;
+
+    vec4 cor = raio < 0.01 ? texture(inputImg, acScreenNorm) : borrar(acScreenNorm, raio);
+
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

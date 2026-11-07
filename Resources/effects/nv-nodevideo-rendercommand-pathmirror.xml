@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_pathmirror
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- Fora do catálogo (0.910.0): o shader precisa de _path_p0s (o caminho), que o Node mandava pelo C# e o conversor
+     não trouxe. Não compila em GPU nenhuma; para voltar, portar essa parte. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-rendercommand-pathmirror"
+    name="Rendercommand Pathmirror (NV)"
+    name-en="Rendercommand Pathmirror (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_pathmirror', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_pathmirror', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_path_seg_count" type="integer" label="Path Seg Count" default="4" min="1" max="32" step="1" />
+        <point id="_shape_center" label="Shape Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="_shape_rotation" label="Shape Rotation" default="0.0" min="-180.0" max="180.0" step="1.0" />
+        <slider id="_shape_scale" label="Shape Scale" default="1.0" min="0.0" max="3.0" step="0.01" />
+        <slider id="_strength" label="Strength" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_quality" label="Quality" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec3 u_xlat2;
+bool u_xlatb2;
+vec3 u_xlat3;
+bool u_xlatb3;
+vec4 u_xlat4;
+vec3 u_xlat5;
+vec2 u_xlat6;
+vec2 u_xlat7;
+vec3 u_xlat8;
+vec3 u_xlat13;
+vec3 u_xlat15;
+bool u_xlatb15;
+vec2 u_xlat18;
+vec2 u_xlat21;
+vec2 u_xlat24;
+bool u_xlatb24;
+float u_xlat25;
+float u_xlat27;
+int u_xlati29;
+int u_xlati32;
+float u_xlat34;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat18.xy = _shape_center.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = (-u_xlat18.xy) + u_xlat0.xy;
+    u_xlat0.xy = u_xlat0.xy * vec2(_viewport_ratio.x, _viewport_ratio.y);
+    u_xlat18.x = _shape_rotation * 0.0174532924;
+    u_xlat1.x = sin(u_xlat18.x);
+    u_xlat2.x = cos(u_xlat18.x);
+    u_xlat3.x = sin((-u_xlat18.x));
+    u_xlat3.y = u_xlat2.x;
+    u_xlat3.z = u_xlat1.x;
+    u_xlat1.x = dot(u_xlat0.xy, u_xlat3.yz);
+    u_xlat1.y = dot(u_xlat0.xy, u_xlat3.xy);
+    u_xlat0.xy = u_xlat1.xy / vec2(vec2(_shape_scale, _shape_scale));
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat18.x = _quality * 100.0;
+    u_xlat27 = _quality * 100.0 + -1.0;
+    u_xlat2.x = float(0.0);
+    u_xlat2.y = float(0.0);
+    u_xlat2.z = float(1e+10);
+    for(int u_xlati_loop_1 = int(0) ; u_xlati_loop_1<_path_seg_count ; u_xlati_loop_1++)
+    {
+        u_xlat3.xy = (-_path_p0s[u_xlati_loop_1].xy) + _path_p0s[u_xlati_loop_1].zw;
+        u_xlat21.xy = u_xlat3.xy * vec2(3.0, 3.0);
+        u_xlat4 = (-_path_p0s[u_xlati_loop_1].zxwy) + _path_p1s[u_xlati_loop_1].zxwy;
+        u_xlat4.xz = u_xlat4.xz * vec2(3.0, 3.0) + (-u_xlat21.xy);
+        u_xlat3.xy = (-u_xlat3.xy) * vec2(3.0, 3.0) + u_xlat4.yw;
+        u_xlat3.xy = (-u_xlat4.xz) + u_xlat3.xy;
+        u_xlat13.xz = _path_p0s[u_xlati_loop_1].xy;
+        u_xlat5.x = float(0.0);
+        u_xlat5.y = float(0.0);
+        u_xlat5.z = float(1e+10);
+        u_xlati32 = int(1);
+        while(true){
+            u_xlat6.x = float(u_xlati32);
+            u_xlatb15 = u_xlat6.x>=u_xlat18.x;
+            if(u_xlatb15){break;}
+            u_xlat6.x = u_xlat6.x / u_xlat27;
+            u_xlat15.x = u_xlat6.x * u_xlat6.x;
+            u_xlat24.x = u_xlat6.x * u_xlat15.x;
+            u_xlat15.xz = u_xlat4.xz * u_xlat15.xx;
+            u_xlat15.xy = u_xlat3.xy * u_xlat24.xx + u_xlat15.xz;
+            u_xlat6.xy = u_xlat21.xy * u_xlat6.xx + u_xlat15.xy;
+            u_xlat6.xy = u_xlat6.xy + _path_p0s[u_xlati_loop_1].xy;
+            u_xlat24.xy = u_xlat0.xy + (-u_xlat13.xz);
+            u_xlat7.xy = (-u_xlat13.xz) + u_xlat6.xy;
+            u_xlat25 = dot(u_xlat24.xy, u_xlat7.xy);
+            u_xlat34 = dot(u_xlat7.xy, u_xlat7.xy);
+            u_xlat25 = u_xlat25 / u_xlat34;
+            u_xlat25 = clamp(u_xlat25, 0.0, 1.0);
+            u_xlat8.xy = u_xlat7.xy * vec2(u_xlat25) + u_xlat13.xz;
+            u_xlat24.xy = (-u_xlat7.xy) * vec2(u_xlat25) + u_xlat24.xy;
+            u_xlat24.x = dot(u_xlat24.xy, u_xlat24.xy);
+            u_xlat8.z = sqrt(u_xlat24.x);
+            u_xlatb24 = u_xlat8.z<u_xlat5.z;
+            u_xlat5.xyz = (bool(u_xlatb24)) ? u_xlat8.xyz : u_xlat5.xyz;
+            u_xlati32 = u_xlati32 + 1;
+            u_xlat13.xz = u_xlat6.xy;
+        }
+        u_xlatb3 = u_xlat5.z<u_xlat2.z;
+        u_xlat2.xyz = (bool(u_xlatb3)) ? u_xlat5.xyz : u_xlat2.xyz;
+    }
+    u_xlat0.xy = u_xlat0.xy + (-u_xlat2.xy);
+    u_xlat0.xy = u_xlat0.xy * vec2(vec2(_shape_scale, _shape_scale));
+    u_xlat0.xy = u_xlat0.xy * vec2(_strength);
+    u_xlat0.xy = (-u_xlat0.xy) * vec2(2.0, 2.0) + acScreenNorm.xy;
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    u_xlatb2 = _path_seg_count<1;
+    fragColor = (bool(u_xlatb2)) ? u_xlat1 : u_xlat0;
+    return;
+}
+    ]]></shader>
+</effect>

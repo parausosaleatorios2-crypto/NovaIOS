@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Diffusion (`diff`, linear). O render do host (`0x1803f0980`, lido em
+  `tools/looks/benchmark/diff.py`): o brilho difuso de um filtro de difusão na frente da lente.
+    1. Highlight Bias ≠ 0: `CoreKernel_PowerKernel` eleva a imagem a k = 1 + bias (ou 1/(1 − bias)) — puxa a difusão
+       para as altas luzes (bias > 0) ou para as sombras;
+    2. o gaussiano do motor com o Size (a mesma tabela da Edge Softness);
+    3. `ColorKernel_Diffusion`: o desfoque, com contraste em volta de 0,7 e o Tint, soma Grade/6 de si mesmo (elevado
+       a 1 + Highlights Only) na imagem, que perde (1 − Glow)·Grade/6 onde o desfoque não é claro; o resultado volta
+       do pow com 1/k e ganha 2^Exposure Compensation.
+  (`assets/mblooks/diffpot.frag` + `gauss.comp` + `diff.frag`.) Conferido contra o After Effects (rodada `diff`,
+  LEIAME.md).
+
+  Os padrões NÃO estão no motor (o slot 9 devolve 0 para todos): são o bloco que mais se repete na pasta de presets.
+  Os limites também não: saíram dos presets, com folga.
+  "Grade" do Looks aparece como "Diffusion Grade": o `tr()` usa o rótulo como chave, e "Grade" já é "Grid" no en.json.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.diffusion"
+    name="Looks: Diffusion"
+    name-en="Looks: Diffusion"
+    desc="A ferramenta Diffusion do Magic Bullet Looks: o brilho suave de um filtro de difusão na lente, que espalha as altas luzes e amacia a imagem."
+    desc-en="Magic Bullet Looks' Diffusion tool: the soft glow of a diffusion filter on the lens, spreading the highlights and softening the image."
+    category="looks"
+    stage="mblooks"
+    looks="diff"
+    tags="magic bullet,looks,red giant,diffusion,difusão,difusao,glow,brilho,bloom,pro-mist,suave,soft">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="size" label="Size" default="30.0" min="0.0" max="200.0" step="0.1" />
+        <slider id="grade" label="Diffusion Grade" default="3.0" min="0.0" max="6.0" step="0.005" />
+        <slider id="glow" label="Glow" default="50.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="highlightsOnly" label="Highlights Only" default="75.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="highlightBias" label="Highlight Bias" default="0.0" min="-1.0" max="1.0" step="0.001" />
+        <slider id="exposureCompensation" label="Exposure Compensation" default="0.0" min="-6.0" max="6.0" step="0.01" />
+        <slider id="tintRed" group="Tint Color" label="Tint Red" default="1.0" min="0.0" max="8.0" step="0.001" />
+        <slider id="tintGreen" group="Tint Color" label="Tint Green" default="1.0" min="0.0" max="8.0" step="0.001" />
+        <slider id="tintBlue" group="Tint Color" label="Tint Blue" default="1.0" min="0.0" max="8.0" step="0.001" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

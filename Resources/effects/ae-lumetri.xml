@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   LUMETRI COLOR — o do After Effects, por fases (0.612.0: os LUTs)
+  ============================================================================
+
+  Pedido do snow (17/10/2026): "o Lumetri Color 100% igual ao After Effects, com a possibilidade de
+  colocar LUT". O Lumetri é grande (Correção básica, Criativo, Curvas, Rodas de cor, HSL secundário,
+  Vinheta) e cada controle vai entrar MEDIDO no AE (tools/lumetri/benchmark: uma fonte com todas as
+  cores, como o Vibrance (AE) — quase tudo no Lumetri é conta por pixel, e a saída numa fonte assim
+  É a resposta do controle). Esta primeira fase é a que não depende de medida para existir:
+
+  - Basic Correction › Input LUT: um .cube escolhido no aparelho (`<lut>`), aplicado antes de tudo.
+  - Creative › Look: outro .cube, e Intensity (0 a 200%) mistura a cor de antes com a do Look.
+
+  A ordem é a do painel do Lumetri: o LUT de entrada primeiro, o Look depois. A conta é na cor reta
+  (o alfa não muda), como os LUTs pedem (eles são feitos para a imagem como aparece na tela).
+
+  O QUE AINDA NÃO FOI CONFERIDO NO AE (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md, Lumetri):
+  - a interpolação do LUT (aqui tetraédrica; o Lumetri pode ser trilinear);
+  - Intensity acima de 100% (aqui a mistura passa do Look na mesma direção);
+  - os LUTs que vêm com o Premiere/AE (são da Adobe: não entram no app; dá para escolher o .cube deles).
+-->
+<effect
+    id="nova.effect.aelumetri"
+    name="Lumetri Color"
+    name-en="Lumetri Color"
+    desc="O Lumetri Color do After Effects, por partes. Já tem: LUT de entrada e Look com Intensidade, com o arquivo .cube que você escolher."
+    desc-en="After Effects' Lumetri Color, in stages. So far: Input LUT and Look with Intensity, from any .cube file you pick."
+    category="color"
+    tags="lumetri,lut,cube,look,color grading,correção de cor,color correction,after effects,premiere"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <lut id="lutDeEntrada" group="Basic Correction" label="Input LUT" />
+
+        <lut id="look" group="Creative" label="Look" />
+        <slider id="intensidade" group="Creative" label="Intensity" default="100.0" min="0.0" max="200.0" step="1.0" snap="100.0" />
+    </params>
+
+    <shader><![CDATA[
+// Medir a interpolação no AE e trocar se for a trilinear (ver o cabeçalho).
+const bool TETRAEDRICA = true;
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 fonte = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+    vec3 c = fonte.rgb;
+
+    // Basic Correction: o LUT de entrada, antes de tudo.
+    c = lutDeEntradaAplicar(c, TETRAEDRICA);
+
+    // Creative: o Look, misturado pela Intensidade.
+    if (lookTipo != 0) {
+        vec3 comLook = lookAplicar(c, TETRAEDRICA);
+        c = mix(c, comLook, clamp(intensidade, 0.0, 200.0) / 100.0);
+    }
+
+    fragColor = vec4(clamp(c, 0.0, 1.0), fonte.a);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Xadrez — gerador. Fundo, textura, transição, e o padrão de teste que revela
+  distorção de lente na hora.
+-->
+<effect
+    id="nova.effect.checkerboard"
+    name="Xadrez"
+    name-en="Checkerboard"
+    desc="Gera um padrão quadriculado de duas cores."
+    desc-en="A checker pattern, with size, colours and softness."
+    category="procedural"
+    blend="mode"
+    tags="xadrez,quadriculado,fundo,padrao,gerador,teste">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="origin" label="Origem" defaultX="0.0" defaultY="0.0" />
+        <slider id="cells" label="Quadros na largura"
+                default="12.0" min="1.0" max="80.0" step="1.0" />
+        <slider id="angle" label="Ângulo"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" snap="0.0,45.0" />
+        <slider id="softness" label="Suavidade da borda"
+                default="0.0" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <color id="colorA" label="Cor A" default="#FFFFFF" />
+        <color id="colorB" label="Cor B" default="#1B1D26" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 uv = (acScreenNorm - origin) * vec2(acAspect, 1.0) * max(cells, 1.0);
+
+    float rad = radians(angle);
+    float co = cos(rad);
+    float si = sin(rad);
+    uv = vec2(uv.x * co - uv.y * si, uv.x * si + uv.y * co);
+
+    // Onda triangular em cada eixo, multiplicadas: o produto troca de sinal a
+    // cada célula em X e a cada célula em Y, que é exatamente um xadrez.
+    vec2 wave = abs(fract(uv * 0.5) * 2.0 - 1.0) * 2.0 - 1.0;
+    float board = wave.x * wave.y;
+
+    float soft = max(softness, 0.0005);
+    float mask = smoothstep(-soft, soft, board);
+
+    vec4 pattern = mix(colorB, colorA, mask);
+    fragColor = vec4(pattern.rgb, pattern.a * original.a);
+}
+
+    ]]></shader>
+</effect>

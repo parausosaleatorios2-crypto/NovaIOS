@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ONDA DE CHOQUE
+  ============================================================================
+
+  Um anel expansivo a partir de um ponto que EMPURRA os pixels em volta: a
+  tela "respira" quando o anel passa. É o efeito de explosão, teletransporte,
+  impacto pesado — assinatura de clipe de ação.
+
+  ============================================================================
+   DISTORÇÃO É UMA LEITURA EM UV DESLOCADO
+  ============================================================================
+
+  Um shader de fragmento não "move" pixels; ele LÊ a imagem num ponto
+  diferente. Pra fazer o efeito de onda, para cada pixel o shader calcula:
+    - vetor do pixel ao centro do choque;
+    - distância;
+    - diferença entre a distância e o RAIO atual do anel;
+    - se pequena, desloca a UV ao longo do vetor pela força da onda.
+
+  O resultado: pixels bem perto do anel "pulam" radialmente; o resto da tela
+  fica intacto. É por isso que o anel se vê como uma DOBRA da imagem, não
+  como uma linha pintada.
+
+  ============================================================================
+   LAÇO DE DURAÇÃO DO ANEL
+  ============================================================================
+
+  O anel nasce em `t=0` da repetição, cresce `duration` segundos, enfraquece e
+  some. `fract(acTime / period)` dá o ciclo; multiplicado por `period` vira a
+  idade do anel. Força linear decrescente (nasce forte, acaba zero) — podia
+  ser exp, mas linear é mais físico pra uma onda de choque real.
+-->
+<effect
+    id="nova.effect.shock-wave"
+    name="Onda de choque"
+    name-en="Shock Wave"
+    desc="Anel expansivo que empurra os pixels em volta: impacto, explosão."
+    desc-en="Expanding ring that pushes pixels around: impact, explosion."
+    category="distort"
+    tags="choque,shock,wave,anel,impacto,explosão,distorção,pulso">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="centerAt" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="speed" label="Velocidade"
+                default="0.6" min="0.05" max="3.0" step="0.05" snap="0.0" />
+        <slider id="period" label="Intervalo entre pulsos (s)"
+                default="2.0" min="0.2" max="6.0" step="0.1" snap="0.0" />
+        <slider id="ringWidth" label="Largura do anel"
+                default="0.08" min="0.01" max="0.4" step="0.005" snap="0.0" />
+        <slider id="strength" label="Força da distorção"
+                default="0.03" min="0.0" max="0.2" step="0.002" snap="0.0" />
+        <color id="ringColor" label="Cor do anel" default="#FFFFFFFF" />
+        <slider id="ringGlow" label="Halo do anel"
+                default="0.4" min="0.0" max="2.0" step="0.05" snap="0.0" />
+    </params>
+
+    <preview>
+        <set param="strength" value="0.05" />
+        <set param="ringGlow" value="1.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    // Idade do anel dentro do ciclo atual (0 = acabou de nascer, period = acabou).
+    float idade = fract(acTime / max(period, 1e-4)) * period;
+    float raio = idade * speed;
+
+    // Força decai linear com a idade: nasce forte, some no fim.
+    float forcaDoPulso = 1.0 - clamp(idade / max(period, 1e-4), 0.0, 1.0);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+    vec2 centro = vec2(centerAt.x * acAspect, centerAt.y);
+    vec2 delta = p - centro;
+    float d = length(delta);
+    vec2 direcao = d > 1e-4 ? delta / d : vec2(0.0);
+
+    // Pulso: proximidade da distância ao raio. Gaussiano no desvio.
+    float proximidade = exp(-pow((d - raio) / max(ringWidth, 1e-4), 2.0));
+    float empurrar = proximidade * strength * forcaDoPulso;
+
+    vec2 uvAfastado = acScreenNorm + direcao * empurrar;
+    vec4 cor = texture(inputImg, uvAfastado);
+
+    // Pinta o anel visível por cima (opcional via ringColor.a).
+    float desenhoDoAnel = exp(-pow((d - raio) / max(ringWidth * 0.5, 1e-4), 2.0)) * forcaDoPulso;
+    vec3 halo = ringColor.rgb * desenhoDoAnel * ringGlow * ringColor.a;
+    cor.rgb = 1.0 - (1.0 - cor.rgb) * (1.0 - halo);
+
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

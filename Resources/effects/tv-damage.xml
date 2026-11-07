@@ -1,0 +1,1023 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TV DANIFICADA — a televisão velha com defeito: recepção ruim, fita de vídeo
+  gasta e o próprio aparelho falhando.
+
+  ============================================================================
+   DE ONDE VEIO
+  ============================================================================
+
+  O snow pediu "o S_TVDamage" (Sapphire, da Boris FX). Nada do plugin foi lido:
+  o que existe aqui é a documentação PÚBLICA dele (borisfx.com, a página do
+  TVDamage para OFX), que lista cada controle, o padrão e o que ele faz. Os
+  nomes e os padrões dos controles seguem essa lista — quem aprendeu num
+  tutorial de After Effects acha tudo no mesmo lugar. As CONTAS são nossas: a
+  documentação diz o que cada controle faz, não como.
+
+  A documentação organiza o defeito em três famílias, e este arquivo também:
+
+   1. RECEPÇÃO — tudo o que o `Reception Master` escala: chuvisco (static),
+      pontos de interferência elétrica, fantasmas (o sinal chegando por dois
+      caminhos), horizontal e vertical soltos, barras de zumbido da rede
+      elétrica e listras de cor (a fase do sinal de cor errando).
+   2. FITA — o avanço rápido do videocassete (faixas rasgadas) e os
+      "dropouts" (riscos brancos onde a fita perdeu o óxido).
+   3. APARELHO — linhas de varredura, vinheta, olho de peixe do vidro, o
+      "orthicon" (o halo escuro em volta do claro das câmeras dos anos 50),
+      correção de cor, a TV em preto e branco e o DESLIGAR (a imagem vira um
+      risco branco, depois um ponto, e some com um clarão).
+
+  ============================================================================
+   AS ESCOLHAS DE INTERPRETAÇÃO
+  ============================================================================
+
+  Onde a documentação só diz o efeito, a conta escolhida foi:
+
+   - Interferência: pontos a cada ~9 pixels de TV numa fileira, e cada fileira
+     empurra o padrão em `Interference Frequency` células. Por isso frações
+     (1,28, 0,3) dão as diagonais "de interferência" e inteiros dão colunas —
+     exatamente o que a documentação avisa ("frações ficam melhores").
+   - Fantasmas: cópias atrasadas do sinal que entram pela DIFERENÇA para o
+     sinal de agora (o ganho automático da TV segura a média) — trecho liso
+     não muda, e a cópia só aparece onde difere. O negativo é a cópia
+     invertida. Somadas, nunca passam de 80% do sinal.
+   - Vertical solto: o tempo é cortado em episódios de 2,5 s; `Vertical Hold`
+     (× recepção) é a fração deles em que a imagem roda. `V Frequency` são os
+     trancos por segundo do rolo: baixo = rola liso, alto = aos solavancos.
+     Quando o episódio acaba, a TV "trava" de novo.
+   - A faixa entre um quadro e outro (Border Height) tem o que a TV mostra lá
+     de verdade: chuvisco, a linha de legenda oculta (os tracinhos brancos) e
+     o código de tempo em blocos. `Border Data` é o brilho disso.
+   - Horizontal solto: ondas de ruído em oitavas ao longo da altura; mais
+     oitavas, mais espetado. Passando da borda aparece a faixa preta e, depois
+     dela, a outra cópia da imagem.
+   - TV Pixels: a resolução do aparelho. O chuvisco, os pontos, os riscos e as
+     linhas nascem nessa grade; com `Downsample`, a IMAGEM também cai para ela
+     (e volta suavizada, sem blocos tortos quando a conta não dá inteira).
+
+  ============================================================================
+   OS PASSES
+  ============================================================================
+
+   0 → claroA  (1/4):  o que é claro o bastante para ter halo de orthicon
+   1 → claroB  (1/8):  desfoque
+   2 → claroC  (1/16): desfoque
+   3 → saída:          todo o resto
+
+  Com `Orthicon` em zero os três primeiros escrevem preto e saem — são baratos
+  nessas resoluções.
+
+  ============================================================================
+   ENXUGADO (0.186.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 75 controles no painel. Agora são 16: os dez principais do Sapphire
+  (Effect, Reception Master, as amplitudes de cada defeito, Fast Forward e
+  Dropout) mais o Static Amplitude, soltos; e Scanlines, Turn Off, Vignette
+  Darkness, Fish Eye e TV Pixels no grupo "TV". O resto continua aqui com
+  `hidden="true"`, nos padrões da documentação: as predefinições mexem neles
+  (os fantasmas da "Antena ruim", o rolo da "Imagem rolando"), e um projeto
+  salvo que os usava continua igual.
+
+-->
+<effect
+    id="nova.effect.tvdamage"
+    name="TV Danificada"
+    name-en="TV Damage"
+    desc="TV velha com defeito: chuvisco, fantasmas, imagem rolando, barras, fita gasta e o desligar da tela."
+    desc-en="Old broken TV: static, ghosts, rolling picture, hum bars, VCR damage and the CRT turn-off."
+    category="stylize"
+    blend="true"
+    tags="tv,televisao,television,damage,dano,chuvisco,static,estatica,ghost,fantasma,vhs,vcr,fita,tape,dropout,rolling,hold,crt,retro,analog,analogico,sinal,signal,desligar,turn off,anos 50,preto e branco,glitch">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="claroA" src="buffer" scale="0.25" />
+        <texture id="claroB" src="buffer" scale="0.125" />
+        <texture id="claroC" src="buffer" scale="0.0625" />
+
+        <selector id="effectMode" label="Effect" default="0" options="Color TV|Mono TV" />
+        <slider id="reception" label="Reception Master"
+                default="0.4" min="0.0" max="3.0" step="0.01" snap="0.0,1.0" />
+        <slider id="staticAmp" label="Static Amplitude"
+                default="0.8" min="0.0" max="3.0" step="0.01" />
+        <slider id="interferenceAmp" label="Interference Amp"
+                default="0.6" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="ghostAmp" label="Ghost Amp"
+                default="0.6" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="horizontalHold" label="Horizontal Hold"
+                default="0.5" min="0.0" max="5.0" step="0.01" snap="0.0" />
+        <slider id="verticalHold" label="Vertical Hold"
+                default="0.8" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="barsBrightness" label="Bars Brightness"
+                default="0.3" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="colorStripesAmp" label="Color Stripes Amplitude"
+                default="0.2" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="fastForward" label="Fast Forward Amount"
+                default="0.0" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="dropoutBrightness" label="Tape Dropout Brightness"
+                default="0.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+
+        <!-- =========================== O PRINCIPAL ============================ -->
+
+        <!-- ======================== STATIC & INTERFERENCE ===================== -->
+        <slider id="staticDensity" hidden="true" group="Static &amp; Interference" label="Static Density"
+                default="0.7" min="0.01" max="1.0" step="0.01" />
+        <slider id="interferenceFreq" hidden="true" group="Static &amp; Interference" label="Interference Frequency"
+                default="1.28" min="0.0" max="50.0" step="0.01" snap="0.3,1.28" />
+        <slider id="dotsSpeedX" hidden="true" group="Static &amp; Interference" label="Dots Speed X"
+                default="100.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="dotsSpeedY" hidden="true" group="Static &amp; Interference" label="Dots Speed Y"
+                default="-10.0" min="-200.0" max="200.0" step="0.5" snap="0.0" />
+        <slider id="jitterAmount" hidden="true" group="Static &amp; Interference" label="Jitter Amount"
+                default="10.0" min="0.0" max="200.0" step="0.5" snap="0.0" />
+
+        <!-- ================================ GHOST ============================= -->
+        <slider id="numGhosts" hidden="true" group="Ghost" label="Num Ghosts" type="integer"
+                default="5" min="0" max="30" step="1" />
+        <slider id="negativeGhosts" hidden="true" group="Ghost" label="Negative Ghosts"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="ghostSpacing" hidden="true" group="Ghost" label="Spacing"
+                default="0.2" min="0.0" max="1.0" step="0.005" />
+        <slider id="varyPosition" hidden="true" group="Ghost" label="Vary Position"
+                default="0.3" min="0.0" max="1.0" step="0.01" />
+        <slider id="ghostShift" hidden="true" group="Ghost" label="Shift"
+                default="0.5" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="ghostBlur" hidden="true" group="Ghost" label="Blur"
+                default="0.0" min="0.0" max="10.0" step="0.05" snap="0.0" />
+
+        <!-- ============================ HOLD DISTORTION ======================= -->
+        <slider id="hFrequency" hidden="true" group="Hold Distortion" label="H Frequency"
+                default="1.25" min="0.0" max="10.0" step="0.01" />
+        <slider id="hTimeVary" hidden="true" group="Hold Distortion" label="H Time Vary"
+                default="0.5" min="0.0" max="3.0" step="0.01" />
+        <slider id="hOctaves" hidden="true" group="Hold Distortion" label="H Octaves" type="integer"
+                default="3" min="1" max="10" step="1" />
+        <slider id="borderWidth" hidden="true" group="Hold Distortion" label="Border Width"
+                default="0.05" min="0.0" max="0.5" step="0.005" />
+        <slider id="vFrequency" hidden="true" group="Hold Distortion" label="V Frequency"
+                default="2.0" min="0.0" max="20.0" step="0.05" />
+        <slider id="vSpeed" hidden="true" group="Hold Distortion" label="V Speed"
+                default="2.0" min="0.0" max="10.0" step="0.05" />
+        <slider id="vRandom" hidden="true" group="Hold Distortion" label="V Random"
+                default="0.1" min="0.0" max="3.0" step="0.01" />
+        <slider id="borderHeight" hidden="true" group="Hold Distortion" label="Border Height"
+                default="0.1" min="0.0" max="0.5" step="0.005" />
+        <slider id="borderData" hidden="true" group="Hold Distortion" label="Border Data"
+                default="1.0" min="0.0" max="3.0" step="0.01" />
+
+        <!-- =============================== HUM BARS =========================== -->
+        <slider id="barRollSpeed" hidden="true" group="Hum Bars" label="Bar Roll Speed"
+                default="0.5" min="-10.0" max="10.0" step="0.05" snap="0.0" />
+        <slider id="barSharpness" hidden="true" group="Hum Bars" label="Bar Sharpness"
+                default="0.5" min="0.0" max="10.0" step="0.05" />
+        <slider id="barFrequency" hidden="true" group="Hum Bars" label="Bar Frequency"
+                default="1.0" min="0.1" max="10.0" step="0.05" />
+        <slider id="bar1Width" hidden="true" group="Hum Bars" label="Bar1 Width"
+                default="0.35" min="0.0" max="1.0" step="0.01" />
+        <slider id="bar2RelFrequency" hidden="true" group="Hum Bars" label="Bar2 Rel Frequency"
+                default="6.0" min="1.0" max="30.0" step="0.1" />
+        <slider id="bar2Sharpness" hidden="true" group="Hum Bars" label="Bar2 Sharpness"
+                default="0.5" min="0.0" max="10.0" step="0.05" />
+
+        <!-- ============================ COLOR STRIPES ========================= -->
+        <slider id="colorFrequency" hidden="true" group="Color Stripes" label="Color Frequency"
+                default="10.0" min="1.0" max="40.0" step="0.1" />
+        <slider id="colorAngle" hidden="true" group="Color Stripes" label="Color Angle" type="angle"
+                default="160.0" min="-360.0" max="360.0" step="1.0" snap="0.0,90.0,160.0" />
+        <slider id="stripesRollSpeed" hidden="true" group="Color Stripes" label="Roll Speed"
+                default="3.0" min="0.0" max="20.0" step="0.05" />
+
+        <!-- ============================ FAST FORWARD ========================== -->
+        <slider id="ffBandFrequency" hidden="true" group="Fast Forward" label="FF Band Frequency"
+                default="4.0" min="0.0" max="20.0" step="0.05" />
+        <slider id="ffBandShift" hidden="true" group="Fast Forward" label="FF Band Shift"
+                default="0.1" min="0.0" max="5.0" step="0.005" />
+        <slider id="ffBandHeight" hidden="true" group="Fast Forward" label="FF Band Height"
+                default="0.16" min="0.0" max="1.0" step="0.005" />
+
+        <!-- =============================== DROPOUT ============================ -->
+        <slider id="dropoutLength" hidden="true" group="Dropout" label="Dropout Length"
+                default="0.25" min="0.0" max="1.0" step="0.01" />
+        <slider id="dropoutGap" hidden="true" group="Dropout" label="Dropout Gap Length"
+                default="0.2" min="0.0" max="2.0" step="0.01" />
+        <slider id="dropoutYFreq" hidden="true" group="Dropout" label="Dropout Y Freq"
+                default="5.0" min="0.0" max="50.0" step="0.1" />
+        <slider id="dropoutYThreshold" hidden="true" group="Dropout" label="Dropout Y Threshold"
+                default="0.75" min="0.0" max="1.0" step="0.01" />
+        <slider id="dropoutsAlways" hidden="true" group="Dropout" label="Dropouts Always"
+                default="1.0" min="0.0" max="1.0" step="0.01" />
+
+        <!-- ============================== SCANLINES =========================== -->
+        <slider id="scanlines" group="TV" label="Scanlines"
+                default="0.1" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="scanlinesRelFreq" hidden="true" group="Scanlines" label="Scanlines Rel Freq"
+                default="1.0" min="0.1" max="4.0" step="0.01" snap="1.0" />
+
+        <!-- =============================== ORTHICON =========================== -->
+        <slider id="orthicon" hidden="true" group="Orthicon" label="Orthicon"
+                default="0.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="orthiconThreshold" hidden="true" group="Orthicon" label="Threshold"
+                default="0.7" min="0.0" max="1.0" step="0.01" />
+        <slider id="darksWidth" hidden="true" group="Orthicon" label="Darks Width"
+                default="0.2" min="0.0" max="2.0" step="0.01" />
+
+        <!-- =============================== TURN OFF =========================== -->
+        <!-- Anime de 0 a 1: a imagem esbranquiça, vira um risco, um ponto e some. -->
+        <slider id="turnOff" group="TV" label="Turn Off"
+                default="0.0" min="0.0" max="1.0" step="0.005" snap="0.0" />
+        <slider id="flareWidth" hidden="true" group="Turn Off" label="Flare Width"
+                default="1.0" min="0.0" max="5.0" step="0.01" />
+        <slider id="flareBrightness" hidden="true" group="Turn Off" label="Flare Brightness"
+                default="2.0" min="0.0" max="10.0" step="0.05" />
+        <slider id="fadeOutTime" hidden="true" group="Turn Off" label="Fade Out Time"
+                default="0.7" min="0.0" max="1.0" step="0.01" />
+
+        <!-- =============================== VIGNETTE =========================== -->
+        <slider id="vignetteDarkness" group="TV" label="Vignette Darkness"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="vignetteRadius" hidden="true" group="Vignette" label="Vignette Radius"
+                default="1.0" min="0.0" max="3.0" step="0.01" />
+        <slider id="vignetteSoftness" hidden="true" group="Vignette" label="Vignette Edge Softness"
+                default="0.5" min="0.0" max="3.0" step="0.01" />
+        <slider id="vignetteRelHeight" hidden="true" group="Vignette" label="Vignette Rel Height"
+                default="0.75" min="0.1" max="3.0" step="0.01" />
+
+        <!-- ============================== DISTORTION ========================== -->
+        <slider id="fishEye" group="TV" label="Fish Eye"
+                default="0.0" min="-1.5" max="1.5" step="0.01" snap="0.0" />
+
+        <!-- =========================== COLOR CORRECTION ======================= -->
+        <slider id="hueShift" hidden="true" group="Color Correction" label="Hue Shift" type="angle"
+                default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0" />
+        <slider id="saturationAmt" hidden="true" group="Color Correction" label="Saturation"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+        <slider id="scaleLights" hidden="true" group="Color Correction" label="Scale Lights"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+        <slider id="offsetDarks" hidden="true" group="Color Correction" label="Offset Darks"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="tintLights" hidden="true" group="Color Correction" label="Tint Lights" default="#FFFFFFFF" />
+        <color id="tintDarks" hidden="true" group="Color Correction" label="Tint Darks" default="#FF000000" />
+
+        <!-- ============================== RESOLUTION ========================== -->
+        <slider id="tvPixels" group="TV" label="TV Pixels" type="integer"
+                default="720" min="16" max="3840" step="1" ticks="240,480,720,1080" />
+        <switch id="downsample" hidden="true" group="Resolution" label="Downsample" default="true" />
+
+        <!-- ============================ RANDOMIZATION ========================= -->
+        <slider id="seed" hidden="true" group="Randomization" label="Seed"
+                default="0.123" min="0.0" max="10.0" step="0.001" />
+
+        <!-- ================================= MASK ============================= -->
+        <!--
+          A máscara do Sapphire é uma entrada: branco aplica, preto deixa a
+          original. Aqui é uma camada da composição. "Off" é o nosso padrão:
+          sem ele, escolher Luma sem escolher a camada faria o efeito sumir.
+        -->
+        <selector id="maskUse" hidden="true" group="Mask" label="Mask Use" default="0" options="Off|Luma|Alpha" />
+        <texture id="maskLayer" hidden="true" src="layer" group="Mask" label="Mask Layer" empty="transparent" />
+        <slider id="blurMask" hidden="true" group="Mask" label="Blur Mask"
+                default="0.05" min="0.0" max="1.0" step="0.01" />
+        <switch id="invertMask" hidden="true" group="Mask" label="Invert Mask" default="false" />
+    </params>
+
+    <passes>
+        <pass target="claroA" />  <!-- 0: o claro que faz halo de orthicon, 1/4 -->
+        <pass target="claroB" />  <!-- 1: desfoque, 1/8 -->
+        <pass target="claroC" />  <!-- 2: desfoque, 1/16 -->
+        <pass />                  <!-- 3: a TV -->
+    </passes>
+
+    <!--
+      As predefinições citam todo controle principal, inclusive os que zeram:
+      uma predefinição só escreve o que cita, e sem isso trocar de "Fora do ar"
+      para "Anos 50" deixaria o chuvisco no máximo. Não citam o Turn Off (é
+      coisa de animar), a máscara nem a semente.
+    -->
+    <presets>
+        <preset id="weakSignal" name="📡 Sinal fraco" name-en="📡 Weak Signal">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="1.0" />
+            <value param="staticAmp" value="0.9" />
+            <value param="staticDensity" value="0.85" />
+            <value param="interferenceAmp" value="0.25" />
+            <value param="ghostAmp" value="0.5" />
+            <value param="horizontalHold" value="0.2" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.15" />
+            <value param="colorStripesAmp" value="0.15" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.15" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.2" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="640" />
+            <value param="saturationAmt" value="0.8" />
+        </preset>
+        <preset id="badAntenna" name="👻 Antena ruim" name-en="👻 Bad Antenna">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="1.0" />
+            <value param="staticAmp" value="0.3" />
+            <value param="staticDensity" value="0.6" />
+            <value param="interferenceAmp" value="0.0" />
+            <value param="ghostAmp" value="1.4" />
+            <value param="numGhosts" value="6" />
+            <value param="negativeGhosts" value="0.35" />
+            <value param="ghostSpacing" value="0.25" />
+            <value param="ghostBlur" value="1.0" />
+            <value param="horizontalHold" value="0.1" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.0" />
+            <value param="colorStripesAmp" value="0.1" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.1" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.0" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="720" />
+            <value param="saturationAmt" value="1.0" />
+        </preset>
+        <preset id="rollingPicture" name="↕️ Imagem rolando" name-en="↕️ Rolling Picture">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="1.0" />
+            <value param="staticAmp" value="0.25" />
+            <value param="staticDensity" value="0.5" />
+            <value param="interferenceAmp" value="0.0" />
+            <value param="ghostAmp" value="0.2" />
+            <value param="horizontalHold" value="0.15" />
+            <value param="verticalHold" value="1.0" />
+            <value param="vSpeed" value="2.0" />
+            <value param="vFrequency" value="1.0" />
+            <value param="borderHeight" value="0.12" />
+            <value param="barsBrightness" value="0.2" />
+            <value param="colorStripesAmp" value="0.0" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.15" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.0" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="720" />
+            <value param="saturationAmt" value="1.0" />
+        </preset>
+        <preset id="lostHold" name="〰️ Horizontal perdido" name-en="〰️ Lost H-Hold">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="1.0" />
+            <value param="staticAmp" value="0.3" />
+            <value param="staticDensity" value="0.5" />
+            <value param="interferenceAmp" value="0.2" />
+            <value param="ghostAmp" value="0.0" />
+            <value param="horizontalHold" value="2.5" />
+            <value param="hOctaves" value="4" />
+            <value param="hTimeVary" value="0.9" />
+            <value param="borderWidth" value="0.08" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.1" />
+            <value param="colorStripesAmp" value="0.2" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.1" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.0" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="720" />
+            <value param="saturationAmt" value="1.0" />
+        </preset>
+        <preset id="electricInterference" name="⚡ Interferência" name-en="⚡ Electrical Interference">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="1.0" />
+            <value param="staticAmp" value="0.2" />
+            <value param="staticDensity" value="0.4" />
+            <value param="interferenceAmp" value="1.6" />
+            <value param="interferenceFreq" value="1.28" />
+            <value param="ghostAmp" value="0.0" />
+            <value param="horizontalHold" value="0.1" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.7" />
+            <value param="barSharpness" value="1.0" />
+            <value param="colorStripesAmp" value="0.3" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.1" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.0" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="720" />
+            <value param="saturationAmt" value="1.0" />
+        </preset>
+        <preset id="vcrFastForward" name="⏩ Avanço rápido" name-en="⏩ VCR Fast Forward">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="0.3" />
+            <value param="staticAmp" value="0.4" />
+            <value param="staticDensity" value="0.6" />
+            <value param="interferenceAmp" value="0.0" />
+            <value param="ghostAmp" value="0.0" />
+            <value param="horizontalHold" value="0.6" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.0" />
+            <value param="colorStripesAmp" value="0.2" />
+            <value param="fastForward" value="1.0" />
+            <value param="ffBandFrequency" value="3.0" />
+            <value param="ffBandHeight" value="0.12" />
+            <value param="dropoutBrightness" value="0.6" />
+            <value param="dropoutsAlways" value="0.5" />
+            <value param="scanlines" value="0.15" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.0" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="560" />
+            <value param="saturationAmt" value="0.9" />
+        </preset>
+        <preset id="wornTape" name="📼 Fita gasta" name-en="📼 Worn Tape">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="0.4" />
+            <value param="staticAmp" value="0.4" />
+            <value param="staticDensity" value="0.5" />
+            <value param="interferenceAmp" value="0.0" />
+            <value param="ghostAmp" value="0.3" />
+            <value param="ghostBlur" value="2.0" />
+            <value param="horizontalHold" value="0.5" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.0" />
+            <value param="colorStripesAmp" value="0.5" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="1.0" />
+            <value param="dropoutsAlways" value="0.6" />
+            <value param="scanlines" value="0.12" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.25" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="480" />
+            <value param="saturationAmt" value="0.85" />
+        </preset>
+        <preset id="fifties" name="🎞️ Anos 50" name-en="🎞️ 1950s TV">
+            <value param="effectMode" value="1" />
+            <value param="reception" value="0.5" />
+            <value param="staticAmp" value="0.5" />
+            <value param="staticDensity" value="0.6" />
+            <value param="interferenceAmp" value="0.0" />
+            <value param="ghostAmp" value="0.4" />
+            <value param="horizontalHold" value="0.2" />
+            <value param="verticalHold" value="0.0" />
+            <value param="barsBrightness" value="0.4" />
+            <value param="colorStripesAmp" value="0.0" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.35" />
+            <value param="orthicon" value="0.8" />
+            <value param="vignetteDarkness" value="0.6" />
+            <value param="fishEye" value="0.25" />
+            <value param="tvPixels" value="440" />
+            <value param="saturationAmt" value="1.0" />
+        </preset>
+        <preset id="offTheAir" name="📴 Fora do ar" name-en="📴 Off the Air">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="2.2" />
+            <value param="staticAmp" value="1.3" />
+            <value param="staticDensity" value="1.0" />
+            <value param="interferenceAmp" value="0.2" />
+            <value param="ghostAmp" value="0.0" />
+            <value param="horizontalHold" value="0.2" />
+            <value param="verticalHold" value="0.3" />
+            <value param="barsBrightness" value="0.3" />
+            <value param="colorStripesAmp" value="0.0" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.15" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.2" />
+            <value param="fishEye" value="0.0" />
+            <value param="tvPixels" value="640" />
+            <value param="saturationAmt" value="0.6" />
+        </preset>
+        <preset id="perfectReception" name="✨ Sinal perfeito" name-en="✨ Perfect Reception">
+            <value param="effectMode" value="0" />
+            <value param="reception" value="0.0" />
+            <value param="staticAmp" value="0.8" />
+            <value param="staticDensity" value="0.7" />
+            <value param="interferenceAmp" value="0.6" />
+            <value param="ghostAmp" value="0.6" />
+            <value param="horizontalHold" value="0.5" />
+            <value param="verticalHold" value="0.8" />
+            <value param="barsBrightness" value="0.3" />
+            <value param="colorStripesAmp" value="0.2" />
+            <value param="fastForward" value="0.0" />
+            <value param="dropoutBrightness" value="0.0" />
+            <value param="scanlines" value="0.2" />
+            <value param="orthicon" value="0.0" />
+            <value param="vignetteDarkness" value="0.15" />
+            <value param="fishEye" value="0.1" />
+            <value param="tvPixels" value="720" />
+            <value param="saturationAmt" value="1.0" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+const float TAU = 6.28318530718;
+const float PI = 3.14159265359;
+
+// ============================================================================
+//  ACASO — hashes sem seno (o seno perde precisão em GPU de celular)
+// ============================================================================
+
+float semente() {
+    return seed * 1000.0 + 17.0;
+}
+
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float hash31(vec3 p) {
+    vec3 p3 = fract(p * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 hash33(vec3 p) {
+    vec3 p3 = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yxz + 33.33);
+    return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+
+/** Ruído de valor 1D, -1..1, liso. */
+float ruido1(float x) {
+    float i = floor(x);
+    float f = fract(x);
+    float u = f * f * (3.0 - 2.0 * f);
+    float s = semente();
+    return mix(hash11(i + s), hash11(i + 1.0 + s), u) * 2.0 - 1.0;
+}
+
+// ============================================================================
+//  COR — a TV pensa em luminância e croma (YIQ, o NTSC)
+// ============================================================================
+
+float luma(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+vec3 paraYiq(vec3 c) {
+    return vec3(
+        dot(c, vec3(0.299, 0.587, 0.114)),
+        dot(c, vec3(0.596, -0.274, -0.322)),
+        dot(c, vec3(0.211, -0.523, 0.312)));
+}
+
+vec3 deYiq(vec3 q) {
+    return vec3(
+        q.x + 0.956 * q.y + 0.621 * q.z,
+        q.x - 0.272 * q.y - 0.647 * q.z,
+        q.x - 1.106 * q.y + 1.703 * q.z);
+}
+
+/** Gira a fase da croma: é o que um sinal de cor fora de fase faz. */
+vec3 girarCroma(vec3 c, float angulo) {
+    vec3 q = paraYiq(c);
+    float cs = cos(angulo);
+    float sn = sin(angulo);
+    q.yz = vec2(cs * q.y - sn * q.z, sn * q.y + cs * q.z);
+    return deYiq(q);
+}
+
+// ============================================================================
+//  LEITURA DA IMAGEM (pré-multiplicada; fora da camada é o apagamento: preto)
+// ============================================================================
+
+vec4 lerP(vec2 uv) {
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
+    vec4 c = texture(inputImg, uv);
+    return vec4(c.rgb * c.a, c.a);
+}
+
+/**
+ * A imagem como a TV a vê: `tvRes` amostras, reconstruídas com interpolação.
+ *
+ * É o "Downsample". Reconstruir em vez de pintar blocos evita o degrau torto
+ * quando a conta não dá inteira (720 pixels de TV numa camada de 1080).
+ */
+vec4 lerNaTv(vec2 uv, vec2 tvRes) {
+    vec2 p = uv * tvRes - 0.5;
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec4 a = lerP((i + vec2(0.5, 0.5)) / tvRes);
+    vec4 b = lerP((i + vec2(1.5, 0.5)) / tvRes);
+    vec4 c = lerP((i + vec2(0.5, 1.5)) / tvRes);
+    vec4 d = lerP((i + vec2(1.5, 1.5)) / tvRes);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// ============================================================================
+//  PASSES 0 a 2 — o halo do orthicon
+// ============================================================================
+
+vec4 claroParaOrthicon() {
+    if (orthicon <= 0.0) return vec4(0.0);
+    vec2 d = acTexelSize * 0.25;
+    float soma = 0.0;
+    for (int i = 0; i < 4; i++) {
+        vec2 o = vec2(i == 0 || i == 2 ? -d.x : d.x, i < 2 ? -d.y : d.y);
+        vec4 c = texture(inputImg, acScreenNorm + o);
+        soma += smoothstep(orthiconThreshold, orthiconThreshold + 0.15, luma(c.rgb)) * c.a;
+    }
+    return vec4(soma * 0.25, 0.0, 0.0, 1.0);
+}
+
+vec4 desfocar(sampler2D t, vec2 uv) {
+    if (orthicon <= 0.0) return vec4(0.0);
+    vec2 d = acTexelSize * (1.0 + darksWidth * 5.0);
+    float s = texture(t, uv).r * 0.25;
+    s += (texture(t, uv + vec2(d.x, 0.0)).r + texture(t, uv - vec2(d.x, 0.0)).r
+        + texture(t, uv + vec2(0.0, d.y)).r + texture(t, uv - vec2(0.0, d.y)).r) * 0.125;
+    s += (texture(t, uv + d).r + texture(t, uv - d).r
+        + texture(t, uv + vec2(d.x, -d.y)).r + texture(t, uv + vec2(-d.x, d.y)).r) * 0.0625;
+    return vec4(s, 0.0, 0.0, 1.0);
+}
+
+// ============================================================================
+//  A FAIXA ENTRE UM QUADRO E OUTRO (o "vertical blanking")
+// ============================================================================
+
+/**
+ * O que aparece na faixa preta quando o vertical solta: não é só preto. A TV
+ * mostra lá as linhas de serviço — o código de tempo em blocos e a legenda
+ * oculta, que é aquela fileira de tracinhos brancos piscando.
+ */
+vec3 faixaDeServico(float y, float x, vec2 tv, float quadro, vec2 tvRes) {
+    float s = semente();
+    float total = max(floor(borderHeight * tvRes.y), 1.0);
+    float linha = floor(y * total);
+    vec3 v = vec3(hash31(vec3(floor(tv), quadro + s)) * 0.1);
+
+    float quadroDoSinal = floor(acTime * 30.0);
+    // Código de tempo (VITC): blocos; só os da direita (os quadros) mudam sempre.
+    if (abs(linha - floor(total * 0.4)) < 0.5 && x > 0.08 && x < 0.9) {
+        float bloco = floor(x * 90.0);
+        float muda = bloco > 60.0 ? quadroDoSinal : floor(quadroDoSinal / 30.0);
+        v = vec3(step(0.5, hash21(vec2(bloco, muda + s))) * 0.75);
+    }
+    // Legenda oculta: o "clock run-in" (uma onda) e depois os bits.
+    if (abs(linha - floor(total * 0.72)) < 0.5 && x > 0.03 && x < 0.92) {
+        if (x < 0.13) {
+            v = vec3(0.5 + 0.5 * sin(x * TAU * 55.0)) * 0.8;
+        } else {
+            float bit = floor(x * 48.0);
+            v = vec3(step(0.45, hash21(vec2(bit, floor(quadroDoSinal / 2.0) + s))) * 0.85);
+        }
+    }
+    return v * borderData;
+}
+
+// ============================================================================
+//  PASSE 3 — A TV
+// ============================================================================
+
+vec4 aTv() {
+    vec2 uvTela = acScreenNorm;
+    vec4 naTela = texture(inputImg, uvTela);   // a área da tela: a camada como está
+    float s = semente();
+    float quadro = floor(acTime * 60.0);
+    float rec = max(reception, 0.0);
+    float pixelsDaTv = max(tvPixels, 8.0);
+    vec2 tvRes = vec2(pixelsDaTv, pixelsDaTv / max(acAspect, 0.0001));
+    vec2 tv = uvTela * tvRes;                  // a grade do aparelho (fica na tela)
+
+    // ------------------------------------------------ desligar: a imagem encolhe
+    vec2 uv = uvTela;
+    float escalaX = 1.0;
+    bool apagada = false;
+    if (turnOff > 0.0) {
+        float escalaY = mix(1.0, 0.004, pow(smoothstep(0.0, 0.55, turnOff), 0.7));
+        escalaX = mix(1.0, 0.003, smoothstep(0.5, 0.9, turnOff));
+        vec2 c = uv - 0.5;
+        apagada = abs(c.y) > escalaY * 0.5 || abs(c.x) > escalaX * 0.5;
+        uv = 0.5 + c / vec2(escalaX, escalaY);
+    }
+
+    // ------------------------------------------------ olho de peixe do vidro
+    if (fishEye != 0.0) {
+        vec2 q = (uv - 0.5) * vec2(acAspect, 1.0);
+        float r2 = clamp(dot(q, q) / (0.25 * (acAspect * acAspect + 1.0)), 0.0, 1.0);
+        q *= max(1.0 - fishEye * 0.5 * (1.0 - r2), 0.1);
+        uv = q / vec2(acAspect, 1.0) + 0.5;
+    }
+    float yDaTela = uv.y;
+
+    // ------------------------------------------------ vertical solto
+    bool naFaixaV = false;
+    float yNaFaixa = 0.0;
+    float vAmt = clamp(verticalHold * rec, 0.0, 1.0);
+    if (vAmt > 0.0 && vSpeed > 0.0) {
+        float duracao = 2.5;
+        float episodio = floor(acTime / duracao);
+        if (hash11(episodio * 3.17 + s) < vAmt) {
+            float t = acTime - episodio * duracao;
+            float f = max(vFrequency, 0.05);
+            float passos = t * f;
+            float tranco = smoothstep(0.0, 1.0, fract(passos));
+            float pos = vSpeed * 0.35 * (floor(passos) + tranco) / f;
+            pos += vRandom * 0.04 * ruido1(t * 11.0 + episodio * 5.3);
+            float periodo = 1.0 + borderHeight;
+            float w = mod(uv.y + pos, periodo);
+            if (w > 1.0) {
+                naFaixaV = true;
+                yNaFaixa = (w - 1.0) / max(borderHeight, 0.0001);
+            }
+            uv.y = w;
+        }
+    }
+
+    // ------------------------------------------------ horizontal solto
+    bool naFaixaH = false;
+    float hAmp = horizontalHold * rec;
+    if (hAmp > 0.0) {
+        float soma = 0.0;
+        float peso = 0.0;
+        float a = 1.0;
+        float fr = 1.0;
+        for (int o = 0; o < 10; o++) {
+            if (float(o) >= hOctaves) break;
+            soma += a * ruido1(yDaTela * hFrequency * 3.0 * fr + acTime * 0.9 * fr + float(o) * 19.7);
+            peso += a;
+            a *= 0.55;
+            fr *= 2.1;
+        }
+        soma /= max(peso, 0.0001);
+        // Uns quadros empurram mais que outros.
+        float varia = 1.0 + hTimeVary * (hash11(floor(acTime * 12.0) * 1.3 + s) * 2.0 - 1.0);
+        float dx = soma * hAmp * 0.06 * max(varia, 0.0);
+        float periodo = 1.0 + borderWidth;
+        float w = mod(uv.x + dx, periodo);
+        if (w > 1.0) naFaixaH = true;
+        uv.x = w;
+    }
+
+    // ------------------------------------------------ a imagem recebida
+    vec3 cor;
+    float alfa;
+    bool naFaixa = naFaixaV || naFaixaH;
+    if (naFaixaV) {
+        cor = faixaDeServico(yNaFaixa, uv.x, tv, quadro, tvRes) * naTela.a;
+        alfa = naTela.a;
+    } else if (naFaixaH) {
+        cor = vec3(0.0);
+        alfa = naTela.a;
+    } else {
+        bool reduz = downsample && tvRes.x < acResolution.x * 0.95;
+        vec4 img = reduz ? lerNaTv(uv, tvRes) : lerP(uv);
+        cor = img.rgb;
+        alfa = img.a;
+    }
+    if (effectMode == 1) cor = vec3(luma(cor));
+
+    // ------------------------------------------------ fantasmas (multipercurso)
+    /*
+     * O sinal chega pela antena e também refletido num prédio, um pouco
+     * depois: uma cópia deslocada para a direita. Algumas chegam antes, a
+     * maioria depois, algumas invertidas. Cada cópia entra pela DIFERENÇA
+     * para o sinal de agora (o ganho automático da TV segura a média): num
+     * trecho liso ela não muda nada, e onde a cópia difere ela aparece — o sol
+     * vira um disco fraco sobre o céu, e o céu escurece um pouco o sol.
+     * Somadas, as cópias nunca passam de 80% do sinal: com trinta fantasmas
+     * fortes a imagem vira uma bagunça de ecos, e não um borrão estourado.
+     */
+    float gAmp = ghostAmp * rec;
+    if (gAmp > 0.0 && numGhosts >= 1.0 && !naFaixa) {
+        vec3 soma = vec3(0.0);
+        float pesos = 0.0;
+        float n = floor(numGhosts);
+        for (int i = 0; i < 30; i++) {
+            float fi = float(i);
+            if (fi >= n) break;
+            float base = mix((fi + 0.5) / n, hash11(fi * 7.7 + s), clamp(varyPosition, 0.0, 1.0));
+            float pos = (base - 0.5 + ghostShift * 0.5) * ghostSpacing;
+            float queda = exp(-abs(pos) / max(ghostSpacing, 0.001) * 1.5);
+            float forca = queda * (0.45 + 0.55 * hash11(fi * 1.93 + s + 11.0));
+            float sinal = hash11(fi * 3.31 + s + 5.0) < negativeGhosts ? -1.0 : 1.0;
+            vec2 uvG = vec2(uv.x - pos, uv.y);
+            vec3 g;
+            if (ghostBlur > 0.0) {
+                vec2 d = vec2(ghostBlur * 0.004, 0.0);
+                g = (lerP(uvG).rgb * 2.0 + lerP(uvG - d).rgb + lerP(uvG + d).rgb) * 0.25;
+            } else {
+                g = lerP(uvG).rgb;
+            }
+            if (effectMode == 1) g = vec3(luma(g));
+            soma += sinal * forca * (g - cor);
+            pesos += forca;
+        }
+        cor += soma * min(gAmp * 0.5, 0.8 / max(pesos, 0.0001));
+    }
+
+    // ------------------------------------------------ orthicon
+    if (orthicon > 0.0 && !naFaixa) {
+        float halo = texture(claroB, uv).r * 0.5 + texture(claroC, uv).r;
+        float aqui = smoothstep(orthiconThreshold, orthiconThreshold + 0.15, luma(cor / max(alfa, 0.0001)));
+        cor *= 1.0 - clamp(orthicon * max(halo - aqui, 0.0) * 0.8, 0.0, 0.95);
+    }
+
+    // ------------------------------------------------ listras de cor
+    float listras = colorStripesAmp * rec;
+    if (listras > 0.0) {
+        float ang = radians(colorAngle);
+        vec2 pp = vec2((uvTela.x - 0.5) * acAspect, uvTela.y - 0.5);
+        float fase = dot(pp, vec2(cos(ang), sin(ang))) * colorFrequency + acTime * stripesRollSpeed;
+        if (effectMode == 0) {
+            cor = girarCroma(cor, sin(fase * TAU) * listras * PI * 0.35);
+            vec3 arco = 0.5 + 0.5 * cos(TAU * (fase + vec3(0.0, 0.333, 0.667)));
+            cor += (arco - 0.5) * listras * 0.2 * alfa;
+        } else {
+            cor *= 1.0 + sin(fase * TAU) * listras * 0.25;
+        }
+    }
+
+    // ------------------------------------------------ barras de zumbido
+    /*
+     * A rede elétrica vaza no sinal e o brilho sobe e desce em faixas largas
+     * que rolam devagar. Duas famílias: as grandes (parte clara = Bar1 Width)
+     * e as finas, `Bar2 Rel Frequency` vezes mais juntas. O produto das duas
+     * é o batimento que a documentação chama de "interferem entre si". A
+     * média fica no lugar: o claro sobe tanto quanto o escuro desce.
+     */
+    float zumbido = barsBrightness * rec;
+    if (zumbido > 0.0) {
+        float f1 = fract(uvTela.y * barFrequency + acTime * barRollSpeed * 0.2);
+        float m1 = 0.5 / (1.0 + barSharpness * 8.0);
+        float b1 = smoothstep(0.0, m1, f1) * (1.0 - smoothstep(bar1Width, bar1Width + m1, f1));
+        float g1 = 1.0 + zumbido * min(barSharpness * 10.0, 1.0) * (b1 - bar1Width) * 1.2;
+        float f2 = fract(uvTela.y * barFrequency * bar2RelFrequency + acTime * barRollSpeed * 0.26);
+        float m2 = 0.5 / (1.0 + bar2Sharpness * 8.0);
+        float b2 = smoothstep(0.0, m2, f2) * (1.0 - smoothstep(0.5, 0.5 + m2, f2));
+        float g2 = 1.0 + zumbido * min(bar2Sharpness * 10.0, 1.0) * (b2 - 0.5) * 0.5;
+        cor *= max(g1 * g2, 0.0);
+    }
+
+    // ------------------------------------------------ chuvisco
+    float chuvisco = staticAmp * rec;
+    if (chuvisco > 0.0) {
+        vec3 celula = vec3(floor(tv), quadro + s);
+        float tem = step(hash31(celula + vec3(0.0, 0.0, 91.3)), staticDensity);
+        vec3 neve = vec3(hash31(celula));
+        // A TV em cores faz um pouco de "confete" colorido no chuvisco.
+        if (effectMode == 0) neve = mix(neve, hash33(celula), 0.25);
+        cor += (neve - 0.5) * chuvisco * 0.9 * tem * max(alfa, naTela.a);
+    }
+
+    // ------------------------------------------------ interferência elétrica
+    float interf = interferenceAmp * rec;
+    if (interf > 0.0) {
+        vec2 tremor = (vec2(hash11(quadro * 1.31 + s), hash11(quadro * 2.77 + s)) - 0.5) * jitterAmount * vec2(1.0, 0.1);
+        vec2 p = tv + vec2(dotsSpeedX, dotsSpeedY) * acTime + tremor;
+        float fila = floor(p.y);
+        float x = p.x / 9.0 + fila * interferenceFreq;
+        float celulaX = floor(x);
+        float f = fract(x);
+        float tem = step(hash21(vec2(celulaX, fila) + s), 0.28);
+        float ponto = smoothstep(0.0, 0.06, f) * (1.0 - smoothstep(0.14, 0.26, f));
+        // A interferência vem em rajadas, não na tela inteira.
+        float rajada = smoothstep(-0.2, 0.6, ruido1(p.y / tvRes.y * 4.0 + acTime * 0.7));
+        vec3 corDoPonto = effectMode == 0 ? 0.35 + 0.9 * hash33(vec3(celulaX, fila, s)) : vec3(1.0);
+        cor += corDoPonto * ponto * tem * rajada * interf * 0.8 * max(alfa, naTela.a);
+    }
+
+    // ------------------------------------------------ avanço rápido do vídeo
+    if (fastForward > 0.0 && ffBandFrequency > 0.0) {
+        float periodo = 1.0 / ffBandFrequency;
+        float yy = uvTela.y - ffBandShift;
+        float faixa = floor(yy / periodo);
+        float d = abs(mod(yy, periodo) - periodo * 0.5);
+        float meia = ffBandHeight * 0.5;
+        // A borda é rasgada: ruído ao longo da largura.
+        float borda = meia * (1.0 + 0.35 * ruido1(uvTela.x * 30.0 + quadro * 0.7 + faixa * 13.0));
+        float dentro = 1.0 - smoothstep(borda * 0.8, borda, d);
+        if (dentro > 0.0) {
+            float fil = floor(tv.y);
+            float rasgo = (hash21(vec2(fil, quadro + s)) - 0.5) * 0.3;
+            vec3 rasgada = lerP(vec2(uv.x + rasgo, uv.y)).rgb * 0.6;
+            if (effectMode == 1) rasgada = vec3(luma(rasgada));
+            float neve = hash31(vec3(floor(tv.x * 0.5), fil, quadro + s));
+            vec3 banda = mix(rasgada, vec3(neve) * naTela.a, 0.55);
+            banda += smoothstep(borda * 0.5, borda, d) * 0.35 * neve * naTela.a;
+            cor = mix(cor, banda * max(fastForward, 1.0), dentro * clamp(fastForward, 0.0, 1.0));
+            alfa = mix(alfa, max(alfa, naTela.a), dentro * clamp(fastForward, 0.0, 1.0));
+        }
+    }
+
+    // ------------------------------------------------ dropouts da fita
+    if (dropoutBrightness > 0.0) {
+        float quadroDaFita = floor(acTime * 30.0);
+        if (hash11(quadroDaFita * 1.37 + s + 3.0) < dropoutsAlways) {
+            float fil = floor(tv.y);
+            // Em que faixas da altura a fita está ruim neste quadro.
+            float nY = ruido1(uvTela.y * dropoutYFreq + quadroDaFita * 7.13) * 0.5 + 0.5;
+            float faixaRuim = smoothstep(1.0 - dropoutYThreshold * 0.6, 1.02 - dropoutYThreshold * 0.6, nY);
+            float linhaRuim = step(hash21(vec2(fil, quadroDaFita + s)), 0.18) * faixaRuim;
+            if (linhaRuim > 0.0) {
+                float ciclo = max(dropoutLength + dropoutGap, 0.001);
+                float xx = uvTela.x / ciclo + hash21(vec2(fil * 1.7, quadroDaFita + s + 2.0));
+                float pedaco = floor(xx);
+                float f = fract(xx) * ciclo;
+                float comprimento = dropoutLength * (0.4 + 1.2 * hash21(vec2(pedaco, fil + quadroDaFita)));
+                float risco = smoothstep(0.0, 0.01, f) * (1.0 - smoothstep(comprimento * 0.8, comprimento, f));
+                risco *= step(hash21(vec2(pedaco * 3.1, fil + s)), 0.6);
+                float grao = 0.7 + 0.3 * hash31(vec3(floor(tv), quadro + s));
+                cor += vec3(risco * dropoutBrightness * grao) * max(alfa, naTela.a);
+            }
+        }
+    }
+
+    // ------------------------------------------------ linhas de varredura
+    if (scanlines > 0.0) {
+        float linhas = tvRes.y * max(scanlinesRelFreq, 0.01);
+        float fw = linhas * acTexelSize.y;
+        float perfil = 0.5 + 0.5 * cos(TAU * (fract(uvTela.y * linhas) - 0.5));
+        // Abaixo de ~2 px por linha a grade vira moiré: some aos poucos.
+        float some = 1.0 - smoothstep(0.3, 0.6, fw);
+        cor *= clamp(1.0 - scanlines * (1.0 - perfil) * some, 0.0, 1.0);
+    }
+
+    // ------------------------------------------------ correção de cor
+    if (hueShift != 0.0) cor = girarCroma(cor, radians(hueShift));
+    if (saturationAmt != 1.0) {
+        float l = luma(cor);
+        cor = vec3(l) + (cor - vec3(l)) * saturationAmt;
+    }
+    cor *= scaleLights * tintLights.rgb;
+    cor += (vec3(offsetDarks) + tintDarks.rgb) * max(alfa - cor, vec3(0.0));
+
+    // ------------------------------------------------ vinheta
+    if (vignetteDarkness > 0.0) {
+        vec2 q = vec2((uvTela.x - 0.5) * 2.0, (uvTela.y - 0.5) * 2.0 / max(acAspect, 0.0001));
+        float d = length(vec2(q.x, q.y / max(vignetteRelHeight, 0.1)));
+        float v = smoothstep(vignetteRadius, vignetteRadius + max(vignetteSoftness, 0.001), d);
+        cor *= 1.0 - clamp(vignetteDarkness, 0.0, 1.0) * v;
+    }
+
+    // ------------------------------------------------ desligar
+    /*
+     * A TV de tubo desligando: a imagem esbranquiça e desaba num risco
+     * horizontal (até 0,55), o risco encolhe até um ponto (até 0,9), e o ponto
+     * some com um clarão. `Fade Out Time` é o quanto do fim é o apagar.
+     */
+    if (turnOff > 0.0) {
+        cor = mix(cor, vec3(max(alfa, naTela.a)), smoothstep(0.04, 0.5, turnOff));
+        if (apagada) cor = vec3(0.0);
+        alfa = naTela.a;
+        // O apagar vem ao quadrado: o risco segura o brilho e cai no fim.
+        float inicio = 1.0 - clamp(fadeOutTime, 0.0, 1.0);
+        float apagando = smoothstep(inicio, 1.0, turnOff);
+        float resta = fadeOutTime > 0.0
+            ? 1.0 - apagando * apagando
+            : (turnOff >= 1.0 ? 0.0 : 1.0);
+        cor *= resta;
+        // O clarão fica de fora do apagar — senão ele sumiria justo no fim,
+        // que é onde ele acontece. Tem o próprio envelope: sobe com o ponto se
+        // formando e morre no último décimo.
+        if (flareWidth > 0.0 && turnOff < 1.0) {
+            vec2 c = (uvTela - 0.5) * vec2(acAspect, 1.0);
+            float quando = smoothstep(0.6, 0.88, turnOff) * (1.0 - smoothstep(0.9, 1.0, turnOff));
+            float w = 0.05 * flareWidth;
+            float redondo = exp(-dot(c, c) / (w * w));
+            float risco = exp(-abs(c.y) / (0.006 * flareWidth))
+                        * exp(-abs(c.x) / (0.35 * flareWidth * max(escalaX, 0.05)));
+            cor += vec3(1.0, 0.97, 0.92) * (redondo * 0.6 + risco * 0.4) * quando * flareBrightness * 0.5 * alfa;
+        }
+    }
+
+    // ------------------------------------------------ máscara e saída
+    float quanto = 1.0;
+    if (maskUse > 0 && textureSize(maskLayer, 0).x > 1) {
+        // Sem camada escolhida o motor entrega uma textura 1×1 (empty="transparent"):
+        // aí a máscara não existe, e o efeito vale na camada inteira.
+        float r = blurMask * 0.02;
+        vec4 m = texture(maskLayer, uvTela) * 0.4
+               + (texture(maskLayer, uvTela + vec2(r, 0.0)) + texture(maskLayer, uvTela - vec2(r, 0.0))
+                + texture(maskLayer, uvTela + vec2(0.0, r)) + texture(maskLayer, uvTela - vec2(0.0, r))) * 0.15;
+        float v = maskUse == 1 ? luma(m.rgb) * m.a : m.a;
+        quanto = invertMask ? 1.0 - v : v;
+    }
+    vec4 efeito = vec4(clamp(cor, 0.0, max(alfa, 0.0001)), clamp(alfa, 0.0, 1.0));
+    vec4 original = vec4(naTela.rgb * naTela.a, naTela.a);
+    vec4 saida = mix(original, efeito, clamp(quanto, 0.0, 1.0));
+    return vec4(saida.a > 0.0001 ? saida.rgb / saida.a : vec3(0.0), saida.a);
+}
+
+void main() {
+    if (acPass == 0) { fragColor = claroParaOrthicon(); return; }
+    if (acPass == 1) { fragColor = desfocar(claroA, acScreenNorm); return; }
+    if (acPass == 2) { fragColor = desfocar(claroB, acScreenNorm); return; }
+    fragColor = aTv();
+}
+    ]]></shader>
+</effect>

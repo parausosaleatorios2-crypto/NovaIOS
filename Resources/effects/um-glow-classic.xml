@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.glowclassic"
+    name="Brilho Clássico (Ultra Motion)"
+    name-en="Classic Glow (Ultra Motion)"
+    desc="Limiar + desfoque gaussiano somado — bloom simples."
+    desc-en="Threshold plus Gaussian blur, added back — plain bloom."
+    category="stylize"
+    tags="ultramotion,glow,bloom,classic,light">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+        <slider id="radius"    label="Raio"        default="10.0" min="0.0" max="40.0" step="0.5" />
+        <slider id="threshold" label="Limiar"      default="0.55" min="0.0" max="1.0"  step="0.01" />
+        <slider id="gain"      label="Ganho"       default="1.0"  min="0.0" max="4.0"  step="0.05" />
+    </params>
+
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const int N = 11;
+const float OFF[11] = float[11](-5.0,-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0,5.0);
+const float WT[11]  = float[11](0.027,0.065,0.121,0.175,0.198,0.198,0.198,0.175,0.121,0.065,0.027);
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    vec2 d = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec2 passo = d * acTexelSize * (radius * acEscalaDePixel);
+
+    vec3 soma = vec3(0.0);
+    float pt = 0.0;
+    for (int i = 0; i < N; i++) {
+        vec2 u = acScreenNorm + passo * OFF[i];
+        vec3 c = (acPass == 0) ? texture(inputImg, u).rgb : texture(hblur, u).rgb;
+        if (acPass == 0) {
+            float l = dot(c, LUMA);
+            float k = smoothstep(threshold, threshold + 0.15, l);
+            c *= k;
+        }
+        soma += c * WT[i];
+        pt += WT[i];
+    }
+    vec3 bloom = soma / pt;
+    if (acPass == 0) { fragColor = vec4(bloom, 1.0); return; }
+
+    vec4 orig = texture(inputImg, acScreenNorm);
+    fragColor = vec4(orig.rgb + bloom * gain, orig.a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TAMANHO DO PULSO — o Pulse Size do Alight Motion, conta por conta (0.549.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora faz tamanho do pulso 100% igual o do alight motion", da série "100% iguais
+  ao AM". Mesmos parâmetros, mesmos ids, faixas, passos e padrões do `com.alightcreative.effects.pulsate2` (o Pulse
+  Size atual do AM 5.0.281; um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM
+  (`assets/effects/pulsate2.xml` do APK descompactado) e escrita de novo em `model/Pulso.kt`; o arquivo do AM não
+  entra no repositório. A conferência é `node tools/ampulso/referencia.js` → `PulsoAmTest`: o script do próprio AM
+  e o Kotlin daqui, número a número.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Aumenta e diminui a camada (em torno da âncora, multiplicando a escala dela) entre o Encolher e o Ampliar:
+      m = sin((ciclos + Fase Inicial) · 3,14159)        Onda Seno
+      m = triângulo((ciclos + Fase Inicial) / 2)        Onda Triângulo
+      escala = escala · ((Ampliar − Encolher) · (m + 1) / 2 + Encolher)
+    A camada começa no MEIO dos dois e cresce primeiro. Com os padrões (0,9 e 1,1), começa no tamanho dela e
+    pulsa 10% para cada lado.
+  - Frequência 2 = um pulso inteiro por segundo (o seno é de `x · π`: a Frequência conta meias voltas). Ela é do
+    tipo "hz" do AM: o script recebe os CICLOS ACUMULADOS desde o começo da camada, então com quadro-chave a
+    camada só passa a pulsar mais depressa, sem pular (a mesma soma do Oscilar e do Balanço). Vai até 0 (parada).
+  - Fase Inicial de 0 a 2, em meias voltas: 1 começa no meio encolhendo; 2 é a volta inteira.
+  - Vários Tamanhos do pulso na mesma camada multiplicam, na ordem da lista (cada um guardado em float, como lá).
+  - Os passos são os que o AM dá a um `<spinner>` sem `step` (`UserParamParserKt.readSpinnerParam`: a potência de
+    10 logo abaixo de (máx − mín) ÷ 100): 0,1 na Frequência, 0,01 no resto. O `originValue="1"` do Encolher e do
+    Ampliar no AM não aparece em tela nenhuma (só o do slider desenha a barra), então não há o que repetir. O AM
+    escreve "Freqüência" (a grafia antiga); aqui é "Frequência", como no Balanço.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele ESCALA a camada. Quem executa é
+  `model/Pulso.kt`, dentro de `LayerGeometry.matrizLocal`, por onde passa a matriz de toda camada (prévia,
+  exportação, seleção, filhos e o desfoque de movimento); a nitidez ao escalonar acompanha a camada ampliada. O
+  shader abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+
+  O Tamanho do pulso ANTIGO do AM (`com.alightcreative.effects.pulsate`, "deprecated") é o
+  `am-pulse-size-legacy.xml`, fora do catálogo.
+-->
+<effect
+    id="nova.effect.am-pulse-size"
+    name="Tamanho do pulso"
+    name-en="Pulse Size"
+    desc="Aumenta e diminui a camada repetidamente ao longo do tempo, com base em uma onda senoidal ou triangular (o Pulse Size do Alight Motion)."
+    desc-en="Automatically grows and shrinks the layer repeatedly over time, based on a sine wave or triangular wave (Alight Motion's Pulse Size)."
+    category="distort"
+    stage="transform"
+    tags="pulso,pulsar,tamanho,escala,crescer,encolher,ampliar,batida,respirar,automático,transformação,pulse,pulse size,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="2.0" min="0.0" max="16.0" step="0.1" type="hz" />
+        <spinner id="minsize" label="Encolher" default="0.9" min="0.0" max="1.0" step="0.01" />
+        <spinner id="maxsize" label="Ampliar" default="1.1" min="1.0" max="2.0" step="0.01" />
+        <spinner id="phase" label="Fase Inicial" default="0.0" min="0.0" max="2.0" step="0.01" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

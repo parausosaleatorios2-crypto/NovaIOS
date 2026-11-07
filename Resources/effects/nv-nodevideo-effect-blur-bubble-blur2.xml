@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Blur_bubble_blur2
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-blur-bubble-blur2"
+    name="Effect Blur Bubble Blur2 (NV)"
+    name-en="Effect Blur Bubble Blur2 (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Blur_bubble_blur2', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Blur_bubble_blur2', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_size" label="Size" default="0.3" min="0" max="1" step="0.01" />
+        <slider id="_threshold" label="Threshold" default="2.5" min="0" max="5" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+float u_xlat4;
+void main()
+{
+    u_xlat0.x = _threshold * _size;
+    u_xlat4 = _resolution.y * 0.5;
+    u_xlat0.x = u_xlat0.x / u_xlat4;
+    u_xlat1 = u_xlat0.xxxx * vec4(1.25, 0.0, -1.25, 0.0) + acScreenNorm.xyxy;
+    u_xlat2 = texture(inputImg, u_xlat1.zw);
+    u_xlat1 = texture(inputImg, u_xlat1.xy);
+    u_xlat2 = u_xlat2 * vec4(0.189999998, 0.189999998, 0.189999998, 0.189999998);
+    u_xlat1 = u_xlat1 * vec4(0.189999998, 0.189999998, 0.189999998, 0.189999998) + u_xlat2;
+    u_xlat2 = u_xlat0.xxxx * vec4(2.5, 0.0, -2.5, 0.0) + acScreenNorm.xyxy;
+    u_xlat3 = texture(inputImg, u_xlat2.xy);
+    u_xlat2 = texture(inputImg, u_xlat2.zw);
+    u_xlat1 = u_xlat3 * vec4(0.170000002, 0.170000002, 0.170000002, 0.170000002) + u_xlat1;
+    u_xlat1 = u_xlat2 * vec4(0.170000002, 0.170000002, 0.170000002, 0.170000002) + u_xlat1;
+    u_xlat2 = u_xlat0.xxxx * vec4(3.75, 0.0, -3.75, 0.0) + acScreenNorm.xyxy;
+    u_xlat3 = texture(inputImg, u_xlat2.xy);
+    u_xlat2 = texture(inputImg, u_xlat2.zw);
+    u_xlat1 = u_xlat3 * vec4(0.150000006, 0.150000006, 0.150000006, 0.150000006) + u_xlat1;
+    u_xlat1 = u_xlat2 * vec4(0.150000006, 0.150000006, 0.150000006, 0.150000006) + u_xlat1;
+    u_xlat2 = u_xlat0.xxxx * vec4(5.0, 0.0, -5.0, 0.0) + acScreenNorm.xyxy;
+    u_xlat3 = texture(inputImg, u_xlat2.xy);
+    u_xlat2 = texture(inputImg, u_xlat2.zw);
+    u_xlat1 = u_xlat3 * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat1;
+    u_xlat1 = u_xlat2 * vec4(0.129999995, 0.129999995, 0.129999995, 0.129999995) + u_xlat1;
+    u_xlat2 = u_xlat0.xxxx * vec4(6.25, 0.0, -6.25, 0.0) + acScreenNorm.xyxy;
+    u_xlat3 = texture(inputImg, u_xlat2.xy);
+    u_xlat2 = texture(inputImg, u_xlat2.zw);
+    u_xlat1 = u_xlat3 * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat1;
+    u_xlat1 = u_xlat2 * vec4(0.109999999, 0.109999999, 0.109999999, 0.109999999) + u_xlat1;
+    u_xlat2 = u_xlat0.xxxx * vec4(7.5, 0.0, -7.5, 0.0) + acScreenNorm.xyxy;
+    u_xlat3 = texture(inputImg, u_xlat2.xy);
+    u_xlat2 = texture(inputImg, u_xlat2.zw);
+    u_xlat1 = u_xlat3 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + u_xlat1;
+    u_xlat1 = u_xlat2 * vec4(0.0799999982, 0.0799999982, 0.0799999982, 0.0799999982) + u_xlat1;
+    u_xlat2 = u_xlat0.xxxx * vec4(8.75, 0.0, -8.75, 0.0) + acScreenNorm.xyxy;
+    u_xlat0 = u_xlat0.xxxx * vec4(10.0, 0.0, -10.0, 0.0) + acScreenNorm.xyxy;
+    u_xlat3 = texture(inputImg, u_xlat2.xy);
+    u_xlat2 = texture(inputImg, u_xlat2.zw);
+    u_xlat1 = u_xlat3 * vec4(0.0500000007, 0.0500000007, 0.0500000007, 0.0500000007) + u_xlat1;
+    u_xlat1 = u_xlat2 * vec4(0.0500000007, 0.0500000007, 0.0500000007, 0.0500000007) + u_xlat1;
+    u_xlat2 = texture(inputImg, u_xlat0.xy);
+    u_xlat0 = texture(inputImg, u_xlat0.zw);
+    u_xlat1 = u_xlat2 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + u_xlat1;
+    u_xlat0 = u_xlat0 * vec4(0.0199999996, 0.0199999996, 0.0199999996, 0.0199999996) + u_xlat1;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat0 = u_xlat1 * vec4(0.200000003, 0.200000003, 0.200000003, 0.200000003) + u_xlat0;
+    fragColor = u_xlat0 * vec4(0.5, 0.5, 0.5, 0.5);
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AUDIO WAVEFORM — o efeito nativo do After Effects, lido do plugin (0.455.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "faz o waveform". O "Espectro de áudio" que já existia é um
+  desenho próprio da Nova (barras de frequência, com queda lenta); ESTE é o Audio Waveform do AE,
+  para os presets converterem com os valores deles.
+
+  DE ONDE VEIO (tools/audwave/benchmark, 281 renders em 16 bpc + o desmonte do AudWave.aex):
+
+  - o efeito pede ao AE o áudio de [agora + Offset − Duration/2, Duration] a 44,1 kHz e o reparte
+    em blocos, um por Displayed Sample. De cada bloco ficam o mínimo e o máximo;
+  - Digital risca do mínimo ao máximo; Analog Lines e Analog Dots escolhem UM dos dois por ponto:
+    alternando (semente 0 — e o quadro decide por qual começa) ou por sorteio (rand() da Microsoft);
+  - cada ponto fica a trunc(valor / 65535 · Maximum Height) px do caminho, na perpendicular;
+  - o traço: opacidade = 0,5 + (T/2 − d) / (1 + Softness · (T − 1)), d = distância ao traço mais
+    próximo, T = Thickness; a cor vai de Inside para Outside em meia espessura (nunca em menos de
+    2 px: traço fino já começa misturado). O alfa das duas cores não conta. Thickness 0 não desenha.
+
+  Tudo isso é conta do MOTOR (`AudioWaveform.kt`): os pontos chegam prontos na textura `ondaImg`
+  (`src="waveform"`), um por texel, e o shader só mede a distância até eles.
+
+  QUANTO BATE (áudio a 44,1 kHz): este shader, na GPU do PC, fica a no máximo 1 nível (de 255) do AE
+  em 112 dos 114 casos de validação — o que sobra é arredondamento de 8 bits. Os outros dois estão
+  em tools/audwave/benchmark/LEIAME.md (o primeiro ponto, com a janela passando do fim do som).
+
+  FORA: Path (o caminho de uma máscara) e a escolha da camada de áudio — aqui é o som que está
+  tocando na composição. APROXIMADO: áudio que não é 44,1 kHz (o AE reamostra com um filtro que não
+  foi medido) e mais de 64 pontos ao alcance do mesmo pixel (milhares de amostras com traço grosso).
+-->
+<effect
+    id="nova.effect.aeaudiowaveform"
+    name="Audio Waveform (AE)"
+    name-en="Audio Waveform (AE)"
+    desc="O Audio Waveform do After Effects: a forma de onda do som da composição, em barras, linha ou pontos."
+    desc-en="After Effects' Audio Waveform: the waveform of the composition audio as bars, a line or dots."
+    category="procedural"
+    tags="audio waveform,waveform,forma de onda,onda,áudio,som,música,after effects,visualizador,digital,analog">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Os pontos do quadro, calculados pelo motor com os controles abaixo (pelo id). -->
+        <texture id="ondaImg" src="waveform" />
+
+        <point id="startPoint" label="Start Point" defaultX="0.1" defaultY="0.5" />
+        <point id="endPoint" label="End Point" defaultX="0.9" defaultY="0.5" />
+        <slider id="samples" label="Displayed Samples" default="120" min="1" max="44100" step="1" type="integer" />
+        <slider id="maxHeight" label="Maximum Height" default="120.0" min="1.0" max="4000.0" step="1.0" />
+        <slider id="duration" label="Audio Duration (milliseconds)" default="125.0" min="0.0" max="30000.0" step="1.0" />
+        <slider id="offset" label="Audio Offset (milliseconds)" default="0.0" min="-30000.0" max="30000.0" step="1.0" snap="0.0" />
+        <slider id="thickness" label="Thickness" default="3.0" min="0.0" max="400.0" step="0.1" />
+        <slider id="softness" label="Softness" default="50.0" min="0.0" max="100.0" step="1.0" />
+        <slider id="seed" label="Random Seed (Analog)" default="0" min="0" max="32000" step="1" type="integer" />
+        <color id="insideColor" label="Inside Color" default="#FF00FF" />
+        <color id="outsideColor" label="Outside Color" default="#FF3296" />
+        <selector id="channels" label="Waveform Options" default="0" options="Mono|Left|Right" />
+        <selector id="display" label="Display Options" default="1" options="Digital|Analog Lines|Analog Dots" />
+        <switch id="composite" label="Composite On Original" default="false" />
+    </params>
+
+    <preview anda="true" />
+
+    <shader><![CDATA[
+// A largura da textura de pontos (`WaveformTexture.LARGURA`) e quantos pontos, no máximo, um pixel olha.
+const int LARGURA = 256;
+const int VIZINHOS = 64;
+
+/** O texel `i` da textura de pontos, desempacotado: dois números de 16 bits. */
+vec2 par(int i) {
+    vec4 b = floor(texelFetch(ondaImg, ivec2(i % LARGURA, i / LARGURA), 0) * 255.0 + 0.5);
+    return vec2(b.r * 256.0 + b.g, b.b * 256.0 + b.a);
+}
+
+/** Quantos px o ponto fica do caminho: o valor de 16 bits vezes a altura, cortado para o zero. */
+float altura(float bruto) { return trunc((bruto - 32768.0) / 65535.0 * maxHeight); }
+
+float aoSegmento(vec2 p, vec2 a, vec2 b) {
+    vec2 v = b - a;
+    float l2 = dot(v, v);
+    float t = l2 > 0.0 ? clamp(dot(p - a, v) / l2, 0.0, 1.0) : 0.0;
+    return length(p - a - t * v);
+}
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    return vec4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
+}
+
+void main() {
+    vec4 fundo = composite ? texture(inputImg, acScreenNorm) : vec4(0.0);
+
+    vec2 cabecalho = par(0);
+    int quantos = int(cabecalho.x + 0.5);
+    int divisor = max(int(cabecalho.y + 0.5), 1);
+    if (thickness <= 0.0 || quantos <= 0) { fragColor = fundo; return; }
+
+    // Tudo em px da COMPOSIÇÃO: a prévia em meia resolução desenha o mesmo traço, menor.
+    vec2 tamanho = acResolution / acEscalaDePixel;
+    vec2 inicio = startPoint * tamanho;
+    vec2 caminho = endPoint * tamanho - inicio;
+    float comprimento = length(caminho);
+    // O AE trata a coordenada do ponto como o CENTRO do pixel: daí o meio px.
+    vec2 rel = acScreenNorm * tamanho - inicio - 0.5;
+
+    float T = max(thickness, 1.0);
+    float macio = 1.0 + softness * 0.01 * (T - 1.0);
+    float alcance = 0.5 * (T + macio);
+    bool linhas = display == 1;
+
+    float d = 1.0e9;
+    if (comprimento < 1.0e-6) {
+        // Start e End no mesmo lugar: todos os pontos caem ali.
+        if (!linhas || quantos > 1 || samples < 1.5) d = length(rel);
+    } else {
+        vec2 ao = caminho / comprimento;
+        vec2 normal = vec2(caminho.y, -caminho.x) / comprimento;
+        vec2 passo = caminho / float(divisor);
+        float a = dot(rel, ao);
+        float q = dot(rel, normal);
+
+        if (abs(q) <= 0.5 * maxHeight + 1.0 + alcance) {
+            float espaco = max(comprimento / float(divisor), 1.0e-4);
+            float de = clamp(ceil((a - alcance) / espaco), -1.0, 70000.0);
+            float ate = clamp(floor((a + alcance) / espaco), -2.0, 70000.0);
+            int k0 = max(int(de) - (linhas ? 1 : 0), 0);
+            int k1 = min(int(ate), quantos - (linhas ? 2 : 1));
+            // Com milhares de amostras e traço grosso passam de VIZINHOS: aí o pixel olha um a cada `salto`.
+            int salto = max((k1 - k0 + VIZINHOS) / VIZINHOS, 1);
+            for (int i = 0; i < VIZINHOS; i++) {
+                int k = k0 + i * salto;
+                if (k > k1) break;
+                vec2 v = par(k + 1);
+                vec2 base = float(k) * passo;
+                if (display == 0) {
+                    d = min(d, aoSegmento(rel, base - altura(v.x) * normal, base - altura(v.y) * normal));
+                } else if (display == 2) {
+                    d = min(d, length(rel - base + altura(v.x) * normal));
+                } else {
+                    float seguinte = altura(par(k + 2).x);
+                    d = min(d, aoSegmento(rel, base - altura(v.x) * normal, base + passo - seguinte * normal));
+                }
+            }
+            // Uma amostra só, em linha: o AE liga o Start Point ao ponto.
+            if (linhas && quantos == 1 && samples < 1.5) {
+                d = min(d, aoSegmento(rel, vec2(0.0), -altura(par(1).x) * normal));
+            }
+        }
+    }
+
+    // A régua do traço, medida: abaixo de 1 px ele é o de 1 px, mais transparente.
+    float alfa = clamp(0.5 + (0.5 * T - d) / macio, 0.0, 1.0) * min(thickness, 1.0);
+    float meia = max(0.5 * thickness, 2.0);
+    float m0 = (meia - 0.5 * thickness) / (2.0 * meia);
+    vec3 cor = mix(insideColor.rgb, outsideColor.rgb, min(m0 + d / meia, 1.0 - m0));
+
+    fragColor = composite ? sobre(fundo, vec4(cor, alfa)) : vec4(cor, alfa);
+}
+
+    ]]></shader>
+</effect>

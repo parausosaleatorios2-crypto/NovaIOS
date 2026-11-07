@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_FLICKER — o Flicker do Sapphire (Boris FX), medido no plugin (0.434.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "faz o s flicker agora". Medido no S_Flicker do Sapphire, no After
+  Effects 2023 (tools/sflicker/benchmark): cerca de 72 mil quadros. O efeito é o mesmo em todo
+  pixel — um ganho por canal, por quadro —, então a fonte das medidas é uma imagem de amostras
+  (cinzas, cores e uma fileira com alfa 0,5) e o ganho sai de um ajuste linear, com resíduo de
+  0,00005.
+
+  O QUE FOI MEDIDO:
+
+  - ganho do canal = Brightness + Amplitude · (Red/Green/Blue Amp) · pisca, nunca abaixo de zero;
+    pisca = Rand Luma Amp · ruído do brilho + Rand Color Amp · ruído do canal + Wave Amp · onda.
+    O ganho multiplica a cor (reta) e corta em branco; o alfa não muda.
+  - O ruído anda com u = Rand Freq · t, em segundos do tempo da CAMADA (não muda com a taxa de
+    quadros; com quadros-chave na frequência é freq(t) · t, não a integral).
+  - A onda é um COSSENO de frequência Wave Freq (em Hz), e a fase de cada canal é em voltas.
+  - O RUÍDO não tem fórmula que se recupere de fora (como no S_Shake): outra semente é outra
+    curva, sem relação com esta. A curva do Sapphire foi GRAVADA para a semente padrão do plugin
+    (0,123 — a que os três presets do snow usam), de 1/16 em 1/16 de u, até u = 2048: o brilho e
+    a cor de cada canal, em assets/flicker/sflicker.png (16 bits por valor). Com essa semente o
+    pisca é o do After Effects; com QUALQUER OUTRA o efeito pisca do mesmo jeito, mas não é a
+    curva de lá.
+  - A tabela cobre 68 s a 30 Hz (42 s a 48 Hz). Depois disso ela é percorrida de volta (sem
+    salto): continua piscando, deixa de ser a curva do AE.
+
+  QUANTO BATE (GPU do PC × AE, níveis de 255; tools/sflicker/benchmark/resultado.txt):
+  os 3 presets do snow — erro médio 0,002 a 0,004, pior pixel 0,07; casos misturados (cor, onda,
+  canais, brilho, 48 Hz, 60 qps, o fim da tabela, alfa parcial) — erro médio até 0,023, pior
+  pixel 0,37. Entre duas amostras da tabela a interpolação erra até 0,001 do ganho.
+
+  O QUE NÃO ENTROU: nada dos controles — estão todos. Só a semente: fora da 0,123 o pisca não é
+  o do After Effects.
+-->
+<effect
+    id="nova.effect.sflicker"
+    name="S_Flicker"
+    name-en="S_Flicker"
+    desc="O Flicker do Sapphire: o brilho e a cor da imagem piscam a cada quadro, ao acaso ou em onda."
+    desc-en="Sapphire's Flicker: the image's brightness and colour flicker every frame, randomly or as a wave."
+    category="color"
+    tags="flicker,piscar,pisca,cintilar,tremular,luz,strobe,estrobo,sapphire,s_flicker,brilho,twitch"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tabela" src="image" files="flicker/sflicker.png" />
+
+        <slider id="amplitude" label="Amplitude" default="0.2" min="0.0" max="10.0" step="0.01" snap="0.2,0.0,1.0" />
+        <slider id="randLumaAmp" label="Rand Luma Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0,0.0" />
+        <slider id="randColorAmp" label="Rand Color Amp" default="0.0" min="0.0" max="10.0" step="0.01" snap="0.0,1.0" />
+        <slider id="randFreq" label="Rand Freq" default="30.0" min="0.0" max="200.0" step="0.1" snap="30.0" />
+
+        <slider id="waveAmp" group="Wave" label="Wave Amp" default="0.0" min="0.0" max="10.0" step="0.01" snap="0.0,1.0" />
+        <slider id="waveFreq" group="Wave" label="Wave Freq" default="5.0" min="0.0" max="100.0" step="0.01" snap="5.0" />
+        <slider id="waveRPhase" group="Wave" label="Wave R Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="waveGPhase" group="Wave" label="Wave G Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="waveBPhase" group="Wave" label="Wave B Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+
+        <slider id="redAmp" label="Red Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0,0.0" />
+        <slider id="greenAmp" label="Green Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0,0.0" />
+        <slider id="blueAmp" label="Blue Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0,0.0" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="seed" label="Seed" default="0.123" min="0.0" max="100.0" step="0.001" snap="0.123" />
+    </params>
+
+    <!-- Na vitrine, a cintilação padrão é fraca demais para uma imagem parada: forte, com cor. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="amplitude" value="3.0" />
+        <set param="randLumaAmp" value="3.0" />
+        <set param="randColorAmp" value="3.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+// ---- A TABELA DO RUÍDO (gerada por tools/sflicker/benchmark/gerar.py; não editar à mão) ----
+const int LARGURA = 1024;                  // amostras por linha da textura
+const float PASSO = 16.0;                    // amostras por unidade de u
+const float FAIXA = 0.94;                    // os valores guardados vão de −FAIXA a +FAIXA
+const float SEMENTE = 0.122986;                // a semente medida no After Effects (a padrão do plugin)
+const int TAMANHO = 32769;                  // amostras de cada trecho
+// a linha onde começa cada trecho: brilho, e a cor de cada canal (R, G, B)
+// Em FUNÇÕES, não em arrays constantes: índice variável num array constante é o que driver de celular erra
+// (como no S_Shake que "não funcionam em alguns celulares", 30/10/2026).
+int linhaDoTrecho(int t) { if (t == 0) return 0; if (t == 1) return 33; if (t == 2) return 66; if (t == 3) return 99; return 0; }
+const float PI2 = 6.28318530718;
+
+/** Uma amostra da tabela: 16 bits em dois canais (R alto, G baixo). */
+float amostra(int trecho, int i) {
+    // fora da tabela o pisca continua: ela é percorrida de volta, e de novo de ida (sem salto)
+    int volta = 2 * (TAMANHO - 1);
+    // o vaivém é simétrico em volta do 0: o índice negativo vale o positivo (e dividir inteiro negativo é
+    // indefinido no GLSL ES — cada driver arredonda de um jeito)
+    if (i < 0) i = -i;
+    i = i - (i / volta) * volta;
+    if (i > TAMANHO - 1) i = volta - i;
+    vec4 t = texelFetch(tabela, ivec2(i - (i / LARGURA) * LARGURA, linhaDoTrecho(trecho) + i / LARGURA), 0);
+    return ((floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5)) / 65535.0 * 2.0 - 1.0) * FAIXA;
+}
+
+/** O ruído do trecho (0 = brilho, 1 a 3 = a cor de R, G e B) no ponto `u`. */
+float ruido(int trecho, float u) {
+    // A semente medida no After Effects dá o MESMO pisca de lá; qualquer outra lê a mesma tabela a
+    // partir de um ponto que depende da semente — outro pisca, do mesmo jeito.
+    float desvio = abs(seed - SEMENTE) < 0.0006 ? 0.0 : fract(seed * 0.61803 + 0.137) * 1500.0 + 37.0;
+    float x = (abs(u) + desvio) * PASSO;
+    float i = floor(x), f = x - i;
+    int k = int(i);
+    float p0 = amostra(trecho, k - 1), p1 = amostra(trecho, k), p2 = amostra(trecho, k + 1), p3 = amostra(trecho, k + 2);
+    // Catmull–Rom pelas quatro amostras vizinhas
+    return p1 + 0.5 * f * (p2 - p0 + f * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3 + f * (3.0 * (p1 - p2) + p3 - p0)));
+}
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    // Medido: o ruído anda com u = Rand Freq · t (em segundos — não depende da taxa de quadros).
+    float u = randFreq * acTime;
+    vec3 pisca = vec3(0.0);
+    if (randLumaAmp != 0.0) pisca += randLumaAmp * ruido(0, u);
+    if (randColorAmp != 0.0) pisca += randColorAmp * vec3(ruido(1, u), ruido(2, u), ruido(3, u));
+    // Medido: a onda é um COSSENO (começa no alto), e a fase de cada canal é em voltas.
+    if (waveAmp != 0.0) pisca += waveAmp * cos(PI2 * (waveFreq * acTime - vec3(waveRPhase, waveGPhase, waveBPhase)));
+    // Medido: ganho = Brightness + Amplitude · (amplitude do canal) · pisca, nunca abaixo de zero;
+    // multiplica a cor, e o alfa não muda.
+    vec3 ganho = max(vec3(0.0), brightness + amplitude * vec3(redAmp, greenAmp, blueAmp) * pisca);
+    fragColor = vec4(clamp(cor.rgb * ganho, 0.0, 1.0), cor.a);
+}
+]]></shader>
+</effect>

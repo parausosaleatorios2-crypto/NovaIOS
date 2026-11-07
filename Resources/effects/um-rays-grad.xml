@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.raysgrad"
+    name="Raios em Leque (Ultra Motion)"
+    name-en="Rays Gradient (Ultra Motion)"
+    desc="Leque de raios saindo de um ponto — luz de janela."
+    desc-en="Fan of rays from a point — window light."
+    category="stylize"
+    tags="ultramotion,rays,fan,light,window">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="count"     label="Raios"    default="18" min="2" max="60" step="1" type="integer" />
+        <slider id="spin"      label="Giro"     default="0.3" min="0.0" max="4.0" step="0.05" />
+        <slider id="intensity" label="Intensidade" default="0.5" min="0.0" max="2.0" step="0.02" />
+        <slider id="falloff"   label="Queda"    default="1.4" min="0.3" max="4.0" step="0.05" />
+        <color  id="tint"      label="Cor"      default="#fffff0b8" />
+        <point  id="source"    label="Fonte"    defaultX="0.5" defaultY="0.2" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    vec2 p = acScreenNorm - source;
+    p.x *= acAspect;
+    float r = length(p);
+    float ang = atan(p.y, p.x) + acTime * spin;
+    float faixa = 0.5 + 0.5 * cos(ang * float(int(count)));
+    float queda = exp(-r * falloff * 2.0);
+    float raio = faixa * queda;
+    vec3 cor = orig.rgb + tint.rgb * tint.a * raio * intensity;
+    fragColor = vec4(cor, orig.a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_GRADIENT — o Gradient do Sapphire (Boris FX), lido do plugin (0.450.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "s_gradient".
+
+  DE ONDE VEIO (tools/sgradient/benchmark): a conta INTEIRA está em texto na sapphire_ae.dll
+  (a definição do efeito) e foi conferida no After Effects (62 renders, 16 bpc):
+
+      linear = (p − Start) · (End − Start) / |End − Start|²         p no centro do pixel
+      suave  = (1 − cos(π · linear preso em 0..1)) / 2
+      g      = mistura(linear, suave, Smooth Curve)
+      cor    = (Start Color + (End Color − Start Color) · g preso em 0..1) · Brightness
+      saída  = Combine(cor, fonte pré-multiplicada · Bg Brightness)
+
+  Medido: as cores valem em 8 bits; em "Normal" (Output Opacity) a saída leva o alfa da fonte; em
+  "All Opaque" fica opaca. Add Noise soma ao g um sorteio de ± Add Noise / 512 dividido pela maior
+  diferença entre as duas cores (no canal que mais muda, ± Add Noise / 2 níveis de 255).
+
+  O modelo em numpy fica a 0,002 nível (de 255) do AE com branco e preto, e a 0,33 com cores
+  (o arredondamento delas em 8 bits, que o shader também faz).
+
+  O QUE NÃO ENTROU: Input Opacity (fica Normal), Mask e Mocha. O ruído do Add Noise tem a mesma
+  força do plugin, mas não o mesmo desenho pixel a pixel.
+
+  OS PONTOS NA CAMADA (0.612.0, `pontos="camada"`): relato de um usuário, "quando eu animo um personagem e
+  coloco um nulo, o gradient sai da configuração que deixei". Start e End eram lidos como fração do BUFFER, que
+  só é a camada sem folga: com o Puppet (que dá folga ao buffer conforme a pose) o degradê escorregava e
+  esticava; no grupo solto ele saía de ponta-cabeça e parado na tela, sem seguir o grupo. Agora a conta é no
+  espaço da camada (`acBufferNoPonto`, ver `render/PontoDoEfeito.kt`), como no AE: o degradê fica onde foi posto.
+-->
+<effect
+    id="nova.effect.sgradient"
+    name="S_Gradient"
+    name-en="S_Gradient"
+    desc="O Gradient do Sapphire: degradê linear entre dois pontos e duas cores, com curva suave, ruído e mistura com a camada."
+    desc-en="Sapphire's Gradient: a linear ramp between two points and two colours, with smooth curve, noise and combine modes."
+    category="procedural"
+    pontos="camada"
+    tags="s_gradient,sapphire,gradiente,gradient,degrade,ramp,rampa,boris,after effects,cc"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="start" label="Start XY" defaultX="0.5" defaultY="0.1" />
+        <point id="end" label="End XY" defaultX="0.5" defaultY="0.89" />
+        <color id="startColor" label="Start Color" default="#FFFFFF" />
+        <color id="endColor" label="End Color" default="#000000" />
+        <switch id="swapColors" label="Swap Colors" default="false" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="addNoise" label="Add Noise" default="0.0" min="0.0" max="256.0" step="0.5" snap="0.0" />
+        <slider id="smoothCurve" label="Smooth Curve" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="bgBrightness" label="Bg Brightness" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <selector id="combine" label="Combine" default="0" options="Grad Only|Mult|Add|Screen|Difference|Overlay" />
+        <selector id="outputOpacity" label="Output Opacity" default="1" options="All Opaque|Normal" />
+    </params>
+
+    <shader><![CDATA[
+float sorteio(vec2 p) {
+    vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    q += dot(q, q.yzx + 33.33);
+    return fract((q.x + q.y) * q.z);
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 pi = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    vec4 fonte = texelFetch(inputImg, pi, 0);
+
+    // Da definição do efeito: a posição ao longo da reta Start -> End (0 no início, 1 no fim), no espaço da CAMADA
+    // (o centro do pixel levado a ela, em unidades com a proporção dela; a escala comum some na divisão).
+    vec2 L = vec2(acAspect, 1.0);
+    vec2 q = acBufferNoPonto((vec2(pi) + 0.5) / vec2(T)) * L;
+    vec2 a = start * L, d = end * L - a;
+    float linear = dot(q - a, d) / max(dot(d, d), 1e-12);
+    float suave = (1.0 - cos(3.14159265 * clamp(linear, 0.0, 1.0))) * 0.5;
+    // Com ruído, fora da reta vale o linear (sem prender), para o ruído poder agir nas pontas.
+    float alvo = addNoise > 0.0 ? (linear > 0.5 ? max(linear, suave) : min(linear, suave)) : suave;
+    float g = mix(linear, alvo, clamp(smoothCurve, 0.0, 1.0));
+
+    // Medido: as cores valem em 8 bits.
+    vec3 c0 = floor(startColor.rgb * 255.0 + 0.5) / 255.0, c1 = floor(endColor.rgb * 255.0 + 0.5) / 255.0;
+    if (swapColors) { vec3 t = c0; c0 = c1; c1 = t; }
+    if (addNoise > 0.0) {
+        vec3 dc = abs(c0 - c1);
+        g += addNoise / (256.0 * max(0.001, max(dc.r, max(dc.g, dc.b)))) * (sorteio(vec2(pi)) - 0.5);
+    }
+    vec3 tex = mix(c0, c1, clamp(g, 0.0, 1.0)) * brightness;
+
+    vec3 b = fonte.rgb * fonte.a * bgBrightness;
+    vec3 cor;
+    if (combine == 1) cor = tex * b;
+    else if (combine == 2) cor = tex + b;
+    else if (combine == 3) cor = 1.0 - (1.0 - tex) * (1.0 - b);
+    else if (combine == 4) cor = abs(tex - b);
+    else if (combine == 5) cor = mix(1.0 - 2.0 * (1.0 - tex) * (1.0 - b), 2.0 * tex * b, vec3(lessThan(b, vec3(0.5))));
+    else cor = tex;
+
+    // Medido: em "Normal" a saída leva o alfa da fonte (a cor reta é a própria conta).
+    fragColor = vec4(clamp(cor, 0.0, 1.0), outputOpacity == 0 ? 1.0 : fonte.a);
+}
+]]></shader>
+</effect>

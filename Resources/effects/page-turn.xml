@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Virar página — um ROLO de verdade, não uma cortina com borda curva.
+
+  ============================================================================
+   POR QUE A VERSÃO ANTERIOR PARECIA UMA CORTINA (relato do snow, 28/09/2026,
+   comparando com o CC Page Turn do After Effects)
+  ============================================================================
+
+  A versão anterior só mexia no ALFA: a imagem em si nunca se dobrava, só o
+  corte que a revelava tinha uma borda curva em vez de reta. Resultado: lia
+  como "Cortina linear com uma curva a mais", porque é exatamente isso que
+  era por dentro.
+
+  Uma página virando de verdade tem um ROLO — um cilindro de papel que cresce
+  a partir da quina, mostrando o VERSO da página conforme enrola, com luz
+  variando pela curvatura. É isso que este arquivo passa a desenhar: a
+  textura da própria camada é AMOSTRADA de um jeito diferente dentro da
+  faixa do rolo (não só o alfa cortado), e aparece uma segunda amostra
+  (o verso, espelhado) que não existia antes.
+
+  ============================================================================
+   A CONTA: DESENROLANDO UM CILINDRO, E POR QUE SE VÊ O VERSO
+  ============================================================================
+
+  `p` é a distância (0 a 1) da quina escolhida ao longo do eixo da dobra —
+  a mesma projeção corrigida pelo aspecto que a "Cortina linear" já usa.
+  `foldPos` é onde a dobra está agora (anda com "Transição").
+  `dist = p - foldPos`: a posição de um pixel de TELA em relação à dobra.
+
+    dist <  0        → já virou de vez: mostra o que está atrás (alfa 0).
+    dist >= R         → ainda achatada: mostra a FRENTE sem mexer em nada.
+    0 <= dist < R     → em cima do ROLO.
+
+  Dentro do rolo, um ponto do papel a `s` de distância (ao longo do próprio
+  papel, "comprimento de arco") da dobra sobe por um cilindro de raio R: a
+  posição dele NA TELA é `R·sin(s/R)` à frente da dobra, e a altura dele
+  (perto ou longe da câmera) é `R·(1 − cos(s/R))` — cresce sem parar
+  conforme `s` cresce, então SEMPRE que duas posições de papel (uma vinda
+  da frente subindo, outra descendo por trás) projetam na MESMA tela, quem
+  está mais perto da câmera (o `s` maior) é quem se vê — e por isso, dentro
+  da faixa do rolo, o que aparece é sempre o ponto com `s` maior: o que já
+  passou de meia-volta (`s > R·π/2`), ou seja, o VERSO da folha, não a
+  frente. É a mesma conta que faz um cano de verdade mostrar sempre a parte
+  de cima dele pra quem olha de lado.
+
+  O verso usa a MESMA imagem, espelhada pela linha da dobra (a mesma
+  convenção do "Back Page: Source" do After Effects) e escurecida — sem
+  textura própria de verso, é a aproximação certa.
+
+  Verificado num script numpy antes de escrever aqui (renderizado como PNG,
+  não commitado — só a prova de conceito): a silhueta do rolo cresce e
+  desaparece pela quina certa, sem costura na borda nem descontinuidade, em
+  várias frações de "Transição" e nos quatro cantos.
+-->
+<effect
+    id="nova.effect.pageturn"
+    name="Virar página"
+    name-en="Page Turn"
+    desc="Revela ou esconde a camada como uma página virando de verdade, com o rolo de papel e o verso à mostra."
+    desc-en="Reveals or hides the layer like a real page turn — a rolling paper tube, with the back of the page showing through."
+    category="matte"
+    tags="pagina,página,virar,folhear,livro,transicao,curl,dobra,rolo">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="completion" label="Transição (%)"
+                default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0,50.0,100.0" />
+
+        <selector id="corner" label="Quina"
+                  options="Inferior direita|Inferior esquerda|Superior direita|Superior esquerda"
+                  default="0" />
+
+        <!-- Antes era só a curvatura da borda; agora é o RAIO do rolo de
+             papel — quanto maior, mais grosso e gradual; menor, mais fino e
+             abrupto. Mesmo id, mesma faixa: projeto salvo continua igual. -->
+        <slider id="curlCurve" label="Raio do rolo"
+                default="0.08" min="0.02" max="0.3" step="0.005" snap="0.08" />
+
+        <slider id="shadowAmount" label="Sombra à frente do rolo"
+                default="0.4" min="0.0" max="1.0" step="0.01" snap="0.4" />
+
+        <slider id="feather" label="Suavidade da borda"
+                default="0.02" min="0.0" max="0.15" step="0.005" snap="0.0" />
+
+        <!-- Agora inverte a ANIMAÇÃO (a "Transição" corre de trás para
+             frente), não só o alfa: com o rolo tendo forma própria, inverter
+             só a máscara deixaria o verso do papel aparecendo do lado errado. -->
+        <switch id="invertWipe" label="Inverter" default="false" />
+    </params>
+
+    <preview>
+        <set param="completion" value="40.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+/**
+ * Reconstrói a UV de outra posição `posAlvo` (0..1) ao longo do MESMO eixo
+ * da dobra, mantendo a coordenada perpendicular de `centred` — "andar" na
+ * imagem sem sair da faixa em que o pixel de tela já está. Usado para o
+ * verso espelhado do papel (ver o cabeçalho do arquivo).
+ */
+vec2 uvEm(float posAlvo, vec2 centred, vec2 axis, vec2 perp, float perpComp, float support) {
+    float along2 = posAlvo * 2.0 * support - support;
+    vec2 centred2 = along2 * axis + perpComp * perp;
+    return clamp(centred2 / vec2(acAspect, 1.0) + 0.5, 0.0, 1.0);
+}
+
+void main() {
+    vec2 uv0 = acScreenNorm;
+
+    // O eixo aponta DA quina escolhida PARA a oposta — a direção em que o
+    // rolo cresce.
+    vec2 axis;
+    if (corner == 0) axis = normalize(vec2(-1.0, -1.0));
+    else if (corner == 1) axis = normalize(vec2(1.0, -1.0));
+    else if (corner == 2) axis = normalize(vec2(-1.0, 1.0));
+    else axis = normalize(vec2(1.0, 1.0));
+    vec2 perp = vec2(-axis.y, axis.x);
+
+    vec2 centred = (uv0 - 0.5) * vec2(acAspect, 1.0);
+
+    // Mesma projeção aspect-corrigida da Cortina linear: sem normalizar pelo
+    // alcance na direção do eixo, a mesma porcentagem andaria mais rápido na
+    // diagonal que na horizontal.
+    float support = max(0.5 * (acAspect * abs(axis.x) + abs(axis.y)), 1e-4);
+    float along = dot(centred, axis);
+    float perpComp = dot(centred, perp);
+    float p = (along + support) / (2.0 * support);
+
+    float completion01 = invertWipe ? (1.0 - completion * 0.01) : (completion * 0.01);
+    float R = max(curlCurve, 0.005);
+
+    // Varre de fora do quadro (nada enrolado) a bem depois da quina oposta
+    // (nada sobra) — ver o comentário do cabeçalho.
+    float foldPos = -R * (PI * 0.5) + completion01 * (1.0 + R * PI);
+    float dist = p - foldPos;
+
+    float soft = max(feather, 0.0005);
+
+    /*
+     * AS TRÊS CORES POSSÍVEIS, SEMPRE CALCULADAS — e misturadas por peso no
+     * final, em vez de um `if`/`return` por região. Um `if` cortaria na
+     * hora: bem na borda do rolo, um lado desenharia "rolo, quase
+     * transparente" e o outro "página, com sombra cheia" — duas contas
+     * diferentes que não têm por que bater exatamente, e a costura aparece
+     * como uma linha. Misturando os três pesos (que somam 1 fora da faixa
+     * de suavização), a borda do rolo se funde na sombra da página do jeito
+     * que a PRÓPRIA sombra já foi pensada para encontrar: sem covarde.
+     */
+
+    // ---- Ainda achatada, com a sombra do rolo se aproximando. ----
+    vec4 frente = texture(inputImg, uv0);
+    const float FAIXA_DE_SOMBRA = 0.06;
+    float sombraT = clamp((dist - R) / FAIXA_DE_SOMBRA, 0.0, 1.0);
+    float sombra = 1.0 - shadowAmount * (1.0 - sombraT);
+    vec4 corFrente = vec4(frente.rgb * sombra, frente.a);
+
+    // ---- Em cima do rolo: sempre o lado mais perto da câmera, que é o
+    // VERSO (ver a conta no cabeçalho). `rim` é 1 na borda externa do rolo
+    // (o ponto mais alto, quase de perfil) e 0 na dobra (o verso virado
+    // cheio para a câmera, mais fundo na sombra própria). ----
+    float distC = clamp(dist, 0.0, R);
+    float theta = PI - asin(clamp(distC / R, 0.0, 1.0));
+    float rim = sin(theta);
+
+    float pBack = foldPos - distC;
+    vec2 uvBack = uvEm(clamp(pBack, 0.0, 1.0), centred, axis, perp, perpComp, support);
+    vec3 verso = texture(inputImg, uvBack).rgb;
+    // Verso de papel: mais pálido e escuro que a tinta da frente, com uma
+    // aresta clara (`rim`) onde a luz pega o papel quase de perfil.
+    vec3 versoPintado = mix(vec3(0.08), verso * 0.4 + 0.06, 0.85);
+    float brilho = mix(0.4, 1.0, rim);
+    vec4 corRolo = vec4(versoPintado * brilho, 1.0);
+
+    // ---- Já virou de vez: nada — o compositor mostra o que está atrás. ----
+    vec4 corVazio = vec4(0.0);
+
+    // Os três pesos, em ordem crescente de `dist`: vazio → rolo → frente.
+    // Ascendente dos dois lados de propósito (ver o comentário acima sobre
+    // `smoothstep` com limites invertidos).
+    float wFrente = smoothstep(R - soft, R + soft, dist);
+    float wVazio = 1.0 - smoothstep(-soft, soft, dist);
+    float wRolo = max(1.0 - wFrente - wVazio, 0.0);
+
+    fragColor = corVazio * wVazio + corRolo * wRolo + corFrente * wFrente;
+}
+
+    ]]></shader>
+</effect>

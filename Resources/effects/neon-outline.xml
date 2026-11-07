@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CONTORNO NEON
+  ============================================================================
+
+  Transforma a cena num letreiro: as bordas da imagem viram uma linha brilhante
+  e colorida, com halo em volta e o fundo escuro ou transparente.
+
+  ============================================================================
+   DE ONDE SAI O CONTORNO
+  ============================================================================
+
+  Edge-detect clássico, pelo operador de SOBEL: um kernel 3×3 que estima o
+  gradiente da luma (Gx para a horizontal, Gy para a vertical). A magnitude
+  `length(vec2(Gx, Gy))` dá a FORÇA da borda em cada pixel.
+
+  Essa magnitude é a INTENSIDADE do neon ali. Multiplicada pela cor do tubo
+  (`tubeColor`), mais um halo (gaussiano barato amostrando em 8 direções),
+  sai o look de letreiro.
+
+  ============================================================================
+   BACKDROP: ESCURO POR PADRÃO, PORQUE NEON SÓ VIVE NO ESCURO
+  ============================================================================
+
+  Um neon desenhado sobre o fundo claro desaparece no fundo. O parâmetro
+  `darken` desce a luma do fundo antes do neon acender — assim mesmo em cena
+  clara, o letreiro se destaca. Em 0, o fundo original fica intacto.
+-->
+<effect
+    id="nova.effect.neon-outline"
+    name="Contorno neon"
+    name-en="Neon Outline"
+    desc="Edge-detect virando letreiro colorido com halo e fundo escurecido."
+    desc-en="Sobel edge detection turned into a glowing neon sign."
+    category="stylize"
+    tags="neon,contorno,borda,letreiro,glow,edge,sobel,noite">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="tubeColor" label="Cor do neon" default="#FF55DDFF" />
+        <slider id="edgeStrength" label="Força da borda"
+                default="2.0" min="0.1" max="8.0" step="0.1" snap="0.0" />
+        <slider id="haloRadius" label="Raio do halo (px)"
+                default="8.0" min="0.0" max="40.0" step="0.5" snap="0.0" />
+        <slider id="haloStrength" label="Intensidade do halo"
+                default="1.5" min="0.0" max="4.0" step="0.05" snap="0.0" />
+        <slider id="darken" label="Escurecer o fundo"
+                default="0.7" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais halo. -->
+    <preview>
+        <set param="haloStrength" value="2.5" />
+    </preview>
+
+    <shader><![CDATA[
+
+const float TAU = 6.2831853;
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Sobel: magnitude do gradiente da luma com um kernel 3×3. */
+float sobelAqui(vec2 uv) {
+    vec2 px = 1.0 / vec2(textureSize(inputImg, 0));
+
+    float tl = luma(texture(inputImg, uv + vec2(-px.x,  px.y)).rgb);
+    float t  = luma(texture(inputImg, uv + vec2( 0.0,   px.y)).rgb);
+    float tr = luma(texture(inputImg, uv + vec2( px.x,  px.y)).rgb);
+    float l  = luma(texture(inputImg, uv + vec2(-px.x,  0.0 )).rgb);
+    float r  = luma(texture(inputImg, uv + vec2( px.x,  0.0 )).rgb);
+    float bl = luma(texture(inputImg, uv + vec2(-px.x, -px.y)).rgb);
+    float b  = luma(texture(inputImg, uv + vec2( 0.0,  -px.y)).rgb);
+    float br = luma(texture(inputImg, uv + vec2( px.x, -px.y)).rgb);
+
+    float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+    float gy = -tl - 2.0 * t - tr + bl + 2.0 * b + br;
+    return length(vec2(gx, gy));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    float borda = sobelAqui(acScreenNorm) * edgeStrength;
+    borda = clamp(borda, 0.0, 1.0);
+
+    // Halo: média do sobel em volta, num círculo de 8 amostras.
+    float halo = 0.0;
+    vec2 px = 1.0 / vec2(textureSize(inputImg, 0));
+    for (int i = 0; i < 8; i++) {
+        float a = TAU * float(i) / 8.0;
+        vec2 d = vec2(cos(a), sin(a)) * haloRadius * px;
+        halo += sobelAqui(acScreenNorm + d) * edgeStrength;
+    }
+    halo = clamp(halo / 8.0, 0.0, 1.0) * haloStrength;
+
+    vec3 fundo = mix(original.rgb, vec3(0.0), darken);
+    vec3 cor = fundo + tubeColor.rgb * (borda + halo);
+    cor = clamp(cor, 0.0, 1.0);
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

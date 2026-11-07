@@ -1,0 +1,219 @@
+{
+    "id": "impacto-glitch",
+    "nome": "Impacto glitch",
+    "nomeEn": "Glitch hit",
+    "descricao": "Camada de ajuste: tudo abaixo quebra em glitch e RGB na batida e volta ao normal; para drops e batidas fortes.",
+    "descricaoEn": "Adjustment layer: everything below glitches with RGB split on the beat and recovers; for drops and hard hits.",
+    "categoria": "impacto",
+    "tags": [
+        "glitch",
+        "batida",
+        "beat",
+        "impacto",
+        "drop",
+        "rgb",
+        "hit"
+    ],
+    "estilos": [
+        "amv",
+        "phonk",
+        "velocity"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 400000,
+    "duracaoMinUs": 150000,
+    "duracaoMaxUs": 2000000,
+    "impactoUs": 0,
+    "campos": [
+        {
+            "id": "intensidade",
+            "tipo": "numero",
+            "rotulo": "Intensidade",
+            "rotuloEn": "Intensity",
+            "padrao": "1",
+            "min": 0.0,
+            "max": 2.0,
+            "alvos": [
+                {
+                    "camada": "glitch",
+                    "propriedade": "efeito:glitch:amount",
+                    "modo": "escala"
+                },
+                {
+                    "camada": "glitch",
+                    "propriedade": "efeito:rgb:amount",
+                    "modo": "escala"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "glitch",
+            "name": "Impacto glitch",
+            "content": {
+                "kind": "adjustment"
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "glitch",
+                    "manifestId": "nova.effect.glitch",
+                    "enabled": true,
+                    "values": {
+                        "amount": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                2.5
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        2.5
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease Out"
+                                    },
+                                    "id": "9232b8b6-dec2-4195-8830-2bb47030f96d"
+                                },
+                                {
+                                    "timeUs": 400000,
+                                    "value": [
+                                        0.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "b7240891-908f-405e-9823-5934af7655f7"
+                                }
+                            ]
+                        },
+                        "rate": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                30.0
+                            ]
+                        }
+                    }
+                },
+                {
+                    "id": "rgb",
+                    "manifestId": "nova.effect.rgbsplit",
+                    "enabled": true,
+                    "values": {
+                        "amount": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                50.0
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        50.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease Out"
+                                    },
+                                    "id": "9732cb83-81e4-4c1c-b230-39de785f8d94"
+                                },
+                                {
+                                    "timeUs": 400000,
+                                    "value": [
+                                        0.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "a44f528b-032e-4579-9980-2fac29a4e87d"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 400000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

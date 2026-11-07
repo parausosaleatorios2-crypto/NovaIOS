@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ===========================================================================
+   DESLOCAR POR MAPA — o Displacer Pro (Plugin Everything), medido no AE
+  ===========================================================================
+
+  Cada pixel do resultado vai buscar a sua cor em OUTRO lugar da imagem, e quem
+  decide o quanto é o valor de uma segunda camada: o mapa. O que o mapa comanda
+  é uma TRANSFORMAÇÃO inteira (empurrar, girar e escalar em volta de uma âncora),
+  não só um empurrão — é a ideia do Displacer Pro, e este efeito já a seguia.
+
+  Pedido do snow (04/10/2026): "faz um benchmark no Displacer Pro, compara com o
+  nosso e melhora". MEDIDO no Displacer Pro 1.6.1 do After Effects dele
+  (`tools/displacer/benchmark/`): 158 renders em 16 bits de uma imagem que guarda
+  em cada pixel a própria coordenada — o render diz, pixel a pixel, de onde cada
+  um foi lido. O que saiu, e é o que este arquivo faz:
+
+  O MAPA VIRA UM NÚMERO `m`:
+    1. Channel: Red, Green, Blue, Alpha (da cor PRÉ-MULTIPLICADA), Hue,
+       Saturation (HSV) ou Lightness = a média de R, G e B (o padrão).
+    2. Map Mix Input mistura esse valor com o mesmo canal da própria camada.
+    3. Map Softness é um desfoque gaussiano do mapa, σ = Softness/4 px.
+    4. Invert (1 − v), depois Map Gamma (v^gamma).
+    5. Map Interpretation: "−1 a 1" (m = 2v − 1, o cinza médio não desloca) ou
+       "0 a 1" (m = v, o preto não desloca).
+    6. Displacement Offset soma em MÓDULO, com o sinal de m: m ± offset.
+    7. Displacement Easing: linear, ou as curvas exponenciais (entrada, saída,
+       entrada e saída) aplicadas a m com sinal — m negativo vira ~0 na entrada.
+
+  A TRANSFORMAÇÃO, na leitura (de onde o pixel `p` lê):
+        q = R(Rotate·m) · (p − âncora) − Translate·m
+        origem = âncora + k · q         k = 1 + (100/Scale − 1)·m
+    - Translate em % da largura/altura; a âncora em % da camada.
+    - A escala interpola o INVERSO: com Scale 150 e m = 0,43 a leitura encolhe
+      para 0,857 (não 1/1,214). Clamp Negative Scale não deixa k passar de zero.
+    - O empurrão é escalado junto com a leitura, mas não gira.
+
+  ITERATIONS: N leituras com m·(1 − ½·Shutter/100·i/N), i = 0…N−1, na média
+  (pré-multiplicada) — o rastro. Shutter 0 = sem rastro.
+
+  CHROMATIC ABERRATION: cada canal usa m × o multiplicador dele (vale para o
+  empurrão, o giro e a escala).
+
+  EDGE BEHAVIOR: transparente, ladrilho, espelho ou esticar a borda.
+
+  Contra o render do AE (o shader rodando na GPU do PC, 146 casos): a ORIGEM de cada
+  pixel a 0,23 px do Displacer Pro (p95, mediana dos casos; 128 de 133 casos abaixo de
+  0,6 px) e o alfa a menos de 1 %. O que sobra é meio pixel do Anti-Aliasing do plugin
+  (com ele em "none" a diferença é 0,01 px) e o Map Softness forte com deslocamento
+  de tela inteira. A versão anterior deste efeito acertava o empurrão e o giro, mas
+  errava a escala (4 a 30 px), a transformação combinada (15 px) e as iterações (12 px).
+
+  Mais regras medidas:
+    - Map Softness trata o que está FORA da camada como zero (o mapa escurece na borda);
+    - com Clamp Negative Scale, onde k passaria de zero o pixel fica TRANSPARENTE;
+    - na aberração, o alfa é o da leitura com o m puro (não segue os multiplicadores);
+    - View Map mostra o valor do mapa (suavizado, antes do invert e do gamma) × o alfa dele.
+
+  Fora: o modo Gradient Ramp e a opção View (não mudaram nada nos renders), o
+  Anti-Aliasing (só qualidade; aqui é a leitura bilinear de sempre) e a quinta
+  curva de Easing (deu o mesmo resultado que a segunda). As iterações vão até
+  32 (no AE, 1000).
+
+  ===========================================================================
+   OS PASSES
+  ===========================================================================
+   0 → va: o valor do mapa (canal + mix), em 16 bits
+   1 → vb: desfoque em X        2 → va: desfoque em Y
+   3 → saída
+-->
+<effect
+    id="nova.effect.displace"
+    name="Deslocar por mapa"
+    name-en="Displacement Map"
+    desc="O Displacer Pro do After Effects: outra camada decide quanto cada pixel é empurrado, girado e escalado."
+    desc-en="After Effects' Displacer Pro: another layer decides how much each pixel is pushed, rotated and scaled."
+    category="distort"
+    tags="deslocar,displace,displacer,displacer pro,mapa,map,distorcer,agua,vidro,calor,lente,rastro,smear,plugin everything">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="mapImg" src="layer" label="Map Layer" />
+        <texture id="va" src="buffer" scale="1.0" />
+        <texture id="vb" src="buffer" scale="1.0" />
+
+        <selector id="channel" label="Channel" default="6"
+                  options="Red|Green|Blue|Alpha|Hue|Saturation|Lightness" />
+        <switch id="viewMap" label="View Map" default="false" />
+
+        <switch id="invertMap" group="Map Adjustments" label="Invert Map" default="false" />
+        <slider id="mapGamma" group="Map Adjustments" label="Map Gamma"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="mapSoftness" group="Map Adjustments" label="Map Softness"
+                default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+        <slider id="mapMixInput" group="Map Adjustments" label="Map Mix Input"
+                default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="displacementOffset" group="Map Adjustments" label="Displacement Offset"
+                default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <selector id="easing" group="Map Adjustments" label="Displacement Easing" default="0"
+                  options="Linear|Ease In Out|Ease In|Ease Out" />
+        <selector id="mapInterpretation" group="Map Adjustments" label="Map Interpretation" default="0"
+                  options="-1 to 1|0 to 1" />
+
+        <!-- No AE o Translate nasce em 0 (o efeito aplicado não faz nada); aqui nasce em 5 %
+             para aparecer assim que se escolhe o mapa. -->
+        <slider id="translateX" group="Transform" label="Translate X"
+                default="5.0" min="-500.0" max="500.0" step="0.1" snap="0.0" />
+        <slider id="translateY" group="Transform" label="Translate Y"
+                default="0.0" min="-500.0" max="500.0" step="0.1" snap="0.0" />
+        <slider id="rotate" group="Transform" label="Rotate" type="angle"
+                default="0.0" min="-360.0" max="360.0" step="0.5" snap="0.0" />
+        <switch id="uniformScale" group="Transform" label="Uniform Scale" default="true" />
+        <switch id="clampNegativeScale" group="Transform" label="Clamp Negative Scale" default="false" />
+        <slider id="scaleX" group="Transform" label="Scale X"
+                default="100.0" min="-500.0" max="500.0" step="0.5" snap="100.0" />
+        <slider id="scaleY" group="Transform" label="Scale Y" showIf="uniformScale=false"
+                default="100.0" min="-500.0" max="500.0" step="0.5" snap="100.0" />
+        <point id="anchor" group="Transform" label="Anchor" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="iterations" group="Iterations" label="Iterations" type="integer"
+                default="1.0" min="1.0" max="32.0" step="1.0" />
+        <slider id="shutterDuration" group="Iterations" label="Shutter Duration"
+                default="100.0" min="0.0" max="200.0" step="1.0" snap="100.0" />
+
+        <slider id="caRed" group="Chromatic Aberration" label="Red"
+                default="1.0" min="-10.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="caGreen" group="Chromatic Aberration" label="Green"
+                default="1.0" min="-10.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="caBlue" group="Chromatic Aberration" label="Blue"
+                default="1.0" min="-10.0" max="10.0" step="0.01" snap="1.0" />
+
+        <selector id="edgeBehavior" label="Edge Behavior" default="0"
+                  options="None|Tile|Mirror|Stretch" />
+    </params>
+
+    <passes>
+        <pass target="va" />  <!-- 0: o valor do mapa -->
+        <pass target="vb" />  <!-- 1: desfoque em X -->
+        <pass target="va" />  <!-- 2: desfoque em Y -->
+        <pass />              <!-- 3: a saída -->
+    </passes>
+
+    <shader><![CDATA[
+
+const int MAX_ITER = 32;
+
+// O valor do mapa em 16 bits (dois canais de um buffer de 8): com 8 bits, um Translate de
+// 50 % numa camada de 1080 px andaria em degraus de 4 px.
+vec2 enc16(float v) {
+    float q = floor(clamp(v, 0.0, 1.0) * 65535.0 + 0.5);
+    float a = floor(q / 256.0);
+    return vec2(a, q - a * 256.0) / 255.0;
+}
+float dec16(vec2 c) {
+    vec2 b = floor(c * 255.0 + 0.5);
+    return (b.x * 256.0 + b.y) / 65535.0;
+}
+
+/** O canal escolhido de uma cor (reta); os de cor leem a PRÉ-MULTIPLICADA, como o AE. */
+float canalDe(vec4 c) {
+    if (channel == 3) return c.a;
+    vec3 p = c.rgb * c.a;
+    if (channel == 0) return p.r;
+    if (channel == 1) return p.g;
+    if (channel == 2) return p.b;
+    float mx = max(p.r, max(p.g, p.b));
+    float mn = min(p.r, min(p.g, p.b));
+    if (channel == 5) return mx > 0.0 ? (mx - mn) / mx : 0.0;       // Saturation (HSV)
+    if (channel == 4) {                                             // Hue, 0..1
+        float d = mx - mn;
+        if (d <= 1e-6) return 0.0;
+        float h = mx == p.r ? (p.g - p.b) / d : (mx == p.g ? 2.0 + (p.b - p.r) / d : 4.0 + (p.r - p.g) / d);
+        return fract(h / 6.0);
+    }
+    return (p.r + p.g + p.b) / 3.0;                                 // Lightness: a média
+}
+
+float vaEm(ivec2 p) {
+    return dec16(texelFetch(va, clamp(p, ivec2(0), textureSize(va, 0) - 1), 0).rg);
+}
+float vbEm(ivec2 p) {
+    return dec16(texelFetch(vb, clamp(p, ivec2(0), textureSize(vb, 0) - 1), 0).rg);
+}
+
+/** Um eixo do gaussiano do Map Softness (σ = Softness/4 px da camada). */
+float sigmaDoMapa() { return mapSoftness * 0.25 * max(acEscalaDePixel, 1e-3); }
+
+float borrar(bool deVa, ivec2 eixo) {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    float sigma = sigmaDoMapa();
+    if (sigma < 0.05) return deVa ? vaEm(p) : vbEm(p);
+    ivec2 tamanho = textureSize(va, 0);
+    int passo = max(1, int(ceil(3.0 * sigma / 40.0)));
+    float soma = 0.0;
+    float pesos = 0.0;
+    for (int k = -40; k <= 40; k++) {
+        float d = float(k * passo);
+        if (abs(d) > 3.0 * sigma + 0.5) continue;
+        float w = exp(-0.5 * d * d / (sigma * sigma));
+        ivec2 q = p + eixo * k * passo;
+        // Fora da camada o mapa vale ZERO (medido: o mapa suavizado escurece perto da borda).
+        bool dentro = q.x >= 0 && q.y >= 0 && q.x < tamanho.x && q.y < tamanho.y;
+        if (dentro) soma += w * (deVa ? vaEm(q) : vbEm(q));
+        pesos += w;
+    }
+    return soma / max(pesos, 1e-6);
+}
+
+/** O alfa do mapa naquele pixel (só para a vista do mapa), guardado no azul. */
+float alfaDoMapa(bool deVa) {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    return deVa ? texelFetch(va, p, 0).b : texelFetch(vb, p, 0).b;
+}
+
+/** O valor (borrado) do mapa em `uv`, com a interpolação bilinear feita à mão (16 bits). */
+float mapaEm(vec2 uv) {
+    vec2 t = uv * vec2(textureSize(va, 0)) - 0.5;
+    ivec2 i = ivec2(floor(t));
+    vec2 f = t - vec2(i);
+    return mix(mix(vaEm(i), vaEm(i + ivec2(1, 0)), f.x),
+               mix(vaEm(i + ivec2(0, 1)), vaEm(i + ivec2(1, 1)), f.x), f.y);
+}
+
+float expoIn(float x) { return pow(2.0, 10.0 * x - 10.0); }
+float expoOut(float x) { return 1.0 - pow(2.0, -10.0 * x); }
+
+/** De valor do mapa (0..1) para o `m` que comanda a transformação. */
+float forca(float v) {
+    if (invertMap) v = 1.0 - v;
+    v = pow(max(v, 0.0), mapGamma);
+    float m = mapInterpretation == 0 ? v * 2.0 - 1.0 : v;
+    m += (m < 0.0 ? -1.0 : 1.0) * displacementOffset;
+    if (easing == 1) m = m < 0.5 ? 0.5 * pow(2.0, 20.0 * m - 10.0) : 0.5 * (2.0 - pow(2.0, -20.0 * m + 10.0));
+    else if (easing == 2) m = expoIn(m);
+    else if (easing == 3) m = expoOut(m);
+    return m;
+}
+
+vec4 lerFonte(vec2 uv) {
+    if (edgeBehavior == 0) {
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return vec4(0.0);
+    } else if (edgeBehavior == 1) {
+        uv = fract(uv);
+    } else if (edgeBehavior == 2) {
+        uv = 1.0 - abs(1.0 - mod(uv, 2.0));
+    }
+    return texture(inputImg, clamp(uv, 0.0, 1.0));
+}
+
+/** De onde o pixel `uv` lê, com a força `m` (ver a conta no cabeçalho). `some` = o Clamp
+ *  Negative Scale apagou este pixel (a escala inverteria). */
+vec2 origem(vec2 uv, float m, out bool some) {
+    vec2 res = acResolution;
+    vec2 p = (uv - anchor) * res;
+    float ang = radians(rotate) * m;
+    float c = cos(ang);
+    float s = sin(ang);
+    vec2 q = vec2(c * p.x + s * p.y, -s * p.x + c * p.y) - vec2(translateX, translateY) * 0.01 * res * m;
+    float ex = abs(scaleX) < 0.01 ? (scaleX < 0.0 ? -0.01 : 0.01) : scaleX;
+    float eyBruto = uniformScale ? scaleX : scaleY;
+    float ey = abs(eyBruto) < 0.01 ? (eyBruto < 0.0 ? -0.01 : 0.01) : eyBruto;
+    vec2 k = vec2(1.0) + (vec2(100.0 / ex, 100.0 / ey) - 1.0) * m;
+    // Medido: com o Clamp ligado, onde a escala passaria de zero o pixel fica transparente.
+    some = clampNegativeScale && (k.x <= 0.0 || k.y <= 0.0);
+    return anchor + k * q / res;
+}
+
+vec4 lerCom(vec2 uv, float m) {
+    bool some;
+    vec2 o = origem(uv, m, some);
+    return some ? vec4(0.0) : lerFonte(o);
+}
+
+void main() {
+    if (acPass == 0) {
+        // O valor do mapa: o canal escolhido, misturado com o da própria camada.
+        vec4 mapa = texture(mapImg, acScreenNorm);
+        float v = canalDe(mapa);
+        if (mapMixInput > 0.0) v = mix(v, canalDe(texture(inputImg, acScreenNorm)), mapMixInput * 0.01);
+        fragColor = vec4(enc16(v), mapa.a, 1.0);
+        return;
+    }
+    if (acPass == 1) { fragColor = vec4(enc16(borrar(true, ivec2(1, 0))), alfaDoMapa(true), 1.0); return; }
+    if (acPass == 2) { fragColor = vec4(enc16(borrar(false, ivec2(0, 1))), alfaDoMapa(false), 1.0); return; }
+
+    vec2 uv = acScreenNorm;
+    // Sem camada escolhida o motor entrega 1×1: a imagem passa intacta.
+    if (textureSize(mapImg, 0).x <= 1) { fragColor = texture(inputImg, uv); return; }
+
+    float v = mapaEm(uv);
+    // A vista mostra o valor do mapa (já suavizado, antes do invert e do gamma) × o alfa dele.
+    if (viewMap) { fragColor = vec4(vec3(v * texture(va, uv).b), 1.0); return; }
+    float m = forca(v);
+
+    int n = int(clamp(iterations, 1.0, float(MAX_ITER)));
+    bool aberracao = caRed != caGreen || caGreen != caBlue;
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i < MAX_ITER; i++) {
+        if (i >= n) break;
+        float mi = m * (1.0 - 0.5 * shutterDuration * 0.01 * float(i) / float(n));
+        if (aberracao) {
+            vec4 r = lerCom(uv, mi * caRed);
+            vec4 g = lerCom(uv, mi * caGreen);
+            vec4 b = lerCom(uv, mi * caBlue);
+            // Medido: o alfa NÃO segue os multiplicadores — é o da leitura com o `m` puro
+            // (a borda do alfa fica a exatamente 1 deslocamento, com qualquer R/G/B). Onde
+            // ele é zero não sobra cor nenhuma.
+            float a = lerCom(uv, mi).a;
+            soma += vec4(vec3(r.r * r.a, g.g * g.a, b.b * b.a) * a, a);
+        } else {
+            vec4 c = lerCom(uv, mi * caGreen);
+            soma += vec4(c.rgb * c.a, c.a);
+        }
+    }
+    soma /= float(n);
+    fragColor = soma.a > 1e-5 ? vec4(soma.rgb / soma.a, soma.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

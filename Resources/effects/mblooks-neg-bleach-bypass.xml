@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Neg Bleach Bypass (`nbby`, linear): o "bleach bypass" do negativo — a prata que
+  fica no filme soma a luma à cor, que perde saturação e ganha contraste. Lido no `MBLooksUI_5_0.dll` (21/10/2026):
+  o render `0x1803f9090` (o mesmo do Bleach Bypass, com a chave do negativo ligada) e o kernel
+  `ColorKernel_BleachBypass` (tools/looks/benchmark/nbby.py); o host é o `ContasDoLooks.negBleachBypass`.
+  L = luma (0,2126, 0,7152, 0,0722); m = c + L; saída = ((c − m)·(1 − Silver Retention) + m)·2^Exposure Compensation.
+
+  Os padrões NÃO estão no motor (o slot 9 devolve 0 para todos): são o bloco que mais se repete na pasta de presets
+  (70, −0,1). Os limites também não: saíram dos presets, com folga.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.negbleachbypass"
+    name="Looks: Neg Bleach Bypass"
+    name-en="Looks: Neg Bleach Bypass"
+    desc="A ferramenta Neg Bleach Bypass do Magic Bullet Looks: o bleach bypass do negativo — a prata que fica soma a luma à cor, com menos saturação e mais contraste."
+    desc-en="Magic Bullet Looks' Neg Bleach Bypass tool: the negative's bleach bypass — the retained silver adds luma to the color, for less saturation and more contrast."
+    category="looks"
+    stage="mblooks"
+    looks="nbby"
+    tags="magic bullet,looks,red giant,bleach bypass,neg bleach,silver retention,prata,filme,dessaturar,contraste">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="silverRetention" label="Silver Retention" default="70.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="exposure" label="Exposure Compensation" default="-0.1" min="-5.0" max="5.0" step="0.01" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

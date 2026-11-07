@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/blit_screen_magnifier
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-blit-screen-magnifier"
+    name="Blit Screen Magnifier (NV)"
+    name-en="Blit Screen Magnifier (NV)"
+    desc="NodeVideo effect 'NodeVideo/blit_screen_magnifier', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/blit_screen_magnifier', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="_magnifier_center" label="Magnifier Center" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <shader><![CDATA[
+vec2 u_xlat0;
+bool u_xlatb0;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+bvec2 u_xlatb6;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = u_xlat0.xy * vec2(0.300000012, 0.300000012) + _magnifier_center.xy;
+    u_xlatb6.xy = lessThan(u_xlat0.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb1.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.xyxx).xy;
+    u_xlat2 = texture(inputImg, u_xlat0.xy);
+    u_xlatb0 = u_xlatb6.x || u_xlatb1.x;
+    u_xlatb0 = u_xlatb6.y || u_xlatb0;
+    u_xlatb0 = u_xlatb1.y || u_xlatb0;
+    u_xlat0.x = (u_xlatb0) ? 0.0 : 1.0;
+    fragColor.xyz = u_xlat0.xxx * u_xlat2.xyz;
+    fragColor.w = u_xlat2.w;
+    return;
+}
+    ]]></shader>
+</effect>

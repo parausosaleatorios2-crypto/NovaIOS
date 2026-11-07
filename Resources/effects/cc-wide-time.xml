@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC WIDE TIME
+  ============================================================================
+
+  Mistura a camada com ela mesma em vários instantes — alguns quadros à FRENTE
+  e alguns ATRÁS do atual. O que se mexeu nesse intervalo vira rastro: é a
+  exposição longa, o borrão que segue o golpe num corte de anime, o
+  "afterimage" do AMV.
+
+  Os controles são os três do plugin da Cycore que acompanha o After Effects:
+
+  - **Forward Steps** — quantos quadros à frente entram na mistura;
+  - **Backward Steps** — quantos quadros atrás;
+  - **Native Motion Blur** — liga sub-passos: em vez de uma imagem por quadro,
+    três. Só muda algo onde a camada anima DENTRO do quadro (texto animado,
+    efeito que depende do tempo). Um vídeo tem um quadro por instante e repete o
+    mesmo três vezes — é mais lento e não sai diferente.
+
+  ============================================================================
+   POR QUE ESTE ARQUIVO NÃO TEM O SHADER DE VERDADE
+  ============================================================================
+
+  Para misturar o quadro de DAQUI A DOIS QUADROS é preciso ter esse quadro, e um
+  shader só recebe o instante atual. Quem pode pedir a imagem de outro instante é
+  o compositor: ele redesenha a camada naquele instante — decodificando o vídeo,
+  se for o caso — e soma as imagens. Ver `SceneRenderer` e `TempoAmplo`.
+
+  Por isso `stage="widetime"`: o efeito mora na lista, se acha, liga e anima como
+  qualquer outro, a cadeia de passes o pula, e os três parâmetros abaixo são lidos
+  pelo MOTOR. O `<shader>` daqui é só uma cópia fiel da entrada.
+
+  ## A posição na lista IMPORTA
+
+  Ao contrário do posterizar tempo, este efeito mistura IMAGENS, então a ordem
+  conta, como no After Effects:
+
+  - o que está ACIMA dele na lista entra em cada uma das imagens misturadas — um
+    Transform com tremor keyframeado acima do CC Wide Time deixa rastro do
+    tremor, que é a combinação clássica;
+  - o que está ABAIXO age sobre a mistura já pronta.
+
+  ## O que custa
+
+  Cada imagem é um redesenho da camada (num vídeo, decodificar quadros) mais um
+  passe de média. O motor guarda as imagens dos quadros anteriores e, tocando o
+  vídeo em ordem, reaproveita quase todas: só a mais nova é desenhada de novo.
+  Pausado, ou arrastando o cursor, tudo é desenhado do zero, e Forward Steps 10 +
+  Backward Steps 10 são 21 desenhos por quadro. O teto é de 25 imagens por
+  quadro: acima dele as imagens se ESPAÇAM (o rastro continua tão longo quanto se
+  pediu, em degraus).
+
+  ## Limites
+
+  - Camada de AJUSTE não tem imagem própria para redesenhar em outro instante: o
+    efeito não faz nada nela.
+  - Um quadro fora do começo ou do fim do clipe não existe e não entra na média.
+-->
+<effect
+    id="nova.effect.ccwidetime"
+    name="CC Wide Time"
+    name-en="CC Wide Time"
+    desc="Mistura a camada com quadros à frente e atrás: o rastro de exposição longa."
+    desc-en="Blends the layer with frames ahead of and behind the current one: a long-exposure trail."
+    category="stylize"
+    stage="widetime"
+    tags="wide time,cc wide time,tempo,rastro,trail,afterimage,exposicao,motion blur,ghost,eco">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          Cada passo é um quadro da composição. De 0 a 32: acima disso o teto de
+          25 imagens por quadro já espaça as amostras, e o slider deixa de ser
+          preciso no dedo.
+
+          O padrão é 3 de cada lado — sete imagens, um rastro que se vê logo.
+        -->
+        <slider id="forwardSteps" label="Forward Steps"
+                default="3" min="0" max="32" step="1" type="integer" />
+        <slider id="backwardSteps" label="Backward Steps"
+                default="3" min="0" max="32" step="1" type="integer" />
+
+        <switch id="nativeMotionBlur" label="Native Motion Blur" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

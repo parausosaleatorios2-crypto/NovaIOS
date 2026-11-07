@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SLIDER CONTROL — o `ADBE Slider Control` do After Effects (0.768.0)
+  ============================================================================
+
+  Pedido do snow (23/10/2026): "100% igual ... principalmente para que os presets da pasta possa ser inclusos".
+  Os presets do AE guardam EFEITOS DE CONTROLE na camada (Slider Control, Angle Control, Point Control,
+  Checkbox Control, Color Control) e, do lado da propriedade (position, scale, opacity…), uma EXPRESSÃO que
+  LÊ esses controles. O quique por inércia do SShake lê `effect("Position amplitude")("Slider")`, por exemplo.
+
+  Este efeito **não pinta nada**: ele existe só para guardar o número que a expressão vai ler. O shader devolve
+  a camada igual (passa adiante). O ControlesDeEfeitoDoAe sabe reconhecê-lo pelo id e esconde a seção de ajuste
+  no painel do efeito (ela aparece quando a camada tem uma expressão referenciando este slider).
+-->
+<effect
+    id="nova.effect.aeslidercontrol"
+    name="Slider Control"
+    name-en="Slider Control"
+    desc="O Slider Control do After Effects: um número que uma expressão da camada pode ler. Não pinta nada."
+    desc-en="After Effects' Slider Control: a number that an expression on the layer can read. Draws nothing."
+    category="expressao"
+    tags="expression,expressao,controle,slider,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="slider" label="Slider" default="0.0" min="-1000000.0" max="1000000.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    fragColor = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Painel de LED.
+
+  A imagem redesenhada como uma matriz de pontos acesos, cada um com os três
+  subpixels de cor. Diferente de "Meio-tom", que é impressão em uma tinta só, e
+  de "Pixelar", que só engrossa o pixel: aqui existe o vão escuro entre os LEDs,
+  e é o vão que faz o olho ler "telão".
+-->
+<effect
+    id="nova.effect.dotmatrix"
+    name="Painel de LED"
+    name-en="LED Panel"
+    desc="Redesenha a imagem como uma matriz de LEDs com subpixels."
+    desc-en="Turns the image into a grid of lit dots."
+    category="stylize"
+    blend="true"
+    tags="led,painel,telao,matriz,pixel,subpixel,arcade,placar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="ledSize" label="Tamanho do LED"
+                default="14.0" min="3.0" max="80.0" step="1.0" />
+        <slider id="gap" label="Vão entre LEDs"
+                default="0.25" min="0.0" max="0.8" step="0.01" />
+        <switch id="rgbSubpixels" label="Subpixels RGB" default="true" />
+        <switch id="roundLeds" label="LED redondo" default="true" />
+        <slider id="glowF" label="Estouro do brilho"
+                default="0.3" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <color id="panelColor" label="Cor do painel apagado" default="#07080C" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    float size = max(ledSize, 2.0);
+    vec2 grid = acResolution / size;
+    vec2 cell = floor(acScreenNorm * grid);
+    vec2 local = fract(acScreenNorm * grid);
+
+    // A cor do LED vem do centro da célula: um LED tem uma cor só.
+    vec4 source = texture(inputImg, clamp((cell + 0.5) / grid, 0.0, 1.0));
+
+    vec3 emitted = source.rgb;
+    if (rgbSubpixels) {
+        // Cada terço horizontal da célula acende um canal. É como um telão de
+        // verdade funciona, e de longe o olho volta a somar as três cores.
+        float third = floor(local.x * 3.0);
+        vec3 pick = vec3(
+            third < 0.5 ? 1.0 : 0.0,
+            (third >= 0.5 && third < 1.5) ? 1.0 : 0.0,
+            third >= 1.5 ? 1.0 : 0.0
+        );
+        emitted = source.rgb * pick * 3.0;
+    }
+
+    // O vão. `roundLeds` troca a distância de Chebyshev (quadrado) pela
+    // euclidiana (círculo) — a mesma conta, outra norma.
+    vec2 fromCentre = abs(local - 0.5) * 2.0;
+    float distanceToEdge = roundLeds ? length(fromCentre) : max(fromCentre.x, fromCentre.y);
+    float lit = 1.0 - smoothstep(1.0 - gap - 0.08, 1.0 - gap, distanceToEdge);
+
+    // Brilho estoura o vão: um LED muito aceso vaza para o vizinho, e sem isso
+    // a imagem clara fica com a mesma cara da escura.
+    float luma = dot(source.rgb, vec3(0.299, 0.587, 0.114));
+    lit = clamp(lit + luma * glowF * (1.0 - lit), 0.0, 1.0);
+
+    vec3 result = mix(panelColor.rgb, clamp(emitted, 0.0, 1.0), lit);
+    fragColor = vec4(result, source.a);
+}
+
+    ]]></shader>
+</effect>

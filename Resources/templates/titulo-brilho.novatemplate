@@ -1,0 +1,313 @@
+{
+    "id": "titulo-brilho",
+    "nome": "Título com brilho",
+    "nomeEn": "Glowing title",
+    "descricao": "Título que cresce e acende com um pulso de brilho dourado; elegante, bom para nomes e títulos de cena.",
+    "descricaoEn": "Title that grows in and lights up with a golden glow pulse; elegant, for names and scene titles.",
+    "categoria": "titulo",
+    "tags": [
+        "titulo",
+        "brilho",
+        "glow",
+        "dourado",
+        "elegante",
+        "nome"
+    ],
+    "estilos": [
+        "minimalista",
+        "cinematico"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 3000000,
+    "duracaoMinUs": 1500000,
+    "duracaoMaxUs": 8000000,
+    "entradaUs": 800000,
+    "saidaUs": 400000,
+    "impactoUs": 500000,
+    "campos": [
+        {
+            "id": "titulo",
+            "tipo": "texto",
+            "rotulo": "Título",
+            "rotuloEn": "Title",
+            "padrao": "TÍTULO",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "brilho",
+            "tipo": "cor",
+            "rotulo": "Cor do brilho",
+            "rotuloEn": "Glow color",
+            "padrao": "#FFFFD27A",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "efeito:brilho:tint"
+                }
+            ]
+        },
+        {
+            "id": "intensidade",
+            "tipo": "numero",
+            "rotulo": "Intensidade",
+            "rotuloEn": "Intensity",
+            "padrao": "1",
+            "min": 0.0,
+            "max": 2.0,
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "efeito:brilho:intensity",
+                    "modo": "escala"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "titulo",
+            "name": "TÍTULO",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "TÍTULO",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        140.0
+                    ]
+                },
+                "fontFamily": "galeria:Montserrat-Bold.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                },
+                "textAnimation": {
+                    "animator": "HERO_REVEAL",
+                    "unit": "LINE",
+                    "durationUs": 700000,
+                    "staggerUs": 60000,
+                    "delayUs": 0,
+                    "easing": {
+                        "kind": "bezier",
+                        "x2": 0.58,
+                        "y2": 1.0,
+                        "label": "Ease Out"
+                    },
+                    "reversed": false
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 2600000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "f681024b-fc94-4ed5-8a66-b7ac99b1fce6"
+                        },
+                        {
+                            "timeUs": 3000000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "97392429-7b24-4e04-bb1f-5370cb4a8267"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "brilho",
+                    "manifestId": "nova.effect.glow",
+                    "enabled": true,
+                    "values": {
+                        "intensity": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                0.0
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        0.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "323a93f0-42bf-4fa0-9b65-1978e665b7da"
+                                },
+                                {
+                                    "timeUs": 500000,
+                                    "value": [
+                                        2.5
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "292c4358-96bc-45cb-8a18-2ceb660af966"
+                                },
+                                {
+                                    "timeUs": 1200000,
+                                    "value": [
+                                        1.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "23c56463-b183-4b99-9b54-8225a6776cd2"
+                                }
+                            ]
+                        },
+                        "radius": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                30.0
+                            ]
+                        },
+                        "threshold": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                0.3
+                            ]
+                        },
+                        "tint": {
+                            "kind": "COLOR",
+                            "staticValue": [
+                                1.0,
+                                0.8235294,
+                                0.47843137,
+                                1.0
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 3000000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

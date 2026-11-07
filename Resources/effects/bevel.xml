@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BISEL E SOMBRA INTERNA
+  ============================================================================
+
+  O acabamento que transforma uma forma chapada em objeto: a borda ganha um
+  chanfro iluminado de um lado e escuro do outro, e a sombra cai para DENTRO em
+  vez de para fora.
+
+  São dois efeitos na cabeça de quem usa e um só aqui, porque os dois saem da
+  mesma medida — a distância até a borda do alfa. Separá-los seria escrever duas
+  vezes a parte difícil.
+
+  ============================================================================
+   COMO SE MEDE A BORDA SEM UM CAMPO DE DISTÂNCIA
+  ============================================================================
+
+  O alfa de uma camada é praticamente um degrau: 1 dentro, 0 fora, com um pixel
+  de transição. Diferença finita nele daria inclinação zero em quase toda parte e
+  enorme exatamente em cima da borda — inútil como relevo.
+
+  A saída é a mesma do vidro: uma COROA de amostras. A média das oito dá uma
+  rampa suave ao longo da largura da coroa (que vira o "tamanho do chanfro"), e a
+  soma vetorial delas dá para onde a borda aponta. Nove leituras, duas respostas.
+
+  ============================================================================
+   POR QUE A SOMBRA INTERNA NÃO É UMA SOMBRA DESLOCADA
+  ============================================================================
+
+  Sombra projetada é a silhueta deslocada e borrada, desenhada ATRÁS. Sombra
+  interna é o contrário: ela mora dentro da forma, encostada na borda do lado de
+  onde a luz não vem. Fazê-la com a mesma conta da externa daria uma mancha
+  cortada pela silhueta — e é assim que ela sai errada na maioria das tentativas.
+-->
+<effect
+    id="nova.effect.bevel"
+    name="Bisel e sombra interna"
+    name-en="Bevel and Inner Shadow"
+    desc="Chanfro iluminado na borda do alfa, com sombra e brilho por dentro."
+    desc-en="Raised edge on the alpha, with an inner shadow. Buttons, plates, frames."
+    category="stylize"
+    tags="bisel,chanfro,relevo,sombra interna,borda,botão,acabamento">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="size" label="Tamanho do chanfro"
+                default="0.02" min="0.002" max="0.15" step="0.001" />
+        <slider id="depth" label="Profundidade"
+                default="1.0" min="0.0" max="3.0" step="0.05" snap="1.0" />
+        <slider id="lightAngle" label="Ângulo da luz"
+                default="135.0" min="0.0" max="360.0" step="1.0" type="angle" />
+
+        <!-- ============================= Bisel ============================= -->
+        <selector id="shape" group="Bisel" label="Formato" default="0"
+                  options="Suave|Duro|Almofada" />
+        <color id="lightColor" group="Bisel" label="Cor da luz" default="#FFFFFFFF" />
+        <color id="darkColor" group="Bisel" label="Cor da sombra" default="#FF000000" />
+
+        <!-- ======================== Sombra interna ========================= -->
+        <slider id="innerShadow" group="Sombra interna" label="Força"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="innerSize" group="Sombra interna" label="Distância"
+                default="0.025" min="0.002" max="0.2" step="0.001" />
+        <slider id="innerGlow" group="Sombra interna" label="Brilho interno"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="glowColor" group="Sombra interna" label="Cor do brilho" default="#FFFFE08A" />
+    </params>
+
+    <!-- Na vitrine, o chanfro padrão é fino demais a 64 dp: largo e fundo. (vitrine, 0.664.0) -->
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura">
+        <set param="size" value="0.08" />
+        <set param="depth" value="3.0" />
+        <set param="innerSize" value="0.1" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+vec2 paraUv(vec2 v) { return vec2(v.x / max(acAspect, 1e-4), v.y); }
+
+/**
+ * A coroa de amostras: devolve a rampa da borda em `x` e a direção dela em `yz`.
+ *
+ * Uma leitura no centro e oito em volta. A média é a rampa (1 fundo dentro, 0
+ * fora); a soma vetorial aponta para FORA, porque o alfa cresce para dentro e o
+ * sinal é invertido na soma.
+ */
+vec3 bordaEm(vec2 ph, float raio) {
+    float media = texture(inputImg, paraUv(ph)).a * 0.2;
+    vec2 soma = vec2(0.0);
+
+    for (int i = 0; i < 8; i++) {
+        float ang = float(i) * 0.78539816;
+        vec2 dir = vec2(cos(ang), sin(ang));
+        float a = texture(inputImg, paraUv(ph + dir * raio)).a;
+        media += a * 0.1;
+        soma -= dir * a;
+    }
+
+    float comp = length(soma);
+    return vec3(media, comp > 1e-5 ? soma / comp : vec2(0.0));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+    if (original.a <= 0.0) {
+        fragColor = original;
+        return;
+    }
+
+    vec2 ph = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+
+    vec3 borda = bordaEm(ph, max(size, 0.001));
+    float rampa = clamp(borda.x, 0.0, 1.0);
+    vec2 normal = borda.yz;
+
+    // O formato do chanfro é a curva aplicada à rampa. São três respostas
+    // diferentes para "como a superfície sobe da borda até o platô":
+    //   Suave    — meia volta de seno, sem canto nenhum
+    //   Duro     — reta, com quina no topo (metal, plástico rígido)
+    //   Almofada — sobe rápido e achata, como estofado
+    float perfil;
+    if (shape == 1) {
+        perfil = rampa;
+    } else if (shape == 2) {
+        perfil = sqrt(clamp(rampa, 0.0, 1.0));
+    } else {
+        perfil = 0.5 - 0.5 * cos(clamp(rampa, 0.0, 1.0) * PI);
+    }
+
+    // A inclinação é a DERIVADA do perfil: no platô ela é zero (nada de luz), e
+    // na beirada é máxima. Aproximada pela diferença entre perfil e rampa, que é
+    // suficiente e custa zero amostras a mais.
+    float inclinacao = (1.0 - abs(rampa * 2.0 - 1.0)) * depth;
+
+    float ang = lightAngle * PI / 180.0;
+    vec2 luz = vec2(cos(ang), -sin(ang));
+    float voltadoParaLuz = dot(normal, luz);
+
+    float claro = max(voltadoParaLuz, 0.0) * inclinacao;
+    float escuro = max(-voltadoParaLuz, 0.0) * inclinacao;
+
+    vec3 cor = original.rgb;
+    cor = mix(cor, lightColor.rgb, clamp(claro * lightColor.a, 0.0, 1.0));
+    cor = mix(cor, darkColor.rgb, clamp(escuro * darkColor.a, 0.0, 1.0));
+
+    // ------------------------------------------------------- sombra interna
+    //
+    // Ela mora DENTRO da forma, encostada na borda do lado contrário à luz.
+    // Amostrar o alfa deslocado na direção da luz é o que produz isso: onde o
+    // deslocamento cai fora da silhueta, há sombra.
+    if (innerShadow > 0.0) {
+        float aDeslocado = texture(inputImg, paraUv(ph + luz * innerSize)).a;
+        float dentroDaSombra = clamp(1.0 - aDeslocado, 0.0, 1.0) * innerShadow;
+        cor = mix(cor, darkColor.rgb, dentroDaSombra * darkColor.a * original.a);
+    }
+
+    // O brilho interno é a mesma ideia sem direção: ele acompanha a borda toda.
+    if (innerGlow > 0.0) {
+        float perto = 1.0 - clamp(rampa, 0.0, 1.0);
+        cor = mix(cor, glowColor.rgb, perto * innerGlow * glowColor.a);
+    }
+
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

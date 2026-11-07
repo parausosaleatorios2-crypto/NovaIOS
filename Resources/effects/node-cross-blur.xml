@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE CRUZADO (NODE) — o Cross Blur do Node Video, conta por conta (0.641.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "próximo efeito 100% igual o do node video". O Node é um app em Unity, e tudo aqui foi
+  LIDO do APK 9.0.2 descompactado (nada do Node entra no repositório; `tools/nodecruz/extrair.py` tira o shader do APK
+  na hora e `comparar.py` roda os dois na GPU do PC):
+
+  - a definição: `_CrossBlur` (no menu, Efeitos → Desfoque → Desfoque cruzado), um `AssetEffect` com 2 parâmetros, na
+    ordem dele: Amostras (inteiro PRESO a 1..128, partida 64) e Raio (Vector2 (0,1; 0,1), em UV da tela: o X é o
+    braço horizontal da cruz e o Y o vertical; com o `AboveZero`, preso em ≥ 0 sem teto, e o `Sync`, que liga X e Y
+    na régua do Node). Os rótulos em português são os do próprio Node (o TextAsset `param`);
+  - como cada um chega ao shader (o `SetShader` de cada tipo, lido no il2cpp): o inteiro por `SetGlobalInt((int)valor)`
+    (o `fcvtzs` corta para o zero), o Vector2 inteiro;
+  - o shader: `NodeVideo/Effect/Blur/cross_blur`, UM passe, o GLSL ES 3.00 que o Unity gerou, com `Blend One Zero` (a
+    saída do programa vai direto ao RT). Sem classe própria no il2cpp (não há `AECrossBlur`): é o `AESinglePass`.
+
+  A CONTA DO NODE (o passe 1, na mesma ordem, com as mesmas constantes do float32). A camada chega como o RT dela
+  (pré-multiplicada, em luz linear):
+  - Amostras pontos t = k ÷ (Amostras − 1) − 0,5, de −0,5 a +0,5; em cada um, duas leituras pelo filtro linear da GPU:
+    o ponto + Raio.x · t na horizontal e o ponto + Raio.y · t na vertical;
+  - cada leitura entra AO QUADRADO (as quatro componentes, o alfa também), com o peso em triângulo 1 − 2|t| (0 nas
+    pontas, 1 no meio); a soma ÷ a soma dos pesos, e a raiz quadrada no fim;
+  - com Amostras 1 o Node divide 0 por 0 (o NaN vai ao RT): copiado como está.
+  A máscara interna do Node (`_use_inner_mask`, a máscara de efeito dele) não é parâmetro do efeito e fica de fora.
+
+  EM LUZ LINEAR, como os outros efeitos do Node (o buffer sRGB do motor, `format="srgb"`, da 0.626):
+  - passe 0: a camada como o RT dela no Node (a cor em luz linear vezes o alfa; a GPU guarda em sRGB), DE PÉ;
+  - passe 1: o programa do Node, copiado conta por conta (os nomes de variável são os do Unity), com o UV dele e
+    lendo o RT pela GPU, escrevendo num RT sRGB (o `One Zero` não mexe na saída);
+  - passe 2: os bytes desse RT de volta ao alfa reto do Nova (a cor linear ÷ o alfa, em sRGB): no opaco, os próprios
+    bytes do Node.
+
+  O UV do Node cresce para CIMA, e os dois RTs do meio ficam SEMPRE como os do Node (a linha 0 é a base). Na tela
+  (`stage="screen"`) a entrada do Nova já chega assim (`acEntradaDePe` = 1); num buffer de camada (a linha 0 é o topo)
+  só o passe 0 e o passe 2 espelham a linha, pelo `texelFetch` (exato). A conta do Node roda com o mesmo UV
+  interpolado nos dois casos (ver `node-manga.xml`). O Raio é um tamanho, não um lugar: dois números crus
+  (`vetor="true"`), os mesmos nas duas orientações.
+
+  NA TELA (`stage="screen"`): o RT de cada camada do Node tem o tamanho da composição e o efeito entra depois do
+  Transform. Prévia reduzida (`screen-scale="safe"`): o Raio é em fração da tela, a mesma conta em qualquer resolução.
+
+  O que não fica igual: o Raio do Node tem X e Y ligados por padrão (o `Sync` do AEParam); aqui são dois números
+  soltos. E o de todos os efeitos do Node: o Node compõe em luz linear e o Nova em gama (a borda de alfa parcial se
+  mistura diferente com o fundo), e a mídia do Node entra no RT com `Blend SrcAlpha Zero`; aqui a camada chega como o
+  Nova a guarda.
+-->
+<effect
+    id="nova.effect.node-cross-blur"
+    name="Desfoque cruzado (Node)"
+    name-en="Cross Blur (Node Video)"
+    desc="Borra a camada em cruz, na horizontal e na vertical, em luz linear (o Cross Blur do Node Video)."
+    desc-en="Blurs the layer in a cross, horizontally and vertically, in linear light (Node Video's Cross Blur)."
+    category="blur"
+    tags="desfoque,cruzado,cruz,horizontal,vertical,estrela,cross,cross blur,node video,nodevideo"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+
+        <!-- Inteiro PRESO do Node (Clamp ligado, 1..128). -->
+        <slider id="samples" label="Amostras" default="64" min="1" max="128" step="1" type="integer" />
+        <!-- O Vector2 do Node, os dois braços da cruz em fração da tela: dois números crus, que vão ao uniform como
+             estão. O `AboveZero` do Node: preso em ≥ 0, sem teto. -->
+        <point id="radius" label="Raio" spinner="true" vetor="true" defaultX="0.1" defaultY="0.1" min="0.0"
+            max="1000.0" step="0.001" />
+
+        <!-- Os RTs do Node (sRGB de 8 bits, pré-multiplicados em luz linear): a camada e a saída. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="saidaRt" src="buffer" format="srgb" precision="highp" />
+    </params>
+
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="saidaRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (o
+// `floor(..)/255.0` vai pelo recíproco e erra o último bit — ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+// Os bytes que um RT sRGB de 8 bits guarda para esta cor linear.
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+// O texel exato de uma imagem do tamanho da tela no pixel de pé (a linha 0 é a base, como nos RTs do Node): no
+// buffer de camada (`acEntradaDePe` = 0, a linha 0 é o topo) a linha é espelhada. Lê a entrada para o RT de pé e o RT
+// de pé para a saída — os dois espelhos se desfazem, e a conta do meio é a da tela.
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+
+// O programa do Node, conta por conta (o `_SourceTex` é o `camadaRt`, os parâmetros com os nomes do Nova).
+// [vs_TEXCOORD0]: o UV do Node (cresce para cima). Sem a máscara interna: o ramo `_use_inner_mask` == 0.
+vec4 crossBlur(vec2 vs_TEXCOORD0) {
+    // As trocas do Nova: o `_samples` é o inteiro do Node (o slider vira float no uniform; o `int()` corta para o
+    // zero, o mesmo `fcvtzs` do `PFloat::SetShader`), e o `_radius` é o Raio como está.
+    int _samples = int(samples);
+    vec2 _radius = radius;
+    vec4 u_xlat0;
+    int u_xlati0;
+    vec4 u_xlat1;
+    vec4 u_xlat2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    vec4 u_xlat5;
+    float u_xlat6;
+    float u_xlat18;
+    u_xlati0 = _samples + int(0xFFFFFFFFu);
+    u_xlat0.x = float(u_xlati0);
+    u_xlat1 = vec4(_radius.x, _radius.x, _radius.y, _radius.y) * vec4(1.0, 0.0, 0.0, 1.0);
+    u_xlat2.x = float(0.0);
+    u_xlat2.y = float(0.0);
+    u_xlat2.z = float(0.0);
+    u_xlat2.w = float(0.0);
+    u_xlat6 = float(0.0);
+    for(int u_xlati_loop_1 = int(0) ; u_xlati_loop_1<_samples ; u_xlati_loop_1++)
+    {
+        u_xlat18 = float(u_xlati_loop_1);
+        u_xlat18 = u_xlat18 / u_xlat0.x;
+        u_xlat18 = u_xlat18 + -0.5;
+        u_xlat3.x = -abs(u_xlat18) * 2.0 + 1.0;
+        u_xlat6 = u_xlat3.x * 2.0 + u_xlat6;
+        u_xlat4 = u_xlat1 * vec4(u_xlat18) + vs_TEXCOORD0.xyxy;
+        u_xlat5 = texture(camadaRt, u_xlat4.xy);
+        u_xlat4 = texture(camadaRt, u_xlat4.zw);
+        u_xlat5 = u_xlat5 * u_xlat5;
+        u_xlat4 = u_xlat4 * u_xlat4;
+        u_xlat5 = u_xlat5 * u_xlat3.xxxx + u_xlat2;
+        u_xlat2 = u_xlat4 * u_xlat3.xxxx + u_xlat5;
+    }
+    u_xlat0 = u_xlat2 / vec4(u_xlat6);
+    u_xlat0 = sqrt(u_xlat0);
+    return u_xlat0;
+}
+void main() {
+    if (acPass == 0) {
+        // A camada como o RT dela no Node: a cor em luz linear vezes o alfa, de pé; a GPU guarda em sRGB.
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O RT da camada está de pé: o UV do Node é o da tela, nos dois casos (a cruz é simétrica e o Raio é um
+        // tamanho, sem troca de Y). `Blend One Zero`: a saída como está (o alvo sRGB de 8 bits prende, como o do Node).
+        fragColor = crossBlur(acScreenNorm);
+        return;
+    }
+
+    // Os bytes do RT de saída do Node (a GPU decodificou ao ler; codificar de novo devolve o byte guardado), de volta
+    // à orientação da entrada.
+    vec4 o = texelDePe(saidaRt);
+    vec3 kc = bytesSrgb(o.rgb);
+    float ka = floor(o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    // O Nova guarda reto: a cor linear guardada dividida pelo alfa, de volta ao sRGB (acima de 1 fica em 1).
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

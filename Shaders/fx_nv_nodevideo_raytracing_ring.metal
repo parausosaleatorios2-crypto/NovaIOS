@@ -1,0 +1,405 @@
+// ---------------------------------------------------------------------------
+// Raytracing Ring (NV)
+// origem : assets/effects/nv-nodevideo-raytracing-ring.xml
+// id     : nv.effect.nodevideo-raytracing-ring
+// passes : 1
+// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// ---------------------------------------------------------------------------
+#include <metal_stdlib>
+#include "NovaEngineUniforms.h"
+#include "NovaShaderHelpers.h"
+using namespace metal;
+
+struct nv_nodevideo_raytracing_ringParams {
+    float _use_inner_mask;
+    float _b_clip_mask;
+    float _show_inner_mask;
+    float3 _position;
+    float3 _rotation;
+    float _zoom;
+    float _iteration;
+    float _enable_lighting;
+    float3 _light_direction;
+    float _ambient;
+    float3 _light_color;
+    float _light_intensity;
+    float _specular;
+    float _shine;
+    float2 _tex_offset;
+    float2 _tex_scale;
+    float _tex_angle;
+    float _radius;
+    float _smoothness;
+    float _height;
+    float _thickness;
+};
+
+// --- funcoes auxiliares do efeito
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution eng.acTamanhoDaTela
+float4 u_xlat0;
+float4 u_xlat1;
+float4 u_xlat2;
+int u_xlati2;
+bool2 u_xlatb2;
+float4 u_xlat3;
+float4 u_xlat4;
+float4 u_xlat5;
+float3 u_xlat6;
+float3 u_xlat7;
+float3 u_xlat8;
+float4 u_xlat9;
+float4 u_xlat10;
+float2 u_xlat11;
+float2 u_xlat12;
+float3 u_xlat13;
+bool u_xlatb13;
+float3 u_xlat14;
+float2 u_xlat15;
+bool u_xlatb15;
+float2 u_xlat16;
+float2 u_xlat26;
+bool u_xlatb26;
+float2 u_xlat28;
+bool u_xlatb28;
+float u_xlat29;
+float2 u_xlat31;
+float u_xlat39;
+float u_xlat41;
+bool u_xlatb41;
+float u_xlat42;
+
+fragment float4 fx_nv_nodevideo_raytracing_ring(
+    NovaVertexOut       in   [[stage_in]],
+    constant EngineUniforms& eng [[buffer(0)]],
+    constant nv_nodevideo_raytracing_ringParams&  u    [[buffer(1)]],
+    sampler             __nv_smp [[sampler(0)]],
+    texture2d<float> inputImg [[texture(0)]],
+    texture2d<float> Mask [[texture(1)]])
+{
+    float4 __nv_fragCoord = in.position;
+    float2 __nv_pointCoord = in.uv;
+    float4 __nv_out = float4(0.0);
+
+    u_xlat0.xyz = u._rotation.xyz * float3(6.28318787, 6.28318787, 6.28318787);
+    u_xlat1.x = cos(u_xlat0.x);
+    u_xlat0.x = sin(u_xlat0.x);
+    u_xlat2.x = sin(u_xlat0.y);
+    u_xlat3.x = cos(u_xlat0.y);
+    u_xlat4.x = sin(u_xlat0.z);
+    u_xlat5.x = cos(u_xlat0.z);
+    u_xlat6.x = (-u_xlat4.x);
+    u_xlat3.y = u_xlat0.x * u_xlat2.x;
+    u_xlat2.y = (-u_xlat0.x) * u_xlat3.x;
+    u_xlat7.z = u_xlat1.x * (-u_xlat2.x);
+    u_xlat8.z = u_xlat1.x * u_xlat3.x;
+    u_xlat6.y = u_xlat5.x;
+    u_xlat7.x = dot(u_xlat6.yx, u_xlat3.xy);
+    u_xlat9.x = u_xlat1.x * u_xlat6.x;
+    u_xlat8.x = dot(u_xlat6.yx, u_xlat2.xy);
+    u_xlat6.z = u_xlat4.x;
+    u_xlat7.y = dot(u_xlat6.zy, u_xlat3.xy);
+    u_xlat9.y = u_xlat1.x * u_xlat5.x;
+    u_xlat8.y = dot(u_xlat6.zy, u_xlat2.xy);
+    u_xlat1.xz = in.acScreenNorm.xy + float2(-0.5, -0.5);
+    u_xlat13.x = _resolution.x / _resolution.y;
+    u_xlat1.y = u_xlat13.x * u_xlat1.x;
+    u_xlat1.xy = u_xlat1.yz / float2(float2(u._zoom, u._zoom));
+    u_xlat1.z = 1.0;
+    u_xlat13.x = dot(u_xlat1.xyz, u_xlat1.xyz);
+    u_xlat13.x = rsqrt(u_xlat13.x);
+    u_xlat13.xyz = u_xlat13.xxx * u_xlat1.xyz;
+    u_xlat1.xyz = (-float3(u._smoothness, u._smoothness, u._thickness)) + float3(u._radius, u._height, u._radius);
+    u_xlat1.w = u._height + 0.100000001;
+    u_xlat9.zw = u_xlat0.xx;
+    u_xlat0.x = 0.0;
+    u_xlati2 = 0;
+    while(true){
+        u_xlatb15 = u_xlati2>=int(u._iteration);
+        if(u_xlatb15){break;}
+        u_xlat15.xy = u_xlat0.xx * u_xlat13.xy;
+        u_xlat41 = u_xlat13.z * u_xlat0.x + (-u._position.z);
+        u_xlat3.xy = u_xlat15.xy + (-u._position.xy);
+        u_xlat3.z = u_xlat41 + -1.0;
+        u_xlat4.x = dot(u_xlat3.xyz, u_xlat7.xyz);
+        u_xlat5.y = dot(u_xlat3.xyz, u_xlat9.xyz);
+        u_xlat4.y = dot(u_xlat3.xyz, u_xlat8.xyz);
+        u_xlat15.x = dot(u_xlat4.xy, u_xlat4.xy);
+        u_xlat5.x = sqrt(u_xlat15.x);
+        u_xlat3 = (-u_xlat1) + abs(u_xlat5.xyxy);
+        u_xlat15.xy = max(u_xlat3.yw, u_xlat3.xz);
+        u_xlat15.xy = min(u_xlat15.xy, float2(0.0, 0.0));
+        u_xlat3 = max(u_xlat3, float4(0.0, 0.0, 0.0, 0.0));
+        u_xlat41 = dot(u_xlat3.xy, u_xlat3.xy);
+        u_xlat41 = sqrt(u_xlat41);
+        u_xlat15.x = u_xlat41 + u_xlat15.x;
+        u_xlat15.x = u_xlat15.x + (-u._smoothness);
+        u_xlat41 = dot(u_xlat3.zw, u_xlat3.zw);
+        u_xlat41 = sqrt(u_xlat41);
+        u_xlat28.x = u_xlat41 + u_xlat15.y;
+        u_xlat41 = u_xlat28.x + u_xlat15.x;
+        u_xlat41 = u_xlat41 * 0.5;
+        u_xlat41 = u_xlat41 / u._smoothness;
+        u_xlat41 = (-u_xlat41) + 0.5;
+        u_xlat41 = clamp(u_xlat41, 0.0, 1.0);
+        u_xlat28.x = (-u_xlat15.x) + (-u_xlat28.x);
+        u_xlat15.x = u_xlat41 * u_xlat28.x + u_xlat15.x;
+        u_xlat28.x = u_xlat41 * u._smoothness;
+        u_xlat41 = (-u_xlat41) + 1.0;
+        u_xlat15.x = u_xlat28.x * u_xlat41 + u_xlat15.x;
+        u_xlat28.x = u_xlat0.x + u_xlat15.x;
+        u_xlatb15 = u_xlat15.x<9.99999975e-06;
+        u_xlatb41 = 1000.0<u_xlat28.x;
+        u_xlatb15 = u_xlatb41 || u_xlatb15;
+        if(u_xlatb15){
+            u_xlat0.x = u_xlat28.x;
+            break;
+        }
+        u_xlati2 = u_xlati2 + 1;
+        u_xlat0.x = u_xlat28.x;
+    }
+    u_xlat28.xy = u_xlat0.xx * u_xlat13.yx;
+    u_xlat2 = u_xlat28.yxxy;
+    u_xlat3.xyz = u_xlat13.zxz * u_xlat0.xxx + (-u._position.zxz);
+    u_xlat4.xy = u_xlat2.xy + (-u._position.xy);
+    u_xlat4.z = u_xlat3.x + -1.0;
+    u_xlat5.x = dot(u_xlat4.xyz, u_xlat7.xyz);
+    u_xlat6.y = dot(u_xlat4.xyz, u_xlat9.xyw);
+    u_xlat5.y = dot(u_xlat4.xyz, u_xlat8.xyz);
+    u_xlat13.x = dot(u_xlat5.xy, u_xlat5.xy);
+    u_xlat6.x = sqrt(u_xlat13.x);
+    u_xlat4 = (-u_xlat1) + abs(u_xlat6.xyxy);
+    u_xlat31.xy = max(u_xlat4.yw, u_xlat4.xz);
+    u_xlat31.xy = min(u_xlat31.xy, float2(0.0, 0.0));
+    u_xlat4 = max(u_xlat4, float4(0.0, 0.0, 0.0, 0.0));
+    u_xlat13.x = dot(u_xlat4.xy, u_xlat4.xy);
+    u_xlat13.x = sqrt(u_xlat13.x);
+    u_xlat13.x = u_xlat13.x + u_xlat31.x;
+    u_xlat13.x = u_xlat13.x + (-u._smoothness);
+    u_xlat42 = dot(u_xlat4.zw, u_xlat4.zw);
+    u_xlat42 = sqrt(u_xlat42);
+    u_xlat42 = u_xlat42 + u_xlat31.y;
+    u_xlat4.x = u_xlat13.x + u_xlat42;
+    u_xlat4.x = u_xlat4.x * 0.5;
+    u_xlat4.x = u_xlat4.x / u._smoothness;
+    u_xlat4.x = (-u_xlat4.x) + 0.5;
+    u_xlat4.x = clamp(u_xlat4.x, 0.0, 1.0);
+    u_xlat42 = (-u_xlat13.x) + (-u_xlat42);
+    u_xlat13.x = u_xlat4.x * u_xlat42 + u_xlat13.x;
+    u_xlat42 = u_xlat4.x * u._smoothness;
+    u_xlat4.x = (-u_xlat4.x) + 1.0;
+    u_xlat13.x = u_xlat42 * u_xlat4.x + u_xlat13.x;
+    u_xlat4.xz = u_xlat3.yz + float2(-0.00999999978, -1.0);
+    u_xlat4.y = u_xlat2.z + (-u._position.y);
+    u_xlat10.x = dot(u_xlat4.xyz, u_xlat7.xyz);
+    u_xlat11.y = dot(u_xlat4.xyz, u_xlat9.xyw);
+    u_xlat10.y = dot(u_xlat4.xyz, u_xlat8.xyz);
+    u_xlat28.x = dot(u_xlat10.xy, u_xlat10.xy);
+    u_xlat11.x = sqrt(u_xlat28.x);
+    u_xlat4 = (-u_xlat1) + abs(u_xlat11.xyxy);
+    u_xlat16.xy = max(u_xlat4.yw, u_xlat4.xz);
+    u_xlat16.xy = min(u_xlat16.xy, float2(0.0, 0.0));
+    u_xlat4 = max(u_xlat4, float4(0.0, 0.0, 0.0, 0.0));
+    u_xlat28.x = dot(u_xlat4.xy, u_xlat4.xy);
+    u_xlat28.x = sqrt(u_xlat28.x);
+    u_xlat28.x = u_xlat28.x + u_xlat16.x;
+    u_xlat28.x = u_xlat28.x + (-u._smoothness);
+    u_xlat16.x = dot(u_xlat4.zw, u_xlat4.zw);
+    u_xlat16.x = sqrt(u_xlat16.x);
+    u_xlat16.x = u_xlat16.x + u_xlat16.y;
+    u_xlat29 = u_xlat28.x + u_xlat16.x;
+    u_xlat29 = u_xlat29 * 0.5;
+    u_xlat29 = u_xlat29 / u._smoothness;
+    u_xlat29 = (-u_xlat29) + 0.5;
+    u_xlat29 = clamp(u_xlat29, 0.0, 1.0);
+    u_xlat16.x = (-u_xlat28.x) + (-u_xlat16.x);
+    u_xlat28.x = u_xlat29 * u_xlat16.x + u_xlat28.x;
+    u_xlat16.x = u_xlat29 * u._smoothness;
+    u_xlat29 = (-u_xlat29) + 1.0;
+    u_xlat4.x = u_xlat16.x * u_xlat29 + u_xlat28.x;
+    u_xlat26.xy = u_xlat13.yz * u_xlat0.xx + (-u._position.yz);
+    u_xlat10.x = u_xlat2.w + (-u._position.x);
+    u_xlat10.yz = u_xlat26.xy + float2(-0.00999999978, -1.0);
+    u_xlat11.x = dot(u_xlat10.xyz, u_xlat7.xyz);
+    u_xlat12.y = dot(u_xlat10.xyz, u_xlat9.xyw);
+    u_xlat11.y = dot(u_xlat10.xyz, u_xlat8.xyz);
+    u_xlat26.x = dot(u_xlat11.xy, u_xlat11.xy);
+    u_xlat12.x = sqrt(u_xlat26.x);
+    u_xlat10 = (-u_xlat1) + abs(u_xlat12.xyxy);
+    u_xlat26.xy = max(u_xlat10.yw, u_xlat10.xz);
+    u_xlat26.xy = min(u_xlat26.xy, float2(0.0, 0.0));
+    u_xlat10 = max(u_xlat10, float4(0.0, 0.0, 0.0, 0.0));
+    u_xlat28.x = dot(u_xlat10.xy, u_xlat10.xy);
+    u_xlat28.x = sqrt(u_xlat28.x);
+    u_xlat26.x = u_xlat26.x + u_xlat28.x;
+    u_xlat26.x = u_xlat26.x + (-u._smoothness);
+    u_xlat28.x = dot(u_xlat10.zw, u_xlat10.zw);
+    u_xlat28.x = sqrt(u_xlat28.x);
+    u_xlat39 = u_xlat26.y + u_xlat28.x;
+    u_xlat28.x = u_xlat39 + u_xlat26.x;
+    u_xlat28.x = u_xlat28.x * 0.5;
+    u_xlat28.x = u_xlat28.x / u._smoothness;
+    u_xlat28.x = (-u_xlat28.x) + 0.5;
+    u_xlat28.x = clamp(u_xlat28.x, 0.0, 1.0);
+    u_xlat39 = (-u_xlat26.x) + (-u_xlat39);
+    u_xlat26.x = u_xlat28.x * u_xlat39 + u_xlat26.x;
+    u_xlat39 = u_xlat28.x * u._smoothness;
+    u_xlat28.x = (-u_xlat28.x) + 1.0;
+    u_xlat4.y = u_xlat39 * u_xlat28.x + u_xlat26.x;
+    u_xlat2.xy = u_xlat2.xy + (-u._position.xy);
+    u_xlat2.z = u_xlat3.x + -1.00999999;
+    u_xlat3.x = dot(u_xlat2.xyz, u_xlat7.xyz);
+    u_xlat7.y = dot(u_xlat2.xyz, u_xlat9.xyw);
+    u_xlat3.y = dot(u_xlat2.xyz, u_xlat8.xyz);
+    u_xlat26.x = dot(u_xlat3.xy, u_xlat3.xy);
+    u_xlat7.x = sqrt(u_xlat26.x);
+    u_xlat1 = (-u_xlat1) + abs(u_xlat7.xyxy);
+    u_xlat26.xy = max(u_xlat1.yw, u_xlat1.xz);
+    u_xlat26.xy = min(u_xlat26.xy, float2(0.0, 0.0));
+    u_xlat1 = max(u_xlat1, float4(0.0, 0.0, 0.0, 0.0));
+    u_xlat1.x = dot(u_xlat1.xy, u_xlat1.xy);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat26.x = u_xlat26.x + u_xlat1.x;
+    u_xlat26.x = u_xlat26.x + (-u._smoothness);
+    u_xlat1.x = dot(u_xlat1.zw, u_xlat1.zw);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat39 = u_xlat26.y + u_xlat1.x;
+    u_xlat1.x = u_xlat39 + u_xlat26.x;
+    u_xlat1.x = u_xlat1.x * 0.5;
+    u_xlat1.x = u_xlat1.x / u._smoothness;
+    u_xlat1.x = (-u_xlat1.x) + 0.5;
+    u_xlat1.x = clamp(u_xlat1.x, 0.0, 1.0);
+    u_xlat39 = (-u_xlat26.x) + (-u_xlat39);
+    u_xlat26.x = u_xlat1.x * u_xlat39 + u_xlat26.x;
+    u_xlat39 = u_xlat1.x * u._smoothness;
+    u_xlat1.x = (-u_xlat1.x) + 1.0;
+    u_xlat4.z = u_xlat39 * u_xlat1.x + u_xlat26.x;
+    u_xlat13.xyz = u_xlat13.xxx + (-u_xlat4.xyz);
+    u_xlat1.x = dot(u_xlat13.xyz, u_xlat13.xyz);
+    u_xlat1.x = rsqrt(u_xlat1.x);
+    u_xlat14.xyz = u_xlat13.xyz * u_xlat1.xxx;
+    u_xlat13.x = dot(u_xlat14.xyz, u_xlat9.xyw);
+    u_xlat26.x = min(abs(u_xlat5.x), abs(u_xlat5.y));
+    u_xlat2.x = max(abs(u_xlat5.x), abs(u_xlat5.y));
+    u_xlat2.x = float(1.0) / u_xlat2.x;
+    u_xlat26.x = u_xlat26.x * u_xlat2.x;
+    u_xlat2.x = u_xlat26.x * u_xlat26.x;
+    u_xlat15.x = u_xlat2.x * 0.0208350997 + -0.0851330012;
+    u_xlat15.x = u_xlat2.x * u_xlat15.x + 0.180141002;
+    u_xlat15.x = u_xlat2.x * u_xlat15.x + -0.330299497;
+    u_xlat2.x = u_xlat2.x * u_xlat15.x + 0.999866009;
+    u_xlat15.x = u_xlat26.x * u_xlat2.x;
+    u_xlatb28 = abs(u_xlat5.x)<abs(u_xlat5.y);
+    u_xlat15.x = u_xlat15.x * -2.0 + 1.57079637;
+    u_xlat15.x = u_xlatb28 ? u_xlat15.x : float(0.0);
+    u_xlat26.x = u_xlat26.x * u_xlat2.x + u_xlat15.x;
+    u_xlatb2.x = u_xlat5.x<(-u_xlat5.x);
+    u_xlat2.x = u_xlatb2.x ? -3.14159274 : float(0.0);
+    u_xlat26.x = u_xlat26.x + u_xlat2.x;
+    u_xlat2.x = min(u_xlat5.x, u_xlat5.y);
+    u_xlat15.x = max(u_xlat5.x, u_xlat5.y);
+    u_xlatb2.x = u_xlat2.x<(-u_xlat2.x);
+    u_xlatb15 = u_xlat15.x>=(-u_xlat15.x);
+    u_xlatb2.x = u_xlatb15 && u_xlatb2.x;
+    u_xlat26.x = (u_xlatb2.x) ? (-u_xlat26.x) : u_xlat26.x;
+    u_xlat2.x = u_xlat26.x * 0.159157097;
+    u_xlat15.x = u_xlat6.y / u._height;
+    u_xlat3.y = u_xlat15.x * 0.5 + 0.5;
+    u_xlat26.x = u_xlat26.x * 0.159157097 + 1.0;
+    u_xlatb26 = u_xlat26.x>=(-u_xlat26.x);
+    u_xlat2.x = fract(u_xlat2.x);
+    u_xlat26.x = (u_xlatb26) ? u_xlat2.x : (-u_xlat2.x);
+    u_xlat3.x = (-u_xlat26.x) + 1.0;
+    u_xlat26.x = u._radius + u._radius;
+    u_xlat2.xy = u_xlat5.xy / u_xlat26.xx;
+    u_xlat2.xy = u_xlat2.xy + float2(1.0, 1.0);
+    u_xlat4.xy = u_xlat2.xy * float2(0.5, 0.5);
+    u_xlatb26 = u_xlat13.x<0.0;
+    u_xlat2.x = (-u_xlat2.y) * 0.5 + 1.0;
+    u_xlat4.z = (u_xlatb26) ? u_xlat2.x : u_xlat4.y;
+    u_xlat2.xy = (-u_xlat3.xy) + u_xlat4.xz;
+    u_xlat13.xy = abs(u_xlat13.xx) * u_xlat2.xy + u_xlat3.xy;
+    u_xlat2.x = u._tex_angle * 0.0174532998;
+    u_xlat3.x = cos(u_xlat2.x);
+    u_xlat2.x = sin(u_xlat2.x);
+    u_xlat4.x = (-u_xlat2.x);
+    u_xlat4.y = u_xlat3.x;
+    u_xlat4.z = u_xlat2.x;
+    u_xlat2.x = dot(u_xlat13.xy, u_xlat4.yz);
+    u_xlat2.y = dot(u_xlat13.xy, u_xlat4.xy);
+    u_xlat0.yz = u_xlat2.xy + float2(u._tex_offset.x, u._tex_offset.y);
+    u_xlat0.xyz = u_xlat0.xyz + float3(-30.0, -0.5, -0.5);
+    u_xlat2.x = _resolution.y * _resolution.x;
+    u_xlat2.x = 5.0 / u_xlat2.x;
+    u_xlat2.x = (-u_xlat2.x) + 1.0;
+    u_xlat13.xy = u_xlat0.yz * u_xlat2.xx;
+    u_xlat13.xy = u_xlat13.xy * u._tex_scale.xy + float2(0.5, 0.5);
+    u_xlatb2.xy = greaterThanEqual(u_xlat13.xyxx, (-u_xlat13.xyxx)).xy;
+    u_xlat13.xy = fract(abs(u_xlat13.xy));
+    {
+        float3 hlslcc_movcTemp = u_xlat13;
+        hlslcc_movcTemp.x = (u_xlatb2.x) ? u_xlat13.x : (-u_xlat13.x);
+        hlslcc_movcTemp.y = (u_xlatb2.y) ? u_xlat13.y : (-u_xlat13.y);
+        u_xlat13 = hlslcc_movcTemp;
+    }
+    u_xlatb2.xy = lessThan(u_xlat13.xyxx, float4(0.0, 0.0, 0.0, 0.0)).xy;
+    {
+        float3 hlslcc_movcTemp = u_xlat13;
+        hlslcc_movcTemp.x = (u_xlatb2.x) ? (-u_xlat13.x) : u_xlat13.x;
+        hlslcc_movcTemp.y = (u_xlatb2.y) ? (-u_xlat13.y) : u_xlat13.y;
+        u_xlat13 = hlslcc_movcTemp;
+    }
+    u_xlat2 = inputImg.sample(__nv_smp, u_xlat13.xy);
+    u_xlat0.x = u_xlat0.x * -0.0476190485;
+    u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+    u_xlat13.x = u_xlat0.x * -2.0 + 3.0;
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat0.x = u_xlat0.x * u_xlat13.x;
+    u_xlat13.x = u_xlat13.z * u_xlat1.x + -0.300000012;
+    u_xlat13.x = u_xlat13.x * -9.99999905;
+    u_xlat13.x = clamp(u_xlat13.x, 0.0, 1.0);
+    u_xlat26.x = u_xlat13.x * -2.0 + 3.0;
+    u_xlat13.x = u_xlat13.x * u_xlat13.x;
+    u_xlat13.x = u_xlat13.x * u_xlat26.x;
+    u_xlat0.x = u_xlat13.x * u_xlat0.x;
+    u_xlatb13 = 0<int(u._enable_lighting);
+    u_xlat3.xyz = u._light_direction.xyz * float3(0.5, -0.5, -2.0);
+    u_xlat26.x = dot(u_xlat3.xyz, u_xlat3.xyz);
+    u_xlat26.x = rsqrt(u_xlat26.x);
+    u_xlat3.xyz = u_xlat26.xxx * u_xlat3.xyz;
+    u_xlat26.x = dot(u_xlat14.xyz, u_xlat3.xyz);
+    u_xlat1.xyz = u_xlat2.xyz * u._light_color.xyz;
+    u_xlat1.xyz = u_xlat26.xxx * u_xlat1.xyz;
+    u_xlat39 = (-u._ambient) + 1.0;
+    u_xlat1.xyz = float3(u_xlat39) * u_xlat1.xyz;
+    u_xlat1.xyz = u_xlat2.xyz * float3(float3(u._ambient, u._ambient, u._ambient)) + u_xlat1.xyz;
+    u_xlat1.xyz = u_xlat1.xyz * float3(float3(u._light_intensity, u._light_intensity, u._light_intensity));
+    u_xlat26.x = log2(u_xlat26.x);
+    u_xlat26.x = u_xlat26.x * u._specular;
+    u_xlat26.x = exp2(u_xlat26.x);
+    u_xlat39 = (-u._shine) * 0.100000001 + 1.0;
+    u_xlat3.xyz = float3(u_xlat39) * u_xlat1.xyz;
+    u_xlat26.x = u_xlat26.x * u._shine;
+    u_xlat1.xyz = (-u_xlat1.xyz) * float3(u_xlat39) + float3(1.0, 1.0, 1.0);
+    u_xlat1.xyz = u_xlat26.xxx * u_xlat1.xyz + u_xlat3.xyz;
+    u_xlat1.w = u_xlat2.w;
+    u_xlat1 = u_xlat0.xxxx * u_xlat1;
+    u_xlat2 = u_xlat0.xxxx * u_xlat2;
+    u_xlat0 = (bool(u_xlatb13)) ? u_xlat1 : u_xlat2;
+    if(int(u._use_inner_mask) != 0) {
+        u_xlat1 = inputImg.sample(__nv_smp, in.acScreenNorm.xy);
+        u_xlatb2.xy = equal(int4(int(u._show_inner_mask), int(u._b_clip_mask), int(u._show_inner_mask), int(u._show_inner_mask)), int4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? float4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = Mask.sample(__nv_smp, in.acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + float4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        __nv_out.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        __nv_out.xyz = u_xlat1.xyz;
+    } else {
+        __nv_out = u_xlat0;
+    }
+    return __nv_out;
+    return __nv_out;
+}

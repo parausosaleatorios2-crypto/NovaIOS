@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Glitch Blocks — blocos quadrados aleatórios deslocados por XY, com canal cromático.
+  Equivale ao "Glitch Blocks" / "Glitch Random Pattern" do Ultra.
+-->
+<effect
+    id="nova.effect.um-glitch-blocks"
+    name="Blocos de Glitch"
+    name-en="Glitch Blocks"
+    desc="Blocos quadrados aleatórios deslocados com separação de canais."
+    desc-en="Random square blocks displaced with channel separation."
+    category="distort"
+    tags="glitch,blocks,digital,ultra motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="amount" label="Intensidade" default="0.4" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+        <spinner id="blockSize" label="Tamanho do bloco" default="32.0" min="4.0" max="200.0" step="1.0" />
+        <spinner id="speed" label="Velocidade" default="2.0" min="0.0" max="10.0" step="0.1" />
+        <spinner id="channelShift" label="Shift RGB" default="0.5" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+    </params>
+
+    <preview>
+        <set param="amount" value="0.6" />
+    </preview>
+
+    <shader><![CDATA[
+vec2 hash2(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(p) * 43758.5453);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 px = uv * acResolution;
+    vec2 blockId = floor(px / blockSize);
+    float tSlot = floor(acTime * speed * 4.0) / 4.0;
+    vec2 h = hash2(blockId + tSlot);
+    float ativo = step(1.0 - amount, h.x);
+
+    vec2 shift = (h - 0.5) * amount * 0.12 * ativo;
+    vec2 uvS = uv + shift;
+
+    float rShift = channelShift * amount * 0.02 * ativo;
+    float r = texture(inputImg, uvS + vec2(rShift, 0.0)).r;
+    vec4 g = texture(inputImg, uvS);
+    float b = texture(inputImg, uvS - vec2(rShift, 0.0)).b;
+
+    fragColor = vec4(r, g.g, b, g.a);
+}
+    ]]></shader>
+</effect>

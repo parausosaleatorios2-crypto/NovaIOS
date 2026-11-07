@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cristalizar: quebra a imagem em células irregulares, cada uma de uma cor só.
+
+  Diferente de "Pixelar", que usa uma grade quadrada. Aqui as células são um
+  diagrama de Voronoi — irregulares, orgânicas — e o resultado lembra vitral,
+  mosaico ou gelo, em vez de censura de TV.
+
+  A conta procura, entre os nove pontos-semente vizinhos, o mais próximo. Nove
+  porque uma célula nunca pode ter vizinho a mais de uma casa de distância se o
+  ponto está dentro da própria casa.
+-->
+<effect
+    id="nova.effect.crystallize"
+    name="Cristalizar"
+    name-en="Crystallize"
+    desc="Quebra a imagem em células irregulares, tipo vitral ou mosaico."
+    desc-en="Breaks the image into cells, like stained glass."
+    category="stylize"
+    blend="mode"
+    tags="cristal,mosaico,vitral,voronoi,celula,gelo,quebrar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="cellSize" label="Tamanho da célula"
+                default="30.0" min="4.0" max="200.0" step="1.0" />
+        <slider id="irregularity" label="Irregularidade"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="edgeWidth" label="Contorno"
+                default="0.0" min="0.0" max="0.4" step="0.005" snap="0.0" />
+        <color id="edgeColor" label="Cor do contorno" default="#000000" />
+    </params>
+
+    <shader><![CDATA[
+
+vec2 hash22(vec2 p) {
+    float n = sin(dot(p, vec2(41.0, 289.0)));
+    return fract(vec2(262144.0, 32768.0) * n);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 scaled = acScreenNorm * acResolution / (max(cellSize, 1.0) * acEscalaDePixel);
+    vec2 cell = floor(scaled);
+    vec2 local = fract(scaled);
+
+    vec2 bestOffset = vec2(0.0);
+    float bestDistance = 8.0;
+    float secondDistance = 8.0;
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 neighbour = vec2(float(x), float(y));
+            // Semente no meio da casa quando a irregularidade é 0 — e aí o
+            // resultado degenera exatamente numa grade quadrada, o que é uma
+            // saída útil e não um defeito.
+            vec2 seed = neighbour + mix(vec2(0.5), hash22(cell + neighbour), irregularity);
+            float d = length(seed - local);
+            if (d < bestDistance) {
+                secondDistance = bestDistance;
+                bestDistance = d;
+                bestOffset = seed;
+            } else if (d < secondDistance) {
+                secondDistance = d;
+            }
+        }
+    }
+
+    // A cor da célula vem do CENTRO dela, não do pixel atual: é isso que faz a
+    // célula inteira ficar de uma cor só.
+    vec2 centreUv = (cell + bestOffset) * (max(cellSize, 1.0) * acEscalaDePixel) / acResolution;
+    vec4 crystal = texture(inputImg, clamp(centreUv, 0.0, 1.0));
+
+    if (edgeWidth > 0.0) {
+        // A diferença entre a menor e a segunda menor distância é pequena
+        // exatamente na fronteira entre duas células — é o jeito clássico de
+        // achar a borda de um Voronoi sem calcular geometria nenhuma.
+        float border = smoothstep(0.0, edgeWidth, secondDistance - bestDistance);
+        crystal.rgb = mix(edgeColor.rgb, crystal.rgb, border);
+    }
+
+    fragColor = crystal;
+}
+
+    ]]></shader>
+</effect>

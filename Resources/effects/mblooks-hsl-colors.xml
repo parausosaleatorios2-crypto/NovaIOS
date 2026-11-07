@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — HSL Colors (`rhsl`, vídeo): matiz, saturação e luminância de 8 faixas de cor
+  (Red, Orange, Yellow, Green, Cyan, Blue, Purple, Magenta). O host (`0x1803fa010`) monta uma textura de 1024
+  matizes — o deslocamento de cada cor para o centro da vizinha, a saturação e a luminância, somados com o peso
+  suave de cada faixa, e a curva de matiz que volta para trás vira degrau — e o `ColorKernel_RangedHSL` a lê com
+  filtro PONTO no matiz do pixel. Saturação e luminância em gama 2,2; a luminância só pega onde há cor.
+  Conferido contra o After Effects (r4: 59 casos, presets da pasta, dobras): até 1 nível em ≤ 0,008% dos valores.
+
+  O QUE NÃO ENTROU: os três "Master" (Hue, Sat, Lum) ficam guardados, escondidos — o caminho de GPU do Looks, o
+  que o After Effects roda, não os lê (r4: `so_master`, 0 valores diferentes); só o de CPU usa o Master Hue.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.hslcolors"
+    name="Looks: HSL Colors"
+    name-en="Looks: HSL Colors"
+    desc="A ferramenta HSL Colors do Magic Bullet Looks: muda o matiz, a saturação e a luminância de cada uma das 8 cores (vermelho a magenta) separadamente."
+    desc-en="Magic Bullet Looks' HSL Colors tool: shifts the hue, saturation and luminance of each of the 8 colors (red to magenta) separately."
+    category="looks"
+    stage="mblooks"
+    looks="rhsl"
+    tags="magic bullet,looks,red giant,hsl,hsl colors,matiz,saturação,luminância,hue,saturation,luminance,cores">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="masterHue" label="Master Hue" default="0.0" min="-100.0" max="100.0" step="0.1" hidden="true" />
+        <slider id="masterSat" label="Master Sat" default="0.0" min="-100.0" max="100.0" step="0.1" hidden="true" />
+        <slider id="masterLum" label="Master Lum" default="0.0" min="-100.0" max="100.0" step="0.1" hidden="true" />
+        <slider id="hueRed" group="Hue" label="Red Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueOrange" group="Hue" label="Orange Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueYellow" group="Hue" label="Yellow Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueGreen" group="Hue" label="Green Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueCyan" group="Hue" label="Cyan Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueBlue" group="Hue" label="Blue Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="huePurple" group="Hue" label="Purple Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="hueMagenta" group="Hue" label="Magenta Hue" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satRed" group="Saturation" label="Red Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satOrange" group="Saturation" label="Orange Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satYellow" group="Saturation" label="Yellow Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satGreen" group="Saturation" label="Green Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satCyan" group="Saturation" label="Cyan Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satBlue" group="Saturation" label="Blue Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satPurple" group="Saturation" label="Purple Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="satMagenta" group="Saturation" label="Magenta Saturation" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumRed" group="Luminance" label="Red Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumOrange" group="Luminance" label="Orange Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumYellow" group="Luminance" label="Yellow Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumGreen" group="Luminance" label="Green Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumCyan" group="Luminance" label="Cyan Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumBlue" group="Luminance" label="Blue Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumPurple" group="Luminance" label="Purple Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="lumMagenta" group="Luminance" label="Magenta Luminance" default="0.0" min="-100.0" max="100.0" step="0.1" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0) não muda a cor: o matiz de cada faixa girado (os "Master" o Looks não lê). (vitrine, 0.668.0) -->
+    <preview>
+        <set param="hueRed" value="80.0" />
+        <set param="hueYellow" value="-60.0" />
+        <set param="hueGreen" value="60.0" />
+        <set param="hueBlue" value="60.0" />
+        <set param="satOrange" value="60.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

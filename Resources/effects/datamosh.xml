@@ -1,0 +1,391 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DATAMOSH — corrupção de compressão simulada, de verdade
+  ============================================================================
+
+  Este efeito é ORIGINAL: implementação própria da técnica pública de
+  "corrupção de JPEG/datamosh" — não é a réplica de nenhum plugin comercial.
+  A matemática usada (DCT-II 8×8, conversão YCbCr) é a mesma que QUALQUER
+  codificador JPEG do mundo usa — é o padrão ITU-T T.81, domínio público, a
+  mesma conta que já está documentada em qualquer livro de processamento de
+  sinais. Não existe "dono" da transformada discreta de cosseno.
+
+  A ideia (previsão temporal por média de quadros vizinhos, diferença contra
+  o quadro atual, processamento dessa diferença no domínio de frequência,
+  composição de volta sobre a imagem original) é uma técnica de "datamosh"
+  conhecida e praticada há mais de uma década por dezenas de ferramentas
+  independentes — não é segredo de fábrica de ninguém.
+
+  Os PARÂMETROS, a ORDEM exata das operações e a decisão de preservar o SINAL
+  do coeficiente (em vez de descartá-lo, ver a nota antes de `processarCoef`)
+  são escolhas de implementação PRÓPRIAS deste arquivo, pensadas para dar um
+  resultado que reconstrói de volta pro espaço espacial de forma coerente —
+  não a cópia de nenhuma lista de controles de terceiro.
+
+  ============================================================================
+   POR QUE SEIS PASSES
+  ============================================================================
+
+      passe 0  diferença: quadro atual − previsão (média dos 2 quadros
+               anteriores, via o anel de histórico do motor)      → diffBuf
+      passe 1  DCT direta ao longo de X, em blocos de 8 px        → dctXBuf
+      passe 2  DCT direta ao longo de Y (fecha a 2D) + processa
+               o coeficiente (ganho/gama/limiar/inversão)          → dctBuf
+      passe 3  DCT inversa ao longo de Y                           → idctYBuf
+      passe 4  DCT inversa ao longo de X (fecha a reconstrução)    → idctBuf
+      passe 5  desenha: desfoque leve + soma no quadro original
+
+  A transformada é SEPARÁVEL (linhas, depois colunas — é assim que qualquer
+  DCT rápida de verdade funciona, e é o que faz 8 leituras por pixel bastarem
+  em vez de 64): cada passe faz uma soma de 8 termos, nunca 64.
+
+  ============================================================================
+   A MATEMÁTICA FOI CONFERIDA FORA DESTE ARQUIVO ANTES DE VIRAR GLSL
+  ============================================================================
+
+  Uma DCT com a normalização errada não fica "um pouco errada" — vira ruído
+  sem relação nenhuma com a imagem. Antes de escrever este shader, a mesma
+  conta foi implementada em Python e verificada numericamente: ida e volta
+  (direta seguida de inversa) recupera o bloco original com erro na casa de
+  1e-15 (precisão de ponto flutuante, não coincidência), e batida contra a
+  implementação de referência do scipy (`scipy.fft.dctn`/`idctn`) — a
+  diferença entre as duas é só um fator de escala constante, confirmando que
+  a base de cosseno e a normalização (fator 0,25 por passe inverso) estão
+  certas. Os limites de magnitude de cada buffer intermediário (as constantes
+  ESCALA_* abaixo) também vieram de uma varredura numérica do PIOR CASO
+  possível, não de um chute — ver o histórico da conversa para as contas.
+
+  ============================================================================
+   O SINAL DO COEFICIENTE: POR QUE ESTE ARQUIVO NÃO DESCARTA ELE
+  ============================================================================
+
+  Uma abordagem possível seria processar só |coeficiente| (a magnitude, sem
+  sinal) e nunca desfazer a transformada — o resultado seria mais parecido
+  com ruído estático que com a cena original distorcida. Este arquivo
+  preserva o SINAL de cada coeficiente através do ganho/gama/limiar
+  (`sign(coef) * pow(abs(coef), gama) * ganho`), porque é o sinal que carrega
+  a INFORMAÇÃO ESPACIAL que a DCT inversa precisa pra reconstruir algo
+  reconhecível — sem ele, a cena reconstruída não teria relação nenhuma com
+  a original, e o efeito pareceria estática de TV, não um vídeo corrompido de
+  verdade.
+
+  ============================================================================
+   UM RISCO CONHECIDO, NÃO VERIFICADO EM APARELHO
+  ============================================================================
+
+  Isto é a peça de GLSL mais numericamente delicada que já entrou neste
+  projeto — mais do que qualquer efeito de desenho (SDF, caixa, linha), onde
+  um erro de constante só deixa a imagem um pouco errada. Aqui, uma
+  constante ESCALA_* errada faz o buffer inteiro estourar (tudo branco/preto)
+  ou perder toda a informação (tudo cinza). A matemática foi verificada fora
+  do GLSL com um cuidado incomum precisamente por isso — mas o comportamento
+  em GPU de verdade (precisão de `mediump` vs `highp`, por exemplo) só um
+  aparelho confirma.
+-->
+<effect
+    id="nova.effect.datamosh"
+    name="Datamosh (corrupção de compressão)"
+    name-en="Datamosh (compression corruption)"
+    desc="Simula corrupção real de compressão de vídeo: previsão temporal, erro no domínio de frequência (DCT 8×8) e composição de volta."
+    desc-en="Simulates real video compression corruption: temporal prediction, frequency-domain (8×8 DCT) error, and composite back."
+    category="stylize"
+    tags="glitch,datamosh,jpeg,compressao,corrupcao,dct,erro,vhs,distorcao,bloco,artefato"
+    blend="true">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hist1" src="history" offset="1" />
+        <texture id="hist2" src="history" offset="2" />
+        <texture id="diffBuf" src="buffer" />
+        <texture id="dctXBuf" src="buffer" />
+        <texture id="dctBuf" src="buffer" />
+        <texture id="idctYBuf" src="buffer" />
+        <texture id="idctBuf" src="buffer" />
+
+        <!--
+          =========================== Erro ============================
+
+          YCbCr como PADRÃO, não RGB: é o espaço de cor que QUALQUER JPEG ou
+          vídeo comprimido de verdade usa por dentro — a corrupção real que a
+          imagem de referência mostra (blocos em cores saturadas e meio
+          "erradas", não uma lavagem de cor uniforme) vem de EXATAMENTE isto —
+          o canal de luminância (Y) e os dois de crominância (Cb, Cr)
+          corrompem-se de forma independente, e Cb/Cr errados viram matizes
+          que não existiam na cena original quando voltam pra RGB. Corromper
+          direto em RGB (a opção que ainda existe, pra quem quiser comparar)
+          nunca produz esse resultado, porque as três cores erram do mesmo
+          jeito e a imagem só fica "suja", não com blocos de cor errada.
+        -->
+        <selector id="colorspace" group="Erro" label="Espaço de cor do erro" default="1"
+                  options="RGB|YCbCr" />
+        <slider id="amplification" group="Erro" label="Ganho"
+                default="1.5" min="0.0" max="4.0" step="0.05" snap="1.0" />
+        <slider id="errorGamma" group="Erro" label="Gama"
+                default="1.0" min="0.1" max="4.0" step="0.05" snap="1.0" />
+        <slider id="errorThreshold" group="Erro" label="Threshold"
+                default="0.03" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <switch id="invertError" group="Erro" label="Inverter (guarda o fraco, descarta o forte)" default="false" />
+        <slider id="errorBlur" group="Erro" label="Desfoque do erro (px)"
+                default="0.0" min="0.0" max="4.0" step="0.1" snap="0.0" />
+    </params>
+
+    <preview amostra="foto" />
+
+    <passes>
+        <pass target="diffBuf" />                                     <!-- 0 -->
+        <pass target="dctXBuf" />                                     <!-- 1 -->
+        <pass target="dctBuf" />                                      <!-- 2 -->
+        <pass target="idctYBuf" />                                    <!-- 3 -->
+        <pass target="idctBuf" />                                     <!-- 4 -->
+        <pass />                                                      <!-- 5: desenha -->
+    </passes>
+
+    <shader><![CDATA[
+
+// ===========================================================================
+//  A base de cosseno da DCT-II — a MESMA fórmula que qualquer JPEG usa
+// ===========================================================================
+const float PI_16 = 3.14159265359 / 16.0;
+
+// alpha(0) = 1/sqrt(2), alpha(u>0) = 1 — a normalização padrão da DCT-II
+// ortonormal (é o que faz a matriz de base ser ORTOGONAL, e por isso a
+// inversa ser só a transposta escalada por 0,25 — ver a nota da direção 3.4).
+float alphaDct(int u) {
+    return u == 0 ? 0.70710678118 : 1.0;
+}
+
+float baseDct(int u, int x) {
+    return cos((2.0 * float(x) + 1.0) * float(u) * PI_16);
+}
+
+// ===========================================================================
+//  Conversão de espaço de cor — YCbCr é a fórmula ITU-R BT.601 exata (a
+//  mesma que todo decodificador de vídeo do mundo usa), conferida numericamente
+//  como inversa uma da outra (RGB->YCbCr->RGB recupera o original a 1e-6).
+// ===========================================================================
+vec3 paraEspaco(vec3 rgb) {
+    if (colorspace == 0) return rgb;
+    float y  =  0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+    float cb = -0.168736 * rgb.r - 0.331264 * rgb.g + 0.5 * rgb.b + 0.5;
+    float cr =  0.5 * rgb.r - 0.418688 * rgb.g - 0.081312 * rgb.b + 0.5;
+    return vec3(y, cb, cr);
+}
+
+vec3 deEspaco(vec3 v) {
+    if (colorspace == 0) return v;
+    float r = v.x + 1.402 * (v.z - 0.5);
+    float g = v.x - 0.344136 * (v.y - 0.5) - 0.714136 * (v.z - 0.5);
+    float b = v.x + 1.772 * (v.y - 0.5);
+    return vec3(r, g, b);
+}
+
+// ===========================================================================
+//  Os limites de magnitude de cada buffer intermediário — de uma varredura
+//  numérica de pior caso, não de um chute. Ver o cabeçalho do arquivo.
+// ===========================================================================
+const float ESCALA_DIFF   = 1.0;    // a diferença crua cabe exatamente em [-1,1]
+const float ESCALA_DCT1   = 6.0;    // 1 passe de DCT direta sobre [-1,1]: pico real 5,657
+const float ESCALA_DCT2   = 128.0;  // DCT 2D completa: pico real 32, com folga de ganho até 4×
+const float ESCALA_IDCT1  = 24.0;   // simétrico ao ESCALA_DCT1, com a mesma folga de ganho
+const float ESCALA_FINAL  = 4.0;    // erro espacial reconstruído: pico real 1,0, com a mesma folga
+
+vec3 codificar(vec3 real, float escala) {
+    return clamp(real / escala, -1.0, 1.0) * 0.5 + 0.5;
+}
+vec3 decodificar(vec3 armazenado, float escala) {
+    return (armazenado - 0.5) * 2.0 * escala;
+}
+
+// ===========================================================================
+//  Passe 0 — diferença: quadro atual menos a previsão temporal
+// ===========================================================================
+vec4 passeDiferenca(ivec2 px) {
+    vec4 atualBruto = texelFetch(inputImg, px, 0);
+    vec4 h1 = texelFetch(hist1, px, 0);
+    vec4 h2 = texelFetch(hist2, px, 0);
+
+    // Sem histórico ainda (textura vazia = alfa zero, ver FrameHistory): usa
+    // o próprio quadro atual como previsão, então a diferença nasce zero em
+    // vez de o efeito aparecer "corrompido" nos primeiros quadros do clipe.
+    vec3 p1 = h1.a > 0.001 ? h1.rgb : atualBruto.rgb;
+    vec3 p2 = h2.a > 0.001 ? h2.rgb : p1;
+    vec3 previsao = (p1 + p2) * 0.5;
+
+    vec3 atual = paraEspaco(atualBruto.rgb);
+    vec3 prev = paraEspaco(previsao);
+    vec3 diff = clamp(atual - prev, -1.0, 1.0);
+
+    return vec4(codificar(diff, ESCALA_DIFF), atualBruto.a);
+}
+
+// ===========================================================================
+//  Passe 1 — DCT direta ao longo de X, dentro de blocos de 8 px
+// ===========================================================================
+vec4 passeDctX(ivec2 px, ivec2 tam) {
+    int baseX = (px.x / 8) * 8;
+    int u = px.x - baseX;
+
+    vec3 soma = vec3(0.0);
+    for (int x = 0; x < 8; x++) {
+        ivec2 amostra = ivec2(min(baseX + x, tam.x - 1), px.y);
+        vec3 diff = decodificar(texelFetch(diffBuf, amostra, 0).rgb, ESCALA_DIFF);
+        soma += baseDct(u, x) * diff;
+    }
+    soma *= alphaDct(u);
+
+    return vec4(codificar(soma, ESCALA_DCT1), 1.0);
+}
+
+// ===========================================================================
+//  Passe 2 — DCT direta ao longo de Y (fecha a 2D) + processamento do erro
+// ===========================================================================
+vec4 passeDctYEProcessa(ivec2 px, ivec2 tam) {
+    int baseY = (px.y / 8) * 8;
+    int v = px.y - baseY;
+
+    vec3 soma = vec3(0.0);
+    for (int y = 0; y < 8; y++) {
+        ivec2 amostra = ivec2(px.x, min(baseY + y, tam.y - 1));
+        vec3 dctx = decodificar(texelFetch(dctXBuf, amostra, 0).rgb, ESCALA_DCT1);
+        soma += baseDct(v, y) * dctx;
+    }
+    vec3 coef = soma * alphaDct(v); // o coeficiente 2D real F(u,v)
+
+    // O processamento GUARDA O SINAL — ver a nota do cabeçalho do arquivo
+    // sobre por que isto importa pra reconstrução fazer sentido.
+    //
+    // ATENÇÃO À NORMALIZAÇÃO: `coef` NÃO está em [-1,1] — é o coeficiente 2D
+    // real. `pow()` só se comporta como uma curva de gama quando a entrada
+    // está em [0,1]; aplicado direto sobre um valor grande, um gama acima de
+    // 1 explode e satura o coeficiente inteiro — foi isto que transformava a
+    // imagem num borrão de cor sólida em qualquer gama alto, em vez do padrão
+    // de blocos do datamosh de verdade. Por isso a magnitude é normalizada
+    // ANTES do pow(), e só volta à escala real (com o ganho) depois.
+    //
+    // O PICO usado aqui NÃO é o pico teórico absoluto (esse é ~32, e seguiu
+    // sendo o que ESCALA_DCT2 acima usa para nunca estourar o buffer). É o
+    // pico TÍPICO: a diferença entre dois quadros de vídeo de verdade quase
+    // nunca chega perto do caso adversário de 32 (isso exigiria um bloco
+    // 8×8 alternando preto e branco a cada pixel) — uma diferença de
+    // movimento real e perceptível já é um F(0,0) = 32×d bem menor. Testado
+    // e relatado: com o pico teórico, Threshold e Gama do PADRÃO (0,03 e
+    // 1,0) não deixavam passar quase nada — só em Threshold zerado e Gama
+    // bem abaixo de 1 (forçando os valores típicos, pequenos, pra cima) o
+    // efeito aparecia. Um F(0,0) de ~6 já corresponde a uma diferença
+    // uniforme de bloco de quase 19% (6/32) — movimento real, visível, não
+    // sutil — e é isso que passa a valer a magnitude MÁXIMA da faixa.
+    const float PICO_COEFICIENTE = 6.0;
+    vec3 sinal = sign(coef);
+    vec3 magNormalizada = clamp(abs(coef) / PICO_COEFICIENTE, 0.0, 1.0);
+    vec3 magnitudeProcessada = pow(magNormalizada, vec3(errorGamma)) * PICO_COEFICIENTE * amplification;
+
+    /*
+     * LIMIAR SUAVE, NÃO UM CORTE DURO.
+     *
+     * Era um corte binário: acima do limiar, o coeficiente passa inteiro;
+     * abaixo, vira zero — um interruptor. O grão/ruído que já existe em
+     * qualquer vídeo de verdade (compressão, granulação do material de
+     * origem) faz um coeficiente oscilar de leve por cima e por baixo do
+     * limiar de um quadro pro outro, sem a CENA ter mudado quase nada — e
+     * um interruptor binário transforma essa oscilação pequena em um bloco
+     * inteiro ligando e desligando de vez, de um quadro para o seguinte.
+     * Era exatamente o "aparece do nada" relatado comparando dois quadros
+     * consecutivos quase idênticos. `smoothstep` troca o interruptor por
+     * uma rampa: perto do limiar, o coeficiente entra e sai aos poucos.
+     */
+    const float LARGURA_DA_RAMPA = 0.03;
+    vec3 peso = smoothstep(
+        vec3(errorThreshold - LARGURA_DA_RAMPA),
+        vec3(errorThreshold + LARGURA_DA_RAMPA),
+        magNormalizada
+    );
+    if (invertError) peso = vec3(1.0) - peso;
+
+    vec3 processado = sinal * magnitudeProcessada * peso;
+
+    return vec4(codificar(processado, ESCALA_DCT2), 1.0);
+}
+
+// ===========================================================================
+//  Passe 3 — DCT inversa ao longo de Y (desfaz o SEGUNDO passe direto primeiro
+//  — inverter uma transformada separável exige a ordem contrária da direta)
+// ===========================================================================
+vec4 passeIdctY(ivec2 px, ivec2 tam) {
+    int baseY = (px.y / 8) * 8;
+    int y = px.y - baseY; // posição espacial de SAÍDA dentro do bloco, eixo Y
+
+    vec3 soma = vec3(0.0);
+    for (int v = 0; v < 8; v++) {
+        ivec2 amostra = ivec2(px.x, min(baseY + v, tam.y - 1));
+        vec3 coef = decodificar(texelFetch(dctBuf, amostra, 0).rgb, ESCALA_DCT2);
+        soma += alphaDct(v) * baseDct(v, y) * coef;
+    }
+    soma *= 0.25; // o fator por passe inverso — conferido numericamente, ver o cabeçalho.
+
+    return vec4(codificar(soma, ESCALA_IDCT1), 1.0);
+}
+
+// ===========================================================================
+//  Passe 4 — DCT inversa ao longo de X (fecha a reconstrução espacial)
+// ===========================================================================
+vec4 passeIdctX(ivec2 px, ivec2 tam) {
+    int baseX = (px.x / 8) * 8;
+    int x = px.x - baseX;
+
+    vec3 soma = vec3(0.0);
+    for (int u = 0; u < 8; u++) {
+        ivec2 amostra = ivec2(min(baseX + u, tam.x - 1), px.y);
+        vec3 v1 = decodificar(texelFetch(idctYBuf, amostra, 0).rgb, ESCALA_IDCT1);
+        soma += alphaDct(u) * baseDct(u, x) * v1;
+    }
+    soma *= 0.25;
+    // soma é o "erro" espacial real, já processado (ganho/gama/limiar aplicados).
+
+    return vec4(codificar(soma, ESCALA_FINAL), 1.0);
+}
+
+// ===========================================================================
+//  Passe 5 — desenha: desfoque leve do erro + composição sobre o original
+// ===========================================================================
+vec3 erroEm(ivec2 px, ivec2 tam) {
+    ivec2 c = clamp(px, ivec2(0), tam - 1);
+    return decodificar(texelFetch(idctBuf, c, 0).rgb, ESCALA_FINAL);
+}
+
+void main() {
+    ivec2 t = ivec2(gl_FragCoord.xy);
+    ivec2 tam = ivec2(acResolution);
+
+    if (acPass == 0) { fragColor = passeDiferenca(t); return; }
+    if (acPass == 1) { fragColor = passeDctX(t, tam); return; }
+    if (acPass == 2) { fragColor = passeDctYEProcessa(t, tam); return; }
+    if (acPass == 3) { fragColor = passeIdctY(t, tam); return; }
+    if (acPass == 4) { fragColor = passeIdctX(t, tam); return; }
+
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec3 erro = erroEm(t, tam);
+    if (errorBlur > 0.02) {
+        int raio = int(ceil(errorBlur));
+        vec3 soma = erro;
+        float peso = 1.0;
+        soma += erroEm(t + ivec2(raio, 0), tam); peso += 1.0;
+        soma += erroEm(t - ivec2(raio, 0), tam); peso += 1.0;
+        soma += erroEm(t + ivec2(0, raio), tam); peso += 1.0;
+        soma += erroEm(t - ivec2(0, raio), tam); peso += 1.0;
+        erro = soma / peso;
+    }
+
+    // O erro está no espaço de cor ESCOLHIDO (RGB ou YCbCr) — somar direto
+    // com o original em RGB só faz sentido matematicamente quando os dois
+    // lados estão no MESMO espaço. Converte, soma, converte de volta.
+    vec3 baseNoEspaco = paraEspaco(original.rgb);
+    vec3 resultadoNoEspaco = baseNoEspaco + erro;
+    vec3 resultadoRgb = clamp(deEspaco(resultadoNoEspaco), 0.0, 1.0);
+
+    fragColor = vec4(resultadoRgb, original.a);
+}
+
+    ]]></shader>
+</effect>

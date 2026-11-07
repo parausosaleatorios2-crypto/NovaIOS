@@ -1,0 +1,615 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_TEXTUREPLASMA — o Texture Plasma do Sapphire (Boris FX), igual ao do After Effects
+  ============================================================================
+
+  Pedido do snow (25/10/2026): "Textureplasm 100% igual do after effects". Está em 7 presets da pasta dele
+  (os Alvar Text Plasma, os Ryan's Texture Plasma, o Edge Glow 2) e no Preset texts/14.aep.
+
+  DE ONDE VEIO (tools/stextureplasma/benchmark):
+
+  - A definição do efeito está em texto na sapphire_ae.dll (`plasma_tex` + `dest_combine_texture_with_bg`):
+        fase  = Phase Start + Phase Speed · tempo
+        v     = bounce((xy · Add Grad + noise(Freq · (Rel X, 1), Octaves, Shift, Seed)) · 2 · Layers + 2 · fase, 1)
+        pic   = clamp((v − Threshold) / max(0,01, 1 − Threshold), 0, 1)
+        tex   = screen(pic², glow(pic², larguras por canal, Glow Brightness · Glow Color)) · Brightness · Color
+        saída = Combine(tex, fonte · Bg Brightness)
+  - O `noise` foi lido no código (fnoise.c, 0x180b5aa40): uma PIRÂMIDE. Uma grade de valores do hash do Sapphire
+    (o mesmo do S_FilmDamage) é subdividida pela B-spline cúbica (máscara 1 4 6 4 1 / 8, mais 2⁻¹⁴ nos vértices)
+    enquanto couber no quadro, somando a cada nível uma oitava nova (semente ^ nível, peso 1/2^nível); no fim
+    v = 0,5·v + 0,5, mais uma subdivisão e interpolação linear nos pixels, com as posições somadas passo a passo
+    em float32.
+  - Medido no After Effects (80 renders; 16 e 8 bpc; os presets do snow aplicados de verdade):
+      * as coordenadas: o `noise` no canto do pixel, o Shift com y para baixo; o `xy` do Add Grad no centro do
+        pixel, y para cima; x de −1 a 1 na largura da CAMADA;
+      * o `bounce` é a dobra em triângulo (período 2); o tempo é em segundos;
+      * o glow é o do S_Glow com a largura ARREDONDADA (meio para cima), borda transparente — e as três caixas
+        vão da menor para a maior: cada caixa corta o que sai da camada, e a ordem muda a borda; a luz não é
+        presa em 1;
+      * as cores valem em 8 bits (meio para cima), os sliders em passos de 1/65536 (truncados);
+      * Input Opacity: Normal mistura com a cor pré-multiplicada, All Opaque e As Premult com a reta; Output
+        Opacity: Copy From Input = a conta é a cor reta e o alfa é o da fonte; All Opaque = opaco.
+    O modelo em numpy fica a 0,000–0,004 nível (de 255) do AE de 16 bpc em média, máximo 0,4; no de 8 bpc, 98 a
+    99,9% dos pixels no mesmo nível e o resto a 1 (empates de meio nível).
+
+  COMO É FEITO AQUI (o buffer do motor é RGBA8):
+    0       ruidoEstado  o `noise` de cada pixel (os 32 bits do float). Ele não muda com o tempo (a fase entra
+                   depois): fica num estado-cache (`src="state" memory="cache"`, o último escrito, com o vídeo
+                   tocando, parado ou o cursor arrastado) e, enquanto a assinatura dos controles dele (passe 1) é a
+                   mesma, é só copiado. Refazer custa ~35 ms na GPU do PC em 1080p; antes da 0.799.0 ele era
+                   refeito a cada ajuste com o vídeo parado, a cada arrasto e quando a prévia pulava quadros.
+                   O `noise` sai pixel a pixel, sem montar a pirâmide: k subdivisões seguidas são uma convolução com K_k(d) = B4_n(d + 2(n − 1)) / n³, n = 2^k (B4 = a
+                   caixa de n convolvida 4 vezes, com fórmula); o viés de 2⁻¹⁴ é uma soma de um termo em x e um em
+                   y; as posições somadas em float32 são refeitas por faixa de expoente (o passo é constante dentro
+                   de cada uma). Conferido contra a pirâmide: 1e-7.
+    1       assinatura  Frequency, Rel X, Octaves, Seed, Shift e o tamanho da camada, para o próximo quadro.
+    2       ruido  o pic² de cada pixel (a fase, o Add Grad, o bounce e o limiar), em 24 bits.
+    3..14   o glow: as 6 caixas (3 em x, 3 em y, da menor para a maior), cada uma em dois passes — a soma de 16
+            pixels seguidos (sR..) e a caixa feita dessas somas mais o que sobra (fR.. ↔ gR..). Um buffer por canal,
+            DOIS pixels vizinhos da linha por texel em 16 bits cada (`pack="2"`, meia largura): cada leitura traz
+            dois valores úteis; em x o pixel da direita é a janela do da esquerda andando um pixel, em y as duas
+            colunas dividem as leituras. Os três canais num desenho só (`target="a,b,c"`). 0.799.0: o quadro
+            tocando caiu de ~25 para ~19 ms na GPU do PC (1080p, os padrões), igual ao de antes a 1 nível em <0,1%
+            dos px.
+    15      a luz, o screen, a cor e a mistura com a fonte.
+  O ruído pula para a tela inteira da camada do AE (`acCamada`): no texto, a composição — como no AE.
+
+  O QUE NÃO ENTROU: Mask (de camada e de caminho), Mocha. Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.stextureplasma"
+    name="S_TexturePlasma"
+    name-en="S_TexturePlasma"
+    desc="O Texture Plasma do Sapphire: plasma de ruído fractal em camadas, com limiar, brilho por canal e mistura com a camada, igual ao After Effects."
+    desc-en="Sapphire's Texture Plasma: layered fractal-noise plasma with threshold, per-channel glow and combine modes, as in After Effects."
+    category="procedural"
+    pontos="camada"
+    tags="s_textureplasma,texture plasma,plasma,sapphire,ruido,noise,textura,texture,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tabelas" src="image" files="filmdamage/tabelas.png" />
+        <texture id="ruidoEstado" src="state" memory="cache" />
+        <texture id="assinatura" src="state" memory="cache" scale="0.0625" />
+        <texture id="ruido" src="buffer" />
+        <texture id="sR" src="buffer" pack="2" />
+        <texture id="sG" src="buffer" pack="2" />
+        <texture id="sB" src="buffer" pack="2" />
+        <texture id="fR" src="buffer" pack="2" />
+        <texture id="fG" src="buffer" pack="2" />
+        <texture id="fB" src="buffer" pack="2" />
+        <texture id="gR" src="buffer" pack="2" />
+        <texture id="gG" src="buffer" pack="2" />
+        <texture id="gB" src="buffer" pack="2" />
+
+        <slider id="noiseFrequency" group="Noise" label="Noise Frequency" default="1.2" min="0.01" max="20.0" step="0.01" snap="1.2" />
+        <slider id="noiseFreqRelX" group="Noise" label="Noise Freq Rel X" default="1.0" min="0.01" max="10.0" step="0.01" snap="1.0" />
+        <slider id="noiseOctaves" group="Noise" label="Noise Octaves" default="4.0" min="1.0" max="10.0" step="1.0" />
+        <slider id="noiseSeed" group="Noise" label="Noise Seed" default="0.12" min="0.0" max="10.0" step="0.01" />
+        <slider id="addGradX" label="Add Grad X" default="0.1" min="-2.0" max="2.0" step="0.01" snap="0.0,0.1" />
+        <slider id="addGradY" label="Add Grad Y" default="0.0" min="-2.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="layers" label="Layers" default="4.5" min="0.0" max="50.0" step="0.1" snap="4.5" />
+        <slider id="threshold" label="Threshold" default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <point id="shift" label="Shift XY" defaultX="0.5" defaultY="0.5" />
+        <slider id="phaseStart" label="Phase Start" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="phaseSpeed" label="Phase Speed" default="1.0" min="-10.0" max="10.0" step="0.01" snap="0.0,1.0" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <slider id="glowBrightness" group="Glow" label="Glow Brightness" default="3.0" min="0.0" max="10.0" step="0.01" snap="3.0" />
+        <color id="glowColor" group="Glow" label="Glow Color" default="#99CCFF" />
+        <slider id="glowWidth" group="Glow" label="Glow Width" default="240.0" min="0.0" max="960.0" step="0.1" snap="240.0" />
+        <slider id="glowWidthRed" group="Glow" label="Glow Width Red" default="0.6" min="0.0" max="4.0" step="0.01" snap="0.6" />
+        <slider id="glowWidthGrn" group="Glow" label="Glow Width Grn" default="1.2" min="0.0" max="4.0" step="0.01" snap="1.2" />
+        <slider id="glowWidthBlue" group="Glow" label="Glow Width Blue" default="1.8" min="0.0" max="4.0" step="0.01" snap="1.8" />
+        <slider id="bgBrightness" label="Bg Brightness" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <selector id="combine" label="Combine" default="0" options="Texture Only|Mult|Add|Screen|Difference|Overlay" />
+        <selector id="inputOpacity" label="Input Opacity" default="1" options="All Opaque|Normal|As Premult" />
+        <selector id="outputOpacity" label="Output Opacity" default="1" options="All Opaque|Copy From Input" />
+    </params>
+
+    <passes>
+        <pass target="ruidoEstado" />                                 <!-- 0: o noise (ou a cópia do quadro anterior) -->
+        <pass target="assinatura" />                                  <!-- 1 -->
+        <pass target="ruido" />                                       <!-- 2: o pic² -->
+        <pass target="sR" skipIfZero="glowBrightness" />              <!-- caixa 1 (x, a menor): somas de 16 (os 3 canais iguais) -->
+        <pass target="fR,fG,fB" skipIfZero="glowBrightness" />        <!--   a caixa -->
+        <pass target="sR,sG,sB" skipIfZero="glowBrightness" />        <!-- caixa 2 (x) -->
+        <pass target="gR,gG,gB" skipIfZero="glowBrightness" />
+        <pass target="sR,sG,sB" skipIfZero="glowBrightness" />        <!-- caixa 3 (x, a maior) -->
+        <pass target="fR,fG,fB" skipIfZero="glowBrightness" />
+        <pass target="sR,sG,sB" skipIfZero="glowBrightness" />        <!-- caixa 1 (y) -->
+        <pass target="gR,gG,gB" skipIfZero="glowBrightness" />
+        <pass target="sR,sG,sB" skipIfZero="glowBrightness" />        <!-- caixa 2 (y) -->
+        <pass target="fR,fG,fB" skipIfZero="glowBrightness" />
+        <pass target="sR,sG,sB" skipIfZero="glowBrightness" />        <!-- caixa 3 (y) -->
+        <pass target="gR,gG,gB" skipIfZero="glowBrightness" />
+        <pass />                                                      <!-- 15: a luz e a mistura -->
+    </passes>
+
+    <shader><![CDATA[
+const int BLOCO = 16;              // pixels por soma parcial do glow
+const int RAIO_MAX = 1280;         // o maior raio de uma caixa (largura de um canal até 3840 px)
+
+// O AE guarda os controles do Sapphire em passos de 1/65536 (truncados): 0,12 -> 0,1199951.
+float q16(float v) { return floor(v * 65536.0) / 65536.0; }
+// As cores valem em 8 bits (meio para cima).
+vec3 cor8(vec3 c) { return floor(c * 255.0 + 0.5) / 255.0; }
+// 2^k exato (o exp2 da GPU não garante).
+float pot2(int k) { return intBitsToFloat((127 + k) << 23); }
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+}
+
+bool naCamada(ivec2 q) { return q.x >= 0 && q.y >= 0 && q.x < gN.x && q.y < gN.y; }
+
+// ---------------------------------------------------------------------------------------------------------
+// O hash do Sapphire (a tabela de assets/filmdamage/tabelas.png, linha 6: cada número de 32 bits em dois texels
+// da mesma coluna, bytes 0-2 em RGB e o byte 3 no R da linha de baixo).
+// ---------------------------------------------------------------------------------------------------------
+uint ler32(int x, int linha) {
+    uvec3 a = uvec3(floor(texelFetch(tabelas, ivec2(x, linha), 0).rgb * 255.0 + 0.5));
+    uint b = uint(floor(texelFetch(tabelas, ivec2(x, linha + 1), 0).r * 255.0 + 0.5));
+    return a.x | (a.y << 8) | (a.z << 16) | (b << 24);
+}
+
+uint rodadas(uint c) {
+    for (int i = 0; i < 4; i++) c = (c >> 8) + ler32(int(c & 255u), 6);
+    return c;
+}
+
+// O valor da grade: ((hash & 0x1fff) − 4096) / 4096, com a linha negada (o y do código cresce para baixo).
+float valorDaLinha(uint linha, int coluna) {
+    uint h = rodadas(linha + uint(coluna));
+    return float(int(h & 0x1fffu) - 4096) * (1.0 / 4096.0);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// O núcleo de k subdivisões da B-spline cúbica: K_k(d) = B4_n(d + 2(n − 1)) / n³, n = 2^k, B4_n(m) = de quantos
+// jeitos m é a soma de 4 inteiros em 0..n−1 (simétrico em 2(n − 1); na metade de baixo, C(m+3, 3) − 4·C(m−n+3, 3)).
+// ---------------------------------------------------------------------------------------------------------
+float c3(float x) { return x >= 3.0 ? x * (x - 1.0) * (x - 2.0) * (1.0 / 6.0) : 0.0; }
+
+float nucleo(int d, int k) {
+    int n = 1 << k;
+    int m = d + 2 * (n - 1);
+    int topo = 4 * (n - 1);
+    if (m < 0 || m > topo) return 0.0;
+    m = min(m, topo - m);
+    return (c3(float(m + 3)) - 4.0 * c3(float(m - n + 3))) * pot2(-3 * k);
+}
+
+// O laço do código num eixo: quantas subdivisões cabem (enquanto 2n − 3 ≤ lado) e o lo/hi/X0 do último nível.
+struct Eixo { int L; float lo; float hi; int X0; };
+
+Eixo eixo(int lado, float lo, float hi) {
+    int X0 = int(floor(lo)) - 1;
+    int X1 = int(ceil(hi)) + 1;
+    if (X1 - X0 + 1 > lado) X1 = X0 + lado - 1;
+    bool anda = hi - lo > 0.0;
+    int L = 0;
+    for (int k = 0; k < 30; k++) {
+        if (!anda || 2 * (X1 - X0 + 1) - 3 > lado) break;
+        lo += lo; hi += hi;
+        X0 = int(floor(lo)) - 1;
+        X1 = int(ceil(hi)) + 1;
+        L++;
+    }
+    return Eixo(L, lo, hi, X0);
+}
+
+/**
+ * A posição do pixel i (de n) no último nível: pos = ini + i·passo, SOMADA como no código — os pares acumulam
+ * p += 2·passo em float32 e o ímpar é passo + p. Dentro de uma faixa de expoente o passo arredondado é constante
+ * (no empate de meio ulp, o primeiro passo vai ao par e os outros ficam iguais), então dá para pular a faixa
+ * inteira de uma vez. Devolve o ponto da grade (c) e a fração.
+ */
+void posicao(int i, int n, Eixo e, out int c, out float f) {
+    int r = 2 * e.X0 + 1;
+    float ini = (e.lo + e.lo) - float(r);
+    float fim = (e.hi + e.hi) - float(r);
+    float passo = (fim - ini) / float(n);
+    float d = passo * 2.0;
+    float P = ini;
+    int m = i >> 1;
+    const int TOPO = 1 << 24;
+    for (int k = 0; k < 64 && m > 0; k++) {
+        uint bits = floatBitsToUint(P);
+        int ex = int((bits >> 23) & 255u) - 127;
+        int Pu = int((bits & 0x7fffffu) | 0x800000u);
+        float x = d * pot2(23 - ex);
+        float sf = floor(x);
+        float fr = x - sf;
+        int su = int(sf);
+        if (fr == 0.5) {
+            if ((Pu & 1) == 1) {
+                int Pn = Pu + su + ((Pu + su) & 1);
+                if (Pn >= TOPO) { P = P + d; m--; continue; }
+                Pu = Pn; m--;
+                if (m == 0) { P = float(Pu) * pot2(ex - 23); break; }
+            }
+            su += su & 1;
+        } else if (fr > 0.5) su++;
+        su = max(su, 1);
+        int dentro = max(0, (TOPO - Pu + su - 1) / su - 1);
+        if (m <= dentro) { P = float(Pu + m * su) * pot2(ex - 23); m = 0; }
+        else { P = float(Pu + dentro * su) * pot2(ex - 23); m -= dentro; P = P + d; m--; }
+    }
+    float pos = (i & 1) == 0 ? P : passo + P;
+    float fl = floor(pos);
+    c = r + int(fl);
+    f = pos - fl;
+}
+
+// Os 5 pesos (já interpolados entre c e c + 1) da grade do nível F − k, a partir do índice i0.
+void pesos(int c, float f, int k, out int i0, out float w[5]) {
+    int n = 1 << k;
+    i0 = -((2 * (n - 1) - c) >> k);         // ceil((c − 2(n − 1)) / n)
+    for (int u = 0; u < 5; u++) {
+        int b = n * (i0 + u);
+        w[u] = (1.0 - f) * nucleo(c - b, k) + f * nucleo(c + 1 - b, k);
+    }
+}
+
+// O viés de um eixo: os 2⁻¹⁴ postos nos vértices (pontos pares) de cada nível, levados até o fim; os de antes do
+// 0,5·v + 0,5 valem a metade.
+float vies(int c, float f, int L) {
+    int F = L + 1;
+    float tot = 0.0;
+    for (int l = 1; l <= F; l++) {
+        int k = F - l;
+        int n = 1 << k;
+        float s = 0.0;
+        for (int lado = 0; lado < 2; lado++) {
+            int cc = c + lado;
+            int t0 = -((2 * (n - 1) - cc) >> (k + 1));
+            float soma = 0.0;
+            for (int u = 0; u < 3; u++) soma += nucleo(cc - 2 * n * (t0 + u), k);
+            s += (lado == 0 ? 1.0 - f : f) * soma;
+        }
+        tot += s * (l <= L ? 0.5 : 1.0);
+    }
+    return tot * (1.0 / 16384.0);
+}
+
+/** O `noise` do Sapphire (0..1) no pixel p (do canto de cima, na camada de W × H). */
+float ruidoDoSapphire(ivec2 p, int W, int H) {
+    float a = float(H) / float(W);
+    float fx = (q16(noiseFrequency) * q16(noiseFreqRelX)) * 2.0;
+    float fy = q16(noiseFrequency) * 2.0;
+    int semente = int(4096.0 * q16(noiseSeed));
+    int oitavas = int(clamp(floor(noiseOctaves + 0.5), 1.0, 10.0));
+    float Nx = W > 4 ? min(abs(fx), float((W - 4) >> 1)) : 0.0;
+    float Ny = H > 4 ? min(abs(fy), float(H - 4) / (2.0 * a)) : 0.0;
+    // O Shift em unidades do Sapphire (a largura vale 2; y para baixo, como o código usa).
+    float ox = (shift.x - 0.5) * 2.0;
+    float oy = (shift.y - 0.5) * 2.0 * a;
+    Eixo ex = eixo(W, (-1.0 - ox) * Nx, Nx * (1.0 - ox));
+    Eixo ey = eixo(H, -(a + oy) * Ny, Ny * (a - oy));
+    int cx, cy; float tx, ty;
+    posicao(p.x, W, ex, cx, tx);
+    posicao(p.y, H, ey, cy, ty);
+
+    float soma = 0.0;
+    int ultima = min(oitavas - 1, min(ex.L, ey.L));
+    for (int o = 0; o <= ultima; o++) {
+        int ix, iy;
+        float wx[5], wy[5];
+        pesos(cx, tx, ex.L + 1 - o, ix, wx);
+        pesos(cy, ty, ey.L + 1 - o, iy, wy);
+        uint sem = uint(semente ^ o);
+        float s = 0.0;
+        for (int v = 0; v < 5; v++) {
+            if (wy[v] == 0.0) continue;
+            uint linha = rodadas((uint(-(iy + v)) << 4) ^ sem);
+            float sl = 0.0;
+            for (int u = 0; u < 5; u++) {
+                if (wx[u] == 0.0) continue;
+                sl += wx[u] * valorDaLinha(linha, ix + u);
+            }
+            s += wy[v] * sl;
+        }
+        soma += s * pot2(-o);
+    }
+    return 0.5 * soma + 0.5 + vies(cx, tx, ex.L) + vies(cy, ty, ey.L);
+}
+
+/** O pic² do pixel p da camada (linha 0 em cima), com o `noise` n dele. */
+float picAoQuadrado(ivec2 p, float n) {
+    int W = gN.x, H = gN.y;
+    // `xy`: x de −1 a 1 na largura, y para CIMA, no centro do pixel
+    float x = (float(p.x) + 0.5) * 2.0 / float(W) - 1.0;
+    float y = float(H) / float(W) - (float(p.y) + 0.5) * 2.0 / float(W);
+    float fase = q16(phaseStart) + q16(phaseSpeed) * acTime;
+    float v = (x * q16(addGradX) + y * q16(addGradY) + n) * (q16(layers) * 2.0) + fase * 2.0;
+    // bounce: a dobra em triângulo de período 2
+    float m = v - 2.0 * floor(v * 0.5);
+    float r = m > 1.0 ? 2.0 - m : m;
+    float th = q16(threshold);
+    float pic = clamp((r - th) / max(0.01, 1.0 - th), 0.0, 1.0);
+    return pic * pic;
+}
+
+// ---- números em buffers de 8 bits ----------------------------------------------------------
+// O float inteiro (os 4 bytes): a ida e a volta pelo RGBA8 são exatas.
+vec4 gravarFloat(float v) {
+    uint u = floatBitsToUint(v);
+    return vec4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
+}
+
+float lerFloat(vec4 c) {
+    uvec4 b = uvec4(floor(c * 255.0 + 0.5));
+    return uintBitsToFloat(b.x | (b.y << 8) | (b.z << 16) | (b.w << 24));
+}
+
+vec4 gravar24(float v) {
+    float a = floor(clamp(v, 0.0, 1.0) * 16777215.0 + 0.5);
+    float b0 = floor(a / 65536.0);
+    float r = a - b0 * 65536.0;
+    float b1 = floor(r / 256.0);
+    return vec4(b0, b1, r - b1 * 256.0, 255.0) / 255.0;
+}
+
+float ler24(vec4 v) {
+    vec3 b = floor(v.rgb * 255.0 + 0.5);
+    return (b.x * 65536.0 + b.y * 256.0 + b.z) / 16777215.0;
+}
+
+// Dois números de 0..1 em 16 bits cada (o erro de uma caixa fica em 1e-5; nas seis, ~0,05 nível no pior caso).
+vec4 gravar16(float a, float b) {
+    vec2 q = floor(clamp(vec2(a, b), 0.0, 1.0) * 65535.0 + 0.5);
+    vec2 alto = floor(q / 256.0);
+    return vec4(alto.x, q.x - alto.x * 256.0, alto.y, q.y - alto.y * 256.0) / 255.0;
+}
+
+vec2 ler16(vec4 c) {
+    vec4 b = floor(c * 255.0 + 0.5);
+    return vec2(b.x * 256.0 + b.y, b.z * 256.0 + b.w) / 65535.0;
+}
+
+// ---- o ruído guardado entre quadros ----------------------------------------------------------
+// O que muda o `noise`: se tudo isto é igual ao do quadro anterior, ele é copiado.
+const int N_ASSINATURA = 10;
+
+float assinado(int k) {
+    if (k == 0) return noiseFrequency;
+    if (k == 1) return noiseFreqRelX;
+    if (k == 2) return noiseOctaves;
+    if (k == 3) return noiseSeed;
+    if (k == 4) return shift.x;
+    if (k == 5) return shift.y;
+    if (k == 6) return float(gN.x);
+    if (k == 7) return float(gN.y);
+    if (k == 8) return float(acEntradaDePe);
+    return 1.0;                              // 9: há assinatura (o estado novo vem zerado)
+}
+
+// Sem olhar o acStateFresh: os dois estados são `memory="cache"` (o motor entrega o último escrito, com o tempo
+// parado, andando ou pulando), e o estado que nunca foi escrito vem zerado — o 9 da assinatura não bate.
+bool mesmaAssinatura() {
+    for (int k = 0; k < N_ASSINATURA; k++) {
+        if (lerFloat(texelFetch(assinatura, ivec2(k & 7, k >> 3), 0)) != assinado(k)) return false;
+    }
+    return true;
+}
+
+// ---- o glow ----------------------------------------------------------------------------------
+// A largura de cada canal em px do buffer, arredondada (meio para cima), e os raios das três caixas, da menor
+// para a maior: (w + i) div 3.
+ivec3 larguras() {
+    vec3 w = q16(glowWidth) * vec3(q16(glowWidthRed), q16(glowWidthGrn), q16(glowWidthBlue));
+    float e = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+    return ivec3(clamp(floor(w * e + 0.5), vec3(0.0), vec3(float(3 * RAIO_MAX))));
+}
+
+ivec3 raios(int qual) { return (larguras() + qual) / 3; }
+
+// DOIS PIXELS POR TEXEL: os buffers do glow (sR.., fR.., gR..) têm um canal cada, e o texel (j, i) guarda os
+// pixels (2j, i) e (2j + 1, i) da camada, em 16 bits cada, a partir do CANTO do buffer (não do gInicio). Cada
+// leitura traz dois valores úteis — antes trazia um. Fora da camada (o pixel 2j + 1 de uma largura ímpar, os
+// texels depois da metade), zero: a borda transparente corta a cada caixa.
+int metade() { return (gN.x + 1) >> 1; }
+
+// O texel j da entrada da caixa `etapa` (1..5) no canal c: o resultado da anterior (fR.. depois das etapas 0, 2,
+// 4; gR.. depois das 1, 3).
+vec4 texelDaEntrada(int etapa, int c, ivec2 j) {
+    if ((etapa & 1) == 1) {
+        if (c == 0) return texelFetch(fR, j, 0);
+        if (c == 1) return texelFetch(fG, j, 0);
+        return texelFetch(fB, j, 0);
+    }
+    if (c == 0) return texelFetch(gR, j, 0);
+    if (c == 1) return texelFetch(gG, j, 0);
+    return texelFetch(gB, j, 0);
+}
+
+// O pixel p (de dentro da camada) da entrada: o pic² na 1ª caixa, o resultado da anterior nas outras.
+float pixelDaEntrada(int etapa, int c, ivec2 p) {
+    if (etapa == 0) return ler24(texelFetch(ruido, p + gInicio, 0));
+    vec2 d = ler16(texelDaEntrada(etapa, c, ivec2(p.x >> 1, p.y)));
+    return (p.x & 1) == 0 ? d.x : d.y;
+}
+
+// A soma de BLOCO pixels seguidos a partir de x (de dentro da camada), guardada no passe anterior como média.
+float blocoEm(int etapa, int c, int x, int y) {
+    ivec2 j = ivec2(x >> 1, y);
+    vec4 v = (etapa == 0 || c == 0) ? texelFetch(sR, j, 0) : c == 1 ? texelFetch(sG, j, 0) : texelFetch(sB, j, 0);
+    vec2 d = ler16(v);
+    return ((x & 1) == 0 ? d.x : d.y) * float(BLOCO);
+}
+
+// As somas de BLOCO pixels seguidos (como média, para caber em 0..1) a partir dos dois pixels do texel j, em x:
+// os BLOCO + 1 pixels vêm de BLOCO / 2 + 1 texels. Cada soma na ordem dos pixels.
+vec2 somasEmX(int etapa, int c, ivec2 j) {
+    float s0 = 0.0, s1 = 0.0;
+    if (etapa == 0) {
+        int x0 = 2 * j.x;
+        for (int k = 0; k <= BLOCO; k++) {
+            int x = x0 + k;
+            float v = x < gN.x ? ler24(texelFetch(ruido, ivec2(x, j.y) + gInicio, 0)) : 0.0;
+            if (k < BLOCO) s0 += v;
+            if (k > 0) s1 += v;
+        }
+    } else {
+        for (int k = 0; k <= BLOCO / 2; k++) {
+            vec2 d = j.x + k < metade() ? ler16(texelDaEntrada(etapa, c, ivec2(j.x + k, j.y))) : vec2(0.0);
+            if (k < BLOCO / 2) { s0 += d.x; s0 += d.y; }
+            if (k > 0) s1 += d.x;
+            if (k < BLOCO / 2) s1 += d.y;
+        }
+    }
+    return vec2(s0, s1) * (1.0 / float(BLOCO));
+}
+
+// Em y, as duas colunas do texel andam juntas: cada leitura serve às duas.
+vec2 somasEmY(int etapa, int c, ivec2 j) {
+    vec2 s = vec2(0.0);
+    for (int k = 0; k < BLOCO; k++) {
+        if (j.y + k < gN.y) s += ler16(texelDaEntrada(etapa, c, ivec2(j.x, j.y + k)));
+    }
+    return s * (1.0 / float(BLOCO));
+}
+
+// A caixa de raio r nos dois pixels do texel j, em x: a média de x − r .. x + r. Fora da camada vale zero, então
+// só a parte de dentro é somada — em somas de BLOCO a partir do começo dela, e o que sobra (menos de BLOCO) pixel a
+// pixel. O pixel da direita é a mesma janela andando um pixel: tira o que saiu, põe o que entrou.
+vec2 caixaEmX(int etapa, int c, ivec2 j, int r) {
+    int N = gN.x;
+    int x0 = 2 * j.x;
+    int ini = max(x0 - r, 0);
+    int fim = min(x0 + r, N - 1);
+    int nb = (fim - ini + 1) / BLOCO;
+    float s = 0.0;
+    for (int b = 0; b < nb; b++) s += blocoEm(etapa, c, ini + b * BLOCO, j.y);
+    int carregado = -1;
+    vec2 d = vec2(0.0);
+    for (int x = ini + nb * BLOCO; x <= fim; x++) {
+        if (etapa == 0) { s += pixelDaEntrada(0, c, ivec2(x, j.y)); continue; }
+        if ((x >> 1) != carregado) { carregado = x >> 1; d = ler16(texelDaEntrada(etapa, c, ivec2(carregado, j.y))); }
+        s += (x & 1) == 0 ? d.x : d.y;
+    }
+    float largura = float(2 * r + 1);
+    vec2 media = vec2(s / largura, 0.0);
+    int x1 = x0 + 1;
+    if (x1 < N) {
+        if (max(x1 - r, 0) > ini) s -= pixelDaEntrada(etapa, c, ivec2(ini, j.y));
+        if (min(x1 + r, N - 1) > fim) s += pixelDaEntrada(etapa, c, ivec2(fim + 1, j.y));
+        media.y = s / largura;
+    }
+    return media;
+}
+
+// Em y, as duas colunas têm a mesma janela: os blocos e o que sobra servem às duas.
+vec2 caixaEmY(int etapa, int c, ivec2 j, int r) {
+    int ini = max(j.y - r, 0);
+    int fim = min(j.y + r, gN.y - 1);
+    int nb = (fim - ini + 1) / BLOCO;
+    vec2 s = vec2(0.0);
+    for (int b = 0; b < nb; b++) {
+        ivec2 k = ivec2(j.x, ini + b * BLOCO);
+        s += ler16(c == 0 ? texelFetch(sR, k, 0) : c == 1 ? texelFetch(sG, k, 0) : texelFetch(sB, k, 0)) * float(BLOCO);
+    }
+    for (int y = ini + nb * BLOCO; y <= fim; y++) s += ler16(texelDaEntrada(etapa, c, ivec2(j.x, y)));
+    return s / float(2 * r + 1);
+}
+
+// A luz no pixel q da camada: o canal c do resultado da última caixa (gR..).
+float luzDoCanal(vec4 v, ivec2 q) {
+    vec2 d = ler16(v);
+    return (q.x & 1) == 0 ? d.x : d.y;
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = !naCamada(q);
+    // A linha da camada do AE (linha 0 em cima); a cena guardada de pé tem a linha 0 embaixo.
+    ivec2 p = acEntradaDePe == 1 ? ivec2(q.x, gN.y - 1 - q.y) : q;
+
+    // ---- 0: o noise, ou a cópia do quadro anterior ----
+    if (acPass == 0) {
+        if (fora) { fragColor = vec4(0.0); return; }
+        fragColor = mesmaAssinatura() ? texelFetch(ruidoEstado, t, 0) : gravarFloat(ruidoDoSapphire(p, gN.x, gN.y));
+        return;
+    }
+
+    // ---- 1: a assinatura (num estado pequeno, um número por pixel) ----
+    if (acPass == 1) {
+        ivec2 a = ivec2(floor(acScreenNorm * vec2(textureSize(assinatura, 0))));
+        int k = a.y * 8 + a.x;
+        fragColor = (a.x < 8 && k < N_ASSINATURA) ? gravarFloat(assinado(k)) : vec4(0.0);
+        return;
+    }
+
+    // ---- 2: o pic² ----
+    if (acPass == 2) {
+        fragColor = fora ? vec4(0.0) : gravar24(picAoQuadrado(p, lerFloat(texelFetch(ruidoEstado, t, 0))));
+        return;
+    }
+
+    // ---- 3..14: o glow, dois pixels por texel (`pack="2"`: o texel j é o par 2·j.x, 2·j.x + 1 da linha j.y) ----
+    if (acPass <= 14) {
+        ivec2 j = ivec2(gl_FragCoord.xy);
+        if (2 * j.x >= gN.x || j.y >= gN.y) {
+            fragColor = vec4(0.0); fragColor1 = vec4(0.0); fragColor2 = vec4(0.0);
+            return;
+        }
+        int etapa = (acPass - 3) / 2;           // 0..5: x1, x2, x3, y1, y2, y3
+        bool somas = ((acPass - 3) & 1) == 0;   // o 1º passe da etapa faz as somas; o 2º, a caixa
+        vec2 r, g, b;
+        if (somas && etapa == 0) {
+            r = somasEmX(0, 0, j); g = r; b = r;  // o pic² é um só para os três canais
+        } else if (somas) {
+            r = etapa < 3 ? somasEmX(etapa, 0, j) : somasEmY(etapa, 0, j);
+            g = etapa < 3 ? somasEmX(etapa, 1, j) : somasEmY(etapa, 1, j);
+            b = etapa < 3 ? somasEmX(etapa, 2, j) : somasEmY(etapa, 2, j);
+        } else {
+            ivec3 k = raios(etapa < 3 ? etapa : etapa - 3);
+            r = etapa < 3 ? caixaEmX(etapa, 0, j, k.x) : caixaEmY(etapa, 0, j, k.x);
+            g = etapa < 3 ? caixaEmX(etapa, 1, j, k.y) : caixaEmY(etapa, 1, j, k.y);
+            b = etapa < 3 ? caixaEmX(etapa, 2, j, k.z) : caixaEmY(etapa, 2, j, k.z);
+        }
+        float dentro = 2 * j.x + 1 < gN.x ? 1.0 : 0.0;
+        fragColor = gravar16(r.x, r.y * dentro);
+        fragColor1 = gravar16(g.x, g.y * dentro);
+        fragColor2 = gravar16(b.x, b.y * dentro);
+        return;
+    }
+
+    // ---- 15: a luz, o screen, a cor e a mistura (da definição; conferido no AE) ----
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora) { fragColor = vec4(0.0); return; }
+    float p2 = ler24(texelFetch(ruido, t, 0));
+    ivec2 tl = ivec2(q.x >> 1, q.y);
+    vec3 luz = q16(glowBrightness) > 0.0
+        ? vec3(luzDoCanal(texelFetch(gR, tl, 0), q), luzDoCanal(texelFetch(gG, tl, 0), q), luzDoCanal(texelFetch(gB, tl, 0), q))
+          * q16(glowBrightness) * cor8(glowColor.rgb)
+        : vec3(0.0);
+    vec3 tex = (1.0 - (1.0 - p2) * (1.0 - luz)) * q16(brightness) * cor8(color.rgb);
+
+    // Input Opacity: Normal (1) mistura com a cor pré-multiplicada; All Opaque e As Premult, com a reta.
+    vec3 b = (inputOpacity == 1 ? s.rgb * s.a : s.rgb) * q16(bgBrightness);
+    vec3 c;
+    if (combine == 1) c = tex * b;
+    else if (combine == 2) c = tex + b;
+    else if (combine == 3) c = 1.0 - (1.0 - tex) * (1.0 - b);
+    else if (combine == 4) c = abs(tex - b);
+    else if (combine == 5) c = mix(1.0 - 2.0 * (1.0 - tex) * (1.0 - b), 2.0 * tex * b, vec3(lessThan(b, vec3(0.5))));
+    else c = tex;
+    c = clamp(c, 0.0, 1.0);
+
+    // Output Opacity: Copy From Input = a cor é a reta, com o alfa da fonte; All Opaque = opaco. Os níveis
+    // arredondados como o AE de 8 bpc (a GPU não arredonda igual).
+    fragColor = vec4(floor(c * 255.0 + 0.5) / 255.0, outputOpacity == 1 ? s.a : 1.0);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.bloom" name="Bloom" desc="Bright-pass, wide blur and screen-add. The clean, controllable bloom." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/bloom.png"
+        tags="light,bloom,glow,bright" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Bloom" />
+<spinner id="threshold" default="0.65" min="0.0" max="1.0" step="0.01" label="Threshold" />
+<spinner id="intensity" default="0.7" min="0.0" max="3.0" step="0.01" label="Intensity" />
+<spinner id="radius" default="0.02" min="0.002" max="0.08" step="0.001" label="Radius" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 12;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float ang = float(i) * 6.2831853 / float(TAPS);
+    vec2 o = vec2(cos(ang), sin(ang)) * radius;
+    vec4 s = texture2DCv(inputImg.texture, uv + o);
+    vec3 sc = s.rgb / max(s.a, 1e-4);
+    float l = gmLum(sc);
+    acc += sc * max(l - threshold, 0.0);
+  }
+  acc /= float(TAPS);
+  vec3 col = c + acc * intensity * mixAmt;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

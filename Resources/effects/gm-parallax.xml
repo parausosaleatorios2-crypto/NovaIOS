@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.parallax" name="Parallax Depth" desc="Offsets the layer by luminance to fake depth. Bright areas push one way, dark the other." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/parallax.png"
+        tags="3d,parallax,depth,fake3d" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Parallax" />
+<spinner id="amountX" default="0.02" min="-0.2" max="0.2" step="0.001" label="Horizontal" />
+<spinner id="amountY" default="0.0" min="-0.2" max="0.2" step="0.001" label="Vertical" />
+<spinner id="invert" default="0.0" min="0.0" max="1.0" step="0.01" label="Invert Depth" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  float l = gmLum(src.rgb / a);
+  l = mix(l, 1.0 - l, invert);
+  vec2 o = vec2(amountX, amountY) * (l - 0.5) * 2.0 * mixAmt;
+  gl_FragColor = texture2DCv(inputImg.texture, uv + o);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Model_page_back
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-model-page-back"
+    name="Model Page Back (NV)"
+    name-en="Model Page Back (NV)"
+    desc="NodeVideo effect 'NodeVideo/Model_page_back', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Model_page_back', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="page_back1" src="content" empty="transparent" />
+        <texture id="page_back2" src="content" empty="transparent" />
+        <texture id="page_back3" src="content" empty="transparent" />
+        <texture id="page_back4" src="content" empty="transparent" />
+        <texture id="page_back5" src="content" empty="transparent" />
+        <texture id="page_back6" src="content" empty="transparent" />
+        <slider id="_my_page" type="integer" label="My Page" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+bool u_xlatb0;
+void main()
+{
+    if(int(_my_page) == 0) {
+        fragColor = texture(inputImg, acScreenNorm.xy);
+    } else {
+        u_xlatb0 = int(_my_page)==1;
+        if(u_xlatb0){
+            fragColor = texture(page_back1, acScreenNorm.xy);
+        } else {
+            u_xlatb0 = int(_my_page)==2;
+            if(u_xlatb0){
+                fragColor = texture(page_back2, acScreenNorm.xy);
+            } else {
+                u_xlatb0 = int(_my_page)==3;
+                if(u_xlatb0){
+                    fragColor = texture(page_back3, acScreenNorm.xy);
+                } else {
+                    u_xlatb0 = int(_my_page)==4;
+                    if(u_xlatb0){
+                        fragColor = texture(page_back4, acScreenNorm.xy);
+                    } else {
+                        u_xlatb0 = int(_my_page)==5;
+                        if(u_xlatb0){
+                            fragColor = texture(page_back5, acScreenNorm.xy);
+                        } else {
+                            u_xlatb0 = int(_my_page)==6;
+                            if(u_xlatb0){
+                                fragColor = texture(page_back6, acScreenNorm.xy);
+                            } else {
+                                fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return;
+}
+    ]]></shader>
+</effect>

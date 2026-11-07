@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   LUPA
+  ============================================================================
+
+  Um círculo que amplia o que está embaixo dele, com a borda de vidro por cima.
+
+  O miolo da conta é uma linha: amostrar a imagem **mais perto do centro da
+  lente** do que o pixel realmente está. Puxar a amostra para o centro é
+  exatamente o que uma lente convergente faz.
+
+      uv = centro + (uv - centro) / ampliacao
+
+  O que separa uma lupa de um zoom retangular é o que acontece na BORDA. Uma
+  transição seca mostra um degrau de imagem que denuncia o truque; por isso a
+  ampliação cai suavemente na faixa externa, e aí a imagem de dentro se emenda
+  com a de fora sem corte visível.
+-->
+<effect
+    id="nova.effect.magnify"
+    name="Lupa"
+    name-en="Magnify"
+    desc="Amplia um círculo da imagem, com borda suave e brilho de vidro."
+    desc-en="A circular magnifier with a soft edge and a glass rim."
+    category="distort"
+    tags="distorção,lupa,zoom,lente,destaque">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="center" label="Centro" default="0.5,0.5" min="-0.5" max="1.5" />
+
+        <slider id="radius" label="Raio"
+                default="0.22" min="0.02" max="0.8" step="0.005"
+                snap="0.22" type="number" />
+
+        <slider id="amount" label="Ampliação"
+                default="2.0" min="1.0" max="6.0" step="0.05"
+                snap="1.0,2.0" ticks="1.0,2.0,4.0,6.0" type="number" />
+
+        <slider id="feather" label="Suavidade da borda"
+                default="0.18" min="0.0" max="0.9" step="0.01"
+                snap="0.18" type="relative-percent" />
+
+        <slider id="rim" label="Borda de vidro"
+                default="0.35" min="0.0" max="1.0" step="0.01"
+                snap="0.0,0.35" type="relative-percent" />
+    </params>
+
+    <shader><![CDATA[
+
+// Distância medida em unidades de ALTURA. Sem multiplicar X pelo aspecto, a
+// "lupa" sai oval em qualquer composição que não seja quadrada — e oval não
+// parece lente, parece defeito.
+vec2 paraAltura(vec2 uv) { return vec2(uv.x * acAspect, uv.y); }
+
+void main() {
+    vec2 p = paraAltura(acScreenNorm);
+    vec2 c = paraAltura(center);
+
+    float d = distance(p, c);
+    float raio = max(radius, 0.001);
+
+    if (d > raio) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+
+    // `t` vai de 0 no centro a 1 na borda. A suavidade define a partir de onde
+    // a ampliação começa a ceder.
+    float t = d / raio;
+    float inicio = 1.0 - clamp(feather, 0.0, 0.95);
+    float queda = 1.0 - smoothstep(inicio, 1.0, t);
+
+    float fator = mix(1.0, max(amount, 1.0), queda);
+
+    // A amostra é puxada para o centro no espaço NORMAL (não no de altura),
+    // senão a correção de aspecto entraria duas vezes e a imagem sairia
+    // esticada dentro da lente.
+    vec2 uv = center + (acScreenNorm - center) / fator;
+
+    vec4 cor = texture(inputImg, clamp(uv, vec2(0.0), vec2(1.0)));
+
+    if (rim > 0.0) {
+        // Duas linhas de luz: uma fina bem na borda (o canto do vidro) e um
+        // brilho largo logo dentro dela (a espessura). Juntas dizem "isto é um
+        // objeto", que é o que faz a lupa parecer pousada sobre a imagem em vez
+        // de ser um buraco nela.
+        float borda = smoothstep(0.86, 1.0, t) * (1.0 - smoothstep(0.995, 1.0, t));
+        float luz = smoothstep(0.55, 0.9, t) * 0.35;
+        cor.rgb += (borda * 0.8 + luz) * rim;
+
+        // E uma sombra por fora do anel, que dá a espessura do vidro.
+        float sombra = smoothstep(0.93, 1.0, t);
+        cor.rgb *= 1.0 - sombra * rim * 0.25;
+    }
+
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

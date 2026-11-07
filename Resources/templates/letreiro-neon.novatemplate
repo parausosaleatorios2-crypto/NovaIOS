@@ -1,0 +1,321 @@
+{
+    "id": "letreiro-neon",
+    "nome": "Letreiro neon",
+    "nomeEn": "Neon sign",
+    "descricao": "Texto neon que pisca ao acender, com brilho forte; noturno, para títulos com clima de cidade e synthwave.",
+    "descricaoEn": "Neon text that flickers on with a strong glow; night vibe, for city and synthwave titles.",
+    "categoria": "titulo",
+    "tags": [
+        "neon",
+        "brilho",
+        "glow",
+        "pisca",
+        "noite",
+        "synthwave",
+        "letreiro",
+        "rosa"
+    ],
+    "estilos": [
+        "synthwave",
+        "phonk"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 3000000,
+    "duracaoMinUs": 1200000,
+    "duracaoMaxUs": 10000000,
+    "entradaUs": 500000,
+    "saidaUs": 300000,
+    "impactoUs": 400000,
+    "campos": [
+        {
+            "id": "titulo",
+            "tipo": "texto",
+            "rotulo": "Texto",
+            "rotuloEn": "Text",
+            "padrao": "NEON",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "cor",
+            "tipo": "cor",
+            "rotulo": "Cor do neon",
+            "rotuloEn": "Neon color",
+            "padrao": "#FFFF4FD8",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto:cor"
+                },
+                {
+                    "camada": "titulo",
+                    "propriedade": "efeito:brilho:tint"
+                }
+            ]
+        },
+        {
+            "id": "intensidade",
+            "tipo": "numero",
+            "rotulo": "Intensidade",
+            "rotuloEn": "Intensity",
+            "padrao": "1",
+            "min": 0.0,
+            "max": 2.0,
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "efeito:brilho:intensity",
+                    "modo": "escala"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "titulo",
+            "name": "NEON",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        0.30980393,
+                        0.84705883,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "text": "NEON",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        180.0
+                    ]
+                },
+                "fontFamily": "galeria:Montserrat-Bold.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 0,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "hold"
+                            },
+                            "id": "253fe13f-0db1-40b9-a13e-46dbda38f3b9"
+                        },
+                        {
+                            "timeUs": 100000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "hold"
+                            },
+                            "id": "5781d046-606b-4aaa-9801-0137188ed092"
+                        },
+                        {
+                            "timeUs": 160000,
+                            "value": [
+                                0.25
+                            ],
+                            "easing": {
+                                "kind": "hold"
+                            },
+                            "id": "05fd6f5a-3fdf-4ae5-93d4-88731f67cd87"
+                        },
+                        {
+                            "timeUs": 240000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "hold"
+                            },
+                            "id": "4c6709be-6cc7-467d-99d8-7610cc2cdc57"
+                        },
+                        {
+                            "timeUs": 320000,
+                            "value": [
+                                0.4
+                            ],
+                            "easing": {
+                                "kind": "hold"
+                            },
+                            "id": "d89d473a-33fa-493a-bd54-56610bce0b1d"
+                        },
+                        {
+                            "timeUs": 400000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "abc161d0-c630-45e9-84af-b038de361d1b"
+                        },
+                        {
+                            "timeUs": 2700000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "6a1b02fa-eb38-4bdf-805d-7b5c92453462"
+                        },
+                        {
+                            "timeUs": 3000000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "6967dce6-6f57-4635-8c5d-c4c0059f5110"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "brilho",
+                    "manifestId": "nova.effect.glow",
+                    "enabled": true,
+                    "values": {
+                        "intensity": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                2.2
+                            ]
+                        },
+                        "radius": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                40.0
+                            ]
+                        },
+                        "threshold": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                0.1
+                            ]
+                        },
+                        "tint": {
+                            "kind": "COLOR",
+                            "staticValue": [
+                                1.0,
+                                0.30980393,
+                                0.84705883,
+                                1.0
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 3000000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

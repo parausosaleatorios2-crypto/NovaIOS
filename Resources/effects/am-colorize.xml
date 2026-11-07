@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COLORIZAR — o Colorize do Alight Motion, conta por conta (0.542.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora o colorizar do alight motion, 100% igual", o sétimo da série "100%
+  iguais ao AM". Mesmo parâmetro, mesmo id e mesmo padrão do `com.alightcreative.effects.colorize` (um
+  projeto do AM importado cai direto aqui). O `com.alightcreative.effects.colortint`, o antigo, escondido
+  no AM (`deprecated`), tem o mesmo nome, o mesmo parâmetro e a mesma conta: quando a importação de projeto
+  do AM existir (`docs/ROADMAP-IMPORTAR-PROJETO-AM.md`), os dois vêm para cá. A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/colorize.xml` do APK descompactado)
+  e do bytecode dele, e escrita de novo aqui; o arquivo do AM não entra no repositório. A conferência é
+  `python tools/amcontour/comparar.py colorir`: o efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Um parâmetro só, a Tonalidade, no DISCO de matiz do AM (`<hue-disc>`): o ângulo é o matiz, em graus
+    de −180 a 180 (0 = vermelho à direita, girando no sentido do relógio: 60 amarelo, 120 verde, −120
+    azul), e a distância do centro é a força, de 0 a 1. Chega ao shader como `vec3` (matiz, força, um
+    terceiro número que o Colorizar não usa). O padrão é (0, 0, 0): o efeito entra sem mudar nada.
+  - A cor vai para YUV (o BT.601: Y = 0,299 R + 0,587 G + 0,114 B, e o U e o V do croma). O Y, o brilho,
+    não muda nunca. O croma (U, V) anda na direção do croma da cor pura do matiz com brilho 0,5 (o
+    vermelho do matiz 0 é (0,5; 0; 0)), na proporção força × alfa, e volta para RGB. Com força 1, toda
+    cor opaca vira o mesmo croma, cada uma com o seu brilho — o "pintar de uma cor só" do AM.
+  - Tudo isso o AM faz na cor PRÉ-MULTIPLICADA (p = cor × alfa): o brilho é o pré-multiplicado e o
+    croma de destino, não. Aqui é a mesma conta, na mesma ordem: a cor é pré-multiplicada no shader, o
+    resultado é cortado em 0 e 1 (o buffer de 8 bits do AM) e só então volta para a cor reta do Nova.
+  - Com o croma de destino forte e brilho alto, um canal passa de 1 (o branco puxado para o vermelho dá
+    R = 1,25): o AM e o Nova cortam em 1 do mesmo jeito na camada opaca. No alfa parcial, o AM guarda o
+    canal acima do alfa (o pré-multiplicado 1,25 × alfa cabe no buffer) e a cor reta do Nova não guarda:
+    por cima de branco dá igual; por cima de preto, o do AM sai mais forte. É a mesma diferença do
+    Gradiente de contorno com cor de canal acima do alfa.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-colorize"
+    name="Colorizar"
+    name-en="Colorize"
+    desc="Muda a cor da camada, mantendo a luminância original (o Colorize do Alight Motion)."
+    desc-en="Changes the color of the layer, keeping the original luminance (Alight Motion's Colorize)."
+    category="color"
+    tags="colorizar,colorir,tingir,matiz,tonalidade,colorize,tint,hue,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <hue-disc id="tint" label="Tonalidade" />
+    </params>
+
+    <!-- Na vitrine, o padrão (força 0) não pinta nada: a amostra vira verde-água. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="tint" x="150.0" y="0.85" z="0.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+// O croma (U, V) e a volta do YUV para o RGB, nos números do BT.601 (os mesmos do AM).
+vec2 cromaDe(vec3 c) {
+    return vec2(dot(c, vec3(-0.14713, -0.28886, 0.436)),
+                dot(c, vec3(0.615, -0.51499, -0.10001)));
+}
+
+vec3 rgbDe(float y, vec2 uv) {
+    return vec3(y + 1.13983 * uv.y,
+                y - 0.39465 * uv.x - 0.58060 * uv.y,
+                y + 2.03211 * uv.x);
+}
+
+// A cor pura do matiz (em voltas, 0..1) com brilho 0,5: a rampa de seis lados do HSV com saturação 1.
+vec3 corDoMatiz(float voltas) {
+    vec3 rampa = abs(fract(vec3(voltas) + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return 0.5 * clamp(rampa - 1.0, 0.0, 1.0);
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    vec3 pre = camada.rgb * a;                                   // o AM trabalha pré-multiplicado
+    float y = dot(pre, vec3(0.299, 0.587, 0.114));
+    vec2 uv = mix(cromaDe(pre), cromaDe(corDoMatiz(tint.x / 360.0)), tint.y * a);
+    vec3 saida = clamp(rgbDe(y, uv), 0.0, 1.0);                  // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = a > 0.0 ? vec4(min(saida / a, vec3(1.0)), a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

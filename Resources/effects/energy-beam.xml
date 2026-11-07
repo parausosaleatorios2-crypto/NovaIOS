@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   FEIXE DE ENERGIA
+  ============================================================================
+
+  Laser, sabre de luz, raio de poder, linha de energia entre dois pontos.
+
+  ============================================================================
+   A ANATOMIA DE UM FEIXE, QUE SÃO QUATRO COISAS
+  ============================================================================
+
+  O erro comum é desenhar uma linha colorida e achar que falta "brilho". Feixe de
+  energia é feito de quatro camadas, e cada uma faz um trabalho diferente:
+
+  1. **Núcleo branco.** Saturado, fino, sem cor. É o que diz "isto é luz", e não
+     "isto é um risco de caneta".
+  2. **Corpo colorido.** A cor vive aqui, e não no núcleo.
+  3. **Halo.** Queda exponencial larga. É o que o ar faz com a luz, e o que
+     integra o feixe à cena em vez de deixá-lo colado por cima.
+  4. **Pontas.** Um feixe que termina num corte reto parece cortado — as pontas
+     arredondadas e o brilho extra nelas é o que fecha a ilusão.
+
+  ============================================================================
+   A PULSAÇÃO ANDA PELO COMPRIMENTO
+  ============================================================================
+
+  A energia pulsa AO LONGO do feixe, e não o feixe inteiro junto. É a diferença
+  entre "há corrente passando por aqui" e "alguém está mexendo no dimmer".
+-->
+<effect
+    id="nova.effect.energybeam"
+    name="Feixe de energia"
+    name-en="Energy Beam"
+    desc="Laser ou sabre de luz entre dois pontos, com núcleo, halo e pulso."
+    desc-en="Laser or sabre with core, glow and travelling pulse."
+    category="procedural"
+    tags="laser,feixe,sabre,energia,luz,gerador,anime">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="fromAt" label="De onde sai" defaultX="0.15" defaultY="0.5" />
+        <point id="toAt" label="Onde chega" defaultX="0.85" defaultY="0.5" />
+        <slider id="thickness" label="Espessura"
+                default="0.6" min="0.05" max="4.0" step="0.05" />
+        <color id="beamColor" label="Cor" default="#FF4FC3F7" />
+
+        <!-- ============================== Luz ============================== -->
+        <slider id="glow" group="Luz" label="Halo"
+                default="1.2" min="0.0" max="5.0" step="0.05" snap="0.0" />
+        <slider id="core" group="Luz" label="Núcleo branco"
+                default="0.6" min="0.0" max="1.0" step="0.01" />
+        <slider id="tipGlow" group="Luz" label="Brilho nas pontas"
+                default="1.0" min="0.0" max="4.0" step="0.05" snap="0.0" />
+
+        <!-- ============================= Energia =========================== -->
+        <slider id="pulse" group="Energia" label="Pulso"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="pulseSpeed" group="Energia" label="Velocidade do pulso"
+                default="3.0" min="0.0" max="20.0" step="0.1" />
+        <slider id="wobble" group="Energia" label="Ondulação"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="grow" group="Energia" label="Quanto já saiu"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+    </params>
+
+    <preview>
+        <set param="fromAt" x="0.12" y="0.78" />
+        <set param="toAt" x="0.88" y="0.22" />
+        <set param="thickness" value="2.0" />
+        <set param="glow" value="3.0" />
+        <set param="wobble" value="0.45" />
+    </preview>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+    vec2 origem = vec2(fromAt.x * acAspect, fromAt.y);
+    vec2 destinoTotal = vec2(toAt.x * acAspect, toAt.y);
+
+    // "Quanto já saiu" encurta o feixe a partir da origem. Com keyframe, é o
+    // sabre de luz sendo ligado — e sai de graça, sem máscara animada.
+    vec2 destino = mix(origem, destinoTotal, clamp(grow, 0.0, 1.0));
+
+    vec2 eixo = destino - origem;
+    float comprimento = length(eixo);
+    if (comprimento < 1e-4) {
+        fragColor = original;
+        return;
+    }
+
+    vec2 direcao = eixo / comprimento;
+    vec2 perpendicular = vec2(-direcao.y, direcao.x);
+    vec2 rel = p - origem;
+
+    float ao = dot(rel, direcao);          // ao longo do feixe
+    float t = clamp(ao / comprimento, 0.0, 1.0);
+    float trav = dot(rel, perpendicular);  // atravessado
+
+    // Ondulação: o eixo do feixe serpenteia enquanto anda. Some com wobble 0.
+    trav -= sin(t * 14.0 - acTime * pulseSpeed * 1.7) * wobble * 0.02;
+
+    // A distância usada nas quatro camadas é a mesma — o que muda é a largura
+    // de cada uma. Fora do trecho do feixe, a distância vira a distância até a
+    // PONTA, e é isso que arredonda os extremos em vez de cortá-los reto.
+    float fora = max(max(-ao, ao - comprimento), 0.0);
+    float d = length(vec2(fora, trav));
+
+    float esp = thickness * 0.006;
+
+    float nucleo = (1.0 - smoothstep(0.0, esp * 0.55, d)) * core;
+    float corpo = 1.0 - smoothstep(0.0, esp, d);
+    float halo = exp(-d / max(esp * 6.0, 1e-5)) * glow;
+
+    // As pontas ganham um brilho extra: é onde a energia "entra" e "sai", e sem
+    // isso o feixe parece um tubo de neon apagado nas extremidades.
+    float naPonta = exp(-length(p - origem) / max(esp * 4.0, 1e-5)) +
+                    exp(-length(p - destino) / max(esp * 4.0, 1e-5));
+    float pontas = naPonta * tipGlow;
+
+    // O pulso ANDA pelo comprimento: `t` entra na fase, e é isso que faz a
+    // energia parecer correr pelo feixe em vez de o feixe inteiro piscar.
+    float onda = 1.0 + pulse * 0.6 * sin(t * 12.0 - acTime * pulseSpeed * PI);
+
+    vec3 cor = beamColor.rgb * (corpo + halo + pontas) * onda + vec3(1.0) * nucleo;
+    float alfa = clamp(max(max(nucleo, corpo), max(halo, pontas) * 0.7), 0.0, 1.0) *
+        beamColor.a * clamp(onda, 0.0, 2.0);
+
+    vec4 desenhado = vec4(cor, clamp(alfa, 0.0, 1.0));
+    float saidaAlfa = desenhado.a + original.a * (1.0 - desenhado.a);
+    vec3 saidaCor = saidaAlfa > 0.0
+        ? (desenhado.rgb * desenhado.a + original.rgb * original.a * (1.0 - desenhado.a)) / saidaAlfa
+        : vec3(0.0);
+
+    fragColor = vec4(saidaCor, saidaAlfa);
+}
+
+    ]]></shader>
+</effect>

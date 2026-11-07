@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/UI_color_picker_slider_bkg
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-ui-color-picker-slider-bkg"
+    name="Ui Color Picker Slider Bkg (NV)"
+    name-en="Ui Color Picker Slider Bkg (NV)"
+    desc="NodeVideo effect 'NodeVideo/UI_color_picker_slider_bkg', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/UI_color_picker_slider_bkg', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_type" type="integer" label="Type" default="0" min="0" max="10" step="1" />
+        <slider id="_mode" type="integer" label="Mode" default="0" min="0" max="10" step="1" />
+        <slider id="_h" label="H" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_s" label="S" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_b" label="B" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec3 u_xlat0;
+vec3 u_xlat1;
+bvec3 u_xlatb1;
+vec3 u_xlat2;
+bvec3 u_xlatb2;
+vec3 u_xlat3;
+bvec2 u_xlatb3;
+vec3 u_xlat4;
+void main()
+{
+    if(int(_mode) == 0) {
+        u_xlat0.xyz = acScreenNorm.xxx * vec3(6.0, 6.0, 6.0) + vec3(0.0, 4.0, 2.0);
+        u_xlat0.xyz = u_xlat0.xyz * vec3(0.166666672, 0.166666672, 0.166666672);
+        u_xlatb1.xyz = greaterThanEqual(u_xlat0.xyzx, (-u_xlat0.xyzx)).xyz;
+        u_xlat0.xyz = fract(abs(u_xlat0.xyz));
+        {
+            vec3 hlslcc_movcTemp = u_xlat0;
+            hlslcc_movcTemp.x = (u_xlatb1.x) ? u_xlat0.x : (-u_xlat0.x);
+            hlslcc_movcTemp.y = (u_xlatb1.y) ? u_xlat0.y : (-u_xlat0.y);
+            hlslcc_movcTemp.z = (u_xlatb1.z) ? u_xlat0.z : (-u_xlat0.z);
+            u_xlat0 = hlslcc_movcTemp;
+        }
+        u_xlat0.xyz = u_xlat0.xyz * vec3(6.0, 6.0, 6.0) + vec3(-3.0, -3.0, -3.0);
+        u_xlat0.xyz = abs(u_xlat0.xyz) + vec3(-1.0, -1.0, -1.0);
+        u_xlat0.xyz = clamp(u_xlat0.xyz, 0.0, 1.0);
+        u_xlat1.xyz = u_xlat0.xyz * u_xlat0.xyz;
+        u_xlat1.xyz = u_xlat0.xyz * u_xlat1.xyz;
+        u_xlat0.xyz = (-u_xlat0.xyz) * vec3(2.0, 2.0, 2.0) + vec3(3.0, 3.0, 3.0);
+        u_xlat0.xyz = u_xlat1.xyz * u_xlat0.xyz + vec3(-1.0, -1.0, -1.0);
+        u_xlat0.xyz = vec3(vec3(_s, _s, _s)) * u_xlat0.xyz + vec3(1.0, 1.0, 1.0);
+        u_xlat0.xyz = u_xlat0.xyz * vec3(_b);
+        u_xlat1.x = acScreenNorm.x;
+        u_xlat1.y = _s;
+        u_xlat1.z = _b;
+        u_xlat0.xyz = (int(_type) != 0) ? u_xlat1.xyz : u_xlat0.xyz;
+    } else {
+        u_xlat1.xyz = vec3(vec3(_h, _h, _h)) * vec3(6.0, 6.0, 6.0) + vec3(0.0, 4.0, 2.0);
+        u_xlat1.xyz = u_xlat1.xyz * vec3(0.166666672, 0.166666672, 0.166666672);
+        u_xlatb2.xyz = greaterThanEqual(u_xlat1.xyzx, (-u_xlat1.xyzx)).xyz;
+        u_xlat1.xyz = fract(abs(u_xlat1.xyz));
+        {
+            vec3 hlslcc_movcTemp = u_xlat1;
+            hlslcc_movcTemp.x = (u_xlatb2.x) ? u_xlat1.x : (-u_xlat1.x);
+            hlslcc_movcTemp.y = (u_xlatb2.y) ? u_xlat1.y : (-u_xlat1.y);
+            hlslcc_movcTemp.z = (u_xlatb2.z) ? u_xlat1.z : (-u_xlat1.z);
+            u_xlat1 = hlslcc_movcTemp;
+        }
+        u_xlat1.xyz = u_xlat1.xyz * vec3(6.0, 6.0, 6.0) + vec3(-3.0, -3.0, -3.0);
+        u_xlat1.xyz = abs(u_xlat1.xyz) + vec3(-1.0, -1.0, -1.0);
+        u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+        u_xlat2.xyz = u_xlat1.xyz * u_xlat1.xyz;
+        u_xlat2.xyz = u_xlat1.xyz * u_xlat2.xyz;
+        u_xlat1.xyz = (-u_xlat1.xyz) * vec3(2.0, 2.0, 2.0) + vec3(3.0, 3.0, 3.0);
+        u_xlat1.xyz = u_xlat2.xyz * u_xlat1.xyz + vec3(-1.0, -1.0, -1.0);
+        u_xlat2.xyz = acScreenNorm.xxx * u_xlat1.xyz + vec3(1.0, 1.0, 1.0);
+        u_xlat2.xyz = u_xlat2.xyz * vec3(_b);
+        u_xlat3.x = _h;
+        u_xlat3.y = acScreenNorm.x;
+        u_xlat3.z = _b;
+        u_xlat2.xyz = (int(_type) != 0) ? u_xlat3.xyz : u_xlat2.xyz;
+        u_xlatb3.xy = equal(ivec4(ivec4(int(_mode), int(_mode), int(_mode), int(_mode))), ivec4(1, 2, 0, 0)).xy;
+        u_xlat1.xyz = vec3(vec3(_s, _s, _s)) * u_xlat1.xyz + vec3(1.0, 1.0, 1.0);
+        u_xlat1.xyz = u_xlat1.xyz * acScreenNorm.xxx;
+        u_xlat4.xy = vec2(_h, _s);
+        u_xlat4.z = acScreenNorm.x;
+        u_xlat1.xyz = (int(_type) != 0) ? u_xlat4.xyz : u_xlat1.xyz;
+        u_xlat1.xyz = (u_xlatb3.y) ? u_xlat1.xyz : vec3(1.0, 1.0, 1.0);
+        u_xlat0.xyz = (u_xlatb3.x) ? u_xlat2.xyz : u_xlat1.xyz;
+    }
+    u_xlat1.xyz = u_xlat0.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = u_xlat0.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    fragColor.xyz = u_xlat0.xyz * u_xlat1.xyz;
+    fragColor.w = 1.0;
+    return;
+}
+    ]]></shader>
+</effect>

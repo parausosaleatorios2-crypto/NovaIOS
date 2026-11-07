@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.kaleido"
+    name="Desfoque Caleidoscópio (Blurrr)"
+    name-en="Kaleidoscope Blur (Blurrr)"
+    desc="Fatias em espelho ao redor do centro com borrão suave na costura."
+    desc-en="Mirrored slices around the center, with a soft blur on the seams."
+    category="blur"
+    tags="blurrr,caleidoscopio,kaleidoscope,simetria,fatia,desfoque,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="slices" label="Fatias"
+                default="6" min="2" max="24" step="1" type="integer" />
+        <slider id="rotation" label="Rotação"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="zoom" label="Zoom"
+                default="1.0" min="0.2" max="3.0" step="0.01" snap="1.0" />
+        <slider id="softness" label="Borrão nas costuras"
+                default="0.008" min="0.0" max="0.04" step="0.0005" snap="0.0" />
+        <point  id="center" label="Centro" default-x="0.5" default-y="0.5" />
+    </params>
+
+    <passes>
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+const float TAU = 6.28318530;
+
+vec4 fatiar(vec2 uv, float jitter) {
+    vec2 p = uv - center;
+    p.x *= acAspect;
+    float r = length(p);
+    float ang = atan(p.y, p.x) - rotation * PI / 180.0 + jitter;
+
+    float setor = TAU / max(float(slices), 1.0);
+    ang = mod(ang, setor);
+    if (ang > setor * 0.5) ang = setor - ang;
+
+    vec2 q = vec2(cos(ang), sin(ang)) * (r / max(zoom, 0.01));
+    q.x /= acAspect;
+    return texture(inputImg, q + center);
+}
+
+void main() {
+    if (softness <= 0.0) {
+        fragColor = fatiar(acScreenNorm, 0.0);
+        return;
+    }
+
+    const int N = 5;
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i < N; i++) {
+        float jitter = (float(i) / float(N - 1) - 0.5) * softness * TAU;
+        soma += fatiar(acScreenNorm, jitter);
+    }
+    fragColor = soma / float(N);
+}
+
+    ]]></shader>
+</effect>

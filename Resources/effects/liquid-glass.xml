@@ -1,0 +1,797 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VIDRO LÍQUIDO
+  ============================================================================
+
+  Vidro de verdade, e não um retângulo translúcido com desfoque: uma placa com
+  ESPESSURA, que entorta a luz pela lei de Snell, reflete o ambiente na medida
+  que o ângulo manda (Fresnel), tinge o que atravessa conforme o caminho andado
+  dentro do material (Beer), e devolve a imagem inteira quando o ângulo passa do
+  limite (reflexão interna total).
+
+  ============================================================================
+   A CONTA, EM QUATRO PASSOS
+  ============================================================================
+
+  1. **Altura.** A distância até a borda vira um perfil de altura: chanfro (plano
+     no meio, curvo na beirada), domo (curvo em tudo) ou plano. É a forma da
+     superfície do vidro.
+
+  2. **Normal 3D.** A inclinação desse perfil dá para onde a superfície aponta —
+     `N = normalize(vec3(-∂h/∂p, 1))`. Tudo depois sai daqui.
+
+  3. **Snell.** O raio de visão atravessa a superfície e entorta:
+     `refract(I, N, 1/ior)`. Ele então anda dentro do vidro até sair pela face de
+     baixo, e ONDE ele sai é o pixel do fundo que se enxerga. Não é um
+     deslocamento inventado — é para onde a luz realmente foi.
+
+  4. **Fresnel.** O mesmo ângulo diz quanto reflete em vez de atravessar. De
+     frente, 4%; de raspão, 100%. É por isso que a borda de qualquer vidro
+     acende, e é o detalhe que o olho usa para reconhecer o material.
+
+  Quando o ângulo passa do limite, `refract` devolve zero: não há travessia, só
+  **reflexão interna total**. O efeito trata esse caso, e é ele que dá a beirada
+  espelhada que todo vidro grosso tem.
+
+  ============================================================================
+   O QUE ELE REFRATA
+  ============================================================================
+
+  Por padrão, **o que está atrás**: a cena montada até esta camada. É para isso
+  que serve — criar um sólido, aplicar o vidro nele, e enxergar o conteúdo de
+  baixo através da placa. Sem nada atrás, cai sozinho na própria camada.
+
+  ============================================================================
+   MEDIDAS EM FRAÇÃO DA ALTURA
+  ============================================================================
+
+  Nada aqui é em pixel do alvo. A prévia cai para metade da resolução enquanto o
+  dedo arrasta, e raio de canto em pixel apareceria com o dobro do tamanho na
+  prévia e voltaria ao normal no export.
+
+  ============================================================================
+   ENXUGADO (0.191.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 30 controles no painel. Agora nascem 16 à vista: Profundidade e Largura
+  do chanfro soltos; Silhueta, Superfície e Centro em Forma; Refratar,
+  Ampliação, Dispersão e Fosco em Óptica; Ângulo da luz, Brilho e Beirada
+  acesa em Reflexo e brilho; Cor do vidro, Quanto da cor, Sombra e Distância
+  da sombra em Cor e sombra.
+
+  Como no Blob Tracker, este efeito não tem predefinições, então o que só vale
+  no retângulo aparece só com a Silhueta = Retângulo arredondado (`showIf`):
+  Tamanho, Raio dos cantos, Rotação, Manter a camada em volta e a segunda gota
+  (tamanho, centro e fusão). Com o Alfa da camada, que é o padrão, a forma vem
+  da camada e esses sete não fazem nada. O Centro fica sempre: é também o
+  centro da ampliação.
+
+  Saíram de vez, nos padrões: o Índice de refração (1,5, o do vidro; quem
+  entorta mais é a Profundidade), o Reflexo (Fresnel), a Nitidez do brilho, o
+  Brilho do lado oposto, a Sombra interna e a Maciez da sombra. O Fosco só na
+  borda virou parte do Fosco: abaixo do padrão (0,22) ele apaga os dois
+  juntos, e em zero o vidro fica limpo de verdade (`foscoDaBorda`).
+
+-->
+<effect
+    id="nova.effect.liquidglass"
+    name="Vidro líquido"
+    name-en="Liquid Glass"
+    desc="Vidro com espessura de verdade: refração por Snell, Fresnel, reflexo e absorção."
+    desc-en="Real glass with thickness — Snell refraction, Fresnel, Beer absorption."
+    category="stylize"
+    tags="vidro,glass,refração,snell,fresnel,interface,apple,fosco"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena montada até esta camada: tudo que está por baixo. -->
+        <texture id="backdropImg" src="backdrop" />
+        <!--
+          ====================================================================
+           O FOSCO MORA EM BUFFER MENOR
+          ====================================================================
+
+          Os quatro buffers do borrão viviam em resolução cheia, e era trabalho
+          jogado fora: fosco é justamente a informação que se perde. Dezoito
+          leituras por pixel em 4K para produzir uma imagem que ninguém vai
+          olhar de perto.
+
+          Agora o primeiro par vive em metade e o segundo em um quarto (ver
+          `TextureParam.scale`). Três ganhos de uma vez:
+
+           - **custa um oitavo** dos pixels;
+           - **borra melhor**: a interpolação da GPU ao subir de volta suaviza o
+             que as nove amostras deixariam em degrau — o "fantasma repetido"
+             que o comentário dos passes já reconhecia;
+           - o alcance em fração da tela **não muda**, porque o passo é em UV e
+             não em pixel.
+        -->
+        <texture id="blurA" src="buffer" scale="0.5" />
+        <texture id="blurB" src="buffer" scale="0.5" />
+        <texture id="blurC" src="buffer" scale="0.25" />
+        <texture id="blurD" src="buffer" scale="0.25" />
+
+        <!--
+          ====================================================================
+           OS TRÊS QUE DEFINEM O VIDRO — E POR QUE OS PADRÕES MUDARAM
+          ====================================================================
+
+          Os padrões antigos (0,05 e 0,05) produziam um vidro **invisível**: a
+          placa entortava o fundo em uns poucos pixels na beirada e o miolo era
+          cópia exata do que estava atrás. Simulei o efeito com os padrões e o
+          resultado era um contorno fininho — nada que alguém chamasse de vidro.
+
+          A profundidade agora nasce em 0,12: é ela que manda no quanto a luz
+          entorta ao atravessar, e abaixo de 0,1 a refração some.
+
+          A largura do chanfro nasce em 0,12 pelo mesmo motivo — ela é limitada
+          pela forma (ver `bandaLente`), então em placa pequena o valor efetivo
+          é menor, e em placa grande ela dá a beirada larga que faz o olho ler
+          "isto tem espessura".
+        -->
+        <slider id="depth" label="Profundidade do vidro"
+                default="0.12" min="0.005" max="0.5" step="0.005" snap="0.12" />
+        <slider id="thickness" label="Largura do chanfro"
+                default="0.12" min="0.005" max="0.4" step="0.005" snap="0.12" />
+
+        <!--
+          ====================================================================
+           A SILHUETA NASCE SENDO A DA PRÓPRIA CAMADA
+          ====================================================================
+
+          Antes nascia "retângulo arredondado", e isso obrigava a um trabalho
+          que ninguém deveria ter: quem põe vidro numa forma, num texto ou num
+          adesivo já desenhou o contorno uma vez, e tinha que desenhá-lo de novo
+          aqui, no olho, com centro, tamanho, raio e rotação — quatro controles
+          para recriar algo que a camada já sabe.
+
+          O alfa da camada É o contorno. Com ele como padrão, arrastar o efeito
+          para cima de qualquer camada já dá vidro NAQUELE formato, e o retângulo
+          continua ali para quem quer uma placa independente do conteúdo.
+
+          Para uma camada que preenche o quadro inteiro (vídeo, foto), a
+          silhueta passa a ser a moldura dela — ver `alfaEm`.
+        -->
+        <selector id="shape" group="Forma" label="Silhueta" default="1"
+                  options="Retângulo arredondado|Alfa da camada" />
+        <selector id="profile" group="Forma" label="Superfície" default="0"
+                  options="Chanfro (placa)|Domo (gota)|Plano (só a parede)" />
+        <point id="center" group="Forma" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <point id="size" showIf="shape=0" group="Forma" label="Tamanho" vetor="true" defaultX="0.5" defaultY="0.34" />
+        <slider id="radius" showIf="shape=0" group="Forma" label="Raio dos cantos"
+                default="0.09" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="rotation" showIf="shape=0" group="Forma" label="Rotação"
+                default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" snap="0.0" />
+        <switch id="keepLayer" showIf="shape=0" group="Forma" label="Manter a camada em volta" default="false" />
+        <point id="size2" showIf="shape=0" group="Forma" label="Segunda gota: tamanho" vetor="true" defaultX="0.0" defaultY="0.0" />
+        <point id="center2" showIf="shape=0" group="Forma" label="Segunda gota: centro" defaultX="0.75" defaultY="0.5" />
+        <slider id="merge" showIf="shape=0" group="Forma" label="Fusão das gotas"
+                default="0.09" min="0.0" max="0.4" step="0.005" snap="0.0" />
+        <selector id="refractFrom" group="Óptica" label="Refratar" default="1"
+                  options="A própria camada|O que está atrás" />
+
+        <!--
+          ====================================================================
+           A AMPLIAÇÃO — O QUE FAZ O MIOLO DA PLACA EXISTIR
+          ====================================================================
+
+          Uma placa de faces PARALELAS não amplia nada: o raio entra, entorta,
+          e sai entortando de volta na mesma medida. Matematicamente correto, e
+          visualmente um buraco — o miolo do vidro fica idêntico ao fundo, e a
+          única prova de que existe vidro ali é a beirada.
+
+          Vidro de verdade que se põe sobre alguma coisa quase nunca é de faces
+          paralelas: é grosso, tem a face de cima abaulada, e **amplia**. É o
+          que a lupa faz, é o que a gota d'água faz, e é o que toda interface de
+          "vidro" imita.
+
+          Aqui a ampliação é máxima no MEIO (onde a placa é mais grossa) e cai
+          para zero na beirada, que é justamente o perfil de uma lente. Some com
+          a refração de Snell da borda em vez de brigar com ela.
+        -->
+        <slider id="magnify" group="Óptica" label="Ampliação da lente"
+                default="0.14" min="0.0" max="0.6" step="0.01" snap="0.0" />
+        <slider id="spectral" group="Óptica" label="Dispersão das cores"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!--
+          Nasce em 0,22 — e antes nascia em ZERO, com um argumento que estava
+          certo pela metade: "vidro de verdade é limpo, e o borrão esconde a
+          refração".
+          
+          Limpo ele é, mas vidro sobre uma imagem quase sempre tem alguma
+          dispersão, e é ela que o olho usa para saber que existe um material ali
+          em vez de um recorte. Com zero, a primeira impressão do efeito era de
+          que faltava alguma coisa — e era esse o relato. Um quinto de fosco
+          mostra o material sem esconder o que a refração faz.
+        -->
+        <slider id="blurAmount" group="Óptica" label="Fosco"
+                default="0.22" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="lightAngle" group="Reflexo e brilho" label="Ângulo da luz"
+                default="135.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="specular" group="Reflexo e brilho" label="Brilho"
+                default="1.8" min="0.0" max="4.0" step="0.05" snap="0.0,1.0" />
+
+        <!--
+          ====================================================================
+           A BEIRADA ACESA E A SOMBRA INTERNA
+          ====================================================================
+
+          São as duas coisas que dão VOLUME, e nenhuma delas sai do modelo
+          óptico: o Fresnel acende a borda inteira por igual, e o especular é um
+          ponto só. O que falta entre os dois é o que todo objeto de vidro tem
+          quando visto de cima:
+
+           - uma **linha fina acesa** correndo pela beirada de dentro, mais forte
+             do lado que olha para a luz. É a luz que entra pela parede lateral
+             e escapa — em vidro de verdade chega a virar fibra óptica;
+           - uma **sombra dentro da própria placa**, do lado oposto, porque a
+             parede tapa a luz rasante.
+
+          Sem as duas, a placa lê como recorte translúcido. Com elas, lê como
+          peça. Foi a diferença entre a terceira e a quarta variante quando
+          simulei — e é o que faltava para o efeito ficar bom.
+        -->
+        <slider id="rimLight" group="Reflexo e brilho" label="Beirada acesa"
+                default="1.0" min="0.0" max="3.0" step="0.05" snap="0.0,1.0" />
+        <color id="tintColor" group="Cor e sombra" label="Cor do vidro" default="#FFE8F4FF" />
+
+        <!--
+          Baixou de 0,35 para 0,2: com o chanfro largo do padrão novo, o caminho
+          dentro do vidro ficou bem mais longo na beirada, e a absorção antiga
+          deixava a borda quase preta. Vidro limpo escurece pouco.
+        -->
+        <slider id="absorb" group="Cor e sombra" label="Quanto da cor"
+                default="0.2" min="0.0" max="3.0" step="0.05" snap="0.0" />
+        <color id="shadowColor" group="Cor e sombra" label="Sombra" default="#66000000" />
+        <slider id="shadowDist" group="Cor e sombra" label="Distância da sombra"
+                default="0.02" min="0.0" max="0.2" step="0.002" snap="0.0" />
+
+        <!-- ===== ESCONDIDOS (hidden): nos padrões; o painel não mostra ===== -->
+        <slider id="ior" hidden="true" label="Índice de refração"
+                default="1.5" min="1.0" max="2.6" step="0.01" snap="1.0,1.5" />
+
+        <slider id="edgeBlur" hidden="true" group="Óptica" label="Fosco só na borda"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="fresnel" hidden="true" group="Reflexo e brilho" label="Reflexo (Fresnel)"
+                default="1.3" min="0.0" max="2.0" step="0.01" snap="0.0,1.0" />
+        <slider id="specularSharp" hidden="true" group="Reflexo e brilho" label="Nitidez do brilho"
+                default="18.0" min="2.0" max="64.0" step="1.0" />
+        <slider id="oppositeLobe" hidden="true" group="Reflexo e brilho" label="Brilho do lado oposto"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="innerShadow" hidden="true" group="Reflexo e brilho" label="Sombra interna"
+                default="0.12" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="shadowSoft" hidden="true" group="Cor e sombra" label="Maciez da sombra"
+                default="0.04" min="0.002" max="0.25" step="0.002" />
+    </params>
+
+    <!--
+      DOIS estágios de borrão, e não um.
+
+      Nove amostras cobrem bem um raio pequeno. Esticar as mesmas nove por um
+      raio grande deixa buraco entre elas, e detalhe fino (texto, grade, folha
+      de árvore) vira fantasma repetido em vez de borrão. Dois estágios em
+      sequência dão uma gaussiana muito maior pelo preço de mais duas passadas.
+    -->
+    <passes>
+        <pass target="blurA" />  <!-- 0: horizontal, estreito -->
+        <pass target="blurB" />  <!-- 1: vertical, estreito -->
+        <pass target="blurC" />  <!-- 2: horizontal, largo -->
+        <pass target="blurD" />  <!-- 3: vertical, largo -->
+        <pass />                 <!-- 4: desenha o vidro -->
+    </passes>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+// Pesos de uma gaussiana de 9 amostras, somando 1.
+const float PESOS[5] = float[5](
+    0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162
+);
+
+// Espaço "altura": X multiplicado pelo aspecto, então distância é fração da
+// ALTURA e nada estica numa composição que não é quadrada.
+vec2 paraAltura(vec2 uv) { return vec2(uv.x * acAspect, uv.y); }
+vec2 paraUv(vec2 ph) { return vec2(ph.x / max(acAspect, 1e-4), ph.y); }
+
+vec2 girar(vec2 v, float graus) {
+    float a = graus * PI / 180.0;
+    float c = cos(a);
+    float s = sin(a);
+    return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
+/**
+ * SDF da caixa arredondada — a forma de Inigo Quilez. Ela é exata: o valor é a
+ * distância de verdade, o que faz a banda da borda ter largura uniforme
+ * inclusive nos cantos.
+ */
+float sdCaixa(vec2 p, vec2 meia, float r) {
+    vec2 q = abs(p) - meia + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+/**
+ * Mínimo SUAVE — a fusão das gotas.
+ *
+ * O mínimo comum de duas distâncias dá a união das formas, e a união tem bico na
+ * junção. O mínimo suave arredonda essa junção num raio `k`, que é o que a
+ * tensão superficial faz quando duas gotas encostam.
+ */
+float sminSuave(float a, float b, float k) {
+    if (k <= 1e-4) return min(a, b);
+    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+/**
+ * O alfa da camada, com o DE FORA valendo ZERO.
+ *
+ * A amostragem presa na borda devolve o pixel da beirada quando se lê fora do
+ * quadro, e para uma camada que preenche o quadro inteiro isso daria alfa 1 em
+ * toda a volta: silhueta nenhuma, vidro sem beirada — e placa sem beirada não se
+ * lê como vidro, porque é justamente ali que o Fresnel acende.
+ *
+ * Com o de fora valendo zero, a MOLDURA da camada vira a silhueta, que é o que
+ * "o formato da camada" quer dizer quando o formato é o retângulo cheio.
+ */
+float alfaEm(vec2 uv) {
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    return texture(inputImg, uv).a;
+}
+
+/** O menor "raio interno" da forma: até onde dá para afundar antes do meio. */
+float raioInterno() {
+    vec2 meia = max(size * vec2(acAspect, 1.0) * 0.5, vec2(1e-4));
+    float menor = min(meia.x, meia.y);
+    if (size2.x > 0.0 && size2.y > 0.0) {
+        vec2 meia2 = max(size2 * vec2(acAspect, 1.0) * 0.5, vec2(1e-4));
+        menor = min(menor, min(meia2.x, meia2.y));
+    }
+    return menor;
+}
+
+/**
+ * A largura da banda do chanfro, LIMITADA PELA FORMA.
+ *
+ * "Largura do chanfro" é uma distância absoluta, e a placa tem o tamanho que
+ * tem. Numa composição 9:16, uma placa de 33% da largura tem meia-largura de
+ * 0,09 — menos que os 0,07 do padrão. Sem limite, o chanfro cobria a placa
+ * inteira: em vez de uma janela com a borda entortando, uma bola de vidro que ia
+ * buscar pixel tão longe que repetia a borda da imagem.
+ *
+ * Com o teto de 45% do raio interno sempre sobra meio da placa plano — que é o
+ * que faz o olho ler "janela".
+ */
+float bandaLente() {
+    float pedida = max(thickness, 1e-4);
+    if (shape == 1) return pedida;
+    return min(pedida, 0.45 * raioInterno());
+}
+
+/** Distância com sinal até a silhueta do vidro. Negativa dentro. */
+float silhueta(vec2 ph) {
+    if (shape == 1) {
+        float banda = bandaLente();
+        float a0 = alfaEm(paraUv(ph));
+        if (a0 > 0.0) return (0.5 - a0) * banda * 2.0;
+
+        /*
+         * SEM ALFA NENHUM AQUI — MAS ISSO NÃO DIZ SE ESTÁ PERTO OU LONGE.
+         *
+         * Sem olhar em volta, todo ponto de fora (alfa 0) devolvia a MESMA
+         * distância fixa — a própria banda —, não importa se era um pixel ao
+         * lado da estrela ou o canto oposto da composição. A sombra ("Distância
+         * da sombra") compara essa distância com uma maciez bem menor que a
+         * banda, e com a mesma distância em toda parte, a comparação dava o
+         * MESMO resultado em toda parte: a sombra pintava a composição inteira
+         * por igual, sempre que a Largura do chanfro ficasse pequena — o
+         * relato do snow, com print (uma estrela pequena escurecendo a cena
+         * toda).
+         *
+         * Uma coroa de amostras, bem mais larga que a da normal ([formaEm]),
+         * resolve: se alguma delas encontra alfa, este ponto está perto da
+         * beirada de verdade (devolve a banda, como antes). Se nenhuma
+         * encontra, está longe de qualquer jeito plausível de sombra — e "0,5"
+         * é maior que qualquer maciez de sombra que o painel permite (até
+         * 0,25), então a sombra nunca mais confunde "longe" com "na beirada".
+         */
+        float largo = max(banda * 3.0, 0.03);
+        for (int i = 0; i < 8; i++) {
+            float ang = float(i) * 0.78539816;
+            vec2 dir = vec2(cos(ang), sin(ang));
+            if (alfaEm(paraUv(ph + dir * largo)) > 0.0) return banda;
+        }
+        return 0.5;
+    }
+
+    vec2 meia = max(size * vec2(acAspect, 1.0) * 0.5, vec2(1e-4));
+    float r = min(max(radius, 0.0), min(meia.x, meia.y));
+    vec2 rel = girar(ph - paraAltura(center), -rotation);
+    float d = sdCaixa(rel, meia, r);
+
+    if (size2.x > 0.0 && size2.y > 0.0) {
+        vec2 meia2 = max(size2 * vec2(acAspect, 1.0) * 0.5, vec2(1e-4));
+        float r2 = min(max(radius, 0.0), min(meia2.x, meia2.y));
+        vec2 rel2 = girar(ph - paraAltura(center2), -rotation);
+        d = sminSuave(d, sdCaixa(rel2, meia2, r2), merge);
+    }
+
+    return d;
+}
+
+/**
+ * A distância E a direção da borda no mesmo ponto: `vec3(d, n.x, n.y)`.
+ *
+ * Para a caixa arredondada, a direção sai de diferenças finitas — aritmética
+ * pura, de graça. Para a silhueta vinda do ALFA, cada avaliação é uma leitura de
+ * textura, e o alfa é praticamente um degrau: medir assim daria inclinação zero
+ * em quase toda parte e enorme em cima da borda.
+ *
+ * Uma COROA de oito amostras resolve as duas coisas de uma vez — a média dá uma
+ * rampa suave, a soma vetorial dá para onde ela cresce. E de brinde, no meio da
+ * forma as amostras dão todas 1: a rampa satura e o chanfro se apaga sozinho.
+ */
+vec3 formaEm(vec2 ph) {
+    float banda = bandaLente();
+
+    if (shape == 1) {
+        float raio = max(banda * 0.6, 0.002);
+        float media = alfaEm(paraUv(ph)) * 0.2;
+        vec2 soma = vec2(0.0);
+
+        for (int i = 0; i < 8; i++) {
+            float ang = float(i) * 0.78539816;
+            vec2 dir = vec2(cos(ang), sin(ang));
+            float a = alfaEm(paraUv(ph + dir * raio));
+            media += a * 0.1;
+            // O alfa cresce para DENTRO e a distância cresce para FORA: o sinal
+            // menos é o que faz a normal apontar para fora da placa.
+            soma -= dir * a;
+        }
+
+        float comp = length(soma);
+        return vec3(
+            (0.5 - media) * banda * 2.0,
+            comp > 1e-5 ? soma / comp : vec2(0.0, -1.0)
+        );
+    }
+
+    float passo = max(banda * 0.25, 0.002);
+    float d = silhueta(ph);
+    float dx = silhueta(ph + vec2(passo, 0.0)) - silhueta(ph - vec2(passo, 0.0));
+    float dy = silhueta(ph + vec2(0.0, passo)) - silhueta(ph - vec2(0.0, passo));
+    vec2 g = vec2(dx, dy);
+    float comp = length(g);
+    return vec3(d, comp > 1e-6 ? g / comp : vec2(0.0, -1.0));
+}
+
+/**
+ * Borrão de nove amostras numa direção.
+ *
+ * As cores entram MULTIPLICADAS pelo alfa e saem divididas de volta: num pixel
+ * transparente o RGB não quer dizer nada, e misturá-lo junto puxaria a borda do
+ * vidro para preto.
+ */
+vec4 borrar(sampler2D tex, vec2 uv, vec2 passo) {
+    vec4 c = texture(tex, uv);
+    vec3 soma = c.rgb * c.a * PESOS[0];
+    float peso = c.a * PESOS[0];
+
+    for (int i = 1; i < 5; i++) {
+        vec2 salto = passo * float(i);
+
+        vec4 a = texture(tex, uv + salto);
+        soma += a.rgb * a.a * PESOS[i];
+        peso += a.a * PESOS[i];
+
+        vec4 b = texture(tex, uv - salto);
+        soma += b.rgb * b.a * PESOS[i];
+        peso += b.a * PESOS[i];
+    }
+
+    return vec4(soma / max(peso, 1e-4), clamp(peso, 0.0, 1.0));
+}
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    vec3 rgb = (cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a;
+    return vec4(rgb, a);
+}
+
+/**
+ * O que está atrás do vidro, com queda automática.
+ *
+ * Fundo VAZIO naquele ponto — camada de baixo de tudo, projeto transparente —
+ * refratado daria uma placa preta. Cair na própria camada mostra vidro em vez de
+ * um buraco.
+ */
+vec4 fundoNitido(vec2 uv) {
+    if (refractFrom == 0) return texture(inputImg, uv);
+
+    /*
+     * ========================================================================
+     *  O FUNDO MORA NA TELA, A CAMADA NÃO
+     * ========================================================================
+     *
+     * `acScreenNorm` é a coordenada do buffer DESTA camada, de antes de ela ser
+     * movida, girada e escalada. `backdropImg` é a cena montada por baixo, já na
+     * tela. Enquanto a camada está parada os dois coincidem — e foi por isso que
+     * este defeito passou tanto tempo escondido.
+     *
+     * Movida a camada, o vidro passava a refratar um pedaço do fundo que não é o
+     * que está atrás dele. O relato veio com print: a placa mostrando uma parte
+     * da imagem que não tinha nada a ver com o lugar onde ela estava.
+     *
+     * `acTela()` é a ponte, montada por camada em `LayerGeometry`.
+     */
+    vec2 naTela = acTela(uv);
+    if (naTela.x < 0.0 || naTela.x > 1.0 || naTela.y < 0.0 || naTela.y > 1.0) {
+        return texture(inputImg, uv);
+    }
+
+    vec4 b = texture(backdropImg, naTela);
+    return b.a < 0.01 ? texture(inputImg, uv) : b;
+}
+
+/** Uma amostra do que o vidro atravessa, já misturando nítido com embaçado. */
+vec3 atras(vec2 uv, float fosco) {
+    return mix(fundoNitido(uv).rgb, texture(blurD, uv).rgb, clamp(fosco, 0.0, 1.0));
+}
+
+/**
+ * O deslocamento da AMPLIAÇÃO.
+ *
+ * Puxa a amostra para o centro da placa: quanto mais perto do centro se lê, mais
+ * o pedaço de fundo ocupa a tela — que é o que ampliar quer dizer.
+ *
+ * Multiplicado pela altura do perfil, então ele é máximo no meio (onde a lente é
+ * grossa) e some na beirada, onde quem manda é a refração de Snell. As duas
+ * contas se somam em vez de brigar.
+ */
+vec2 ampliar(vec2 uv, float alturaRel) {
+    if (magnify <= 0.001) return vec2(0.0);
+    return (uv - center) * (-magnify) * alturaRel;
+}
+
+/**
+ * O perfil da superfície: altura relativa (0..1) e a inclinação dela.
+ *
+ * `x` é a altura, `y` é `d(altura)/d(distância)` — a inclinação, que é o que
+ * vira normal. Os dois saem da mesma fórmula porque a derivada aqui é
+ * analítica: medir a inclinação por diferenças finitas custaria mais avaliações
+ * e daria ruído justamente na beirada, onde ela importa.
+ */
+vec2 perfilEm(float d, float banda) {
+    // Plano: laje de faces paralelas. Só a parede lateral entorta, e ela é fina
+    // demais para aparecer — serve para quem quer só o fosco e a cor.
+    if (profile == 2) return vec2(1.0, 0.0);
+
+    // Domo mede pelo raio interno (curva a placa inteira); chanfro mede pela
+    // banda (curva só a beirada).
+    float alcance = profile == 1 ? max(raioInterno(), 1e-4) : banda;
+
+    float u = clamp(-d / alcance, 0.0, 1.0);
+    float um = 1.0 - u;
+    float alt = sqrt(max(1.0 - um * um, 0.0));
+
+    // d(alt)/du = (1-u)/alt, e du/dd = -1/alcance.
+    float inclinacao = -(um / max(alt, 1e-3)) / alcance;
+    return vec2(alt, inclinacao);
+}
+
+/** Fresnel de Schlick: quanto reflete, dado o cosseno do ângulo de visão. */
+float schlick(float coseno, float indice) {
+    float f0 = (1.0 - indice) / (1.0 + indice);
+    f0 *= f0;
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - coseno, 0.0, 1.0), 5.0);
+}
+
+/**
+ * Para onde o raio sai, depois de entortar na entrada e atravessar o vidro.
+ *
+ * `refract` devolve zero quando o ângulo passa do limite — reflexão interna
+ * total. Aí não há travessia, e quem chama trata o ponto como reflexo puro.
+ */
+vec2 travessia(vec3 normal, float indice, float espessuraLocal, out bool refletiu) {
+    vec3 entrada = vec3(0.0, 0.0, -1.0);
+    vec3 raio = refract(entrada, normal, 1.0 / max(indice, 1.0001));
+
+    refletiu = dot(raio, raio) < 1e-6 || raio.z > -1e-3;
+    if (refletiu) return vec2(0.0);
+
+    // Anda até sair pela face de baixo. `-raio.z` é o avanço em profundidade por
+    // unidade de caminho; o resto é regra de três.
+    return raio.xy * (espessuraLocal / max(-raio.z, 0.02));
+}
+
+/**
+ * O fosco da beirada. No painel há um "Fosco" só: abaixo do padrão dele (0,22)
+ * ele apaga o da beirada junto, e em zero o vidro fica limpo de verdade.
+ */
+float foscoDaBorda() {
+    return edgeBlur * clamp(blurAmount / 0.22, 0.0, 1.0);
+}
+
+void main() {
+    // O quanto o borrão se espalha, em fração da altura.
+    float espalha = 0.003 + 0.035 * blurAmount;
+    float largo = espalha * 2.6;
+
+    if (acPass < 4) {
+        // Fosco desligado: os quatro passes viram cópia. Sair aqui pula 36
+        // leituras de textura que não mudariam nada.
+        if (blurAmount <= 0.002 && foscoDaBorda() <= 0.002) {
+            if (acPass == 0) {
+                fragColor = fundoNitido(acScreenNorm);
+            } else if (acPass == 1) {
+                fragColor = texture(blurA, acScreenNorm);
+            } else if (acPass == 2) {
+                fragColor = texture(blurB, acScreenNorm);
+            } else {
+                fragColor = texture(blurC, acScreenNorm);
+            }
+            return;
+        }
+
+        if (acPass == 0) {
+            vec2 passo = vec2(espalha / max(acAspect, 1e-4), 0.0);
+            // O fundo é lido pela UV da TELA (ver `fundoNitido`); o borrão
+            // resultante fica guardado na UV da CAMADA, que é como os passes
+            // seguintes e o vidro o leem.
+            vec2 naTela = acTela(acScreenNorm);
+            vec4 b = texture(backdropImg, naTela);
+            fragColor = (refractFrom == 1 && b.a >= 0.01)
+                ? borrar(backdropImg, naTela, passo)
+                : borrar(inputImg, acScreenNorm, passo);
+        } else if (acPass == 1) {
+            fragColor = borrar(blurA, acScreenNorm, vec2(0.0, espalha));
+        } else if (acPass == 2) {
+            fragColor = borrar(blurB, acScreenNorm, vec2(largo / max(acAspect, 1e-4), 0.0));
+        } else {
+            fragColor = borrar(blurC, acScreenNorm, vec2(0.0, largo));
+        }
+        return;
+    }
+
+    vec4 original = texture(inputImg, acScreenNorm);
+    vec2 ph = paraAltura(acScreenNorm);
+    float aa = 1.5 / max(acResolution.y, 1.0);
+
+    vec3 forma = formaEm(ph);
+    float d = forma.x;
+    vec2 n2d = forma.yz;
+    float dentro = 1.0 - smoothstep(-aa, aa, d);
+
+    // ---------------------------------------------------- superfície e normal
+    float banda = bandaLente();
+    vec2 perfil = perfilEm(d, banda);
+    float alturaRel = perfil.x;
+    float espessuraLocal = max(depth * alturaRel, 1e-4);
+
+    // A inclinação vira o vetor normal em 3D. O teto de 8 existe porque, na
+    // beirada exata, a superfície é vertical e a derivada vai ao infinito — e um
+    // infinito aqui viraria NaN espalhado pela borda inteira.
+    float inclina = clamp(-perfil.y * depth, -8.0, 8.0);
+    vec3 normal = normalize(vec3(inclina * n2d, 1.0));
+
+    float fosco = clamp(blurAmount + foscoDaBorda() * (1.0 - alturaRel), 0.0, 1.0);
+
+    // ------------------------------------------------------------- travessia
+    //
+    // Um índice por canal: vidro entorta o azul mais que o vermelho, e é isso
+    // que faz a franja colorida na beirada de qualquer lente.
+    float leque = spectral * 0.06;
+    bool tirR;
+    bool tirG;
+    bool tirB;
+    vec2 offR = travessia(normal, ior * (1.0 - leque), espessuraLocal, tirR);
+    vec2 offG = travessia(normal, ior, espessuraLocal, tirG);
+    vec2 offB = travessia(normal, ior * (1.0 + leque), espessuraLocal, tirB);
+
+    vec2 lente = ampliar(acScreenNorm, alturaRel);
+
+    vec3 atravessado = vec3(
+        atras(acScreenNorm + paraUv(offR) + lente, fosco).r,
+        atras(acScreenNorm + paraUv(offG) + lente, fosco).g,
+        atras(acScreenNorm + paraUv(offB) + lente, fosco).b
+    );
+
+    // ------------------------------------------------------------- absorção
+    //
+    // Lei de Beer: o que atravessa perde cor conforme o CAMINHO andado dentro do
+    // vidro. É por isso que a beirada de um vidro grosso é mais verde que o meio
+    // — e é o que dá impressão de material, e não de película.
+    float caminho = length(vec2(length(offG), espessuraLocal)) / max(depth, 1e-4);
+    vec3 perda = exp(-absorb * caminho * (1.0 - clamp(tintColor.rgb, 0.0, 1.0)));
+    atravessado *= perda;
+
+    // -------------------------------------------------------------- reflexo
+    //
+    // Sem mapa de ambiente, o próprio fundo faz as vezes: espelhado pela normal
+    // e lido do borrão. Reflexo é quase sempre menos nítido que a travessia,
+    // então a versão embaçada aproxima bem.
+    vec3 espelhado = reflect(vec3(0.0, 0.0, -1.0), normal);
+    vec2 uvRefl = acScreenNorm - paraUv(espelhado.xy * depth * 2.0);
+    vec3 refletido = texture(blurD, uvRefl).rgb;
+
+    float f = clamp(schlick(clamp(normal.z, 0.0, 1.0), ior) * fresnel, 0.0, 1.0);
+
+    // Reflexão interna total: o raio não atravessou, então o que se vê ali é
+    // reflexo puro. É a beirada espelhada que todo vidro grosso tem.
+    if (tirG) f = max(f, 0.9);
+
+    vec3 cor = mix(atravessado, refletido, f);
+
+    // ------------------------------------------------------------- especular
+    //
+    // O ponto de luz, que nenhum reflexo de fundo dá: o brilho da fonte em si.
+    // Dois lobos — o do lado da luz e o da parede oposta, que é o que sugere
+    // espessura.
+    //
+    // A LUZ É RASANTE (z baixo), e isso não é gosto: é o que separa vidro de
+    // plástico brilhante. Com a luz de frente, o meio-vetor fica quase colado no
+    // eixo, e a parte PLANA da placa — que é a maior parte dela — acende
+    // inteira. O resultado é uma pastilha leitosa. Rasante, o brilho só aparece
+    // onde a superfície se inclina para a luz: a beirada.
+    vec2 luz2 = vec2(cos(lightAngle * PI / 180.0), -sin(lightAngle * PI / 180.0));
+    vec3 luz = normalize(vec3(luz2 * 1.6, 0.42));
+    vec3 meio = normalize(luz + vec3(0.0, 0.0, 1.0));
+    float brilho = pow(max(dot(normal, meio), 0.0), max(specularSharp, 1.0)) * specular;
+
+    vec3 luzOposta = normalize(vec3(-luz2 * 1.6, 0.42));
+    vec3 meioOposto = normalize(luzOposta + vec3(0.0, 0.0, 1.0));
+    float oposto = pow(max(dot(normal, meioOposto), 0.0), max(specularSharp, 1.0)) *
+                   specular * oppositeLobe;
+
+    cor += brilho + oposto;
+
+    /*
+     * ========================================================================
+     *  A BEIRADA ACESA E A SOMBRA INTERNA
+     * ========================================================================
+     *
+     * As duas usam a mesma faixa exponencial medida a partir da borda para
+     * dentro, e a mesma normal 2D para saber de que lado está a luz:
+     *
+     *  - a beirada acende em toda a volta, e mais forte onde ela encara a luz;
+     *  - a sombra escurece o lado oposto, onde a parede lateral tapa a luz
+     *    rasante.
+     *
+     * Exponencial e não `smoothstep` de propósito: ela cai rápido e nunca chega
+     * a zero, que é como luz presa dentro de um material se comporta — dá o
+     * gradiente macio que uma banda dura não dá.
+     */
+    float dentroDaBorda = max(-d, 0.0);
+
+    if (rimLight > 0.001) {
+        float faixa = exp(-dentroDaBorda / max(banda * 0.35, 1e-4));
+        float encaraALuz = clamp(dot(n2d, luz2), 0.0, 1.0);
+        cor += faixa * rimLight * (0.35 + 0.65 * encaraALuz) * tintColor.rgb;
+    }
+
+    if (innerShadow > 0.001) {
+        float faixa = exp(-dentroDaBorda / max(banda * 0.8, 1e-4));
+        float deCostas = clamp(-dot(n2d, luz2), 0.0, 1.0);
+        cor *= 1.0 - faixa * deCostas * innerShadow;
+    }
+
+    // ---------------------------------------------------------------- sombra
+    float dSombra = silhueta(ph + luz2 * shadowDist);
+    float sombra = (1.0 - smoothstep(0.0, max(shadowSoft, 1e-3), dSombra)) *
+                   shadowColor.a * (1.0 - dentro);
+
+    vec4 base = keepLayer ? original : vec4(original.rgb, 0.0);
+    vec4 saida = sobre(base, vec4(shadowColor.rgb, sombra));
+    fragColor = sobre(saida, vec4(cor, dentro));
+}
+
+    ]]></shader>
+</effect>

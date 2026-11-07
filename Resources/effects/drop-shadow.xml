@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sombra projetada.
+
+  Quatro passes: recorta a silhueta deslocada, borra em dois passes separáveis,
+  e por fim desenha a camada original por cima da sombra.
+
+  Repare que o passe 0 só usa o ALPHA da entrada. A sombra é a silhueta da
+  camada, não uma cópia escura dela — é por isso que sombra de texto sai com o
+  formato das letras e não com um retângulo cinza atrás.
+-->
+<effect
+    id="nova.effect.dropshadow"
+    name="Sombra projetada"
+    name-en="Drop Shadow"
+    desc="Sombra com deslocamento, desfoque e cor. Funciona com o recorte da camada."
+    desc-en="Shadow cast from the layer alpha, with angle and softness."
+    category="stylize"
+    tags="sombra,profundidade,contorno,shadow">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="shadowMask" src="buffer" />
+        <texture id="blurH" src="buffer" />
+        <texture id="blurV" src="buffer" />
+
+        <!-- Chamava-se `distance`, que sombreia a função nativa distance() do
+             GLSL para o resto do shader. Era legal e funcionava, mas bastava
+             alguém acrescentar uma linha usando a função para o arquivo parar
+             de compilar. Renomeado, com migração para os projetos já salvos —
+             ver `EffectDto.toModel`. -->
+        <slider id="reach" label="Distância" default="16.0" min="0.0" max="200.0" step="1.0" />
+        <slider id="angle" label="Ângulo" default="135.0" min="-180.0" max="180.0" step="1.0"
+                ticks="-90.0,0.0,90.0" snap="0.0,45.0,90.0,135.0,180.0,-45.0,-90.0,-135.0" />
+        <slider id="softness" label="Suavidade" default="12.0" min="0.0" max="80.0" step="1.0" />
+        <slider id="opacity" label="Opacidade" default="0.6" min="0.0" max="1.0" step="0.01" />
+        <color id="shadowColor" label="Cor" default="#000000" />
+        <!-- O "Shadow Only" do After Effects: devolve só a sombra, sem a camada
+             por cima. Serve para montar a sombra numa camada separada — com
+             outra mesclagem, outra máscara ou atrás de um elemento diferente. -->
+        <switch id="shadowOnly" label="Só a sombra" default="false" />
+    </params>
+
+    <!-- Na vitrine, a sombra padrão some atrás da amostra: longe e escura. (vitrine, 0.664.0) -->
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura">
+        <set param="reach" value="40.0" />
+        <set param="softness" value="6.0" />
+        <set param="opacity" value="1.0" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="shadowMask" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+// Gaussiana de 9 amostras fundida em 5 leituras bilineares — ~44% menos leituras por passe.
+const int TAPS = 5;
+const float TAP_OFFSETS[5] = float[5](-3.2307692308, -1.3846153846, 0.0, 1.3846153846, 3.2307692308);
+const float WEIGHTS[5] = float[5](0.0702702703, 0.3162162162, 0.2270270270, 0.3162162162, 0.0702702703);
+
+vec4 blurPass(sampler2D tex, vec2 direction) {
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 stepUv = direction * acTexelSize * max(softness * acEscalaDePixel / 4.0, 0.001);
+    vec4 sum = vec4(0.0);
+    for (int i = 0; i < TAPS; i++) {
+        sum += texture(tex, acScreenNorm + stepUv * TAP_OFFSETS[i]) * WEIGHTS[i];
+    }
+    return sum;
+}
+
+void main() {
+    if (acPass == 0) {
+        float rad = radians(angle);
+        vec2 offset = vec2(cos(rad), sin(rad)) * (reach * acEscalaDePixel) * acTexelSize;
+
+        // Amostra DESLOCADA: a sombra é a silhueta deslocada no sentido oposto
+        // ao da luz.
+        float silhouette = texture(inputImg, acScreenNorm - offset).a;
+        fragColor = vec4(shadowColor.rgb, silhouette * opacity * shadowColor.a);
+        return;
+    }
+
+    if (acPass == 1) {
+        fragColor = blurPass(shadowMask, vec2(1.0, 0.0));
+        return;
+    }
+
+    if (acPass == 2) {
+        fragColor = blurPass(blurH, vec2(0.0, 1.0));
+        return;
+    }
+
+    vec4 shadow = texture(blurV, acScreenNorm);
+
+    // Só a sombra: ela inteira, inclusive a parte que ficaria escondida embaixo
+    // da camada. É o que o After Effects faz, e é o que se quer ao usar a sombra
+    // em outro lugar — um recorte no formato da camada seria outro efeito.
+    //
+    // O texel já sai pronto: o passe 0 pinta TODO pixel com a cor da sombra
+    // (só o alfa varia), então o borrão mistura cores iguais e a cor continua
+    // reta, sem escurecer na borda.
+    if (shadowOnly) {
+        fragColor = shadow;
+        return;
+    }
+
+    vec4 base = texture(inputImg, acScreenNorm);
+
+    // Composição "source-over": a camada por cima da sombra. Mesma fórmula do
+    // compositor de camadas do motor.
+    float outAlpha = base.a + shadow.a * (1.0 - base.a);
+    vec3 outRgb = outAlpha > 0.0
+        ? (base.rgb * base.a + shadow.rgb * shadow.a * (1.0 - base.a)) / outAlpha
+        : vec3(0.0);
+
+    fragColor = vec4(outRgb, outAlpha);
+}
+
+    ]]></shader>
+</effect>

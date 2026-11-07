@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Lens Vignette (`lenv`, vídeo): `ColorKernel_LensVignette`, constantes em `0x1803f5950` +
+  `0x18041a130`. Até 1 nível em 0,005% dos valores.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.lensvignette"
+    name="Looks: Lens Vignette"
+    name-en="Looks: Lens Vignette"
+    desc="A ferramenta Lens Vignette do Magic Bullet Looks: o escurecimento das bordas de uma lente, protegendo as altas."
+    desc-en="Magic Bullet Looks' Lens Vignette tool: a lens's edge darkening, protecting the highlights."
+    category="looks"
+    stage="mblooks"
+    looks="lenv"
+    tags="magic bullet,looks,red giant,lens vignette,vinheta,vignette">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="vignette" label="Vignette" default="50.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="amount" label="Amount" default="50.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="highlights" label="Highlights" default="50.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="centerX" label="Center X" default="0.0" min="-60.0" max="60.0" step="0.1" />
+        <slider id="centerY" label="Center Y" default="0.0" min="-60.0" max="60.0" step="0.1" />
+        <slider id="aspect" label="Aspect" default="1.0" min="0.1" max="3.0" step="0.001" />
+        <switch id="anamorphic" label="Anamorphic" default="false" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_SHAKE — o Shake do Sapphire (Boris FX), medido no plugin (0.433.0)
+  ============================================================================
+
+  Pedido do snow (07/10/2026): "faz o sapphire shake então, não esquece de fazer os benchmark pra
+  ficar 100% perfeito ao efeito do after effects". É o efeito que destrava nove dos shakes dele.
+  Medido no S_Shake do Sapphire 2024, no After Effects 2023 (tools/sshake/benchmark): cerca de 43 mil
+  quadros, a maior parte com uma fonte de COORDENADAS (a cor de cada pixel diz de onde ele foi lido),
+  o que dá o deslocamento, o zoom e o giro de cada quadro com erro abaixo de 0,01 px.
+
+  O QUE FOI MEDIDO:
+
+  - Cada eixo (X, Y, Z, Tilt) soma uma parte aleatória e uma onda, tudo vezes Amplitude:
+      u = Frequency · Rand Freq · (t − Phase − Phase do eixo)
+      X e Y em pixels da composição (não mudam com o tamanho do quadro); Tilt em graus;
+      1/zoom = Z Dist + Z Rand Amp · ruído · 6,4 / LARGURA do quadro (a altura não entra).
+    A onda é um seno de frequência Frequency · Wave Freq — com sinal contrário no X, e no Z valendo
+    2 / largura por unidade.
+  - O RUÍDO não tem fórmula que se recupere de fora: cada semente e cada eixo é uma curva própria,
+    sem relação com as outras (nem por deslocamento). Então a curva do Sapphire foi GRAVADA, de
+    1/16 em 1/16 de u, para as cinco sementes que os presets do snow usam (0; 0,098; 0,268; 29,78;
+    30,35) — a tabela vai em assets/shake/sshake.png (16 bits por valor). Com essas sementes o
+    movimento é o do After Effects (0,08 px de erro com Rand Amp 100). Com QUALQUER OUTRA semente o
+    efeito treme do mesmo jeito, mas não é a curva de lá.
+  - A tabela da semente 0 cobre u até 1024 em X/Y (22 s a 46 Hz, 97 s a 10 Hz); as outras, até 32 a
+    256; Z e Tilt, até 32. Depois disso ela é percorrida de volta (sem salto): continua tremendo,
+    deixa de ser a curva do AE.
+  - Borda: "Tile" repete; "Reflect" espelha em volta do índice 0 de um lado e do índice n do outro,
+    com a leitura presa no último pixel; "No" deixa transparente.
+  - Motion Blur: é a LINHA RETA do movimento deste quadro até o do quadro seguinte (nos quatro
+    eixos), percorrida por igual; o Mo Blur Length estica esse caminho (3 = três vezes, na mesma
+    direção). A borda é dobrada uma vez, na pose do quadro, e o borrão corre a partir dali.
+
+  QUANTO BATE (GPU do PC × AE, 640 × 360, imagem com linhas de 1 px; níveis de 255):
+  os 9 presets sem desfoque de movimento — erro médio de 0,05 a 0,20; a onda — 0,02; borda — 0,9
+  com deslocamentos de 400 px; desfoque em X/Y — 0,5; desfoque com zoom e giro — 1,7 (as linhas
+  finas perto do centro saem mais lisas aqui); os 2 presets com desfoque — 1,4.
+
+  O QUE NÃO ENTROU: os estilos 2 e 3 do plugin (Style; os presets usam o 1, e Stillness, Twitch
+  Frequency, Drift e Center Bias não mexem nele — conferido), o tremor por canal (RGB), o Crop e o
+  Mocha. Com Phase > 0 o começo (t < Phase) não bate: a tabela não tem o ruído em u negativo.
+-->
+<effect
+    id="nova.effect.sshake"
+    name="S_Shake"
+    name-en="S_Shake"
+    desc="O Shake do Sapphire: tremor de câmera em X, Y, zoom e giro, com frequência, semente, borda espelhada e desfoque de movimento."
+    desc-en="Sapphire's Shake: camera shake in X, Y, zoom and tilt, with frequency, seed, reflected edges and motion blur."
+    category="distort"
+    tags="shake,tremor,tremida,camera,câmera,sapphire,s_shake,chacoalhar,impacto,terremoto,handheld,zoom,tilt">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="tabela" src="image" files="shake/sshake.png" filter="nearest" />
+
+        <slider id="amplitude" label="Amplitude" default="1.0" min="0.0" max="20.0" step="0.01" snap="1.0,0.0" />
+        <slider id="frequency" label="Frequency" default="8.0" min="0.0" max="100.0" step="0.1" snap="8.0" />
+        <slider id="phase" label="Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+        <slider id="seed" label="Seed" default="0.0" min="0.0" max="100.0" step="0.001" snap="0.0" />
+        <slider id="zDist" label="Z Dist" default="1.0" min="0.1" max="10.0" step="0.01" snap="1.0" />
+        <switch id="motionBlur" label="Motion Blur" default="false" />
+        <slider id="moBlurLength" label="Mo Blur Length" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" showIf="motionBlur=true" />
+        <selector id="wrapX" label="Wrap X" default="2" options="No|Tile|Reflect" />
+        <selector id="wrapY" label="Wrap Y" default="2" options="No|Tile|Reflect" />
+
+        <slider id="xRandAmp" group="X Shake" label="X Rand Amp" default="192.0" min="0.0" max="2000.0" step="1.0" snap="192.0,0.0" />
+        <slider id="xRandFreq" group="X Shake" label="X Rand Freq" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="xWaveAmp" group="X Shake" label="X Wave Amp" default="0.0" min="0.0" max="2000.0" step="1.0" snap="0.0" />
+        <slider id="xWaveFreq" group="X Shake" label="X Wave Freq" default="0.5" min="0.0" max="10.0" step="0.01" snap="0.5" />
+        <slider id="xPhase" group="X Shake" label="X Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+
+        <slider id="yRandAmp" group="Y Shake" label="Y Rand Amp" default="96.0" min="0.0" max="2000.0" step="1.0" snap="96.0,0.0" />
+        <slider id="yRandFreq" group="Y Shake" label="Y Rand Freq" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="yWaveAmp" group="Y Shake" label="Y Wave Amp" default="0.0" min="0.0" max="2000.0" step="1.0" snap="0.0" />
+        <slider id="yWaveFreq" group="Y Shake" label="Y Wave Freq" default="0.5" min="0.0" max="10.0" step="0.01" snap="0.5" />
+        <slider id="yPhase" group="Y Shake" label="Y Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+
+        <slider id="zRandAmp" group="Z Shake" label="Z Rand Amp" default="0.0" min="0.0" max="500.0" step="1.0" snap="0.0" />
+        <slider id="zRandFreq" group="Z Shake" label="Z Rand Freq" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="zWaveAmp" group="Z Shake" label="Z Wave Amp" default="0.0" min="0.0" max="500.0" step="1.0" snap="0.0" />
+        <slider id="zWaveFreq" group="Z Shake" label="Z Wave Freq" default="0.5" min="0.0" max="10.0" step="0.01" snap="0.5" />
+        <slider id="zPhase" group="Z Shake" label="Z Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+
+        <slider id="tiltRandAmp" group="Tilt Shake" label="Tilt Rand Amp" default="0.0" min="0.0" max="180.0" step="0.1" snap="0.0" />
+        <slider id="tiltRandFreq" group="Tilt Shake" label="Tilt Rand Freq" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="tiltWaveAmp" group="Tilt Shake" label="Tilt Wave Amp" default="0.0" min="0.0" max="180.0" step="0.1" snap="0.0" />
+        <slider id="tiltWaveFreq" group="Tilt Shake" label="Tilt Wave Freq" default="0.5" min="0.0" max="10.0" step="0.01" snap="0.5" />
+        <slider id="tiltPhase" group="Tilt Shake" label="Tilt Phase" default="0.0" min="-10.0" max="10.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+// ---- A TABELA DO RUÍDO (gerada por tools/sshake/benchmark/gerar.py; não editar à mão) ----
+const int LARGURA = 1024;                  // amostras por linha da textura
+const float PASSO = 16.0;                    // amostras por unidade de u
+const float FAIXA = 0.91;                    // os valores guardados vão de −FAIXA a +FAIXA
+const int N_SEMENTES = 5;
+float semente(int k) { if (k == 0) return 0.0; if (k == 1) return 0.098; if (k == 2) return 0.268; if (k == 3) return 29.78; if (k == 4) return 30.35; return 0.0; }
+// para cada semente e cada eixo (X, Y, Z, Tilt): a linha onde o trecho começa e quantas amostras tem
+// Em FUNÇÕES, não em arrays constantes: índice variável num array constante é o que driver de celular erra
+// (o S_Shake e o S_DissolveShake que "não funcionam em alguns celulares", 30/10/2026).
+int linhaDoTrecho(int t) { if (t == 0) return 0; if (t == 1) return 17; if (t == 2) return 34; if (t == 3) return 35; if (t == 4) return 36; if (t == 5) return 37; if (t == 6) return 38; if (t == 7) return 39; if (t == 8) return 40; if (t == 9) return 41; if (t == 10) return 42; if (t == 11) return 43; if (t == 12) return 44; if (t == 13) return 49; if (t == 14) return 54; if (t == 15) return 55; if (t == 16) return 56; if (t == 17) return 58; if (t == 18) return 60; if (t == 19) return 61; return 0; }
+int tamanhoDoTrecho(int t) { if (t == 0) return 16385; if (t == 1) return 16385; if (t == 2) return 513; if (t == 3) return 513; if (t == 4) return 513; if (t == 5) return 513; if (t == 6) return 513; if (t == 7) return 513; if (t == 8) return 513; if (t == 9) return 513; if (t == 10) return 513; if (t == 11) return 513; if (t == 12) return 4097; if (t == 13) return 4097; if (t == 14) return 513; if (t == 15) return 513; if (t == 16) return 1025; if (t == 17) return 1025; if (t == 18) return 513; if (t == 19) return 513; return 0; }
+const int AMOSTRAS_DO_BORRAO = 48;
+const float PI2 = 6.28318530718;
+
+/**
+ * Uma amostra da tabela: 16 bits em dois canais (R alto, G baixo). O trecho chega como `n` (amostras) e `linha`: as
+ * cadeias de `if` da tabela uma vez por eixo, não em cada amostra (0.915.0 — eram 32 cópias no shader, e a Mali-G57
+ * da 0.894.0 recusou o programa sem dizer o porquê).
+ */
+float amostra(int n, int linha, int i) {
+    // fora da tabela o movimento continua: ela é percorrida de volta, e de novo de ida (sem salto)
+    int volta = 2 * (n - 1);
+    // o vaivém é simétrico em volta do 0: o índice negativo vale o positivo (e dividir inteiro negativo é
+    // indefinido no GLSL ES — cada driver arredonda de um jeito)
+    if (i < 0) i = -i;
+    i = i - (i / volta) * volta;
+    if (i > n - 1) i = volta - i;
+    vec4 t = texelFetch(tabela, ivec2(i - (i / LARGURA) * LARGURA, linha + i / LARGURA), 0);
+    return ((floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5)) / 65535.0 * 2.0 - 1.0) * FAIXA;
+}
+
+/** O ruído do eixo (0 = X, 1 = Y, 2 = Z, 3 = Tilt) no ponto `u`, pela tabela da semente. */
+float ruido(int qual, float u) {
+    // A semente: uma das medidas no After Effects (aí o movimento é o MESMO de lá); qualquer outra
+    // usa a tabela mais longa a partir de um ponto que depende da semente — outro tremor, do mesmo jeito.
+    int s = -1;
+    for (int j = 0; j < N_SEMENTES; j++) if (abs(seed - semente(j)) < 0.0006) s = j;
+    float desvio = 0.0;
+    if (s < 0) { s = 0; desvio = fract(seed * 0.61803 + float(qual) * 0.37) * 400.0 + 20.0 + float(qual) * 97.0; }
+    int trecho = s * 4 + qual;
+    int n = tamanhoDoTrecho(trecho), linha = linhaDoTrecho(trecho);
+    float x = (abs(u) + desvio) * PASSO;
+    float xi = floor(x);
+    float f = x - xi;
+    int idx = int(xi);
+    float p0 = amostra(n, linha, idx - 1), p1 = amostra(n, linha, idx), p2 = amostra(n, linha, idx + 1), p3 = amostra(n, linha, idx + 2);
+    // Catmull–Rom pelas quatro amostras vizinhas
+    return p1 + 0.5 * f * (p2 - p0 + f * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3 + f * (3.0 * (p1 - p2) + p3 - p0)));
+}
+
+/**
+ * Um eixo no instante `t`: a parte aleatória mais a onda.
+ * Medido: u = Frequency · Rand Freq · (t − Phase − Phase do eixo); a onda é um seno de frequência
+ * Frequency · Wave Freq, com o sinal de cada eixo (`sinalDaOnda`: X anda para o lado contrário).
+ */
+float eixo(int qual, float t, float randAmp, float randFreq, float waveAmp, float waveFreq, float fase, float sinalDaOnda, float escalaDaOnda) {
+    float tt = t - phase - fase;
+    float v = 0.0;
+    if (randAmp != 0.0) v += randAmp * ruido(qual, frequency * randFreq * tt);
+    if (waveAmp != 0.0) v += sinalDaOnda * escalaDaOnda * waveAmp * sin(PI2 * frequency * waveFreq * tt);
+    return amplitude * v;
+}
+
+/** O movimento no instante `t`: (dx, dy) em px do buffer, 1/zoom e o giro em radianos. */
+vec4 movimento(float t, vec2 R) {
+    vec2 d = vec2(eixo(0, t, xRandAmp, xRandFreq, xWaveAmp, xWaveFreq, xPhase, -1.0, 1.0),
+                  eixo(1, t, yRandAmp, yRandFreq, yWaveAmp, yWaveFreq, yPhase, 1.0, 1.0)) * acEscalaDePixel;
+    // Medido: 1/zoom = Z Dist + Z Rand Amp · ruído · 6,4 / largura do quadro — o Z é uma distância em
+    // pixels, e pesa o dobro num quadro com a metade da largura (a altura não entra). A onda do Z
+    // vale 2 / largura por unidade (3,2 vezes menos que a parte aleatória, na escala da tabela).
+    float larguraDaComp = R.x / max(acEscalaDePixel, 1e-4);
+    float invZoom = zDist + eixo(2, t, zRandAmp, zRandFreq, zWaveAmp, zWaveFreq, zPhase, 1.0, 1.0 / 3.2) * 6.4 / larguraDaComp;
+    float ang = radians(eixo(3, t, tiltRandAmp, tiltRandFreq, tiltWaveAmp, tiltWaveFreq, tiltPhase, 1.0, 1.0));
+    return vec4(d, invZoom, ang);
+}
+
+/**
+ * A borda. Medido com a fonte de coordenadas (em índices de pixel, o centro do pixel i em i):
+ * "Tile" repete com período igual à largura; "Reflect" espelha em volta do índice 0 de um lado e do
+ * índice `n` do outro (meio pixel além do último), e a leitura fica presa no último pixel.
+ */
+float dobrar(float c, float n, int modo) {
+    if (modo == 1) return mod(c + 0.5, n) - 0.5;
+    if (modo == 2) {
+        float p = 2.0 * n;
+        float m = mod(c, p);
+        if (m > n) m = p - m;
+        return clamp(m, 0.0, n - 1.0);
+    }
+    return c;
+}
+
+/** Da tela para a fonte, pelo movimento `m` (px do buffer; o centro do pixel i fica em i + 0,5). */
+vec2 paraAFonte(vec2 px, vec2 R, vec4 m) {
+    vec2 c = 0.5 * R;
+    vec2 q = px - c - m.xy;
+    float cs = cos(m.w), sn = sin(m.w);
+    // a tela é a fonte girada e ampliada em volta do centro, e depois deslocada: aqui, o caminho de volta
+    return vec2(cs * q.x + sn * q.y, -sn * q.x + cs * q.y) * m.z + c;
+}
+
+/** Da fonte para a tela (o caminho de ida). */
+vec2 paraATela(vec2 fonte, vec2 R, vec4 m) {
+    vec2 c = 0.5 * R;
+    vec2 q = (fonte - c) / m.z;
+    float cs = cos(m.w), sn = sin(m.w);
+    return vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y) + c + m.xy;
+}
+
+/** A fonte lida no ponto `fonte` (px), com a borda escolhida. Sai pré-multiplicada. */
+vec4 ler(vec2 fonte, vec2 R, bool noPixel) {
+    vec2 i = fonte - 0.5;                        // em índices de pixel
+    // Medido: com o Motion Blur ligado o AE lê o pixel mais próximo em cada amostra (onde nada se
+    // mexe — o centro de um giro — as linhas finas saem serrilhadas lá, e aqui também).
+    if (noPixel) i = floor(i + 0.5);
+    if ((wrapX == 0 && (i.x < -0.5 || i.x > R.x - 0.5)) || (wrapY == 0 && (i.y < -0.5 || i.y > R.y - 0.5))) return vec4(0.0);
+    i = vec2(dobrar(i.x, R.x, wrapX), dobrar(i.y, R.y, wrapY));
+    vec2 uv = (i + 0.5) / R;
+    // a conta é com a linha 0 no TOPO, como no plugin; numa cena de pé (camada de ajuste) ela é a base do buffer
+    if (acEntradaDePe == 1) uv.y = 1.0 - uv.y;
+    vec4 cor = texture(inputImg, uv);
+    return vec4(cor.rgb * cor.a, cor.a);
+}
+
+void main() {
+    vec2 R = vec2(textureSize(inputImg, 0));
+    vec2 px = acScreenNorm * R;
+    // Na camada de ajuste (e no grupo solto) a cena chega de pé: a linha 0 do buffer é a BASE. Sem virar, o tremor
+    // em Y e o giro saíam ao contrário do mesmo S_Shake numa camada (relato do Magrelão, 20/10/2026).
+    if (acEntradaDePe == 1) px.y = R.y - px.y;
+    vec4 agora = movimento(acTime, R);
+    vec4 soma;
+    if (motionBlur && moBlurLength > 0.0 && acFrameDuration > 0.0) {
+        // Medido: o borrão é a LINHA RETA do movimento deste quadro até o do quadro seguinte,
+        // percorrida por igual e esticada pelo Mo Blur Length (1 = até o quadro seguinte; 3 = três
+        // vezes esse caminho, na mesma direção).
+        //
+        // Na BORDA a ordem importa (medido): o AE dobra a borda UMA vez, na pose deste quadro, e o
+        // borrão corre a partir desse ponto já dobrado — a faixa espelhada sai simétrica em volta da
+        // borda da imagem deslocada, em vez de cada amostra dobrar num lugar diferente.
+        vec4 depois = movimento(acTime + acFrameDuration, R);
+        vec2 aqui = paraAFonte(px, R, agora);
+        vec2 dentro = vec2(wrapX == 0 ? aqui.x : dobrar(aqui.x - 0.5, R.x, wrapX) + 0.5,
+                           wrapY == 0 ? aqui.y : dobrar(aqui.y - 0.5, R.y, wrapY) + 0.5);
+        vec2 naTela = paraATela(dentro, R, agora);
+        soma = vec4(0.0);
+        for (int k = 0; k < AMOSTRAS_DO_BORRAO; k++) {
+            float f = (float(k) + 0.5) / float(AMOSTRAS_DO_BORRAO) * moBlurLength;
+            soma += ler(paraAFonte(naTela, R, agora + (depois - agora) * f), R, false);
+        }
+        soma /= float(AMOSTRAS_DO_BORRAO);
+    } else {
+        soma = ler(paraAFonte(px, R, agora), R, false);
+    }
+    fragColor = soma.a > 0.0 ? vec4(soma.rgb / soma.a, soma.a) : vec4(0.0);
+}
+]]></shader>
+</effect>

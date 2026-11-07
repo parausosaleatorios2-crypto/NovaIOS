@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.mosaic" name="Mosaic Tiles" desc="Voronoi cells flattened to one colour each, with optional grout lines. A clean mosaic." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/mosaic.png"
+        tags="stylize,mosaic,tiles,voronoi" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Mosaic" />
+<spinner id="cells" default="24.0" min="4.0" max="120.0" step="1.0" label="Tile Count" />
+<spinner id="grout" default="0.15" min="0.0" max="0.6" step="0.01" label="Grout" />
+<color id="groutColor" default="#FF0A0A0A" label="Grout Colour" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 p = uv * vec2(ar, 1.0) * cells;
+  vec2 g = floor(p);
+  float d1 = 8.0, d2 = 8.0;
+  vec2 best = vec2(0.5);
+  for (int y = -1; y <= 1; y++){
+    for (int x = -1; x <= 1; x++){
+      vec2 o = vec2(float(x), float(y));
+      vec2 pt = o + 0.5;
+      float d = length(pt - fract(p));
+      if (d < d1){ d2 = d1; d1 = d; best = (g + o + 0.5) / (vec2(ar, 1.0) * cells); }
+      else if (d < d2){ d2 = d; }
+    }
+  }
+  vec3 fill = texture2DCv(inputImg.texture, best).rgb / max(texture2DCv(inputImg.texture, best).a, 1e-4);
+  float edge = smoothstep(0.0, grout, d2 - d1);
+  vec3 col = mix(groutColor.rgb, fill, edge);
+  col = mix(c, col, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

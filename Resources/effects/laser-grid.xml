@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   GRADE LASER (CHÃO EM PERSPECTIVA)
+  ============================================================================
+
+  A grade neon correndo em direção ao horizonte: o chão dos vídeos de synthwave,
+  Tron, Outrun. Linhas desenhadas em um PLANO infinito e projetadas numa
+  perspectiva — e tudo em 1 passe de shader, sem geometria.
+
+  ============================================================================
+   DA PERSPECTIVA, POR DIVISÃO
+  ============================================================================
+
+  A projeção perspectiva de um plano horizontal é aritmética do ensino médio:
+  um ponto no chão a `z` metros fica numa altura de tela `h / z` (`h` é a
+  altura da câmera). Invertendo: para cada pixel abaixo do horizonte, `z` é
+  `h / (horizonte − y)`.
+
+  Com `z` em mãos, o pixel SABE em qual metro do chão ele cai. As linhas
+  perpendiculares à câmera são `step(.)` sobre `fract(z)`; as paralelas são
+  o mesmo truque no eixo `x · z` (o x escala com a profundidade, porque longe
+  as linhas verticais se juntam no ponto de fuga).
+
+  ============================================================================
+   ANIMAÇÃO: CORRER PRA FRENTE É SOMAR TEMPO EM Z
+  ============================================================================
+
+  Para a grade "voar em direção à câmera", basta somar `acTime * speed` ao z.
+  As linhas perpendiculares passam pelo pixel; a sensação de VELOCIDADE é a
+  derivada natural do chão se mexer.
+-->
+<effect
+    id="nova.effect.laser-grid"
+    name="Grade laser"
+    name-en="Laser Grid"
+    desc="Grade neon em perspectiva correndo em direção ao horizonte."
+    desc-en="Neon perspective grid running toward the horizon."
+    category="procedural"
+    tags="laser,grade,synthwave,outrun,tron,80s,retro,gerador">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="lineColor" label="Cor da linha" default="#FF00FFFF" />
+        <color id="skyColor" label="Cor do céu" default="#110022FF" />
+        <slider id="horizon" label="Altura do horizonte"
+                default="0.5" min="0.1" max="0.9" step="0.01" snap="0.0" />
+        <slider id="cameraHeight" label="Altura da câmera"
+                default="0.4" min="0.05" max="2.0" step="0.01" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="1.0" min="0.0" max="8.0" step="0.05" snap="0.0" />
+        <slider id="lineWidth" label="Espessura da linha"
+                default="0.06" min="0.005" max="0.3" step="0.005" snap="0.0" />
+        <slider id="glow" label="Halo"
+                default="1.5" min="0.0" max="4.0" step="0.05" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais halo pra acusar a grade. -->
+    <preview>
+        <set param="glow" value="2.5" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Desenha uma linha fina em `t = fract(x)`: 1 na linha, 0 fora dela. */
+float linha(float x, float largura) {
+    float f = abs(fract(x) - 0.5) * 2.0;    // 0 no meio da célula, 1 na borda
+    return smoothstep(1.0 - largura, 1.0, f);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    // Céu: pintado uniformemente acima do horizonte.
+    if (uv.y < horizon) {
+        fragColor = vec4(skyColor.rgb, skyColor.a);
+        return;
+    }
+
+    // Projeção: y sob o horizonte → z metros de distância.
+    float alturaNoChao = uv.y - horizon;
+    float z = cameraHeight / max(alturaNoChao, 1e-4);
+
+    // X escala com z (ponto de fuga no centro). O centro do chão fica em x=0.5.
+    float xDoChao = (uv.x - 0.5) * acAspect * z;
+
+    // Linhas perpendiculares correndo pra câmera.
+    float profundidade = z + acTime * speed;
+    float linhaPerp = linha(profundidade, lineWidth * 2.0);
+
+    // Linhas paralelas (x fixo no mundo).
+    float linhaPar = linha(xDoChao, lineWidth * 2.0);
+
+    float grade = max(linhaPerp, linhaPar);
+
+    // Halo: queda com a distância ao centro da linha (grosseiro mas vendável).
+    float halo = 0.0;
+    halo += exp(-abs(fract(profundidade) - 0.5) * 2.0 / max(lineWidth, 1e-4)) * glow * 0.5;
+    halo += exp(-abs(fract(xDoChao) - 0.5) * 2.0 / max(lineWidth, 1e-4)) * glow * 0.5;
+
+    // As linhas somem com a distância (fog).
+    float neblina = exp(-z * 0.08);
+    grade *= neblina;
+    halo *= neblina;
+
+    vec3 cor = skyColor.rgb + lineColor.rgb * (grade + halo);
+    cor = clamp(cor, 0.0, 1.0);
+
+    fragColor = vec4(cor, 1.0);
+}
+
+    ]]></shader>
+</effect>

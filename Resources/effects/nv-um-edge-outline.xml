@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Edge Outline — borda detectada por Sobel, desenhada em cor sólida sobre fundo ajustável.
+  Equivale ao "Edge Outline" / "Edge Line" do Ultra.
+-->
+<effect
+    id="nova.effect.um-edge-outline"
+    name="Contorno de Borda"
+    name-en="Edge Outline"
+    desc="Detecta bordas por Sobel e desenha um contorno colorido."
+    desc-en="Detects edges via Sobel and draws a colored outline."
+    category="stylize"
+    tags="edge,outline,sobel,line,ultra motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="threshold" label="Limiar" default="0.15" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+        <spinner id="thickness" label="Espessura" default="1.0" min="0.5" max="5.0" step="0.1" />
+        <color id="edgeColor" label="Cor da borda" default="#FF000000" />
+        <color id="bgColor" label="Fundo" default="#00FFFFFF" />
+        <spinner id="mistura" label="Mistura com camada" default="0.0" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+    </params>
+
+    <preview>
+        <set param="threshold" value="0.1" />
+    </preview>
+
+    <shader><![CDATA[
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 t = thickness / acResolution;
+
+    float tl = luma(texture(inputImg, uv + vec2(-t.x,  t.y)).rgb);
+    float  l = luma(texture(inputImg, uv + vec2(-t.x,  0.0)).rgb);
+    float bl = luma(texture(inputImg, uv + vec2(-t.x, -t.y)).rgb);
+    float tt = luma(texture(inputImg, uv + vec2( 0.0,  t.y)).rgb);
+    float bb = luma(texture(inputImg, uv + vec2( 0.0, -t.y)).rgb);
+    float tr = luma(texture(inputImg, uv + vec2( t.x,  t.y)).rgb);
+    float  r = luma(texture(inputImg, uv + vec2( t.x,  0.0)).rgb);
+    float br = luma(texture(inputImg, uv + vec2( t.x, -t.y)).rgb);
+
+    float gx = -tl - 2.0 * l - bl + tr + 2.0 * r + br;
+    float gy = -tl - 2.0 * tt - tr + bl + 2.0 * bb + br;
+    float g = sqrt(gx * gx + gy * gy);
+    float m = smoothstep(threshold, threshold + 0.1, g);
+
+    vec4 base = texture(inputImg, uv);
+    vec4 bg = mix(bgColor, base, mistura);
+    vec3 col = mix(bg.rgb, edgeColor.rgb, m);
+    float a = mix(bg.a, edgeColor.a, m);
+    fragColor = vec4(col, a);
+}
+    ]]></shader>
+</effect>

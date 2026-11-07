@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DEEP GLOW — o plugin do After Effects (Plugin Everything, v1.5), medido (0.446.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "deep glow". O "Luz profunda" que já existia é um desenho próprio da
+  Nova; ESTE é a conta do plugin, para os presets do After Effects converterem com os valores deles.
+
+  DE ONDE VEIO (tools/deepglow/benchmark):
+
+  - Do plugin (os shaders estão em texto no arquivo dele): o limiar, canal a canal — abaixo dele o
+    valor vira c · (c / limiar) · suavidade —; a conta em luz linear (gama 2,2); o desfoque
+    gaussiano de cada nível, com sigma = 0,245 da meia largura; a exposição; e o Unmult.
+  - Medido no After Effects (124 renders): são SEIS níveis, cada um com metade do alcance do
+    anterior (o maior tem meia largura Radius / 2, sigma ≈ Radius / 8); os níveis se juntam em
+    "screen" (1 − Π (1 − nível)), e não em soma; a luz volta sobre a imagem em screen, com a fonte
+    pré-multiplicada vezes o Source Opacity; a borda é espelhada. Sem Unmult a saída fica OPACA
+    (alfa 1, mesmo onde a camada era transparente — é assim lá); com Unmult o alfa é
+    screen(alfa · Source Opacity, maior canal da luz).
+
+  O modelo fica a 0,01 nível (de 255) do AE num ponto de luz e a 0,3–2,0 em média numa imagem cheia
+  (o pior é a borda dura: o plugin desfoca em buffers reduzidos, com poucos passos).
+
+  COMO É FEITO AQUI: a luz desce uma pirâmide (1/2 ... 1/32). Os níveis largos são desfocados no
+  degrau da pirâmide em que o sigma deles fica entre 1,5 e 3 pontos (barato: o degrau é pequeno); os
+  níveis finos, na resolução cheia. Nos buffers (8 bits) a luz fica guardada como mantissa e
+  expoente (o halo de um ponto vale 0,0001: com gama só, sumia), e toda conta é feita em linear.
+
+  O QUE NÃO ENTROU: Blend Mode Add (só Screen, o padrão e o que os presets usam), Chromatic
+  Aberration, Tint, Aspect Ratio, o gama manual, o Dither (um ruído de menos de 1 nível) e a máscara.
+-->
+<effect
+    id="nova.effect.pedg"
+    name="Deep Glow (AE)"
+    name-en="Deep Glow (AE)"
+    desc="O Deep Glow do After Effects (plugin): halo em seis escalas, em luz linear, com Radius, Exposure, Threshold e Unmult."
+    desc-en="After Effects' Deep Glow (plugin): a six-scale halo in linear light, with Radius, Exposure, Threshold and Unmult."
+    category="stylize"
+    tags="deep glow,glow,bloom,brilho,luz,halo,neon,néon,pedg,plugin everything,after effects,unmult,cc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- A pirâmide da luz (com gama). Depois do desfoque, cada degrau guarda o nível que caiu nele. -->
+        <texture id="p1" src="buffer" scale="0.5" />
+        <texture id="p2" src="buffer" scale="0.25" />
+        <texture id="p3" src="buffer" scale="0.125" />
+        <texture id="p4" src="buffer" scale="0.0625" />
+        <texture id="p5" src="buffer" scale="0.03125" />
+        <!-- O desfoque horizontal de cada degrau. -->
+        <texture id="h1" src="buffer" scale="0.5" />
+        <texture id="h2" src="buffer" scale="0.25" />
+        <texture id="h3" src="buffer" scale="0.125" />
+        <texture id="h4" src="buffer" scale="0.0625" />
+        <texture id="h5" src="buffer" scale="0.03125" />
+        <!-- Na resolução cheia: o desfoque horizontal de um nível fino, e a junção deles (vai e vem). -->
+        <texture id="tf" src="buffer" />
+        <texture id="ja" src="buffer" />
+        <texture id="jb" src="buffer" />
+
+        <slider id="radius" label="Radius" default="250.0" min="0.0" max="2000.0" step="1.0" snap="250.0,500.0" />
+        <slider id="exposure" label="Exposure" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="threshold" group="Input" label="Threshold" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0,50.0" />
+        <slider id="thresholdSmooth" group="Input" label="Threshold Smooth" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0,50.0" />
+        <slider id="sourceOpacity" group="View" label="Source Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <switch id="unmult" group="View" label="Unmult" default="true" />
+    </params>
+
+    <preview amostra="foto" />
+
+    <passes>
+        <pass target="p1" /> <!-- 0..4: a pirâmide (o primeiro degrau já com o limiar, em luz) -->
+        <pass target="p2" />
+        <pass target="p3" />
+        <pass target="p4" />
+        <pass target="p5" />
+        <pass target="h1" /> <!-- 5..9: desfoque horizontal do nível de cada degrau -->
+        <pass target="h2" />
+        <pass target="h3" />
+        <pass target="h4" />
+        <pass target="h5" />
+        <pass target="p1" /> <!-- 10..14: desfoque vertical, de volta no degrau -->
+        <pass target="p2" />
+        <pass target="p3" />
+        <pass target="p4" />
+        <pass target="p5" />
+        <pass target="tf" /> <!-- 15..22: até quatro níveis finos na resolução cheia (horizontal; vertical + junção) -->
+        <pass target="ja" />
+        <pass target="tf" />
+        <pass target="jb" />
+        <pass target="tf" />
+        <pass target="ja" />
+        <pass target="tf" />
+        <pass target="jb" />
+        <pass />             <!-- 23: junta tudo, exposição, gama e a mistura com a imagem -->
+    </passes>
+
+    <shader><![CDATA[
+const int NIVEIS = 6;                 // medido: seis níveis, cada um com metade do alcance do anterior
+const int DEGRAUS = 5;                // a pirâmide vai até 1/32
+const float SIGMA = 0.24494897;       // do shader do plugin: sqrt(0,06) da meia largura do nível
+const float GAMA = 2.2222222;
+const int MEIA_MAX = 24;              // o desfoque soma até 49 pontos por passe
+
+vec3 paraLuz(vec3 g) { return pow(max(g, vec3(0.0)), vec3(GAMA)); }
+vec3 paraGama(vec3 l) { return pow(max(l, vec3(0.0)), vec3(1.0 / GAMA)); }
+
+/**
+ * A luz num buffer de 8 bits: o halo de um ponto pequeno vale 0,0001 ou menos, e 8 bits (mesmo com gama) não
+ * guardam isso. Vai então como mantissa e expoente: o maior canal fica entre 0,5 e 1 (guardado com raiz, para
+ * render mais) e o alfa leva a potência de dois — o erro é sempre uma fração do valor, claro ou escuro.
+ */
+vec4 codificar(vec3 l) {
+    l = max(l, vec3(0.0));
+    float m = max(l.r, max(l.g, l.b));
+    if (m < 1e-9) return vec4(0.0);
+    float e = clamp(ceil(log2(m)), -30.0, 2.0);
+    return vec4(sqrt(min(l / exp2(e), vec3(1.0))), (e + 32.0) / 255.0);
+}
+
+vec3 decodificar(vec4 t) {
+    if (t.a <= 0.0) return vec3(0.0);
+    return t.rgb * t.rgb * exp2(floor(t.a * 255.0 + 0.5) - 32.0);
+}
+
+/** A luz da fonte num pixel: pré-multiplicada, com o limiar do plugin (canal a canal), em linear, presa em 1. */
+vec3 entrada(ivec2 p) {
+    vec4 t = texelFetch(inputImg, p, 0);
+    vec3 c = max(t.rgb * t.a, vec3(0.0));
+    float lim = threshold / 100.0;
+    if (lim > 0.0) {
+        vec3 abaixo = (c / lim) * c * (thresholdSmooth / 100.0);
+        c = mix(c, abaixo, vec3(lessThan(c, vec3(lim))));
+    }
+    return min(paraLuz(c), vec3(1.0));
+}
+
+/** Espelha o índice na borda (medido: a borda do plugin é espelhada). */
+int espelhar(int i, int n) {
+    // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+ivec2 tamanhoDe(int d) {
+    if (d == 0) return textureSize(inputImg, 0);
+    if (d == 1) return textureSize(p1, 0);
+    if (d == 2) return textureSize(p2, 0);
+    if (d == 3) return textureSize(p3, 0);
+    if (d == 4) return textureSize(p4, 0);
+    return textureSize(p5, 0);
+}
+
+/** Um ponto do degrau `d` da pirâmide (0 = a própria entrada), em luz. */
+vec3 degrau(int d, ivec2 p) {
+    ivec2 T = tamanhoDe(d);
+    p = ivec2(espelhar(p.x, T.x), espelhar(p.y, T.y));
+    if (d == 0) return entrada(p);
+    if (d == 1) return decodificar(texelFetch(p1, p, 0));
+    if (d == 2) return decodificar(texelFetch(p2, p, 0));
+    if (d == 3) return decodificar(texelFetch(p3, p, 0));
+    if (d == 4) return decodificar(texelFetch(p4, p, 0));
+    return decodificar(texelFetch(p5, p, 0));
+}
+
+/** O tamanho do buffer do desfoque horizontal do degrau `d` (o mesmo do degrau). */
+ivec2 tamanhoDoH(int d) {
+    if (d == 0) return textureSize(tf, 0);
+    if (d == 1) return textureSize(h1, 0);
+    if (d == 2) return textureSize(h2, 0);
+    if (d == 3) return textureSize(h3, 0);
+    if (d == 4) return textureSize(h4, 0);
+    return textureSize(h5, 0);
+}
+
+vec3 horizontal(int d, ivec2 p) {
+    // No passe vertical o alvo é o próprio degrau (o motor não o entrega como textura): o tamanho vem do buffer do horizontal.
+    ivec2 T = tamanhoDoH(d);
+    p = ivec2(espelhar(p.x, T.x), espelhar(p.y, T.y));
+    if (d == 0) return decodificar(texelFetch(tf, p, 0));
+    if (d == 1) return decodificar(texelFetch(h1, p, 0));
+    if (d == 2) return decodificar(texelFetch(h2, p, 0));
+    if (d == 3) return decodificar(texelFetch(h3, p, 0));
+    if (d == 4) return decodificar(texelFetch(h4, p, 0));
+    return decodificar(texelFetch(h5, p, 0));
+}
+
+/** O degrau `d` lido num ponto qualquer da tela (uv), com interpolação bilinear feita em luz. */
+vec3 degrauEm(int d, vec2 uv) {
+    vec2 c = uv * vec2(tamanhoDe(d)) - 0.5;
+    ivec2 b = ivec2(floor(c));
+    vec2 f = c - vec2(b);
+    return mix(mix(degrau(d, b), degrau(d, b + ivec2(1, 0)), f.x), mix(degrau(d, b + ivec2(0, 1)), degrau(d, b + ivec2(1, 1)), f.x), f.y);
+}
+
+/** O sigma (em pixels do buffer cheio) do nível `k`: 0 é o mais largo. */
+float sigmaDoNivel(int k) {
+    return SIGMA * radius * acEscalaDePixel * 0.5 / exp2(float(k));
+}
+
+/** Em que degrau o nível mais largo é desfocado: aquele em que o sigma dele fica entre 1,5 e 3 pontos. */
+int degrauDoMaior() {
+    float s = sigmaDoNivel(0);
+    if (s < 3.0) return 0;
+    return clamp(int(floor(log2(s / 1.5))), 0, DEGRAUS);
+}
+
+/** Um passe do desfoque gaussiano no degrau `d`, com `sigma` em pontos desse degrau. */
+vec3 desfocar(int d, ivec2 p, float sigma, bool vertical) {
+    int meia = min(int(ceil(sigma * 3.0)), MEIA_MAX);
+    // Centro (i = 0, w = 1.0).
+    vec3 soma = vertical ? horizontal(d, p) : degrau(d, p);
+    float pesos = 1.0;
+    // Pesos incrementais: um único exp() por passada em vez de um por amostra.
+    // w_i = w_{i-1} · rk, com rk crescendo por r²: i=1→r, i=2→r⁴, i=3→r⁹, ...
+    float r  = exp(-0.5 / (sigma * sigma));
+    float r2 = r * r;
+    float rk = r;   // r^(2i-1) para i=1
+    float w  = 1.0;
+    for (int i = 1; i <= MEIA_MAX; i++) {
+        if (i > meia) break;
+        w  *= rk;
+        rk *= r2;
+        ivec2 qP = p + (vertical ? ivec2(0,  i) : ivec2( i, 0));
+        ivec2 qM = p + (vertical ? ivec2(0, -i) : ivec2(-i, 0));
+        soma  += w * ((vertical ? horizontal(d, qP) : degrau(d, qP))
+                    + (vertical ? horizontal(d, qM) : degrau(d, qM)));
+        pesos += 2.0 * w;
+    }
+    return soma / pesos;
+}
+
+/**
+ * O sigma, em pontos do degrau `d`, que falta aplicar para o nível `k`: a própria pirâmide já
+ * desfocou um pouco (cada descida de 2 x 2 soma 1/12 de ponto² de variância).
+ */
+float sigmaNoDegrau(int k, int d, ivec2 T) {
+    float ponto = float(textureSize(inputImg, 0).x) / float(T.x);
+    float s = sigmaDoNivel(k) / ponto;
+    float jaFeito = d == 0 ? 0.0 : (1.0 - exp2(-2.0 * float(d))) / 12.0;
+    return sqrt(max(s * s - jaFeito, 0.01));
+}
+
+void main() {
+    int m0 = degrauDoMaior();
+
+    // ---- 0..4: a pirâmide ----
+    if (acPass < 5) {
+        int d = acPass + 1;
+        if (d > m0) { fragColor = vec4(0.0); return; }
+        // A média da ÁREA que este ponto cobre no degrau de cima. Os buffers não têm exatamente a metade um do
+        // outro (o lado é arredondado para baixo): com dois pontos por eixo, uma linha inteira ficava de fora.
+        ivec2 Tc = tamanhoDe(d - 1);
+        vec2 razao = vec2(Tc) / acResolution;
+        vec2 de = floor(acScreenNorm * acResolution) * razao, ate = de + razao;
+        ivec2 b = ivec2(floor(de));
+        vec3 l = vec3(0.0);
+        float area = 0.0;
+        for (int j = 0; j < 4; j++) {
+            float wy = min(float(b.y + j + 1), ate.y) - max(float(b.y + j), de.y);
+            if (wy <= 0.0) continue;
+            for (int i = 0; i < 4; i++) {
+                float wx = min(float(b.x + i + 1), ate.x) - max(float(b.x + i), de.x);
+                if (wx <= 0.0) continue;
+                l += wx * wy * degrau(d - 1, b + ivec2(i, j));
+                area += wx * wy;
+            }
+        }
+        l /= max(area, 1e-6);
+        fragColor = codificar(l);
+        return;
+    }
+
+    // ---- 5..14: o nível de cada degrau (o degrau d recebe o nível m0 − d) ----
+    if (acPass < 15) {
+        bool vertical = acPass >= 10;
+        int d = (vertical ? acPass - 10 : acPass - 5) + 1;
+        if (d > m0) { fragColor = vec4(0.0); return; }
+        ivec2 T = vertical ? tamanhoDoH(d) : tamanhoDe(d);
+        ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+        fragColor = codificar(desfocar(d, p, sigmaNoDegrau(m0 - d, d, T), vertical));
+        return;
+    }
+
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+
+    // ---- 15..22: os níveis finos (de m0 em diante), na resolução cheia; menos de 1/4 de ponto de sigma não desfoca ----
+    if (acPass < 23) {
+        int vaga = (acPass - 15) / 2;
+        bool vertical = ((acPass - 15) & 1) == 1;
+        int k = m0 + vaga;
+        bool usa = k < NIVEIS && sigmaDoNivel(k) >= 0.25;
+        if (!vertical) {
+            fragColor = usa ? codificar(desfocar(0, p, sigmaDoNivel(k), false)) : vec4(0.0);
+            return;
+        }
+        // a junção até aqui (screen): quem escreve em `ja` lê `jb`, e vice-versa; a primeira começa do zero
+        vec3 antes = vaga == 0 ? vec3(0.0) : decodificar((vaga & 1) == 1 ? texelFetch(ja, p, 0) : texelFetch(jb, p, 0));
+        if (usa) antes = 1.0 - (1.0 - antes) * (1.0 - desfocar(0, p, sigmaDoNivel(k), true));
+        fragColor = codificar(antes);
+        return;
+    }
+
+    // ---- 23: junta os níveis, exposição, gama e a mistura com a imagem ----
+    vec3 falta = 1.0 - decodificar(texelFetch(jb, p, 0));          // os níveis finos desfocados
+    vec3 e = entrada(p);
+    for (int k = m0; k < NIVEIS; k++) {
+        if (sigmaDoNivel(k) < 0.25) falta *= 1.0 - e;              // nível fino demais: é a própria entrada
+    }
+    for (int d = 1; d <= DEGRAUS; d++) {
+        if (d <= m0) falta *= 1.0 - degrauEm(d, acScreenNorm);     // os níveis largos, cada um no seu degrau
+    }
+    // medido: os níveis se juntam em screen; a exposição vem depois, e o resultado volta do gama preso em 1
+    vec3 luz = min(paraGama((1.0 - falta) * exposure), vec3(1.0));
+
+    vec4 fonte = texelFetch(inputImg, p, 0);
+    float a = fonte.a * clamp(sourceOpacity / 100.0, 0.0, 1.0);
+    vec3 cor = 1.0 - (1.0 - fonte.rgb * a) * (1.0 - luz);          // screen sobre a fonte pré-multiplicada
+    // medido: sem Unmult a saída é opaca; com ele, o alfa é screen(alfa da fonte, maior canal da luz)
+    float alfa = unmult ? 1.0 - (1.0 - a) * (1.0 - max(luz.r, max(luz.g, luz.b))) : 1.0;
+    fragColor = alfa > 0.0 ? vec4(min(cor / alfa, vec3(1.0)), alfa) : vec4(0.0);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Distort_bend
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-distort-bend"
+    name="Effect Distort Bend (NV)"
+    name-en="Effect Distort Bend (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Distort_bend', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Distort_bend', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_pivot" type="integer" label="Pivot" default="3" min="0" max="3" step="1" />
+        <slider id="_amount" label="Amount" default="45" min="-180" max="180" step="1" />
+        <slider id="_offset" label="Offset" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_type" type="integer" label="Type" default="0" min="0" max="2" step="1" />
+        <point id="_tex_offset" label="Tex Offset" defaultX="0" defaultY="0" vetor="true" min="0" max="3" />
+        <point id="_tex_scale" label="Tex Scale" defaultX="1" defaultY="1" vetor="true" min="0" max="3" />
+        <slider id="_tex_angle" label="Tex Angle" default="0" min="0" max="360" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+bvec2 u_xlatb0;
+vec4 u_xlat1;
+ivec3 u_xlati1;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+bvec4 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+int u_xlati5;
+bvec2 u_xlatb5;
+vec4 u_xlat6;
+bool u_xlatb6;
+vec4 u_xlat7;
+vec4 u_xlat8;
+vec2 u_xlat9;
+vec3 u_xlat10;
+int u_xlati10;
+vec2 u_xlat11;
+bool u_xlatb11;
+float u_xlat14;
+bool u_xlatb14;
+vec2 u_xlat18;
+bvec2 u_xlatb18;
+vec2 u_xlat19;
+bvec2 u_xlatb19;
+float u_xlat20;
+float u_xlat23;
+bool u_xlatb23;
+bool u_xlatb27;
+float u_xlat28;
+bool u_xlatb28;
+float u_xlat29;
+int u_xlati29;
+float u_xlat30;
+bool u_xlatb30;
+float u_xlat32;
+bool u_xlatb32;
+int op_not(int value) { return -value - 1; }
+ivec2 op_not(ivec2 a) { a.x = op_not(a.x); a.y = op_not(a.y); return a; }
+ivec3 op_not(ivec3 a) { a.x = op_not(a.x); a.y = op_not(a.y); a.z = op_not(a.z); return a; }
+ivec4 op_not(ivec4 a) { a.x = op_not(a.x); a.y = op_not(a.y); a.z = op_not(a.z); a.w = op_not(a.w); return a; }
+
+void main()
+{
+    u_xlat0.x = _tex_angle * 0.0174532998;
+    u_xlat1.x = cos(u_xlat0.x);
+    u_xlat0.x = sin(u_xlat0.x);
+    u_xlat2.x = (-u_xlat0.x);
+    u_xlat9.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat9.xy = u_xlat9.xy / vec2(_tex_scale.x, _tex_scale.y);
+    u_xlat2.y = u_xlat1.x;
+    u_xlat2.z = u_xlat0.x;
+    u_xlat10.x = dot(u_xlat9.xy, u_xlat2.yz);
+    u_xlat10.y = dot(u_xlat9.xy, u_xlat2.xy);
+    u_xlat0.xy = u_xlat10.xy + _tex_offset.xy;
+    u_xlat0.yz = u_xlat0.xy + vec2(0.5, 0.5);
+    u_xlati1.xyz = ivec3(uvec3(equal(ivec4(int(_pivot)), ivec4(1, 2, 3, 0)).xyz) * 0xFFFFFFFFu);
+    u_xlat2.z = intBitsToFloat(op_not(u_xlati1.x));
+    u_xlat3.x = float(0.5);
+    u_xlat3.y = float(0.0);
+    u_xlat3.w = (-_amount);
+    u_xlat4.x = 0.0;
+    u_xlat4.z = _amount;
+    u_xlat3.xyz = (u_xlati1.z != 0) ? u_xlat3.xyw : u_xlat4.xxz;
+    u_xlat4.y = float(0.5);
+    u_xlat4.z = float(0.0);
+    u_xlat4.w = float(0.5);
+    u_xlat4.x = _offset * -0.99000001 + 1.0;
+    u_xlat5.x = float(0.5);
+    u_xlat5.z = float(0.5);
+    u_xlat5.w = float(1.0);
+    u_xlat5.y = _offset * 0.99000001;
+    u_xlat6 = (u_xlati1.y != 0) ? u_xlat4.wxwz : u_xlat5;
+    u_xlat7.x = float(0.5);
+    u_xlat7.y = float(1.0);
+    u_xlat7.w = _amount;
+    u_xlat10.xyz = (u_xlati1.y != 0) ? u_xlat7.xyw : u_xlat3.xyz;
+    u_xlat3.x = float(1.0);
+    u_xlat3.y = float(0.5);
+    u_xlat3.w = (-_amount);
+    u_xlat2.xyw = (u_xlati1.x != 0) ? u_xlat3.xyw : u_xlat10.xyz;
+    u_xlat1 = (u_xlati1.x != 0) ? u_xlat4 : u_xlat6;
+    u_xlat3.yw = (int(_pivot) != 0) ? u_xlat1.xy : u_xlat5.yz;
+    u_xlat1.xy = (int(_pivot) != 0) ? u_xlat1.zw : vec2(1.0, 0.5);
+    u_xlat4.x = float(0.0);
+    u_xlat4.y = float(0.5);
+    u_xlat4.w = _amount;
+    u_xlat2 = (int(_pivot) != 0) ? u_xlat2.wxyz : u_xlat4.wxyx;
+    u_xlat1.xy = (-u_xlat3.yw) + u_xlat1.xy;
+    u_xlat19.xy = u_xlat0.yz + (-u_xlat3.yw);
+    u_xlat19.x = dot(u_xlat1.xy, u_xlat19.xy);
+    u_xlat4 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb19.x = u_xlat19.x<0.0;
+    if(u_xlatb19.x){
+        u_xlatb19.x = int(_type)==0;
+        u_xlatb28 = 0.0>=_offset;
+        u_xlatb19.x = u_xlatb28 || u_xlatb19.x;
+        if(u_xlatb19.x){
+            u_xlatb19.xy = lessThan(u_xlat0.yzyz, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+            u_xlatb5.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.yzyy).xy;
+            u_xlatb19.x = u_xlatb19.x || u_xlatb5.x;
+            u_xlatb19.x = u_xlatb19.y || u_xlatb19.x;
+            u_xlatb19.x = u_xlatb5.y || u_xlatb19.x;
+            u_xlat5 = texture(inputImg, u_xlat0.yz);
+            u_xlat19.x = (u_xlatb19.x) ? 0.0 : 1.0;
+            u_xlat5 = u_xlat19.xxxx * u_xlat5;
+            if(int(_use_inner_mask) != 0) {
+                u_xlatb19.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_b_clip_mask)), ivec4(1, 1, 1, 1)).xy;
+                u_xlat6 = (u_xlatb19.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat5;
+                u_xlat7 = texture(Mask, acScreenNorm.xy);
+                u_xlat8 = (-u_xlat7) + vec4(1.0, 1.0, 1.0, 1.0);
+                u_xlat8 = u_xlat4 * u_xlat8;
+                u_xlat6 = u_xlat6 * u_xlat7 + u_xlat8;
+                u_xlat19.x = u_xlat7.x * u_xlat6.w;
+                fragColor.w = (u_xlatb19.y) ? u_xlat19.x : u_xlat6.w;
+                fragColor.xyz = u_xlat6.xyz;
+            } else {
+                fragColor = u_xlat5;
+            }
+            return;
+        } else {
+            u_xlat1.xy = (-u_xlat3.yw) + u_xlat2.yz;
+            u_xlatb19.x = int(_type)==2;
+            u_xlat2.x = (u_xlatb19.x) ? (-u_xlat2.x) : u_xlat2.x;
+        }
+    }
+    u_xlat19.x = u_xlat2.x * 0.00872664619;
+    u_xlat1.x = dot(u_xlat1.xy, u_xlat1.xy);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat1.x = u_xlat19.x / u_xlat1.x;
+    if(uint(floatBitsToUint(u_xlat2.w)) != uint(0)) {
+        u_xlat10.xy = _resolution.xy / _resolution.yx;
+        u_xlat0.x = u_xlat0.y * u_xlat10.x;
+        u_xlat3.z = u_xlat10.x * u_xlat3.y;
+        u_xlat10.xz = u_xlat0.xz + (-u_xlat3.zw);
+        u_xlatb0.x = abs(u_xlat1.x)<0.00100000005;
+        u_xlat2.x = u_xlat10.z;
+        u_xlat2.x = clamp(u_xlat2.x, 0.0, 1.0);
+        u_xlat2.x = u_xlat10.z + (-u_xlat2.x);
+        u_xlat2.y = (u_xlatb0.x) ? u_xlat2.x : u_xlat10.z;
+        u_xlat20 = 0.5 / u_xlat1.x;
+        u_xlat2.x = u_xlat10.x + (-u_xlat20);
+        u_xlati29 = int((0.0<u_xlat1.x) ? 0xFFFFFFFFu : uint(0));
+        u_xlati5 = int((u_xlat1.x<0.0) ? 0xFFFFFFFFu : uint(0));
+        u_xlati29 = (-u_xlati29) + u_xlati5;
+        u_xlat29 = float(u_xlati29);
+        u_xlat5.x = dot(u_xlat2.xy, u_xlat2.xy);
+        u_xlat5.x = sqrt(u_xlat5.x);
+        u_xlat5.x = abs(u_xlat20) + (-u_xlat5.x);
+        u_xlat11.x = u_xlat2.y * u_xlat29;
+        u_xlat2.x = u_xlat2.x * (-u_xlat29);
+        u_xlat14 = min(abs(u_xlat2.x), abs(u_xlat11.x));
+        u_xlat23 = max(abs(u_xlat2.x), abs(u_xlat11.x));
+        u_xlat23 = float(1.0) / u_xlat23;
+        u_xlat14 = u_xlat23 * u_xlat14;
+        u_xlat23 = u_xlat14 * u_xlat14;
+        u_xlat32 = u_xlat23 * 0.0208350997 + -0.0851330012;
+        u_xlat32 = u_xlat23 * u_xlat32 + 0.180141002;
+        u_xlat32 = u_xlat23 * u_xlat32 + -0.330299497;
+        u_xlat23 = u_xlat23 * u_xlat32 + 0.999866009;
+        u_xlat32 = u_xlat23 * u_xlat14;
+        u_xlatb6 = abs(u_xlat2.x)<abs(u_xlat11.x);
+        u_xlat32 = u_xlat32 * -2.0 + 1.57079637;
+        u_xlat32 = u_xlatb6 ? u_xlat32 : float(0.0);
+        u_xlat14 = u_xlat14 * u_xlat23 + u_xlat32;
+        u_xlatb23 = u_xlat2.x<(-u_xlat2.x);
+        u_xlat23 = u_xlatb23 ? -3.14159274 : float(0.0);
+        u_xlat14 = u_xlat23 + u_xlat14;
+        u_xlat23 = min(u_xlat2.x, u_xlat11.x);
+        u_xlat2.x = max(u_xlat2.x, u_xlat11.x);
+        u_xlatb11 = u_xlat23<(-u_xlat23);
+        u_xlatb2.x = u_xlat2.x>=(-u_xlat2.x);
+        u_xlatb2.x = u_xlatb2.x && u_xlatb11;
+        u_xlat2.x = (u_xlatb2.x) ? (-u_xlat14) : u_xlat14;
+        u_xlat11.y = u_xlat2.x * u_xlat20;
+        u_xlat11.x = u_xlat29 * u_xlat5.x;
+        u_xlat2.yz = (u_xlatb0.x) ? u_xlat10.xz : u_xlat11.xy;
+        u_xlat2.x = u_xlat10.y * u_xlat2.y;
+        u_xlat3.x = u_xlat10.y * u_xlat3.z;
+        u_xlat10.xy = u_xlat3.xw + u_xlat2.xz;
+        u_xlatb2.xy = greaterThanEqual(u_xlat10.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+        u_xlatb2.zw = greaterThanEqual(vec4(0.0, 0.0, 1.0, 1.0), u_xlat10.xxxy).zw;
+        u_xlat2.x = u_xlatb2.x ? float(1.0) : 0.0;
+        u_xlat2.y = u_xlatb2.y ? float(1.0) : 0.0;
+        u_xlat2.z = u_xlatb2.z ? float(1.0) : 0.0;
+        u_xlat2.w = u_xlatb2.w ? float(1.0) : 0.0;
+;
+        u_xlat0.x = u_xlat2.z * u_xlat2.x;
+        u_xlat0.x = u_xlat2.y * u_xlat0.x;
+        u_xlat0.x = u_xlat2.w * u_xlat0.x;
+        u_xlat2 = texture(inputImg, u_xlat10.xy);
+        u_xlat2 = u_xlat0.xxxx * u_xlat2;
+    } else {
+        u_xlat10.xy = _resolution.yx / _resolution.xy;
+        u_xlat0.w = u_xlat0.z * u_xlat10.x;
+        u_xlat3.x = u_xlat10.x * u_xlat3.w;
+        u_xlat0.xy = u_xlat0.yw + (-u_xlat3.yx);
+        u_xlatb27 = abs(u_xlat1.x)<0.00100000005;
+        u_xlat10.x = u_xlat0.y;
+        u_xlat10.x = clamp(u_xlat10.x, 0.0, 1.0);
+        u_xlat10.x = u_xlat0.y + (-u_xlat10.x);
+        u_xlat10.x = (u_xlatb27) ? u_xlat10.x : u_xlat0.y;
+        u_xlat28 = 0.5 / u_xlat1.x;
+        u_xlat0.z = (-u_xlat28) + u_xlat10.x;
+        u_xlati10 = int((0.0<u_xlat1.x) ? 0xFFFFFFFFu : uint(0));
+        u_xlati1.x = int((u_xlat1.x<0.0) ? 0xFFFFFFFFu : uint(0));
+        u_xlati1.x = (-u_xlati10) + u_xlati1.x;
+        u_xlat1.x = float(u_xlati1.x);
+        u_xlat10.x = dot(u_xlat0.xz, u_xlat0.xz);
+        u_xlat10.x = sqrt(u_xlat10.x);
+        u_xlat10.x = (-u_xlat10.x) + abs(u_xlat28);
+        u_xlat30 = u_xlat0.x * u_xlat1.x;
+        u_xlat18.x = u_xlat0.z * (-u_xlat1.x);
+        u_xlat5.x = min(abs(u_xlat18.x), abs(u_xlat30));
+        u_xlat14 = max(abs(u_xlat18.x), abs(u_xlat30));
+        u_xlat14 = float(1.0) / u_xlat14;
+        u_xlat5.x = u_xlat14 * u_xlat5.x;
+        u_xlat14 = u_xlat5.x * u_xlat5.x;
+        u_xlat23 = u_xlat14 * 0.0208350997 + -0.0851330012;
+        u_xlat23 = u_xlat14 * u_xlat23 + 0.180141002;
+        u_xlat23 = u_xlat14 * u_xlat23 + -0.330299497;
+        u_xlat14 = u_xlat14 * u_xlat23 + 0.999866009;
+        u_xlat23 = u_xlat14 * u_xlat5.x;
+        u_xlatb32 = abs(u_xlat18.x)<abs(u_xlat30);
+        u_xlat23 = u_xlat23 * -2.0 + 1.57079637;
+        u_xlat23 = u_xlatb32 ? u_xlat23 : float(0.0);
+        u_xlat5.x = u_xlat5.x * u_xlat14 + u_xlat23;
+        u_xlatb14 = u_xlat18.x<(-u_xlat18.x);
+        u_xlat14 = u_xlatb14 ? -3.14159274 : float(0.0);
+        u_xlat5.x = u_xlat14 + u_xlat5.x;
+        u_xlat14 = min(u_xlat18.x, u_xlat30);
+        u_xlat18.x = max(u_xlat18.x, u_xlat30);
+        u_xlatb30 = u_xlat14<(-u_xlat14);
+        u_xlatb18.x = u_xlat18.x>=(-u_xlat18.x);
+        u_xlatb18.x = u_xlatb18.x && u_xlatb30;
+        u_xlat18.x = (u_xlatb18.x) ? (-u_xlat5.x) : u_xlat5.x;
+        u_xlat5.x = u_xlat18.x * u_xlat28;
+        u_xlat5.y = u_xlat1.x * u_xlat10.x;
+        u_xlat0.xy = (bool(u_xlatb27)) ? u_xlat0.xy : u_xlat5.xy;
+        u_xlat0.z = u_xlat10.y * u_xlat0.y;
+        u_xlat3.z = u_xlat10.y * u_xlat3.x;
+        u_xlat0.xy = u_xlat0.xz + u_xlat3.yz;
+        u_xlatb18.xy = greaterThanEqual(u_xlat0.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+        u_xlat18.x = u_xlatb18.x ? float(1.0) : 0.0;
+        u_xlat18.y = u_xlatb18.y ? float(1.0) : 0.0;
+;
+        u_xlatb1.xy = greaterThanEqual(vec4(1.0, 1.0, 0.0, 0.0), u_xlat0.xyxx).xy;
+        u_xlat1.x = u_xlatb1.x ? float(1.0) : 0.0;
+        u_xlat1.y = u_xlatb1.y ? float(1.0) : 0.0;
+;
+        u_xlat18.x = u_xlat18.x * u_xlat1.x;
+        u_xlat18.x = u_xlat18.y * u_xlat18.x;
+        u_xlat18.x = u_xlat1.y * u_xlat18.x;
+        u_xlat1 = texture(inputImg, u_xlat0.xy);
+        u_xlat2 = u_xlat18.xxxx * u_xlat1;
+    }
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb0.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat1 = (u_xlatb0.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat2;
+        u_xlat3 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat3) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat4 = u_xlat4 * u_xlat5;
+        u_xlat1 = u_xlat1 * u_xlat3 + u_xlat4;
+        u_xlat0.x = u_xlat3.x * u_xlat1.w;
+        fragColor.w = (u_xlatb0.y) ? u_xlat0.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat2;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

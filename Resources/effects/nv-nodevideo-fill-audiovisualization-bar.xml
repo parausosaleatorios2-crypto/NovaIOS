@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Fill_AudioVisualization_bar
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- Fora do catálogo (0.910.0): o shader precisa de _bands (o espectro do áudio), que o Node mandava pelo C# e o conversor
+     não trouxe. Não compila em GPU nenhuma; para voltar, portar essa parte. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-fill-audiovisualization-bar"
+    name="Fill Audiovisualization Bar (NV)"
+    name-en="Fill Audiovisualization Bar (NV)"
+    desc="NodeVideo effect 'NodeVideo/Fill_AudioVisualization_bar', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Fill_AudioVisualization_bar', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <point id="_scale" label="Scale" defaultX="0.5" defaultY="0.5" />
+        <slider id="_invert" type="integer" label="Invert" default="0" min="0" max="10" step="1" />
+        <slider id="_band_count" type="integer" label="Band Count" default="4" min="1" max="32" step="1" />
+        <slider id="_offset" label="Offset" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <color id="_color1" label="Color1" default="#FFFFFFFF" />
+        <color id="_color2" label="Color2" default="#FFFFFFFF" />
+        <color id="_color3" label="Color3" default="#FFFFFFFF" />
+        <color id="_color4" label="Color4" default="#FFFFFFFF" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+uint u_xlatu6;
+vec2 u_xlat12;
+float u_xlat18;
+float u_xlat19;
+void main()
+{
+    u_xlat0.x = acScreenNorm.y * 2.0 + -1.0;
+    u_xlat0.x = u_xlat0.x + (-_offset);
+    u_xlat6.x = float(_band_count);
+    u_xlat12.x = u_xlat6.x * acScreenNorm.x;
+    u_xlat18 = floor(u_xlat12.x);
+    u_xlat12.x = fract(u_xlat12.x);
+    u_xlat6.x = u_xlat6.x * 0.0322580636;
+    u_xlat6.x = u_xlat18 / u_xlat6.x;
+    u_xlat6.x = max(u_xlat6.x, 0.0);
+    u_xlat6.x = min(u_xlat6.x, 30.0);
+    u_xlatu6 = uint(u_xlat6.x);
+    u_xlat18 = 3.0 * _bands[int(u_xlatu6)];
+    u_xlat18 = clamp(u_xlat18, 0.0, 1.0);
+    u_xlat1.xyz = (-_color1.xyz) + _color2.xyz;
+    u_xlat1.xyz = vec3(u_xlat18) * u_xlat1.xyz + _color1.xyz;
+    u_xlat2.xy = vec2(-0.333333343, -0.666666687) + vec2(_bands[int(u_xlatu6)]);
+    u_xlat2.xy = u_xlat2.xy * vec2(3.0, 3.0);
+    u_xlat2.xy = clamp(u_xlat2.xy, 0.0, 1.0);
+    u_xlat3.xyz = (-u_xlat1.xyz) + _color3.xyz;
+    u_xlat1.xyz = u_xlat2.xxx * u_xlat3.xyz + u_xlat1.xyz;
+    u_xlat2.xzw = (-u_xlat1.xyz) + _color4.xyz;
+    u_xlat1.xyz = u_xlat2.yyy * u_xlat2.xzw + u_xlat1.xyz;
+    u_xlat2 = (int(_invert) != 0) ? vec4(-1.0, -0.00999999978, -100.0, 100.0) : vec4(1.0, 0.00999999978, 100.0, -100.0);
+    u_xlat6.xz = vec2(_scale.x, _scale.y) * vec2(_bands[int(u_xlatu6)]);
+    u_xlat6.xz = u_xlat2.xx * u_xlat6.xz;
+    u_xlat6.x = (-u_xlat6.x) * 1.5 + u_xlat0.x;
+    u_xlat6.x = u_xlat2.z * u_xlat6.x;
+    u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+    u_xlat19 = u_xlat6.x * -2.0 + 3.0;
+    u_xlat6.x = u_xlat6.x * u_xlat6.x;
+    u_xlat3.w = (-u_xlat19) * u_xlat6.x + 1.0;
+    u_xlat3.xyz = u_xlat1.xyz * u_xlat3.www;
+    u_xlat6.x = u_xlat6.z * 1.5 + u_xlat0.x;
+    u_xlat6.x = u_xlat2.w * u_xlat6.x;
+    u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+    u_xlat18 = u_xlat6.x * -2.0 + 3.0;
+    u_xlat6.x = u_xlat6.x * u_xlat6.x;
+    u_xlat4.w = (-u_xlat18) * u_xlat6.x + 1.0;
+    u_xlat6.xz = (int(_invert) != 0) ? vec2(-0.5, -50.0) : vec2(0.5, 50.0);
+    u_xlat6.x = u_xlat6.x + u_xlat0.x;
+    u_xlat6.x = u_xlat2.x * u_xlat6.x;
+    u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+    u_xlat19 = u_xlat6.x * -2.0 + 3.0;
+    u_xlat6.x = u_xlat6.x * u_xlat6.x;
+    u_xlat6.x = u_xlat6.x * u_xlat19;
+    u_xlat1.xyz = u_xlat6.xxx * u_xlat1.xyz;
+    u_xlat4.xyz = u_xlat1.xyz * u_xlat4.www;
+    u_xlat0.x = u_xlat0.x + u_xlat2.y;
+    u_xlat0.x = u_xlat6.z * u_xlat0.x;
+    u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+    u_xlat6.x = u_xlat0.x * -2.0 + 3.0;
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat0.x = u_xlat0.x * u_xlat6.x;
+    u_xlat1 = u_xlat3 + (-u_xlat4);
+    u_xlat1 = u_xlat0.xxxx * u_xlat1 + u_xlat4;
+    u_xlat0.xy = u_xlat12.xx + vec2(-0.125, -0.875);
+    u_xlat0.xy = u_xlat0.xy * vec2(4.0, -4.0);
+    u_xlat0.xy = clamp(u_xlat0.xy, 0.0, 1.0);
+    u_xlat12.xy = u_xlat0.xy * vec2(-2.0, -2.0) + vec2(3.0, 3.0);
+    u_xlat0.xy = u_xlat0.xy * u_xlat0.xy;
+    u_xlat0.xy = u_xlat0.xy * u_xlat12.xy;
+    u_xlat1 = u_xlat0.xxxx * u_xlat1;
+    u_xlat0 = u_xlat0.yyyy * u_xlat1;
+    u_xlat0 = clamp(u_xlat0, 0.0, 1.0);
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb2.x = _blend_mode==1;
+    u_xlat3 = u_xlat0 * u_xlat1;
+    u_xlat4.xyz = u_xlat0.xyz + u_xlat1.xyz;
+    u_xlat4.w = u_xlat1.w;
+    u_xlat2 = (u_xlatb2.x) ? u_xlat3 : u_xlat4;
+    u_xlat3.xyz = u_xlat0.xyz;
+    u_xlat0 = (_blend_mode != 0) ? u_xlat2 : u_xlat3;
+    if(_use_inner_mask != 0) {
+        u_xlatb2.xy = equal(ivec4(_show_inner_mask, _b_clip_mask, _show_inner_mask, _show_inner_mask), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

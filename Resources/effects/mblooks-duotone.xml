@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Duotone (`duto`, vídeo): `ColorKernel_Duotone` — o modo Color (com o "máx" do kernel que ignora o
+  verde) e a mistura pela curva da luminosidade (`0x1803f0de0`). Até 1 nível em 0,01% dos valores.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.duotone"
+    name="Looks: Duotone"
+    name-en="Looks: Duotone"
+    desc="A ferramenta Duotone do Magic Bullet Looks: uma cor nas altas e outra nas sombras, com a luminância do pixel."
+    desc-en="Magic Bullet Looks' Duotone tool: one color in the highlights and another in the shadows, keeping the pixel's luminance."
+    category="looks"
+    stage="mblooks"
+    looks="duto"
+    tags="magic bullet,looks,red giant,duotone,duas cores,tint">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="highlightR" label="Highlight R" default="1.0" min="0.0" max="2.5" step="0.001" />
+        <slider id="highlightG" label="Highlight G" default="0.8" min="0.0" max="2.5" step="0.001" />
+        <slider id="highlightB" label="Highlight B" default="0.4" min="0.0" max="2.5" step="0.001" />
+        <slider id="highlightTint" label="Highlight Tint" default="10.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="shadowR" label="Shadow R" default="0.4" min="0.0" max="2.5" step="0.001" />
+        <slider id="shadowG" label="Shadow G" default="0.7" min="0.0" max="2.5" step="0.001" />
+        <slider id="shadowB" label="Shadow B" default="1.0" min="0.0" max="2.5" step="0.001" />
+        <slider id="shadowTint" label="Shadow Tint" default="25.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="balance" label="Balance" default="65.0" min="0.0" max="100.0" step="0.1" />
+    </params>
+
+    <!-- Na vitrine, o tom padrão é fraco: as duas cores bem mais fortes. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="highlightTint" value="70.0" />
+        <set param="shadowTint" value="80.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

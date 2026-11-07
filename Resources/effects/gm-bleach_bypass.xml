@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.bleach_bypass" name="Bleach Bypass" desc="Silver-retention look: desaturated, crushed and metallic. The classic war-film grade." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/bleach_bypass.png"
+        tags="color,grade,desaturate,contrast,film" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Grade" />
+<spinner id="desat" default="0.55" min="0.0" max="1.0" step="0.01" label="Desaturation" />
+<spinner id="contrast" default="1.25" min="0.5" max="3.0" step="0.01" label="Contrast" />
+<spinner id="lift" default="0.0" min="-0.2" max="0.3" step="0.01" label="Lift" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  vec3 base = mix(c, vec3(l), desat);
+  vec3 bc = clamp((base - 0.5) * contrast + 0.5 + lift, 0.0, 1.0);
+  bc = bc * bc * (3.0 - 2.0 * bc);            // soft S-curve
+  vec3 col = mix(c, bc, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

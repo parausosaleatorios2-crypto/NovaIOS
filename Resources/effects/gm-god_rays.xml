@@ -1,0 +1,39 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.god_rays" name="God Rays" desc="Radial light streaks pulled from the bright areas toward a light position." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/god_rays.png"
+        tags="light,rays,godrays,volumetric" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Light Position" />
+<spinner id="centerX" default="0.50" min="0.0" max="1.0" step="0.01" label="Light X" />
+<spinner id="centerY" default="0.30" min="0.0" max="1.0" step="0.01" label="Light Y" />
+<spinner id="intensity" default="0.9" min="0.0" max="3.0" step="0.01" label="Intensity" />
+<spinner id="decay" default="0.92" min="0.5" max="1.0" step="0.005" label="Decay" />
+<color id="rayColor" default="#FFFFE6B0" label="Ray Colour" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 24;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec2 light = vec2(centerX, centerY);
+  vec2 delta = (uv - light) / float(TAPS);
+  vec2 p = uv;
+  float w = 1.0;
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < TAPS; i++){
+    p -= delta;
+    vec4 s = texture2DCv(inputImg.texture, p);
+    acc += (s.rgb / max(s.a, 1e-4)) * w;
+    w *= decay;
+  }
+  acc /= float(TAPS);
+  vec3 col = c + acc * rayColor.rgb * intensity * mixAmt;
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

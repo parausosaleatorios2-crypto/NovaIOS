@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O `com.alightcreative.effect.movealongpath` do Alight Motion (deprecated lá, fora do catálogo aqui): o Mover ao longo do
+  caminho dos projetos feitos antes da versão atual dele (0.827.0; ver `am-move-along-path.xml` e
+  `model/MoverPeloCaminho.kt`). Diferenças lidas do bytecode (`MoveAlongPathKt.script_moveAlongPath`):
+  o caminho é SEMPRE o da camada abaixo (a mãe não conta e a camada continua seguindo a mãe), o caminho é lido no
+  tempo normalizado DESTA camada, o pivô não é descontado — a âncora fica deslocada do ponto pelo próprio valor
+  dela — e o giro lido da DIREÇÃO do caminho direto (90° a mais que o atual).
+-->
+<effect
+    id="nova.effect.am-move-along-path-legacy"
+    name="Mover ao longo do caminho (antigo)"
+    name-en="Move Along Path (legacy)"
+    desc="O Mover ao longo do caminho antigo do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Move Along Path, from projects made before its current version."
+    category="distort"
+    stage="transform"
+    catalog="false"
+    tags="mover,caminho,move along path,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="progress" label="Progresso" default="0.0" min="0.0" max="1.0" step="0.001" type="percent"
+            ticks="-1.0,0.0,1.0" />
+        <spinner id="angle" label="Orientação" default="0.0" min="-1800.0" max="1800.0" step="1" type="angle"
+            ticks="-90,-45,0,45,90" />
+        <switch id="tangent" label="Tangente" default="true" />
+        <spinner id="inset" label="Inserção/Desvio" default="0.0" min="-500.0" max="500.0" step="1" ticks="0.0" />
+        <point id="offset" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

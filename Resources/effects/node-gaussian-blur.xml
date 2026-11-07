@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESFOQUE GAUSSIANO (NODE) — o Gaussian Blur do Node Video, conta por conta (0.626.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "faça agora desfoque gaussiano 100% igual o node video", da série do Node depois do
+  Mapa de deslocamento (0.623.0) e da Cor de preenchimento (0.625.0). É o desfoque que o mapa do usuário do "buraco
+  negro" usa (Gaussian Blur 3,37 sobre um Fill Color branco). Lido do APK 9.0.2 descompactado (o Node é Unity 6; nada
+  do Node entra no repositório): o shader `NodeVideo/Effect/gaussian_blur_auto` (5 programas GLSL ES 3.00, todos
+  `Blend One Zero`), a definição `_GaussianBlur` (um `AEParam`: `_amount`, Float, 0 a 5, preso, partida 0,3) e os
+  rótulos do TextAsset `param` ("Desfoque gaussiano", "Quantidade"). O código que roda os passes é o
+  `NodeVideo.AE.AEGaussianBlur.Render` do il2cpp. Conferido rodando os programas do próprio Node na GPU do PC, montados
+  como o Unity dele os monta, ao lado deste (`tools/nodegauss`).
+
+  O QUE O NODE FAZ (e este repete):
+
+  1. Quantidade abaixo de 0,0001: `CommandBuffer.Blit` da entrada para a saída, e mais nada — a camada passa como está.
+  2. Senão: `_blur_amount` = Quantidade, `_resolution` = o tamanho da COMPOSIÇÃO (`Config.GetRes`), e três RTs
+     temporários de METADE do tamanho (a divisão inteira, para baixo): `RenderManager.GetTempRT` →
+     `GetTemporaryRT(id, w/2, h/2, 16, Bilinear, ARGB32, Default)`. Num projeto Unity em espaço LINEAR (o do Node,
+     `m_ActiveColorSpace` = 1) o ARGB32 "Default" é sRGB de 8 bits: a GPU decodifica ao ler (o filtro linear mistura
+     já em luz linear) e codifica ao escrever. A camada que chega é o RT dela, do mesmo jeito: pré-multiplicada em luz
+     linear, em sRGB de 8 bits.
+  3. Os passes 0, 1, 2 e 4 do shader (o 3 não é usado): o 0 desce à metade (uma leitura no meio de 2 × 2); o 1 e o 2
+     são a gaussiana na horizontal e na vertical, na metade — a MESMA conta do Desfoque gaussiano (AM)
+     (`am-gaussian-blur.xml`): meio-lado = Quantidade × 0,0475 × a diagonal da composição, em pixels da metade, sigma
+     = meio-lado × 0,4660, os pesos tirados um do outro por multiplicação, dois vizinhos numa leitura só, a posição
+     presa a 0..1; o 4 volta ao tamanho cheio pelo filtro linear (a "máscara interna" dele é do editor de máscara do
+     Node e fica desligada).
+
+  AQUI: o motor ganhou o buffer sRGB (`format="srgb"`, `TextureParam.srgb` → `GL_SRGB8_ALPHA8`), então os buffers
+  do meio são os do Node de verdade — a decodificação, o filtro em luz linear e a codificação são os da própria GPU,
+  como o Unity faz no celular. Os passes 2, 3 e 4 são os programas 1, 2 e 4 do Node copiados conta por conta (os
+  nomes de variável são os do Unity, para comparar linha a linha). O que o Nova acrescenta:
+  - o passe 0 guarda a camada (reta, em 8 bits) como o RT do Node a guarda — a cor linear vezes o alfa, em sRGB;
+  - o passe 4 escreve num buffer sRGB, como o RT de saída do Node, e o 5 lê os bytes de volta e passa para o alfa reto
+    do Nova (a cor linear ÷ o alfa, de volta ao sRGB): no opaco, os próprios bytes do Node.
+
+  DE PÉ (0.627.0): os RTs do meio ficam SEMPRE como os do Node (a linha 0 é a base). Na tela a entrada do Nova já
+  chega assim (`acEntradaDePe` = 1); num buffer de camada (a linha 0 é o topo) só o passe 0 e o 5 espelham a linha,
+  pelo `texelFetch` (exato), e os programas do Node rodam com o UV da tela. A 0.626 virava o passo do passe vertical;
+  em tamanho ímpar a metade do Node e o filtro linear da GPU (que quantiza a fração do texel em 1/256, de um jeito que
+  não é simétrico) não espelham — na bancada, 0,14 % dos pixels opacos saíam 1 nível diferentes no buffer de camada.
+
+  NA TELA (`stage="screen"`), como no Node: os efeitos dele rodam depois do Transform, no RT do tamanho da
+  composição. A prévia parada fica na resolução cheia (`screen-scale="full"`), pelo mesmo motivo do AM: a descida à
+  metade é um desfoque de 2 px da resolução em que o efeito roda.
+
+  O que não fica igual (o mesmo da Cor de preenchimento (Node)):
+  - o Node COMPÕE em luz linear e o Nova em gama: onde o desfoque deixa alfa parcial (a borda borrada de um recorte)
+    sobre outra camada, a mistura com o fundo difere. Uma camada que enche a tela (vídeo, foto) não tem alfa parcial
+    e sai igual;
+  - a mídia do Node entra no RT dela com `Blend SrcAlpha Zero` (o alfa parcial da própria imagem vai ao quadrado);
+    aqui a camada chega como o Nova a guarda;
+  - o arredondamento do sRGB e do filtro é o da GPU de cada aparelho, no Node também: no PC (AMD) os dois passam pelo
+    mesmo hardware e dão o mesmo byte; o celular arredonda do jeito dele, igual para os dois apps.
+-->
+<effect
+    id="nova.effect.node-gaussian-blur"
+    name="Desfoque gaussiano (Node)"
+    name-en="Gaussian Blur (Node Video)"
+    desc="Desfoque gaussiano suave, borrado em luz linear e do tamanho da composição (o Gaussian Blur do Node Video)."
+    desc-en="Smooth gaussian blur, blurred in linear light and sized by the composition (Node Video's Gaussian Blur)."
+    category="blur"
+    tags="desfoque,gaussiano,suavizar,borrar,blur,gaussian,node video,nodevideo,mapa"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <!-- `highp`: os 8 bits da camada chegam exatos à conversão para luz linear. -->
+        <texture id="inputImg" src="content" precision="highp" />
+        <!-- O RT da camada no Node: pré-multiplicada em luz linear, em sRGB de 8 bits. -->
+        <texture id="pre" src="buffer" format="srgb" precision="highp" />
+        <!-- Os RTs temporários do Node, com os nomes dele: metade do tamanho, sRGB de 8 bits. -->
+        <texture id="downImg" src="buffer" scale="0.5" format="srgb" precision="highp" />
+        <texture id="hblur" src="buffer" scale="0.5" format="srgb" precision="highp" />
+        <texture id="vblur" src="buffer" scale="0.5" format="srgb" precision="highp" />
+        <!-- O RT de saída do Node (sRGB de 8 bits): o passe 5 lê os bytes dele. -->
+        <texture id="saida" src="buffer" format="srgb" precision="highp" />
+
+        <slider id="amount" label="Quantidade" default="0.3" min="0.0" max="5.0" />
+    </params>
+
+    <passes>
+        <pass target="pre" skipIfZero="amount" />
+        <pass target="downImg" skipIfZero="amount" />
+        <pass target="hblur" skipIfZero="amount" />
+        <pass target="vblur" skipIfZero="amount" />
+        <pass target="saida" skipIfZero="amount" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (ver
+// `node-fill-color.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+// Os bytes que um RT sRGB de 8 bits guarda para esta cor linear.
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+// O texel exato de uma imagem do tamanho da tela no pixel de pé (a linha 0 é a base, como nos RTs do Node): no
+// buffer de camada (`acEntradaDePe` = 0, a linha 0 é o topo) a linha é espelhada. Lê a entrada para o RT de pé e o RT
+// de pé para a saída — os dois espelhos se desfazem, e os programas do Node rodam como na tela.
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+
+// O programa 1 do Node (`_hblur`), conta por conta: a gaussiana na horizontal, na metade. `res` = `_resolution`.
+vec4 passeHorizontal(vec2 uv, vec2 res) {
+    float u_xlat0;
+    vec3 u_xlat1;
+    vec4 u_xlat2;
+    vec3 u_xlat3;
+    vec2 u_xlat4;
+    vec4 u_xlat5;
+    vec3 u_xlat6;
+    bool u_xlatb6;
+    vec4 u_xlat7;
+    vec4 u_xlat8;
+    float u_xlat9;
+    float u_xlat10;
+    vec2 u_xlat18;
+    vec2 u_xlat22;
+    float u_xlat24;
+    float u_xlat28;
+    float u_xlat30;
+    u_xlat0 = res.x * 0.5;
+    u_xlat9 = amount * 0.0474999994;
+    u_xlat18.x = dot(res.xy, res.xy);
+    u_xlat18.x = sqrt(u_xlat18.x);
+    u_xlat9 = u_xlat18.x * u_xlat9;
+    u_xlat0 = float(1.0) / u_xlat0;
+    u_xlat18.xy = vec2(u_xlat9) * vec2(0.465990603, 1.16806519);
+    u_xlat18.y = float(1.0) / u_xlat18.y;
+    u_xlat18.x = u_xlat18.x * u_xlat18.x;
+    u_xlat18.x = -0.5 / u_xlat18.x;
+    u_xlat18.x = u_xlat18.x * 1.44269502;
+    u_xlat18.x = exp2(u_xlat18.x);
+    u_xlat1.z = u_xlat18.x * u_xlat18.x;
+    u_xlat2 = texture(downImg, uv);
+    u_xlat2 = u_xlat18.yyyy * u_xlat2;
+    u_xlat3.z = u_xlat1.z;
+    u_xlat4.y = 0.0;
+    u_xlat5 = u_xlat2;
+    u_xlat22.xy = u_xlat18.yx;
+    u_xlat28 = u_xlat18.y;
+    u_xlat30 = 1.0;
+    while (true) {
+        u_xlatb6 = u_xlat9 < u_xlat30;
+        if (u_xlatb6) { break; }
+        u_xlat6.xy = vec2(u_xlat30) + vec2(1.0, 2.0);
+        u_xlat1.xy = u_xlat22.xy;
+        u_xlat3.xy = u_xlat1.yz * u_xlat1.xy;
+        u_xlat24 = u_xlat3.x * 2.0 + u_xlat28;
+        u_xlat22.xy = u_xlat3.yz * u_xlat3.xy;
+        u_xlat28 = u_xlat22.x * 2.0 + u_xlat24;
+        u_xlat1.x = u_xlat1.x * u_xlat1.y + u_xlat22.x;
+        u_xlat10 = u_xlat22.x * u_xlat6.x;
+        u_xlat10 = u_xlat30 * u_xlat3.x + u_xlat10;
+        u_xlat10 = u_xlat10 / u_xlat1.x;
+        u_xlat4.x = u_xlat0 * u_xlat10;
+        u_xlat3.xy = (-u_xlat4.xy) + uv;
+        u_xlat3.xy = clamp(u_xlat3.xy, 0.0, 1.0);
+        u_xlat6.xz = u_xlat4.xy + uv;
+        u_xlat6.xz = clamp(u_xlat6.xz, 0.0, 1.0);
+        u_xlat7 = texture(downImg, u_xlat3.xy);
+        u_xlat7 = u_xlat7 * u_xlat1.xxxx + u_xlat5;
+        u_xlat8 = texture(downImg, u_xlat6.xz);
+        u_xlat5 = u_xlat8 * u_xlat1.xxxx + u_xlat7;
+        u_xlat30 = u_xlat6.y;
+    }
+    return u_xlat5 / vec4(u_xlat28);
+}
+
+// O programa 2 do Node (`_vblur`), conta por conta: a gaussiana na vertical (o `hblur` está de pé, como no Node).
+vec4 passeVertical(vec2 uv, vec2 res) {
+    vec4 u_xlat0;
+    vec2 u_xlat1;
+    vec4 u_xlat2;
+    vec4 u_xlat3;
+    vec3 u_xlat4;
+    vec4 u_xlat5;
+    vec3 u_xlat6;
+    vec4 u_xlat7;
+    vec4 u_xlat8;
+    vec2 u_xlat9;
+    float u_xlat11;
+    vec2 u_xlat19;
+    float u_xlat27;
+    float u_xlat29;
+    float u_xlat31;
+    bool u_xlatb31;
+    u_xlat0.x = amount * 0.0474999994;
+    u_xlat9.x = dot(res.xy, res.xy);
+    u_xlat9.x = sqrt(u_xlat9.x);
+    u_xlat0.x = u_xlat9.x * u_xlat0.x;
+    u_xlat9.x = res.y * 0.5;
+    u_xlat1.y = float(1.0) / u_xlat9.x;
+    u_xlat9.xy = u_xlat0.xx * vec2(0.465990603, 1.16806519);
+    u_xlat9.y = float(1.0) / u_xlat9.y;
+    u_xlat9.x = u_xlat9.x * u_xlat9.x;
+    u_xlat9.x = -0.5 / u_xlat9.x;
+    u_xlat9.x = u_xlat9.x * 1.44269502;
+    u_xlat9.x = exp2(u_xlat9.x);
+    u_xlat2.z = u_xlat9.x * u_xlat9.x;
+    u_xlat3 = texture(hblur, uv);
+    u_xlat3 = u_xlat9.yyyy * u_xlat3;
+    u_xlat4.z = u_xlat2.z;
+    u_xlat1.x = 0.0;
+    u_xlat5 = u_xlat3;
+    u_xlat19.xy = u_xlat9.yx;
+    u_xlat27 = u_xlat9.y;
+    u_xlat29 = 1.0;
+    while (true) {
+        u_xlatb31 = u_xlat0.x < u_xlat29;
+        if (u_xlatb31) { break; }
+        u_xlat6.xy = vec2(u_xlat29) + vec2(1.0, 2.0);
+        u_xlat2.xy = u_xlat19.xy;
+        u_xlat4.xy = u_xlat2.yz * u_xlat2.xy;
+        u_xlat31 = u_xlat4.x * 2.0 + u_xlat27;
+        u_xlat19.xy = u_xlat4.yz * u_xlat4.xy;
+        u_xlat27 = u_xlat19.x * 2.0 + u_xlat31;
+        u_xlat2.x = u_xlat2.x * u_xlat2.y + u_xlat19.x;
+        u_xlat11 = u_xlat19.x * u_xlat6.x;
+        u_xlat11 = u_xlat29 * u_xlat4.x + u_xlat11;
+        u_xlat11 = u_xlat11 / u_xlat2.x;
+        u_xlat4.xy = (-vec2(u_xlat11)) * u_xlat1.xy + uv;
+        u_xlat4.xy = clamp(u_xlat4.xy, 0.0, 1.0);
+        u_xlat6.xz = vec2(u_xlat11) * u_xlat1.xy + uv;
+        u_xlat6.xz = clamp(u_xlat6.xz, 0.0, 1.0);
+        u_xlat7 = texture(hblur, u_xlat4.xy);
+        u_xlat7 = u_xlat7 * u_xlat2.xxxx + u_xlat5;
+        u_xlat8 = texture(hblur, u_xlat6.xz);
+        u_xlat5 = u_xlat8 * u_xlat2.xxxx + u_xlat7;
+        u_xlat29 = u_xlat6.y;
+    }
+    u_xlat0 = u_xlat5 / vec4(u_xlat27);
+    // (o Node devolve a entrada com Quantidade <= 0; aqui esse passe nem roda — `skipIfZero`)
+    return u_xlat0;
+}
+
+void main() {
+    // `_resolution`: o tamanho da composição (o RT cheio).
+    vec2 res = vec2(textureSize(pre, 0));
+
+    if (acPass == 0) {
+        // A camada como o RT do Node a guarda: a cor em luz linear vezes o alfa, de pé; a GPU guarda em sRGB.
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O programa 0 do Node: a metade, uma leitura no meio de 2 × 2 (em luz linear).
+        fragColor = texture(pre, acScreenNorm);
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = passeHorizontal(acScreenNorm, res);
+        return;
+    }
+    if (acPass == 3) {
+        fragColor = passeVertical(acScreenNorm, res);
+        return;
+    }
+    if (acPass == 4) {
+        // O programa 4 do Node (sem a máscara interna): de volta ao tamanho cheio pelo filtro linear, no RT sRGB.
+        fragColor = texture(vblur, acScreenNorm);
+        return;
+    }
+
+    // Abaixo de 0,0001 o Node só copia a entrada para a saída: a camada como está.
+    if (!(amount >= 0.0001)) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+    // Os bytes do RT de saída do Node (a GPU decodificou ao ler; codificar de novo devolve o byte guardado), de volta
+    // à orientação da entrada.
+    vec4 o = texelDePe(saida);
+    vec3 kc = bytesSrgb(o.rgb);
+    float ka = floor(o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    // O Nova guarda reto: a cor linear guardada dividida pelo alfa, de volta ao sRGB (acima de 1 fica em 1).
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

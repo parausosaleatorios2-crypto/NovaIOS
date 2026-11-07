@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Fill_AssetStore_heart_spread
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-fill-assetstore-heart-spread"
+    name="Fill Assetstore Heart Spread (NV)"
+    name-en="Fill Assetstore Heart Spread (NV)"
+    desc="NodeVideo effect 'NodeVideo/Fill_AssetStore_heart_spread', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Fill_AssetStore_heart_spread', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_evolution" label="Evolution" default="0" min="0" max="5" step="0.01" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="2" step="1" />
+        <color id="_color1" label="Color1" default="#FFFF0003" />
+        <color id="_color2" label="Color2" default="#FFF59ECC" />
+        <color id="_color3" label="Color3" default="#FFF0426B" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+bvec2 u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+float u_xlat18;
+void main()
+{
+    u_xlat0.xy = _resolution.xy * vec2(0.5, 0.5);
+    u_xlat0.xy = acScreenNorm.xy * _resolution.xy + (-u_xlat0.xy);
+    u_xlat0.xy = u_xlat0.xy / _resolution.yy;
+    u_xlat0.xy = u_xlat0.xy * vec2(0.400000006, 0.480000019);
+    u_xlat18 = abs(u_xlat0.x) * abs(u_xlat0.x);
+    u_xlat6.x = u_xlat18 * 1.10000002 + u_xlat0.y;
+    u_xlat0.z = -abs(u_xlat0.x) * 0.660000026 + u_xlat6.x;
+    u_xlat0.x = dot(u_xlat0.xz, u_xlat0.xz);
+    u_xlat0.x = sqrt(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * 5.0 + (-_evolution);
+    u_xlat0.x = fract(u_xlat0.x);
+    u_xlat6.xyz = _color1.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat6.xyz = _color1.xyz * u_xlat6.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat6.xyz = u_xlat6.xyz * _color1.xyz;
+    u_xlat1.xyz = _color2.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = _color2.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat1.xyz = u_xlat1.xyz * _color2.xyz;
+    u_xlat2.xyz = _color3.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat2.xyz = _color3.xyz * u_xlat2.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat2.xyz = u_xlat2.xyz * _color3.xyz;
+    u_xlatb3.xy = lessThan(vec4(0.330000013, 0.670000017, 0.0, 0.0), u_xlat0.xxxx).xy;
+    u_xlat0.xyz = (u_xlatb3.y) ? u_xlat6.xyz : u_xlat1.xyz;
+    u_xlat18 = (u_xlatb3.y) ? _color1.w : _color2.w;
+    u_xlat1.xyz = (u_xlatb3.x) ? u_xlat0.xyz : u_xlat2.xyz;
+    u_xlat1.w = (u_xlatb3.x) ? u_xlat18 : _color3.w;
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb2.x = int(_blend_mode)==1;
+    u_xlat3 = u_xlat0 * u_xlat1;
+    u_xlat4.xyz = u_xlat0.xyz + u_xlat1.xyz;
+    u_xlat4.w = u_xlat0.w;
+    u_xlat2 = (u_xlatb2.x) ? u_xlat3 : u_xlat4;
+    u_xlat3.xyz = u_xlat1.xyz;
+    u_xlat1 = (int(_blend_mode) != 0) ? u_xlat2 : u_xlat3;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

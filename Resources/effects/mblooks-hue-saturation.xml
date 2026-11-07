@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Hue/Saturation (`husa`, vídeo). O render do host (`0x1803f4820`, lido em
+  `tools/looks/benchmark/husa.py`) roda até dois kernels, num passe só aqui (`assets/mblooks/husa.frag`):
+    1. Hue ≠ 0 → `ColorKernel_HueRotation` (graus / 360);
+    2. Saturation ≠ 100 → `ColorKernel_Saturation`: (c − Y)·s + Y, com Y pelos três pesos da luma do bloco
+       (padrão Rec. 709; no Looks eles não aparecem — "Parameter 3/4/5" — mas os presets os trazem mudados, e a
+       soma deles ≠ 1 clareia ou escurece). Saturation abaixo de 0,1% vira 0,1%.
+  Os mesmos dois kernels das etapas 4 e 5 do Colorista. Conferido contra o After Effects (r7, LEIAME.md).
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md).
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.huesaturation"
+    name="Looks: Hue/Saturation"
+    name-en="Looks: Hue/Saturation"
+    desc="A ferramenta Hue/Saturation do Magic Bullet Looks: gira o matiz de todas as cores e muda a saturação, com os pesos da luma ajustáveis."
+    desc-en="Magic Bullet Looks' Hue/Saturation tool: rotates the hue of every color and changes the saturation, with adjustable luma weights."
+    category="looks"
+    stage="mblooks"
+    looks="husa"
+    tags="magic bullet,looks,red giant,hue,saturation,matiz,saturação,saturacao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="hue" label="Hue" default="0.0" min="-180.0" max="180.0" step="0.1" />
+        <slider id="saturation" label="Saturation" default="100.0" min="0.0" max="200.0" step="0.1" />
+        <slider id="lumaRed" group="Luma Weights" label="Luma Red" default="0.2126" min="0.0" max="1.0" step="0.0001" />
+        <slider id="lumaGreen" group="Luma Weights" label="Luma Green" default="0.7152" min="0.0" max="1.0" step="0.0001" />
+        <slider id="lumaBlue" group="Luma Weights" label="Luma Blue" default="0.0722" min="0.0" max="1.0" step="0.0001" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0 e 100) não muda nada: matiz girado e cor mais forte. -->
+    <preview>
+        <set param="hue" value="60.0" />
+        <set param="saturation" value="150.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

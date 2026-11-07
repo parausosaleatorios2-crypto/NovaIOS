@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CC Light Sweep, implementado para o pipeline do NovaEditor.
+
+  A faixa é a distância assinada de cada pixel a uma reta orientada — não um
+  gradiente circular. O alpha da entrada limita a luz principal. As bordas vêm
+  do gradiente do alpha e recebem luz somente quando estão voltadas para ela.
+-->
+<effect
+    id="nova.effect.lightsweep"
+    name="Passada de luz"
+    name-en="CC Light Sweep"
+    desc="Faixa de luz orientada que atravessa a camada e destaca suas bordas."
+    desc-en="An oriented light band with directional alpha-edge highlights."
+    category="stylize"
+    blend="true"
+    tags="brilho,shine,reflexo,passada,logo,titulo,metal,varredura,cc light sweep">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Centro normalizado à camada. Os limites deliberadamente passam do
+             quadro: é assim que se anima a entrada e saída natural do feixe. -->
+        <point id="center" group="Feixe" label="Centro"
+               defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" />
+        <slider id="direction" group="Feixe" label="Direção"
+                default="-30.0" min="-180.0" max="180.0" step="1.0"
+                type="angle" snap="0.0,45.0,90.0,-45.0,-90.0,180.0,-180.0" />
+        <selector id="shape" group="Feixe" label="Forma" default="2"
+                  options="Linear|Suave|Nítida" />
+        <slider id="width" group="Feixe" label="Largura"
+                default="0.09" min="0.001" max="1.5" step="0.005" />
+        <slider id="sweepIntensity" group="Feixe" label="Intensidade do feixe"
+                default="0.85" min="0.0" max="5.0" step="0.05" snap="0.0,1.0" />
+
+        <slider id="edgeIntensity" group="Bordas" label="Intensidade da borda"
+                default="0.45" min="0.0" max="5.0" step="0.05" snap="0.0,1.0" />
+        <slider id="edgeThickness" group="Bordas" label="Espessura da borda"
+                default="1.5" min="0.5" max="24.0" step="0.5" />
+
+        <!--
+          A RECEPÇÃO DA LUZ FICA SOLTA, FORA DE GRUPO.
+
+          Ela existe desde sempre e fazia os três modos do After Effects
+          (Add, Composite, Cutout) — mas morava dentro de "Aparência", que abre
+          fechada, e por isso passava despercebida. Não é um ajuste fino: é a
+          chave que decide se o efeito ACENDE a camada, se PINTA por cima dela
+          ou se RECORTA só a luz. Quem procura por ela não sabe que o nome dela
+          é "aparência".
+        -->
+        <selector id="lightReception" label="Recepção da luz"
+                  default="0" options="Adicionar|Compor|Recorte" />
+
+        <color id="lightColor" group="Aparência" label="Cor da luz" default="#FFFFFF" />
+    </params>
+
+    <shader><![CDATA[
+
+float sweepProfile(float normalizedDistance) {
+    float x = 1.0 - clamp(normalizedDistance, 0.0, 1.0);
+    if (shape == 0) return x;
+    if (shape == 1) return x * x * (3.0 - 2.0 * x);
+    // Perfil concentrado: núcleo nítido, mas ainda contínuo e anti-aliased.
+    return pow(x, 4.0);
+}
+
+void main() {
+    vec4 source = texture(inputImg, acScreenNorm);
+
+    // Trabalhar em espaço com aspecto corrigido impede a faixa de mudar de
+    // largura quando a camada não é quadrada. `normal` é perpendicular ao eixo
+    // da faixa; sua projeção dá a distância assinada do pixel ao sweep.
+    float radiansDirection = radians(direction);
+    vec2 normal = vec2(cos(radiansDirection), sin(radiansDirection));
+    vec2 pixelFromCenter = (acScreenNorm - center) * vec2(acAspect, 1.0);
+    float signedDistance = dot(pixelFromCenter, normal);
+    float normalizedDistance = abs(signedDistance) / max(width, 0.00001);
+    float bandProfile = sweepProfile(normalizedDistance);
+
+    // A contribuição principal nunca acende o vazio de um PNG/texto. Alfa
+    // parcial continua parcial — nenhum threshold binário é introduzido aqui.
+    float mainLight = bandProfile * sweepIntensity * source.a;
+
+    // Gradiente central do alpha, em uma vizinhança controlada pela espessura.
+    // A distância das amostras alarga a região de influência sem transformar a
+    // borda num blur genérico. O x é corrigido pelo aspecto para compartilhar o
+    // mesmo espaço geométrico da direção da luz.
+    vec2 edgeOffset = acTexelSize * max(edgeThickness * 0.5, 0.5) * acEscalaDePixel;
+    float alphaLeft = texture(inputImg, acScreenNorm - vec2(edgeOffset.x, 0.0)).a;
+    float alphaRight = texture(inputImg, acScreenNorm + vec2(edgeOffset.x, 0.0)).a;
+    float alphaDown = texture(inputImg, acScreenNorm - vec2(0.0, edgeOffset.y)).a;
+    float alphaUp = texture(inputImg, acScreenNorm + vec2(0.0, edgeOffset.y)).a;
+    vec2 alphaGradient = vec2((alphaRight - alphaLeft) / max(acAspect, 0.0001),
+                              alphaUp - alphaDown);
+    float gradientLength = length(alphaGradient);
+    vec2 edgeNormal = gradientLength > 0.00001
+        ? alphaGradient / gradientLength
+        : vec2(0.0);
+
+    // O gradiente aponta para dentro da região opaca. A luz chega no sentido
+    // oposto à normal do sweep, portanto só a face que a encara recebe destaque.
+    float facing = max(dot(edgeNormal, -normal), 0.0);
+    float edgeMask = smoothstep(0.005, 0.25, gradientLength);
+    float edgeLight = bandProfile * edgeMask * facing * edgeIntensity * source.a;
+
+    float lightStrength = (mainLight + edgeLight) * lightColor.a;
+    vec3 lightContribution = lightColor.rgb * lightStrength;
+
+    if (lightReception == 2) {
+        // Recorte mostra somente a luz produzida. O alpha carrega a cobertura
+        // iluminada, mantendo as áreas transparentes transparentes.
+        float cutoutAlpha = clamp(lightStrength, 0.0, 1.0);
+        fragColor = vec4(lightColor.rgb, cutoutAlpha);
+    } else if (lightReception == 1) {
+        // Uma camada de luz normal composta sobre a fonte; o alpha original da
+        // camada é preservado para a composição posterior no renderer.
+        float compositeAmount = clamp(lightStrength, 0.0, 1.0);
+        fragColor = vec4(mix(source.rgb, lightColor.rgb, compositeAmount), source.a);
+    } else {
+        // Adição é o modo de brilho clássico. Não limitar antes da saída deixa
+        // o pipeline usar o alcance que o framebuffer de destino suportar.
+        fragColor = vec4(source.rgb + lightContribution, source.a);
+    }
+}
+
+    ]]></shader>
+</effect>

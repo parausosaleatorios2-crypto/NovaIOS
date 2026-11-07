@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.chromatic" name="Chromatic Aberration" desc="Radial lens dispersion: the channels separate toward the edges, exactly like a real lens." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/chromatic.png"
+        tags="retro,chromatic,aberration,lens,optics" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Aberration" />
+<spinner id="amount" default="0.008" min="0.0" max="0.05" step="0.0005" label="Amount" />
+<spinner id="falloff" default="1.5" min="0.2" max="4.0" step="0.05" label="Edge Falloff" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec2 dir = uv - 0.5;
+  float r = length(dir) * falloff;
+  vec2 o = dir * r * amount * mixAmt;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = src.a;
+  float cr = texture2DCv(inputImg.texture, uv + o).r;
+  float cg = src.g;
+  float cb = texture2DCv(inputImg.texture, uv - o).b;
+  gl_FragColor = vec4(cr, cg, cb, a);
+}
+]]></shader>
+</effect>

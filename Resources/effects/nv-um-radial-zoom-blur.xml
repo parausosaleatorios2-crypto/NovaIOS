@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Radial Zoom Blur — zoom radial com raios amostrados em várias passadas.
+  Equivale ao "Zoom Streaks" do Ultra e à variante forte do CC Radial Fast Blur.
+-->
+<effect
+    id="nova.effect.um-radial-zoom-blur"
+    name="Zoom Radial Blur"
+    name-en="Radial Zoom Blur"
+    desc="Desfoque radial em zoom a partir de um centro."
+    desc-en="Radial zoom blur from a center point."
+    category="blur"
+    tags="zoom,radial,blur,streaks,ultra motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point  id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <spinner id="amount" label="Intensidade" default="0.15" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+        <spinner id="samples" label="Amostras" default="20.0" min="4.0" max="48.0" step="1.0" type="integer" />
+    </params>
+
+    <preview>
+        <set param="amount" value="0.3" />
+    </preview>
+
+    <shader><![CDATA[
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 d = uv - center;
+
+    int N = int(samples);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 48; i++) {
+        if (i >= N) break;
+        float t = float(i) / float(N - 1);
+        float s = mix(1.0, 1.0 - amount, t);
+        acc += texture(inputImg, center + d * s);
+    }
+    fragColor = acc / float(N);
+}
+    ]]></shader>
+</effect>

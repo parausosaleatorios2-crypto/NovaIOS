@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   INFRAVERMELHO (VISÃO TÉRMICA)
+  ============================================================================
+
+  Falsa-cor sobre a imagem lendo o que seria "temperatura" (aqui, a luminância)
+  e mapeando pra uma rampa de cor: azul-roxo no frio, laranja-amarelo no
+  quente, branco no estouro. É o "Predador", o "termocâmera", o "visão de
+  calor" que todo thriller tem.
+
+  ============================================================================
+   LUMA COMO TEMPERATURA É UM CHUTE ÚTIL
+  ============================================================================
+
+  Visão térmica real mede a radiação infravermelha, não a luz visível —
+  então não dá pra reconstruir termocâmera a partir de imagem de câmera
+  normal. Mas o olho ACEITA que claro = quente: é o que viu em filme a vida
+  inteira, e é fácil de ler.
+
+  A substituição é: `luma(imagem)` vira a temperatura normalizada [0, 1], e
+  um `rampa(T)` vira RGB. A rampa clássica é "jet" ou "inferno" (azul → roxo
+  → vermelho → laranja → amarelo → branco), aqui aproximada por 5 pontos de
+  `mix` — mais simples que polinômio e visualmente igual.
+
+  ============================================================================
+   CONTRASTE E VIÉS
+  ============================================================================
+
+  `contrast` espicha a rampa (puxa o preto pro mais frio, o branco pro mais
+  quente); `bias` desloca o ponto de "temperatura média". Juntos, os dois
+  controlam se a cena fica inteira "fria" (predominância de azul) ou "quente"
+  (predominância de amarelo).
+-->
+<effect
+    id="nova.effect.infrared"
+    name="Infravermelho"
+    name-en="Infrared"
+    desc="Falsa-cor térmica: azul no frio, amarelo no quente, branco no estouro."
+    desc-en="Thermal false-color: blue cold, yellow hot, white at saturation."
+    category="color"
+    tags="infravermelho,infrared,térmica,thermal,predador,predator,falsa-cor,visão">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="contrast" label="Contraste"
+                default="1.0" min="0.3" max="3.0" step="0.05" snap="0.0" />
+        <slider id="bias" label="Viés"
+                default="0.0" min="-0.5" max="0.5" step="0.01" snap="0.0" />
+        <slider id="strength" label="Mistura"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="saturation" label="Saturação da rampa"
+                default="1.0" min="0.0" max="1.5" step="0.02" snap="0.0" />
+    </params>
+
+    <preview>
+        <set param="contrast" value="1.5" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Rampa "inferno" aproximada em 5 pontos: preto-azul-roxo-vermelho-amarelo-branco. */
+vec3 rampaTermica(float t) {
+    t = clamp(t, 0.0, 1.0);
+    vec3 c;
+    if (t < 0.2)      c = mix(vec3(0.0),              vec3(0.1, 0.0, 0.5),  t / 0.2);
+    else if (t < 0.4) c = mix(vec3(0.1, 0.0, 0.5),    vec3(0.6, 0.0, 0.5),  (t - 0.2) / 0.2);
+    else if (t < 0.6) c = mix(vec3(0.6, 0.0, 0.5),    vec3(1.0, 0.2, 0.0),  (t - 0.4) / 0.2);
+    else if (t < 0.8) c = mix(vec3(1.0, 0.2, 0.0),    vec3(1.0, 0.85, 0.0), (t - 0.6) / 0.2);
+    else              c = mix(vec3(1.0, 0.85, 0.0),   vec3(1.0),            (t - 0.8) / 0.2);
+    return c;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // Temperatura é luma com contraste e viés aplicados.
+    float T = luma(original.rgb);
+    T = (T - 0.5) * contrast + 0.5 + bias;
+
+    vec3 termica = rampaTermica(T);
+
+    // Saturação da rampa: mistura entre o cinza perceptual da rampa e ela mesma.
+    float cinzaDaRampa = luma(termica);
+    termica = mix(vec3(cinzaDaRampa), termica, saturation);
+
+    vec3 cor = mix(original.rgb, termica, strength);
+    fragColor = vec4(cor, original.a);
+}
+
+    ]]></shader>
+</effect>

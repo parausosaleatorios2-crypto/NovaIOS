@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.chromaticglow"
+    name="Brilho Cromático (Ultra Motion)"
+    name-en="Chromatic Glow (Ultra Motion)"
+    desc="Glow nas luzes com separação RGB — brilho arco-íris."
+    desc-en="Glow on highlights with RGB separation — rainbow bloom."
+    category="stylize"
+    tags="ultramotion,glow,chromatic,bloom,rainbow">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+        <slider id="radius"    label="Raio"       default="12.0" min="0.0" max="60.0" step="0.5" />
+        <slider id="threshold" label="Limiar"     default="0.6"  min="0.0" max="1.0" step="0.01" />
+        <slider id="intensity" label="Intensidade" default="1.2" min="0.0" max="4.0" step="0.05" />
+        <slider id="spread"    label="Separação RGB" default="0.5" min="0.0" max="2.0" step="0.05" />
+    </params>
+
+    <!-- Na vitrine: raio e limiar do padrão deixam o brilho sutil demais em 320 px. -->
+    <preview>
+        <set param="radius" value="42.0" />
+        <set param="threshold" value="0.25" />
+        <set param="intensity" value="3.0" />
+        <set param="spread" value="1.4" />
+    </preview>
+
+
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const int N = 11;
+const float OFF[11] = float[11](-5.0,-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0,5.0);
+const float WT[11]  = float[11](0.027,0.065,0.121,0.175,0.198,0.198,0.198,0.175,0.121,0.065,0.027);
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+vec3 varrer(vec2 uv, vec2 d, float r, int canal, sampler2D s) {
+    vec2 passo = d * acTexelSize * (r * acEscalaDePixel);
+    vec3 soma = vec3(0.0);
+    float pt = 0.0;
+    for (int i = 0; i < N; i++) {
+        vec2 u = uv + passo * OFF[i];
+        vec3 c = texture(s, u).rgb;
+        float g = smoothstep(threshold, threshold + 0.2, dot(c, LUMA));
+        soma[canal] += c[canal] * g * WT[i];
+        pt += WT[i];
+    }
+    return soma / pt;
+}
+
+void main() {
+    if (acPass == 0) {
+        vec2 d = vec2(1.0, 0.0);
+        vec3 col = vec3(0.0);
+        col.r = varrer(acScreenNorm, d, radius * (1.0 + spread), 0, inputImg).r;
+        col.g = varrer(acScreenNorm, d, radius,                  1, inputImg).g;
+        col.b = varrer(acScreenNorm, d, radius * (1.0 - 0.5 * spread), 2, inputImg).b;
+        fragColor = vec4(col, 1.0);
+    } else {
+        vec2 d = vec2(0.0, 1.0);
+        vec3 col = vec3(0.0);
+        col.r = varrer(acScreenNorm, d, radius * (1.0 + spread), 0, hblur).r;
+        col.g = varrer(acScreenNorm, d, radius,                  1, hblur).g;
+        col.b = varrer(acScreenNorm, d, radius * (1.0 - 0.5 * spread), 2, hblur).b;
+        vec4 orig = texture(inputImg, acScreenNorm);
+        fragColor = vec4(orig.rgb + col * intensity, orig.a);
+    }
+}
+    ]]></shader>
+</effect>

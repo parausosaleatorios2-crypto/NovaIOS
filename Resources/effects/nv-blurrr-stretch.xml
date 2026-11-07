@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.stretch"
+    name="Esticar Borda (Blurrr)"
+    name-en="Edge Stretch (Blurrr)"
+    desc="Puxa a imagem pelas bordas, borrando no sentido do puxão."
+    desc-en="Stretches the image from the edges, blurring along the pull."
+    category="blur"
+    tags="blurrr,stretch,esticar,borda,edge,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount"  label="Quanto estica" default="0.15" min="0.0" max="0.6" step="0.01" />
+        <slider id="samples" label="Amostras" default="16" min="4" max="32" step="1" type="integer" />
+        <slider id="power"   label="Queda" default="2.0" min="1.0" max="4.0" step="0.1" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec2 p = acScreenNorm - 0.5;
+    float r = length(p);
+    vec2 dir = (r > 1e-5) ? p / r : vec2(0.0);
+    float k = pow(r * 2.0, power) * amount;
+
+    int n = clamp(int(samples), 4, 32);
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i <= 32; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n);
+        soma += texture(inputImg, acScreenNorm - dir * k * t);
+    }
+    fragColor = soma / float(n + 1);
+}
+    ]]></shader>
+</effect>

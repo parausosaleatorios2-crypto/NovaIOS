@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O Pixel Sort do Node Video (definição `_CPUPixelSorting`, Efeitos → Glitch), portado do C# e do nativo (0.915.0).
+  O porte automático trazia só o `NodeVideo/RenderCommand/pixel_sort`, o passe que gira a imagem — a ordenação do
+  Node é na CPU, e ficava de fora.
+
+  O que o Node faz (lido no il2cpp, `AECPUPixelSorting::Render`, e no libNVNative.so, `nv_cpu_eft_pixelsort` e
+  `pixelSortRow`; o `AEPixelSorting` de GPU, com agentes num compute, não está no menu):
+  - a camada (RT sRGB de 8 bits, pré-multiplicado) vai para a CPU; o nativo a GIRA pelo Ângulo num buffer do tamanho
+    da caixa da imagem girada + 4 px (bilinear nos bytes, cortado para baixo; o centro é o meio de cada caixa, então
+    mesmo em 0° há meio pixel de deslocamento na ida e na volta);
+  - em cada linha do buffer girado (threads de 3 em 3 linhas): o pixel entra na faixa se alfa > 0,001 e a chave do
+    Tipo ≥ Limiar — Brilho (r + g + b) ÷ 3, Matiz (graus ÷ 360), Saturação (Δ ÷ máx), Máx, Mín, nos bytes ÷ 255;
+    cada faixa contínua (a que chega ao último pixel da linha perde esse pixel) é ordenada pela mesma chave, do menor
+    para o maior, só o RGB (o alfa fica onde está), se randFloat(0, 100) ≤ Contínuo × 100;
+  - Aleatório: a faixa começa no primeiro pixel que entra e vai até p + largura × 0,01 + (int)randFloat(1, 100),
+    passe quem passar (o transparente também, que entra preto); a próxima procura começa dois pixels depois;
+  - desgira (bilinear, cortado para baixo); o pixel cuja volta cai fora do buffer girado fica como estava.
+
+  Aqui, na GPU: o passe 0 gira como o nativo; os 1–13 acham começo e fim de cada faixa por salto de ponteiro (12
+  saltos = faixas de até 4096 px); o 14 resolve faixa, Aleatório e Contínuo; os 15–92 são uma rede bitônica (78
+  passos, comparação sempre do menor para baixo, a faixa no próprio lugar) e o 93 desgira. Os sorteios do rand() do
+  Node viram um hash da linha, da faixa e do quadro (mudam a cada quadro, como no Node, e não ao parar a prévia).
+  O que fica diferente do Node: o buffer girado tem a camada + 4 px de cada lado, deitando-se de lado quando cabe
+  melhor — 0°, 90°, 180° e 270° são pixel a pixel; num ângulo torto a caixa não cabe e o buffer a encolhe (até ~2× ao
+  longo da linha numa camada 9:16 a 45°), o que borra um pouco o que não entra na faixa; faixa acima de 4096 px é
+  ordenada em blocos de 4096; empate na chave pode trocar a ordem de cores iguais na chave; no Aleatório, a faixa que
+  começaria depois do fim da linha num mundo de faixas curtas segue a mesma regra, mas os comprimentos sorteados são
+  outros. A cor movida para um pixel de outro alfa volta à cor reta dele (o Node a deixa pré-multiplicada).
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-pixel-sort"
+    name="Classificação de pixels (NV)"
+    name-en="Pixel Sort (NV)"
+    desc="Ordena as faixas de pixels claros (ou de matiz, saturação…) acima do limiar, em qualquer ângulo — o Pixel Sort do Node Video."
+    desc-en="Sorts the runs of pixels above the threshold (by brightness, hue, saturation…) at any angle — Node Video's Pixel Sort."
+    category="nodevideo"
+    tags="nodevideo,nv,pixel sort,classificação de pixels,ordenar,glitch,faixas,sort"
+    stage="screen">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <slider id="limiar" label="Limiar" default="0.3" min="0" max="1" step="0.01" />
+        <slider id="angulo" label="Ângulo" default="0" min="0" max="360" step="0.1" />
+        <selector id="tipo" label="Tipo" default="0" options="Brilho|Matiz|Saturação|Máx|Mín" />
+        <switch id="aleatorio" label="Aleatório" default="false" />
+        <slider id="continuo" label="Contínuo" default="1" min="0" max="1" step="0.01" />
+
+        <!-- O buffer girado do nativo (bytes do RT: sRGB de linear × alfa) e os dois do vaivém. -->
+        <texture id="giroRt" src="buffer" margin="4" filter="nearest" precision="highp" />
+        <texture id="saltoA" src="buffer" margin="4" filter="nearest" precision="highp" />
+        <texture id="saltoB" src="buffer" margin="4" filter="nearest" precision="highp" />
+    </params>
+
+    <preview>
+        <set param="limiar" value="0.45" />
+        <set param="angulo" value="90" />
+    </preview>
+
+    <passes>
+        <pass target="giroRt" />    <!-- 0: o giro -->
+        <pass target="saltoA" />    <!-- 1: os ponteiros -->
+        <pass target="saltoB" />    <!-- 2..7: os saltos -->
+        <pass target="saltoA" />
+        <pass target="saltoB" />
+        <pass target="saltoA" />
+        <pass target="saltoB" />
+        <pass target="saltoA" />
+        <pass target="saltoB" />    <!-- 8: as faixas -->
+        <pass target="saltoA" />    <!-- 9: blocos de 8 -->
+        <pass target="giroRt" />    <!-- 10..18: as intercalações -->
+        <pass target="saltoA" />
+        <pass target="giroRt" />
+        <pass target="saltoA" />
+        <pass target="giroRt" />
+        <pass target="saltoA" />
+        <pass target="giroRt" />
+        <pass target="saltoA" />
+        <pass target="giroRt" />
+        <pass />                    <!-- 19: a volta -->
+    </passes>
+
+    <shader><![CDATA[
+// ---- Passes (o <passes> tem 20) ----
+const int MARGEM = 4;
+const int P_GIRO = 0;      // giroRt: a camada girada
+const int P_PONTEIROS = 1; // saltoA: os ponteiros de começo/fim (ou do próximo que entra)
+const int P_SALTO = 2;     // 2..7: 6 saltos de ×4 (4⁶ = 4096), B ← A, A ← B...; o último fica em saltoA
+const int P_FAIXAS = 8;    // saltoB: (começo, fim) de cada pixel
+const int P_ORDEM = 9;     // 9: blocos de 8; 10..18: intercala 8+8 ... 2048+2048; saltoA ← giroRt, giroRt ← saltoA...
+const int P_VOLTA = 19;    // lê giroRt
+const int BLOCO = 8;
+
+vec3 linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+ivec2 tamCamada() { return textureSize(inputImg, 0); }
+// O pixel do RT do Node na posição (x, y) da camada de pé, em bytes (0..255).
+vec4 bytesDaCamada(ivec2 p) {
+    ivec2 T = tamCamada();
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    vec4 c = texelFetch(inputImg, p, 0);
+    return floor(vec4(srgb(linear(c.rgb) * c.a), c.a) * 255.0 + 0.5);
+}
+
+// ---- A geometria do giro (nv_cpu_eft_pixelsort) ----
+float co, si;           // cos e sin do ângulo
+vec2 centro;            // (w/2, h/2)
+ivec2 caixa;            // a caixa girada do Node: (int)(extensão + 4)
+vec2 centroG;           // o meio dela
+bool deLado;            // a linha do Node corre na vertical do buffer
+ivec2 L;                // elementos usados: (ao longo, através)
+vec2 f;                 // quanto o buffer encolhe a caixa (1 = pixel a pixel)
+void montarGiro() {
+    ivec2 T = tamCamada();
+    // O Node: sincos em double de ângulo × 0,017453291681077746 (o grau→radiano arredondado), então o cos de 270°
+    // é −2,3e−7 e não zero — e o corte para baixo do bilinear perde um nível onde a conta cai logo abaixo do inteiro.
+    // O float da GPU não chega a isso por cos(ângulo): o quadrante exato e o resto pequeno, que o float guarda.
+    float q = floor(angulo / 90.0 + 0.5);
+    float r = (angulo - 90.0 * q) * 0.017453291681077746 - 7.549789948768648e-8 * q;
+    float c0 = cos(r), s0 = sin(r);
+    int k = int(mod(q, 4.0));
+    co = k == 0 ? c0 : (k == 1 ? -s0 : (k == 2 ? -c0 : s0));
+    si = k == 0 ? s0 : (k == 1 ? c0 : (k == 2 ? -s0 : -c0));
+    centro = vec2(T) * 0.5;
+    vec2 x0 = vec2(-centro.x, float(T.x - 1) - centro.x);
+    vec2 y0 = vec2(-centro.y, float(T.y - 1) - centro.y);
+    float xa = 1e9, xb = -1e9, ya = 1e9, yb = -1e9;
+    for (int i = 0; i < 2; i++) for (int k = 0; k < 2; k++) {
+        float gx = x0[i] * co - y0[k] * si, gy = x0[i] * si + y0[k] * co;
+        xa = min(xa, gx); xb = max(xb, gx); ya = min(ya, gy); yb = max(yb, gy);
+    }
+    caixa = ivec2(int(xb - xa + 4.0), int(yb - ya + 4.0));
+    centroG = vec2(caixa) * 0.5;
+    ivec2 B = T + 2 * MARGEM;
+    bool cabe = caixa.x <= B.x && caixa.y <= B.y;
+    bool cabeDeLado = caixa.x <= B.y && caixa.y <= B.x;
+    if (cabe) deLado = false;
+    else if (cabeDeLado) deLado = true;
+    else deLado = max(float(caixa.x) / float(B.y), float(caixa.y) / float(B.x))
+                < max(float(caixa.x) / float(B.x), float(caixa.y) / float(B.y));
+    ivec2 cap = deLado ? B.yx : B;
+    L = min(caixa, cap);
+    f = vec2(caixa) / vec2(L);
+}
+ivec2 texelDe(int a, int c) { return deLado ? ivec2(c, a) : ivec2(a, c); }
+void elementoDoTexel(ivec2 b, out int a, out int c) { a = deLado ? b.y : b.x; c = deLado ? b.x : b.y; }
+// elemento (ao longo, através) → ponto da caixa girada do Node
+vec2 pontoGirado(int a, int c) {
+    return vec2(L.x == caixa.x ? float(a) : (float(a) + 0.5) * f.x - 0.5,
+                L.y == caixa.y ? float(c) : (float(c) + 0.5) * f.y - 0.5);
+}
+
+// ---- As chaves (pixelSortRow e os comparadores), nos bytes ÷ 255 ----
+float fmodC(float x, float y) { return x - y * trunc(x / y); }
+float chave(vec3 c) {
+    int t = int(tipo);
+    if (t == 0) return (c.r + c.g + c.b) / 3.0;
+    float mx = max(max(c.r, c.g), c.b), mn = min(min(c.r, c.g), c.b), d = mx - mn;
+    if (t == 3) return mx;
+    if (t == 4) return mn;
+    if (t == 2) return d > 0.0 && mx > 0.0 ? d / mx : 0.0;
+    if (d <= 0.0) return 0.0;
+    float h;
+    if (mx == c.r) h = fmodC((c.g - c.b) / d, 6.0) * 60.0;
+    else if (mx == c.g) h = ((c.b - c.r) / d + 2.0) * 60.0;
+    else h = ((c.r - c.g) / d + 4.0) * 60.0;
+    if (h < 0.0) h += 360.0;
+    return h / 360.0;
+}
+bool entra(vec4 bytes) { return bytes.a / 255.0 > 0.001 && chave(bytes.rgb / 255.0) >= limiar; }
+
+// ---- Os ponteiros: dois índices de 16 bits por texel ----
+vec4 guardar(int p, int q) { return vec4(float(p / 256), float(p % 256), float(q / 256), float(q % 256)) / 255.0; }
+ivec2 ler(highp sampler2D s, int a, int c) {
+    ivec4 v = ivec4(texelFetch(s, texelDe(a, c), 0) * 255.0 + 0.5);
+    return ivec2(v.x * 256 + v.y, v.z * 256 + v.w);
+}
+
+// Os sorteios (o rand() do Node): hash da linha, do índice e do quadro.
+uint hash3(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    return v.x ^ v.y ^ v.z;
+}
+float sorteio(int linha, int i, int qual, float a, float b) {
+    uint quadro = uint(int(floor(acTime * 1000.0 + 0.5)));
+    float u = float(hash3(uvec3(uint(linha), uint(i) * 4u + uint(qual), quadro)) >> 8u) / 16777216.0;
+    return a + u * (b - a);
+}
+bool continua(int linha, int i) { return continuo * 100.0 >= sorteio(linha, i, 2, 0.0, 100.0); }
+
+vec4 passeGiro(ivec2 b) {
+    int a, c;
+    elementoDoTexel(b, a, c);
+    if (a >= L.x || c >= L.y) return vec4(0.0);
+    vec2 g = pontoGirado(a, c) - centroG;
+    vec2 s = vec2(g.x * co + g.y * si, g.y * co - g.x * si) + centro;
+    ivec2 i = ivec2(s);                   // fcvtzs: corta para o zero
+    ivec2 T = tamCamada();
+    if (s.x <= -1.0 || s.y <= -1.0 || i.x < 0 || i.y < 0 || i.x >= T.x - 1 || i.y >= T.y - 1) return vec4(0.0);
+    vec2 fr = s - vec2(i);
+    vec4 v = mix(mix(bytesDaCamada(i), bytesDaCamada(i + ivec2(1, 0)), fr.x),
+                 mix(bytesDaCamada(i + ivec2(0, 1)), bytesDaCamada(i + ivec2(1, 1)), fr.x), fr.y);
+    return clamp(floor(v + 1e-4), 0.0, 255.0) / 255.0;
+}
+
+bool entraEm(int a, int c) { return entra(floor(texelFetch(giroRt, texelDe(a, c), 0) * 255.0 + 0.5)); }
+
+vec4 passePonteiros(ivec2 b) {
+    int a, c;
+    elementoDoTexel(b, a, c);
+    if (a >= L.x || c >= L.y) return guardar(a, a);
+    int ultimo = L.x - 1;
+    bool q = entraEm(a, c);
+    if (aleatorio) return guardar(a, q || a == ultimo ? a : a + 1);   // o próximo que entra
+    int p = q && a > 0 && entraEm(a - 1, c) ? a - 1 : a;
+    int n = q && a < ultimo && entraEm(a + 1, c) ? a + 1 : a;
+    return guardar(p, n);
+}
+
+// p ← p(p(p(p))): o alcance vezes 4 a cada passe
+vec4 passeSalto(ivec2 b, highp sampler2D de) {
+    int a, c;
+    elementoDoTexel(b, a, c);
+    if (a >= L.x || c >= L.y) return guardar(a, a);
+    ivec2 p = ler(de, a, c);
+    for (int k = 0; k < 3; k++) p = ivec2(ler(de, p.x, c).x, ler(de, p.y, c).y);
+    return guardar(p.x, p.y);
+}
+
+vec4 passeFaixas(ivec2 b) {
+    int a, c;
+    elementoDoTexel(b, a, c);
+    if (a >= L.x || c >= L.y) return guardar(a, a);
+    int ultimo = L.x - 1;
+    if (!aleatorio) {
+        if (a == ultimo || !entraEm(a, c)) return guardar(a, a);
+        ivec2 p = ler(saltoA, a, c);
+        int fim = min(p.y, ultimo - 1);
+        if (fim <= p.x || !continua(c, p.x)) return guardar(a, a);
+        return guardar(p.x, fim);
+    }
+    // Aleatório: a corrente de faixas desde o começo da linha
+    int r = 0;
+    for (int k = 0; k < 1024; k++) {
+        if (r > ultimo) break;
+        int ini = ler(saltoA, r, c).y;
+        if (ini > a || !entraEm(ini, c)) break;
+        float comp = float(caixa.x) * 0.01 + floor(sorteio(c, k, 1, 1.0, 100.0));
+        int fim = min(ultimo, int(float(ini) + comp / f.x));
+        if (a <= fim) return fim > ini && continua(c, k) ? guardar(ini, fim) : guardar(a, a);
+        r = fim + 2;
+    }
+    return guardar(a, a);
+}
+
+// ---- A ordenação de cada faixa, no lugar: blocos de 8 e intercalações (estável; empate fica na ordem) ----
+float chaveEm(highp sampler2D de, int ini, int i, int c) {
+    return chave(floor(texelFetch(de, texelDe(ini + i, c), 0).rgb * 255.0 + 0.5) / 255.0);
+}
+vec4 passeBloco(ivec2 b, highp sampler2D de) {
+    int a, c;
+    elementoDoTexel(b, a, c);
+    vec4 meu = texelFetch(de, b, 0);
+    if (a >= L.x || c >= L.y) return meu;
+    ivec2 fx = ler(saltoB, a, c);
+    int n = fx.y - fx.x + 1;
+    if (n <= 1) return meu;
+    int i = a - fx.x, b0 = i / BLOCO * BLOCO, cnt = min(BLOCO, n - b0), r = i - b0;
+    float k[BLOCO];
+    for (int j = 0; j < BLOCO; j++) if (j < cnt) k[j] = chaveEm(de, fx.x, b0 + j, c);
+    // o elemento cuja posição na ordem é r
+    for (int j = 0; j < BLOCO; j++) {
+        if (j >= cnt) break;
+        int pos = 0;
+        for (int l = 0; l < BLOCO; l++) if (l < cnt && (k[l] < k[j] || (k[l] == k[j] && l < j))) pos++;
+        if (pos == r) return vec4(texelFetch(de, texelDe(fx.x + b0 + j, c), 0).rgb, meu.a);
+    }
+    return meu;
+}
+// intercala as metades ordenadas de cada bloco de 2m: a posição k sai da busca binária (merge path)
+vec4 passeJuntar(ivec2 b, int m, highp sampler2D de) {
+    int a, c;
+    elementoDoTexel(b, a, c);
+    vec4 meu = texelFetch(de, b, 0);
+    if (a >= L.x || c >= L.y) return meu;
+    ivec2 fx = ler(saltoB, a, c);
+    int n = fx.y - fx.x + 1;
+    if (n <= m) return meu;
+    int i = a - fx.x, b0 = i / (2 * m) * (2 * m);
+    int la = min(m, n - b0), lb = clamp(n - b0 - m, 0, m), k = i - b0;
+    if (lb == 0) return meu;
+    int A = fx.x + b0, B = A + m;
+    int lo = max(0, k - lb), hi = min(k, la);
+    for (int it = 0; it < 13; it++) {
+        if (lo >= hi) break;
+        int mid = (lo + hi) / 2;
+        if (chaveEm(de, A, mid, c) <= chaveEm(de, B, k - mid - 1, c)) lo = mid + 1; else hi = mid;
+    }
+    int ia = lo, ib = k - lo;
+    bool daA = ia < la && (ib >= lb || chaveEm(de, A, ia, c) <= chaveEm(de, B, ib, c));
+    return vec4(texelFetch(de, texelDe(daA ? A + ia : B + ib, c), 0).rgb, meu.a);  // só o RGB anda
+}
+
+vec4 bytesGirados(int a, int c) { return floor(texelFetch(giroRt, texelDe(a, c), 0) * 255.0 + 0.5); }
+vec4 passeVolta() {
+    ivec2 T = tamCamada();
+    vec2 q = acEntradaDePe == 1 ? acScreenNorm : vec2(acScreenNorm.x, 1.0 - acScreenNorm.y);
+    ivec2 p = ivec2(min(floor(q * vec2(T)), vec2(T) - 1.0));
+    vec2 d = vec2(p) - centro;
+    vec2 g = vec2(d.x * co - d.y * si, d.x * si + d.y * co) + centroG;
+    ivec2 gi = ivec2(g);
+    vec4 v;
+    if (g.x <= -1.0 || g.y <= -1.0 || gi.x < 0 || gi.y < 0 || gi.x >= caixa.x - 1 || gi.y >= caixa.y - 1) {
+        v = bytesDaCamada(p);
+    } else {
+        // no elemento do buffer (pixel a pixel, ou encolhido)
+        vec2 u = vec2(L.x == caixa.x ? g.x : (g.x + 0.5) / f.x - 0.5, L.y == caixa.y ? g.y : (g.y + 0.5) / f.y - 0.5);
+        u = clamp(u, vec2(0.0), vec2(L - 1));
+        ivec2 e = ivec2(u);
+        ivec2 e1 = min(e + 1, L - 1);
+        vec2 fr = u - vec2(e);
+        v = mix(mix(bytesGirados(e.x, e.y), bytesGirados(e1.x, e.y), fr.x),
+                mix(bytesGirados(e.x, e1.y), bytesGirados(e1.x, e1.y), fr.x), fr.y);
+        v = clamp(floor(v + 1e-4), 0.0, 255.0);
+    }
+    v /= 255.0;
+    return v.a > 0.0 ? vec4(srgb(min(linear(v.rgb) / v.a, vec3(1.0))), v.a) : vec4(0.0);
+}
+
+void main()
+{
+    montarGiro();
+    ivec2 b = ivec2(gl_FragCoord.xy);
+    if (acPass == P_GIRO) { fragColor = passeGiro(b); return; }
+    if (acPass == P_PONTEIROS) { fragColor = passePonteiros(b); return; }
+    if (acPass < P_FAIXAS) {
+        int k = acPass - P_SALTO;
+        fragColor = k % 2 == 0 ? passeSalto(b, saltoA) : passeSalto(b, saltoB);
+        return;
+    }
+    if (acPass == P_FAIXAS) { fragColor = passeFaixas(b); return; }
+    if (acPass == P_ORDEM) { fragColor = passeBloco(b, giroRt); return; }
+    if (acPass < P_VOLTA) {
+        int k = acPass - P_ORDEM, m = BLOCO << (k - 1);
+        fragColor = k % 2 == 0 ? passeJuntar(b, m, giroRt) : passeJuntar(b, m, saltoA);
+        return;
+    }
+    fragColor = passeVolta();
+}
+    ]]></shader>
+</effect>

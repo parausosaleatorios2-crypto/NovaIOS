@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.perspective" name="Perspective Warp" desc="A true perspective tilt of the layer plane. Tilts the image back like a card on a table." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/perspective.png"
+        tags="3d,perspective,warp,tilt" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Perspective" />
+<spinner id="tiltX" default="0.25" min="-1.0" max="1.0" step="0.01" label="Tilt X" />
+<spinner id="tiltY" default="0.0" min="-1.0" max="1.0" step="0.01" label="Tilt Y" />
+<spinner id="zoom" default="1.0" min="0.3" max="3.0" step="0.01" label="Zoom" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec2 p = (uv - 0.5) * 2.0;
+  float w = 1.0 + tiltX * p.x * mixAmt + tiltY * p.y * mixAmt;
+  p /= max(w, 0.1);
+  p /= max(zoom, 0.05);
+  vec2 tuv = p * 0.5 + 0.5;
+  vec4 warped = texture2DCv(inputImg.texture, tuv);
+  vec4 orig = texture2DCv(inputImg.texture, uv);
+  float inside = step(0.0, tuv.x) * step(tuv.x, 1.0) * step(0.0, tuv.y) * step(tuv.y, 1.0);
+  gl_FragColor = mix(orig, warped * inside, mixAmt);
+}
+]]></shader>
+</effect>

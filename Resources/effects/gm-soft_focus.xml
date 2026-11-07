@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.soft_focus" name="Soft Focus" desc="A blurred copy screened back over the original. The dreamy, glowing portrait finish." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/soft_focus.png"
+        tags="blur,soft,focus,dreamy,glow" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Soft Focus" />
+<spinner id="radius" default="0.012" min="0.001" max="0.05" step="0.0005" label="Radius" />
+<spinner id="screenAmt" default="0.45" min="0.0" max="1.0" step="0.01" label="Glow Amount" />
+<spinner id="desat" default="0.15" min="0.0" max="1.0" step="0.01" label="Glow Desaturation" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 8;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  vec4 blur = vec4(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float ang = float(i) * 6.2831853 / float(TAPS);
+    blur += texture2DCv(inputImg.texture, uv + vec2(cos(ang), sin(ang)) * radius);
+  }
+  blur /= float(TAPS);
+  float ba = max(blur.a, 1e-4);
+  vec3 bc = mix(blur.rgb / ba, vec3(gmLum(blur.rgb / ba)), desat);
+  float sa = max(src.a, 1e-4);
+  vec3 sc = src.rgb / sa;
+  vec3 glow = vec3(1.0) - (vec3(1.0) - sc) * (vec3(1.0) - bc * screenAmt * mixAmt);
+  float a = src.a;
+  gl_FragColor = vec4(clamp(glow, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

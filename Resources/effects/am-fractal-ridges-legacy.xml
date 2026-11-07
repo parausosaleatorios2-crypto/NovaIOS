@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CRISTAIS FRACTAIS (AM, versão antiga) — o `ridges` do Alight Motion (0.789.0)
+  ============================================================================
+
+  O `com.alightcreative.effects.ridges`, "deprecated" no AM 5.0.281 (`assets/effects/ridges.xml`): os projetos feitos
+  antes do `ridges2` abrem nele. Fora do catálogo. A conta é a do `am-fractal-ridges.xml` com duas diferenças, lidas
+  do XML do AM:
+
+  - o Esticar é UM número (−50..50, marca no 0): negativo alarga o X (Escala − Esticar), positivo o Y
+    (Escala + Esticar);
+  - a escala MULTIPLICA a coordenada em volta de 0,5 (na versão atual, divide).
+
+  Conferido em `tools/amcristais/comparar.py` (a versão `v1`).
+-->
+<effect
+    id="nova.effect.am-fractal-ridges-legacy"
+    name="Cristais fractais (AM, versão antiga)"
+    name-en="Fractal Ridges (AM, old version)"
+    desc="Os Cristais fractais antigos do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Fractal Ridges, from projects made before its current version."
+    category="procedural"
+    tags="cristais fractais,fractal ridges,alight motion"
+    stage="screen"
+    screen-scale="safe"
+    catalog="false">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena atrás da camada: só para a luz acima do alfa da borda (`paraReta`). -->
+        <texture id="comp" src="backdrop" />
+        <!-- `<point>` do AM sem atributos: (0, 0), ±9999 e passo 1 (`readPointParam`), número cru. -->
+        <point id="parr" label="Paralaxe" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0" max="9999.0"
+            step="1.0" />
+        <point id="offs" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <!-- `<spinner>` como no AM: o `readSpinnerParam` dele lê `ticks` (as marcas claras) e não lê `snap`. -->
+        <spinner id="evolution" label="Evolução" default="0.0" min="-50.0" max="50.0" step="0.01" ticks="1.0" />
+        <spinner id="scale" label="Escala" default="1.0" min="0.01" max="50.0" step="0.01" ticks="1.0" />
+        <spinner id="stretch" label="Esticar" default="0.0" min="-50.0" max="50.0" step="0.01" ticks="0.0" />
+        <spinner id="intensity" label="Intensidade" default="1.0" min="0.1" max="1.5" step="0.01" ticks="0.5" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="5.0" step="0.01" />
+        <color id="color1" label="Cor 1" default="#FF000000" alpha="true" />
+        <color id="color2" label="Cor 2" default="#FFFFFFFF" alpha="true" />
+        <slider id="octaves" label="Oitavas" default="6" min="1" max="9" step="1" type="integer"
+            ticks="1,2,3,4,5,6,7,8,9" />
+    </params>
+
+    <shader><![CDATA[
+// O simplex 3D do webgl-noise (Ashima Arts / Ian McEwan, licença MIT), como o AM o escreve: as mesmas constantes e
+// a mesma ordem de operações (o ruído dá salto na divisa das células; a mesma ordem dá o mesmo float).
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+                 i.z + vec4(0.0, i1.z, i2.z, 1.0))
+               + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+               + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0) * 2.0 + 1.0;
+    vec4 s1 = floor(b1) * 2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+
+// A crista do AM: |n| vira dobra, invertida para a dobra ficar em cima, e afinada ao quadrado.
+float ridge(float h, float offset) {
+    h = abs(h);
+    h = offset - h;
+    h = h * h;
+    return h;
+}
+
+// O ridged multifractal do AM, linha por linha (cada oitava pesa também pela crista da anterior).
+float ridgedMF(vec2 p, int OCTAVES, vec2 parallax, float evo) {
+    float lacunarity = 2.0;
+    float gain = 0.5;
+    float offset = 0.9;
+    float sum = 0.0;
+    float freq = 1.0, amp = 0.5;
+    float prev = 1.0;
+    for (int i = 0; i < OCTAVES; i++) {
+        float n = ridge(snoise(vec3(p * freq, evo)), offset);
+        sum += n * amp;
+        sum += n * amp * prev;
+        prev = n;
+        freq *= lacunarity;
+        p += parallax;
+        amp *= gain;
+    }
+    return sum;
+}
+
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM em cor reta (a conta da Caixa e do Virar camada). O comum (cor ≤ alfa) é só
+// dividir. Na borda antialiased da camada, com o ruído acima de 1, a mistura passa da Cor 2 e a cor fica ACIMA do
+// alfa (luz que a composição do AM soma ao fundo): este pixel leva junto o fundo dele — com o menor alfa `a` em que
+// a cor reta `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1, a composição Normal do Nova, `s·a·op +
+// fundo·(1 − a·op)`, dá o mesmo `op·p + fundo·(1 − op·alfa)` do AM com qualquer opacidade. Não cabe só quando a
+// soma passa de 1 com a opacidade abaixo da cheia.
+vec4 paraReta(vec4 p) {
+    // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
+    vec4 q = floor(p * 255.0 + 0.5) / 255.0;
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return p.a > 0.0 ? vec4(min(p.rgb / p.a, vec3(1.0)), p.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    vec4 texColor = preMultiplicada(texture(inputImg, acScreenNorm));
+
+    // O `acLayerNorm` do AM: o retângulo do conteúdo de 0 a 1, com o meio no meio do buffer (que cobre a
+    // composição, `acTamanhoDaTela`) e o Y para CIMA (o buffer do Nova cresce para baixo). A ponte dos Raios radiais.
+    vec2 acLayerSize = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 camada = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / acLayerSize;
+    camada.y = 1.0 - camada.y;
+
+    // Daqui em diante, o `main` do AM na mesma ordem.
+    vec2 st = camada;
+    st.x *= acLayerSize.x / acLayerSize.y;
+    st += offs * vec2(-1., 1.) / 500.;
+    st += mod(vec2(821.921 * seed, 437.317 * seed), vec2(4.365, 7.701));
+    vec2 parallax = parr * vec2(-1., 1.) / 100.;
+    vec2 scaleVec;
+    if (stretch < 0.0) {
+        scaleVec = vec2(scale - stretch, scale);
+    } else {
+        scaleVec = vec2(scale, scale + stretch);
+    }
+    float p = ridgedMF((st - 0.5) * scaleVec + 0.5, int(octaves), parallax, evolution) * intensity;
+    vec4 rcolor = mix(color1, color2, p);
+    rcolor *= texColor.a;
+    vec4 saida = rcolor + texColor * (1.0 - rcolor.a);
+
+    // A gravação de 8 bits do AM corta cada canal pré-multiplicado em 0..1; depois, o alfa reto do Nova, com a luz
+    // acima do alfa levada pelo fundo (`paraReta`).
+    fragColor = paraReta(clamp(saida, 0.0, 1.0));
+}
+    ]]></shader>
+</effect>

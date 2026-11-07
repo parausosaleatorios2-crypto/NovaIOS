@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MAPA DE DESLOCAMENTO (NODE) — o Displacement Map do Node Video, conta por conta (0.623.0; luz linear 0.627.0)
+  ============================================================================
+
+  Pedido do snow (18/10/2026): "quero o efeito displacement map 100% igual o do node video". O Node é um app em
+  Unity: o efeito é o shader `NodeVideo/Effect/Distort/displacement_map` (o GLSL ES 3.00 que o Unity gerou, LIDO de
+  `assets/bin/Data/data.unity3d` do APK 9.0.2 descompactado) e a definição `_DisplacementMap` (um `AssetEffect` com 7
+  `AEParam`), e a conversão de cada parâmetro foi lida do código il2cpp (`AEParam.ToParam`, `PEnum`, `PBool`,
+  `AnimParam._Eval`, `SetInternal`). Nada do Node entra no repositório: `tools/nodedeslocamento/extrair.py` tira o
+  shader do APK na hora e `comparar.py` roda os dois na GPU do PC.
+
+  EM LUZ LINEAR (0.627.0, "segue aí então com essa luz linear", 19/10/2026). O Node é um projeto Unity em espaço
+  LINEAR: o RT de cada camada (e o do mapa) é sRGB de 8 bits, com a cor pré-multiplicada em luz linear — ler devolve
+  luz linear (o filtro linear mistura já decodificado) e escrever codifica. A 0.623 lia o mapa e a camada em gama: com
+  mapa branco (o canal = o alfa) dava o mesmo; com mapa cinza ou colorido, o canal lido era outro número (o cinza 128
+  em gama é 0,502; em luz linear, 0,216) e o deslocamento saía outro. Agora, com o buffer sRGB do motor
+  (`format="srgb"`, da 0.626 — o mesmo do Desfoque gaussiano (Node)):
+  - passe 0: a camada como o RT dela no Node (a cor em luz linear vezes o alfa; a GPU guarda em sRGB), DE PÉ;
+  - passe 1: o mapa, igual (o RT da camada escolhida; "Próprio" = a própria camada);
+  - passe 2: o programa do Node, copiado conta por conta (os nomes de variável são os do Unity), lendo os dois RTs
+    pela GPU — o canal do mapa em luz linear, a camada no ponto deslocado pelo filtro linear da GPU — e escrevendo
+    num RT sRGB, como a saída do Node;
+  - passe 3: os bytes desse RT de volta ao alfa reto do Nova (a cor linear ÷ o alfa, em sRGB): no opaco, os próprios
+    bytes do Node.
+
+  OS PARÂMETROS (na ordem do Node):
+
+  - Fonte (`_displacement_source`, um TexPicker): o índice 0 é "Próprio" — a entrada do efeito é o próprio mapa.
+    Aqui é o `<texture src="layer">` sem camada escolhida (o padrão do motor: a própria entrada). Com outra camada,
+    o Node lê o RT DELA, que é a camada como aparece na composição (transformada, com os efeitos dela); aqui é o mesmo
+    (`renderLayerAlone`, no tamanho da tela, porque este efeito roda na tela).
+  - Deslocamento horizontal / vertical máximo: Float 0,1, faixa −1..1 SEM prender (`Clamp` desligado: o
+    `SetInternal` do Node só prende com ele). Em UV da tela: 0,1 = um décimo da largura (ou da altura).
+  - Manter bordas: Bool, o Float guardado é 1 e o Node liga com `Float > 0` — ligado.
+  - A partir do centro: Bool, o Float guardado é −0,98 — DESLIGADO.
+  - Usar para deslocamento horizontal / vertical: Enum de 8 (Red, Green, Blue, Alpha, Luminance, Hue, Lightness,
+    Saturation). O Float guardado é −2,12 → `(int)` = −2, e o `PEnum` nasce com `Clamp` em 0..7: VERMELHO nos dois.
+
+  A CONTA DO NODE (o passe 2, na mesma ordem, com as mesmas constantes do float32):
+
+  - c = o mapa no próprio pixel (pré-multiplicado, em luz linear); o canal: R, G, B, A; Luminância = dot(rgb, (0,3;
+    0,59; 0,11)); Matiz, Clareza e Saturação pelo rgb2hsv de sempre (Sam Hocevar): matiz = |q.z + (q.w − q.y) /
+    (6d + 1e−10)|, "Clareza" = o V do HSV (o máximo, não o L do HSL), saturação = d / (q.x + 1e−10);
+  - d = canal − 0,5, ou o canal cru com "A partir do centro" ligado (é ao contrário do nome, e é o Node);
+  - ponto = (máx H, máx V) · d + uv;
+  - Manter bordas: q = (ponto − 0,5)·1,001 + 0,5; acima de 1 → 1 − fract(q); abaixo de 0 → −q (uma dobra só);
+    ponto = (q − 0,5)·0,999000967 + 0,5. Desligado: o ponto como está, e o RT do Unity (Clamp e Bilinear, o Node
+    nunca troca) repete a borda — o buffer do Nova também é CLAMP_TO_EDGE e LINEAR;
+  - a saída é a camada lida no ponto. A máscara interna do Node (`_use_inner_mask`, a máscara de efeito dele) não é
+    parâmetro do efeito e fica de fora.
+
+  O UV do Node cresce para CIMA (GLES: a linha 0 do RT é a base), e os três RTs do meio ficam SEMPRE como os do Node.
+  Na tela (`stage="screen"`) a entrada do Nova já chega assim (`acEntradaDePe` = 1); num buffer de camada (a linha 0
+  é o topo) só os passes 0, 1 e 3 espelham a linha, pelo `texelFetch` (exato), e a conta do Node roda com o mesmo UV
+  interpolado da tela. Trocar o Y dentro da conta (a 0.623 fazia assim) não basta em luz linear: o filtro linear da GPU
+  quantiza a fração do texel (1/256) de um jeito que não é simétrico, e 1/256 de peso perto do preto vira até 13
+  níveis no sRGB — na bancada, 0,4 % dos pixels opacos saíam diferentes no buffer de camada; de pé, nenhum.
+
+  NA TELA (`stage="screen"`): o RT de cada camada do Node tem o tamanho da composição (`Node.ResetRT` →
+  `Config.GetRes`) e o efeito novo entra DEPOIS do Transform, então ele roda sobre a camada já posta na composição.
+  Prévia reduzida (`screen-scale="safe"`): o deslocamento é em fração da tela, a mesma conta em qualquer resolução.
+
+  O que não fica igual (o mesmo da Cor de preenchimento e do Desfoque gaussiano (Node)): o Node compõe em luz linear e
+  o Nova em gama (a borda de alfa parcial se mistura diferente com o fundo), e o "mais claro que o alfa" — o RT do Node
+  pode guardar a cor acima do alfa (a cor é sRGB, fina no escuro; o alfa, 8 bits lineares), que a cor reta do Nova não
+  guarda: fica no alfa. O mapa e a camada chegam como o Nova os guarda (no Node, a mídia entra no RT com `Blend
+  SrcAlpha Zero`).
+
+  Os samplers são `highp` como os do Node (`precision="highp"`): com o `mediump` do prelúdio, o celular devolveria o
+  canal em meia precisão, e o canal multiplica o deslocamento.
+-->
+<effect
+    id="nova.effect.node-displacement-map"
+    name="Mapa de deslocamento (Node)"
+    name-en="Displacement Map (Node Video)"
+    desc="Desloca os pixels da camada pela cor de um mapa — a própria camada ou outra (o Displacement Map do Node Video)."
+    desc-en="Displaces the layer's pixels by the color of a map — the layer itself or another one (Node Video's Displacement Map)."
+    category="distort"
+    tags="mapa de deslocamento,deslocamento,deslocar,mapa,distorcer,displacement map,displace,node video,nodevideo,vidro,agua,glitch,warp"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" precision="highp" />
+        <texture id="mapImg" src="layer" label="Fonte" precision="highp" />
+
+        <!-- Float do Node: número livre (sem prender), a faixa −1..1 dele é só a régua. -->
+        <spinner id="maxHorizontal" label="Deslocamento horizontal máximo" default="0.1" min="-10.0" max="10.0"
+            step="0.01" />
+        <spinner id="maxVertical" label="Deslocamento vertical máximo" default="0.1" min="-10.0" max="10.0"
+            step="0.01" />
+        <switch id="keepEdge" label="Manter bordas" default="true" />
+        <switch id="fromCenter" label="A partir do centro" default="false" />
+        <selector id="useForHorizontal" label="Usar para deslocamento horizontal" default="0"
+            options="Vermelho|Verde|Azul|Alfa|Luminância|Matiz|Clareza|Saturação" />
+        <selector id="useForVertical" label="Usar para deslocamento vertical" default="0"
+            options="Vermelho|Verde|Azul|Alfa|Luminância|Matiz|Clareza|Saturação" />
+
+        <!-- Os RTs do Node (sRGB de 8 bits, pré-multiplicados em luz linear): a camada, o mapa e a saída. -->
+        <texture id="camadaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="mapaRt" src="buffer" format="srgb" precision="highp" />
+        <texture id="saidaRt" src="buffer" format="srgb" precision="highp" />
+    </params>
+
+    <passes>
+        <pass target="camadaRt" />
+        <pass target="mapaRt" />
+        <pass target="saidaRt" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (o
+// `floor(..)/255.0` vai pelo recíproco e erra o último bit — ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec3 oitoBits3(vec3 k) {
+    return vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+}
+
+vec3 linear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 srgb(vec3 l) {
+    l = clamp(l, 0.0, 1.0);
+    return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l));
+}
+
+// Os bytes que um RT sRGB de 8 bits guarda para esta cor linear.
+vec3 bytesSrgb(vec3 l) {
+    return floor(srgb(l) * 255.0 + 0.5);
+}
+
+// O texel exato de uma imagem do tamanho da tela no pixel de pé (a linha 0 é a base, como nos RTs do Node): no
+// buffer de camada (`acEntradaDePe` = 0, a linha 0 é o topo) a linha é espelhada. Lê a entrada e o mapa para os RTs de
+// pé e o RT de pé para a saída — os espelhos se desfazem, e a conta do meio é a da tela.
+vec4 texelDePe(highp sampler2D img) {
+    ivec2 T = textureSize(img, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+    if (acEntradaDePe != 1) p.y = T.y - 1 - p.y;
+    return texelFetch(img, p, 0);
+}
+
+// O programa do Node, conta por conta (o `_displacement_source` é o `mapaRt`, o `_SourceTex` é o `camadaRt`).
+// [uvNode]: o UV do Node (cresce para cima) — os RTs estão de pé, é o da tela.
+vec4 deslocar(vec2 uvNode) {
+    vec4 u_xlat0;
+    bool u_xlatb1;
+    vec2 u_xlat2;
+    bvec2 u_xlatb2;
+    vec4 u_xlat3;
+    vec4 u_xlat4;
+    float u_xlat6;
+    float u_xlat7;
+    bvec2 u_xlatb7;
+    vec2 u_xlat12;
+    bvec2 u_xlatb12;
+    float u_xlat13;
+    bool u_xlatb13;
+    vec2 u_xlat14;
+    bvec2 u_xlatb14;
+    float u_xlat18;
+    float u_xlat19;
+    u_xlat0 = texture(mapaRt, acScreenNorm).yzwx;
+    u_xlatb1 = keepEdge;
+    if (useForHorizontal == 0) {
+        u_xlat2.x = u_xlat0.w;
+    } else {
+        u_xlatb7.x = useForHorizontal == 1;
+        if (u_xlatb7.x) {
+            u_xlat2.x = u_xlat0.x;
+        } else {
+            u_xlatb7.x = useForHorizontal == 2;
+            if (u_xlatb7.x) {
+                u_xlat2.x = u_xlat0.y;
+            } else {
+                u_xlatb7.x = useForHorizontal == 3;
+                if (u_xlatb7.x) {
+                    u_xlat2.x = u_xlat0.z;
+                } else {
+                    u_xlatb7.x = useForHorizontal == 4;
+                    if (u_xlatb7.x) {
+                        u_xlat2.x = dot(u_xlat0.wxy, vec3(0.300000012, 0.589999974, 0.109999999));
+                    } else {
+                        u_xlatb7.x = u_xlat0.x >= u_xlat0.y;
+                        u_xlat7 = u_xlatb7.x ? 1.0 : float(0.0);
+                        u_xlat3.xy = u_xlat0.yx;
+                        u_xlat3.z = float(-1.0);
+                        u_xlat3.w = float(0.666666687);
+                        u_xlat4.xy = u_xlat0.xy + (-u_xlat3.xy);
+                        u_xlat4.z = float(1.0);
+                        u_xlat4.w = float(-1.0);
+                        u_xlat3 = vec4(u_xlat7) * u_xlat4 + u_xlat3;
+                        u_xlatb7.x = u_xlat0.w >= u_xlat3.x;
+                        u_xlat7 = u_xlatb7.x ? 1.0 : float(0.0);
+                        u_xlat4.xyz = u_xlat3.xyw;
+                        u_xlat4.w = u_xlat0.w;
+                        u_xlat3.xyw = u_xlat4.wyx;
+                        u_xlat3 = (-u_xlat4) + u_xlat3;
+                        u_xlat3 = vec4(u_xlat7) * u_xlat3 + u_xlat4;
+                        u_xlat7 = min(u_xlat3.y, u_xlat3.w);
+                        u_xlat7 = (-u_xlat7) + u_xlat3.x;
+                        u_xlat13 = (-u_xlat3.y) + u_xlat3.w;
+                        u_xlat19 = u_xlat7 * 6.0 + 1.00000001e-10;
+                        u_xlat13 = u_xlat13 / u_xlat19;
+                        u_xlat13 = u_xlat13 + u_xlat3.z;
+                        u_xlatb14.xy = equal(ivec4(useForHorizontal), ivec4(5, 6, 5, 6)).xy;
+                        u_xlat19 = u_xlat3.x + 1.00000001e-10;
+                        u_xlat7 = u_xlat7 / u_xlat19;
+                        u_xlat7 = (u_xlatb14.y) ? u_xlat3.x : u_xlat7;
+                        u_xlat2.x = (u_xlatb14.x) ? abs(u_xlat13) : u_xlat7;
+                    }
+                }
+            }
+        }
+    }
+    u_xlatb7.x = fromCenter;
+    if (useForVertical == 0) {
+        u_xlat2.y = u_xlat0.w;
+    } else {
+        u_xlatb13 = useForVertical == 1;
+        if (u_xlatb13) {
+            u_xlat2.y = u_xlat0.x;
+        } else {
+            u_xlatb13 = useForVertical == 2;
+            if (u_xlatb13) {
+                u_xlat2.y = u_xlat0.y;
+            } else {
+                u_xlatb13 = useForVertical == 3;
+                if (u_xlatb13) {
+                    u_xlat2.y = u_xlat0.z;
+                } else {
+                    u_xlatb13 = useForVertical == 4;
+                    if (u_xlatb13) {
+                        u_xlat2.y = dot(u_xlat0.wxy, vec3(0.300000012, 0.589999974, 0.109999999));
+                    } else {
+                        u_xlatb13 = u_xlat0.x >= u_xlat0.y;
+                        u_xlat13 = u_xlatb13 ? 1.0 : float(0.0);
+                        u_xlat3.xy = u_xlat0.yx;
+                        u_xlat3.z = float(-1.0);
+                        u_xlat3.w = float(0.666666687);
+                        u_xlat4.xy = u_xlat0.xy + (-u_xlat3.xy);
+                        u_xlat4.z = float(1.0);
+                        u_xlat4.w = float(-1.0);
+                        u_xlat3 = vec4(u_xlat13) * u_xlat4 + u_xlat3;
+                        u_xlatb13 = u_xlat0.w >= u_xlat3.x;
+                        u_xlat13 = u_xlatb13 ? 1.0 : float(0.0);
+                        u_xlat0.xyz = u_xlat3.xyw;
+                        u_xlat3.xyw = u_xlat0.wyx;
+                        u_xlat3 = (-u_xlat0) + u_xlat3;
+                        u_xlat0 = vec4(u_xlat13) * u_xlat3 + u_xlat0;
+                        u_xlat13 = min(u_xlat0.y, u_xlat0.w);
+                        u_xlat13 = u_xlat0.x + (-u_xlat13);
+                        u_xlat6 = (-u_xlat0.y) + u_xlat0.w;
+                        u_xlat18 = u_xlat13 * 6.0 + 1.00000001e-10;
+                        u_xlat6 = u_xlat6 / u_xlat18;
+                        u_xlat6 = u_xlat6 + u_xlat0.z;
+                        u_xlatb12.xy = equal(ivec4(useForVertical), ivec4(5, 6, 5, 6)).xy;
+                        u_xlat19 = u_xlat0.x + 1.00000001e-10;
+                        u_xlat13 = u_xlat13 / u_xlat19;
+                        u_xlat0.x = (u_xlatb12.y) ? u_xlat0.x : u_xlat13;
+                        u_xlat2.y = (u_xlatb12.x) ? abs(u_xlat6) : u_xlat0.x;
+                    }
+                }
+            }
+        }
+    }
+    u_xlat0.xy = u_xlat2.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = (u_xlatb7.x) ? u_xlat2.xy : u_xlat0.xy;
+    u_xlat0.xy = vec2(maxHorizontal, maxVertical) * u_xlat0.xy + uvNode;
+    u_xlat12.xy = u_xlat0.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = u_xlat12.xy * vec2(1.00100005, 1.00100005) + vec2(0.5, 0.5);
+    u_xlatb7.xy = lessThan(u_xlat12.xyxx, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb2.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat12.xyxx).xy;
+    u_xlat14.xy = fract(u_xlat12.xy);
+    u_xlat14.xy = (-u_xlat14.xy) + vec2(1.0, 1.0);
+    u_xlat2.x = (u_xlatb2.x) ? u_xlat14.x : u_xlat12.x;
+    u_xlat2.y = (u_xlatb2.y) ? u_xlat14.y : u_xlat12.y;
+    {
+        vec2 hlslcc_movcTemp = u_xlat12;
+        hlslcc_movcTemp.x = (u_xlatb7.x) ? (-u_xlat12.x) : u_xlat2.x;
+        hlslcc_movcTemp.y = (u_xlatb7.y) ? (-u_xlat12.y) : u_xlat2.y;
+        u_xlat12 = hlslcc_movcTemp;
+    }
+    u_xlat12.xy = u_xlat12.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = u_xlat12.xy * vec2(0.999000967, 0.999000967) + vec2(0.5, 0.5);
+    u_xlat0.xy = (bool(u_xlatb1)) ? u_xlat12.xy : u_xlat0.xy;
+    return texture(camadaRt, u_xlat0.xy);
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada como o RT dela no Node: a cor em luz linear vezes o alfa, de pé; a GPU guarda em sRGB.
+        vec4 c = texelDePe(inputImg);
+        fragColor = vec4(linear(c.rgb) * c.a, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        // O mapa, igual (o RT da camada escolhida; sem nenhuma, a própria camada).
+        vec4 m = texelDePe(mapImg);
+        fragColor = vec4(linear(m.rgb) * m.a, m.a);
+        return;
+    }
+    if (acPass == 2) {
+        // Os RTs estão de pé: o UV do Node é o da tela, nos dois casos.
+        fragColor = deslocar(acScreenNorm);
+        return;
+    }
+
+    // Os bytes do RT de saída do Node (a GPU decodificou ao ler; codificar de novo devolve o byte guardado), de volta
+    // à orientação da entrada.
+    vec4 o = texelDePe(saidaRt);
+    vec3 kc = bytesSrgb(o.rgb);
+    float ka = floor(o.a * 255.0 + 0.5);
+    if (ka <= 0.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+    if (ka >= 255.0) {
+        fragColor = vec4(oitoBits3(kc), 1.0);
+        return;
+    }
+    // O Nova guarda reto: a cor linear guardada dividida pelo alfa, de volta ao sRGB (acima de 1 fica em 1).
+    float a = oitoBits(ka);
+    fragColor = vec4(srgb(min(linear(oitoBits3(kc)) / a, vec3(1.0))), a);
+}
+    ]]></shader>
+</effect>

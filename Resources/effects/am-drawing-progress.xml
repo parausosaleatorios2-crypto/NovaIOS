@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AVANÇO DO DESENHO — o Drawing Progress do Alight Motion (0.829.0)
+  ============================================================================
+
+  Pedido do snow (28/10/2026): "faça o efeito drawin progress 100% igual do alight motion", da série "100% iguais ao
+  AM". Mesmos parâmetros, ids, faixas, passos e padrões do `com.alightcreative.effects.drawing.progress` (AM 5.0.281;
+  um projeto do AM importado cai direto aqui pela `EfeitosDoAm.TABELA`).
+
+  O XML do AM não tem shader nem script: quem faz o efeito é o motor dele (`ShapeElementTypeImpl.render`,
+  `TextElementTypeImpl.render` → `Dm.bB6`), que mede o contorno vetorial da camada com o `PathMeasure` do Android e
+  troca o caminho pelo pedaço entre Início e Fim (% do comprimento TOTAL, somando os contornos) antes de desenhar.
+  A conta inteira, lida do bytecode, está em `model/AvancoDoDesenho.kt` — inclusive a medida do Skia reescrita em
+  Kotlin para as formas do Nova, conferida contra o `PathMeasure` de verdade no `AvancoDoDesenhoTest`.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Vale o PRIMEIRO Avanço do desenho ligado da lista. Com Início em 0 e Fim em 100 % a forma sai inteira (as folgas do AM, 1e-5 e
+    0,99999, ficam abaixo do passo do painel).
+  - Fim ≤ Início: a camada some (nem preenchimento nem borda).
+  - O preenchimento também é recortado: um pedaço aberto é preenchido como se uma reta ligasse as pontas. O
+    contorno só continua fechado se entrou inteiro.
+  - Na forma, o desenho começa onde a forma do AM começa: retângulo no canto de cima à esquerda, elipse no meio de
+    cima, os dois no sentido do relógio; o desenho da caneta, no primeiro ponto. No texto, letra por letra, cada
+    contorno da letra na ordem da fonte.
+
+  `stage="vector"`: o efeito não desenha pixel na cadeia — quem executa é o desenho da forma e o do texto. O shader
+  abaixo só copia a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-drawing-progress"
+    name="Avanço do desenho"
+    name-en="Drawing Progress"
+    desc="Recorta o início e o fim do contorno vetorial da camada de forma que ele seja desenhado apenas parcialmente (o Drawing Progress do Alight Motion)."
+    desc-en="Trims the start and end of the layer's vector outline so it is drawn only partially (Alight Motion's Drawing Progress)."
+    category="stylize"
+    stage="vector"
+    tags="avanço do desenho,desenho,desenhar,traço,contorno,linha,progresso,aparar,trim paths,drawing progress,stroke,vetor,forma,texto,escrever,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="start" label="Início" default="0.0" min="0.0" max="100.0" step="0.1" />
+        <spinner id="end" label="Fim" default="100.0" min="0.0" max="100.0" step="0.1" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Model_blingmesh
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-model-blingmesh"
+    name="Model Blingmesh (NV)"
+    name-en="Model Blingmesh (NV)"
+    desc="NodeVideo effect 'NodeVideo/Model_blingmesh', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Model_blingmesh', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_intensity" label="Intensity" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="_angle" label="Angle" default="0.0" min="-180.0" max="180.0" step="1.0" />
+        <color id="_color" label="Color" default="#FFFFFFFF" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec3 u_xlat1;
+vec2 u_xlat2;
+float u_xlat3;
+float u_xlat8;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = u_xlat0.xy * _viewport_ratio.xy;
+    u_xlat8 = _angle * 0.0174532924;
+    u_xlat1.x = sin((-u_xlat8));
+    u_xlat2.x = sin(u_xlat8);
+    u_xlat3 = cos(u_xlat8);
+    u_xlat1.y = u_xlat3;
+    u_xlat1.z = u_xlat2.x;
+    u_xlat2.y = dot(u_xlat1.zy, u_xlat0.xy);
+    u_xlat2.x = dot(u_xlat1.yx, u_xlat0.xy);
+    u_xlat0.xy = u_xlat2.xy + vec2(0.5, 0.5);
+    u_xlat0.xy = clamp(u_xlat0.xy, 0.0, 1.0);
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    u_xlat0 = u_xlat0 * vs_COLOR0;
+    u_xlat0 = u_xlat0 * vec4(vec4(_intensity, _intensity, _intensity, _intensity));
+    fragColor = u_xlat0 * _color;
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand__time_displacement_blit
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-time-displacement-blit"
+    name="Rendercommand  Time Displacement Blit (NV)"
+    name-en="Rendercommand  Time Displacement Blit (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand__time_displacement_blit', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand__time_displacement_blit', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+    </params>
+
+    <shader><![CDATA[
+void main()
+{
+    fragColor = texture(inputImg, acScreenNorm.xy);
+    return;
+}
+    ]]></shader>
+</effect>

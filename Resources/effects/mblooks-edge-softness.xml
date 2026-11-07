@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Edge Softness (`edgs`, linear): `0x1803f1090` — passos de gaussiano recursivo (compute shader)
+  com elipses que crescem (`FXKernel_EllipseMask`). Até 1 nível em 0,005% dos valores. Blur Size 0 = nada.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.edgesoftness"
+    name="Looks: Edge Softness"
+    name-en="Looks: Edge Softness"
+    desc="A ferramenta Edge Softness do Magic Bullet Looks: as bordas da imagem desfocadas aos poucos, de dentro de uma elipse para fora."
+    desc-en="Magic Bullet Looks' Edge Softness tool: the image edges blurred gradually, outward from an ellipse."
+    category="looks"
+    stage="mblooks"
+    looks="edgs"
+    tags="magic bullet,looks,red giant,edge softness,bordas,desfoque,blur,tilt">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="blurSize" label="Blur Size" default="0.0" min="0.0" max="20.0" step="0.01" />
+        <slider id="quality" label="Quality" type="integer" default="0" min="0" max="10" step="1" />
+        <slider id="centerX" label="Center X" default="0.0" min="-50.0" max="50.0" step="0.1" />
+        <slider id="centerY" label="Center Y" default="0.0" min="-50.0" max="50.0" step="0.1" />
+        <slider id="radius" label="Radius" default="1.0" min="0.0" max="3.0" step="0.001" />
+        <slider id="spread" label="Spread" default="1.0" min="0.0" max="1.0" step="0.001" />
+        <slider id="aspect" label="Aspect" default="1.0" min="0.1" max="3.0" step="0.001" />
+    </params>
+
+    <!-- Na vitrine, o padrão (Blur Size 0) não borra: borda bem desfocada. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="blurSize" value="12.0" />
+        <set param="quality" value="6.0" />
+        <set param="radius" value="0.45" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

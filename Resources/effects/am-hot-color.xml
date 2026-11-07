@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   COR QUENTE — o Hot Color do Alight Motion, conta por conta (0.648.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "faça o próximo efeito 100% igual o do alight motion" — o próximo da fila das cenas
+  (`colorhot`, 14 usos). Mesmos ids, mesmos padrões e a mesma conta do `com.alightcreative.effects.colorhot` (um
+  projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281 (`assets/effects/colorhot.xml`
+  do APK descompactado) e do bytecode dele, e escrita de novo aqui; o arquivo do AM não entra no repositório. O
+  antigo, `colorhot2` ("deprecated", um disco só), é o `am-hot-color2-legacy.xml`. A conferência é
+  `python -u tools/amcorquente/comparar.py`: o efeito do AM rodado na GPU do PC ao lado deste.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Dois DISCOS de matiz com o controle de Y ao lado (`<hue-disc bias="true">`): a Cor (padrão vermelho, força 1) e a
+    Tonalidade (padrão amarelo, 60°, força 1). O Y da Cor é o gama do brilho (gama = Y + 1, de 0 a 2); o Y da
+    Tonalidade é onde fica o corte entre as duas cores (corte = Y/2 + 0,5).
+  - O brilho é o do BT.709 (0,2126 R + 0,7152 G + 0,0722 B) da cor PRÉ-multiplicada, elevado a 1/gama. Até o corte a
+    cor é a da Cor (pura, HSV com valor 1); dali para cima vai da Cor à Tonalidade.
+  - Essa cor vira YUV (o BT.601), o Y é TROCADO pelo brilho e o croma multiplicado pelo brilho; de volta ao RGB, acima
+    de 85% de brilho ela vai para o branco (o quadrado da sobra × a força da Cor). Sai × o alfa.
+  - Tudo na cor pré-multiplicada, como lá: a camada é pré-multiplicada em 8 bits pelo mais perto (o premul do
+    Android, `oitoBits`) — o gama é uma potência e um nível de diferença na borda vira muitos.
+  - A volta do YUV passa de 1 com as cores fortes (o vermelho puro com brilho 1 dá R = 1,58): no opaco os dois cortam
+    em 1; no alfa parcial o AM guarda a cor ACIMA do alfa, a luz que a composição dele soma ao fundo. A conta do AM
+    vai para um buffer de 8 bits (`quente`, idêntico ao alvo dele) e a saída reconstrói essa luz com o fundo
+    (`paraReta` do Anel/Sharpen, `src="backdrop"`), por isso o efeito roda NA TELA (`stage="screen"`, depois da
+    transformação, como todo efeito do AM). Limite: com opacidade < 100% e a soma passando de 1, sai um pouco mais
+    escuro; com outro modo de mesclagem, a luz acima do alfa não é somada.
+  - O shader do AM não pede `precision`: compila em `mediump` (16 bits no celular). As variáveis daqui levam o mesmo
+    `mediump`, e as matrizes o `highp` que ele escreve.
+-->
+<effect
+    id="nova.effect.am-hot-color"
+    name="Cor Quente"
+    name-en="Hot Color"
+    desc="Remapeia o brilho da camada numa rampa de cor intensa entre dois matizes escolhidos (o Hot Color do Alight Motion)."
+    desc-en="Remaps the layer's luminance into an intense color ramp based on two selected hues (Alight Motion's Hot Color)."
+    category="color"
+    tags="cor quente,quente,calor,energia,rampa,dois matizes,duotone,hot color,heat,energy,color ramp,alight motion"
+    stage="screen">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena atrás da camada: só lida onde a cor passa do alfa (`paraReta`). -->
+        <texture id="comp" src="backdrop" />
+        <!-- A saída do AM, em 8 bits como o alvo dele (pré-multiplicada, a cor podendo passar do alfa). -->
+        <texture id="quente" src="buffer" />
+
+        <hue-disc id="color" label="Cor" bias="true" default="0,1,0" />
+        <hue-disc id="tint" label="Tonalidade" bias="true" default="60,1,0" />
+    </params>
+
+    <passes>
+        <pass target="quente" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta — a do `am-sharpen.xml`: onde a cor passa do alfa, o
+// menor alfa em que a cor reta cabe, com o fundo junto, dá na composição Normal o mesmo que a soma do AM.
+vec4 paraReta(vec4 q) {
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return q.a > 0.0 ? vec4(q.rgb / q.a, q.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve ao AM (ver `am-color-balance.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// Daqui até o fim do passe 0, o shader do AM com os nomes dele, na mesma ordem e na mesma precisão.
+mediump vec3 hsv2rgb(mediump vec3 c)
+{
+    mediump vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    mediump vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+const highp mat3 rgb2yuv = mat3(
+     0.299,     0.587,    0.114,
+    -0.14713,  -0.28886,  0.436,
+     0.615,    -0.51499, -0.10001
+);
+
+const highp mat3 yuv2rgb = mat3(
+    1.0,  0.0,      1.13983,
+    1.0, -0.39465, -0.58060,
+    1.0,  2.03211,  0.0
+);
+
+void main() {
+    if (acPass == 0) {
+        // A camada do AM chega pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android). No opaco a cor já é
+        // o float da textura, bit a bit.
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 pre = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            pre = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        // Os parâmetros no `mediump` dos uniforms do AM.
+        mediump vec3 cor = color;
+        mediump vec3 tom = tint;
+
+        mediump vec4 source = vec4(pre, c.a);
+        mediump float luminance = dot(source.rgb, luminanceWeighting);
+
+        mediump float gamma = cor.z+1.0;
+        luminance = pow(luminance,1.0/gamma);
+
+        mediump float hue = cor.x /360.;
+        mediump float sat = cor.y;
+        mediump float hue2 = tom.x /360.;
+        mediump float sat2 = tom.y;
+
+        mediump vec3 darkColor =  hsv2rgb(vec3(hue,sat,1.0));
+        mediump vec3 baseColor =  hsv2rgb(vec3(hue,sat,1.0));
+        mediump vec3 lightColor =  hsv2rgb(vec3(hue2,sat2,1.0));
+
+        mediump float cutoff = tom.z / 2.0 + 0.5;
+        mediump vec3 blendColor = luminance < cutoff ? mix( darkColor, baseColor, luminance/cutoff) :  mix( baseColor, lightColor, (luminance-cutoff)/(1.-cutoff));
+
+        mediump vec3 yuv = blendColor * rgb2yuv;
+        yuv.x = luminance;
+        yuv.yz *= luminance;
+        blendColor = yuv * yuv2rgb;
+
+        mediump float shineStart = .85;
+        mediump float shineAmount = max(0.,luminance - shineStart) * (1./(1.-shineStart));
+        shineAmount = shineAmount * shineAmount * sat;
+        blendColor = mix( blendColor, vec3(1.), shineAmount );
+
+        // O corte em 0..1 é o do alvo de 8 bits do AM; escrito aqui para o projeto de 32 bits sair igual.
+        fragColor = clamp(vec4(blendColor,1.0) * source.a, 0.0, 1.0);
+        return;
+    }
+    fragColor = paraReta(texture(quente, acScreenNorm));
+}
+    ]]></shader>
+</effect>

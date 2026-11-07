@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.barrel"
+    name="Barril (Ultra Motion)"
+    name-en="Barrel (Ultra Motion)"
+    desc="Distorção radial com cromática — lente barata."
+    desc-en="Radial lens distortion with chroma — cheap-lens look."
+    category="distort"
+    tags="ultramotion,barrel,lens,distort,radial">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="k1"     label="Curva" default="0.3" min="-1.0" max="1.0" step="0.01" />
+        <slider id="k2"     label="Curva fina" default="0.05" min="-0.5" max="0.5" step="0.005" />
+        <slider id="chroma" label="Cromática" default="0.015" min="0.0" max="0.05" step="0.001" />
+        <point  id="center" label="Centro" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+vec2 distorcer(vec2 p, float coef) {
+    float r2 = dot(p, p);
+    float f = 1.0 + k1 * r2 + k2 * r2 * r2;
+    return p * (f + coef);
+}
+
+void main() {
+    vec2 p = acScreenNorm - center;
+    p.x *= acAspect;
+    vec2 pr = distorcer(p,  chroma);
+    vec2 pg = distorcer(p,  0.0);
+    vec2 pb = distorcer(p, -chroma);
+    pr.x /= acAspect; pg.x /= acAspect; pb.x /= acAspect;
+    float r = texture(inputImg, pr + center).r;
+    float g = texture(inputImg, pg + center).g;
+    float b = texture(inputImg, pb + center).b;
+    float a = texture(inputImg, pg + center).a;
+    fragColor = vec4(r, g, b, a);
+}
+    ]]></shader>
+</effect>

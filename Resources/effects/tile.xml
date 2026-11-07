@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.tile"
+    name="Repetir"
+    name-en="Repeat"
+    desc="Repete a camada em grade, com espelhamento e deslocamento opcionais."
+    desc-en="Repeats the layer in a grid, with mirroring and scroll."
+    category="repeat"
+    tags="repetir,grade,padrão,mosaico,tile">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="countX" label="Colunas" default="3" min="1" max="24" step="1" type="integer" />
+        <slider id="countY" label="Linhas" default="3" min="1" max="24" step="1" type="integer" />
+        <switch id="mirrored" label="Espelhar alternado" default="true" />
+        <slider id="offsetX" label="Deslocar linhas ímpares" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0,0.5" />
+        <slider id="scroll" label="Rolagem" default="0.0" min="-4.0" max="4.0" step="0.05" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, a miniatura ANDA (fase 5, 0.669.0): o padrão é parado; com isto o laço de 1,3 s mostra o movimento. -->
+    <preview>
+        <set param="scroll" value="0.75" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    vec2 counts = vec2(max(countX, 1.0), max(countY, 1.0));
+    vec2 grid = acScreenNorm * counts;
+
+    // Rolagem ligada ao tempo: padrão animado sem precisar de keyframe.
+    grid.x += acTime * scroll;
+
+    vec2 cell = floor(grid);
+
+    // Deslocar as linhas ímpares transforma uma grade quadriculada num padrão
+    // de tijolos. É a diferença entre "repetido" e "padrão".
+    if (mod(cell.y, 2.0) > 0.5) {
+        grid.x += offsetX;
+        cell = floor(grid);
+    }
+
+    vec2 uv = fract(grid);
+
+    // Espelhar as células alternadas faz as bordas casarem: sem isso, a emenda
+    // entre um ladrilho e o vizinho aparece como um corte duro.
+    if (mirrored) {
+        if (mod(cell.x, 2.0) > 0.5) uv.x = 1.0 - uv.x;
+        if (mod(cell.y, 2.0) > 0.5) uv.y = 1.0 - uv.y;
+    }
+
+    fragColor = texture(inputImg, uv);
+}
+
+    ]]></shader>
+</effect>

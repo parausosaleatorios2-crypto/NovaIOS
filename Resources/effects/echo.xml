@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ECO (RASTRO)
+  ============================================================================
+
+  A camada somada a ela mesma alguns quadros atrás. É o rastro de movimento
+  clássico: o dançarino que deixa silhuetas para trás, o texto que entra
+  arrastando cópias, o objeto rápido que vira borrão em degraus.
+
+  ============================================================================
+   O QUE ISTO EXIGIU DO MOTOR
+  ============================================================================
+
+  Todos os outros efeitos deste app olham para UM instante: o passe recebe a
+  camada como ela está agora e devolve pixels. Este precisa de algo que nenhum
+  shader consegue guardar sozinho — como a camada ESTAVA.
+
+  Por isso ele veio junto com o anel de quadros (`FrameHistory`): o motor guarda
+  os últimos quadros de cada camada que peça histórico, e a textura
+  `src="history"` entrega o de N passos atrás.
+
+  Três consequências que aparecem no uso, e é melhor saber de antemão:
+
+  - **Arrastar o cursor apaga o rastro.** O anel guarda o que foi DESENHADO, e
+    pular para outro instante não desenha o caminho até ele. Os rastros voltam
+    assim que o vídeo roda — e a alternativa (mostrar quadros de outro trecho)
+    seria pior que não mostrar nada.
+  - **Em resolução cheia cabem menos rastros.** O anel tem orçamento de memória;
+    um quadro 1080p ocupa 8 MB. Rastro que não cabe chega transparente e some,
+    em vez de estourar a memória do aparelho.
+  - **O eco lê a camada ANTES dos efeitos.** Se lesse depois, e o eco fizesse
+    parte da cadeia, o quadro anterior já viria com o eco dele — realimentação, e
+    o rastro cresceria sozinho até virar borrão.
+-->
+<effect
+    id="nova.effect.echo"
+    name="Eco (rastro)"
+    name-en="Echo"
+    desc="Soma a camada com ela mesma alguns quadros atrás: o rastro de movimento."
+    desc-en="The current frame added to previous ones — the classic motion trail."
+    category="stylize"
+    tags="eco,rastro,trail,tempo,movimento,motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          Cinco retratos do passado, espaçados pelo mesmo parâmetro.
+
+          Cinco porque é o que ainda dá para ler como rastro: com mais, as
+          silhuetas se encostam e viram borrão; com menos, parece que a camada
+          está piscando.
+        -->
+        <texture id="eco1" src="history" offset="1" spacing="gap" />
+        <texture id="eco2" src="history" offset="2" spacing="gap" />
+        <texture id="eco3" src="history" offset="3" spacing="gap" />
+        <texture id="eco4" src="history" offset="4" spacing="gap" />
+        <texture id="eco5" src="history" offset="5" spacing="gap" />
+
+        <slider id="count" label="Quantos rastros"
+                default="4" min="0" max="5" step="1" type="integer" />
+        <slider id="gap" label="Quadros entre um e outro"
+                default="2" min="1" max="8" step="1" type="integer" />
+        <slider id="decay" label="Quanto cada um apaga"
+                default="0.55" min="0.05" max="1.0" step="0.01" snap="0.5" />
+
+        <!-- ============================= Estilo ============================= -->
+        <selector id="mode" group="Estilo" label="Como somar" default="0"
+                  options="Por trás|Somar luz|Mais claro" />
+        <color id="tint" group="Estilo" label="Tingir o rastro" default="#00FFFFFF" />
+        <slider id="scatter" group="Estilo" label="Afastar o rastro"
+                default="0.0" min="-0.1" max="0.1" step="0.002" snap="0.0" />
+    </params>
+
+    <!-- O rastro fica ATRÁS da camada: numa amostra opaca ele some. A figura solta deixa ver as cópias (0.669.0). -->
+    <preview amostra="figura" />
+
+    <shader><![CDATA[
+
+vec2 paraUv(vec2 v) { return vec2(v.x / max(acAspect, 1e-4), v.y); }
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    return vec4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
+}
+
+/**
+ * Junta um rastro ao que já está montado.
+ *
+ * O deslocamento existe para o caso em que a camada está PARADA: sem ele, cinco
+ * cópias no mesmo lugar não aparecem, e o efeito parece desligado. Um empurrão
+ * pequeno por rastro já mostra a escada.
+ */
+vec4 juntar(vec4 acumulado, vec4 rastro, float peso) {
+    if (rastro.a <= 0.0 || peso <= 0.0) return acumulado;
+
+    vec3 corRastro = mix(rastro.rgb, tint.rgb, tint.a);
+    vec4 pintado = vec4(corRastro, rastro.a * peso);
+
+    if (mode == 1) {
+        // Somar luz: o rastro ACENDE o que já está lá. É o que se quer em
+        // fogo, faísca e texto brilhante.
+        return vec4(acumulado.rgb + pintado.rgb * pintado.a,
+                    max(acumulado.a, pintado.a));
+    }
+    if (mode == 2) {
+        // Mais claro: fica o maior dos dois, canal a canal. Não estoura o
+        // branco como a soma, e mantém a silhueta limpa.
+        return vec4(max(acumulado.rgb, pintado.rgb),
+                    max(acumulado.a, pintado.a));
+    }
+    // Por trás: o rastro aparece ONDE a camada atual não está. É o padrão
+    // porque é o que preserva a imagem de agora intacta.
+    return sobre(pintado, acumulado);
+}
+
+void main() {
+    vec4 agora = texture(inputImg, acScreenNorm);
+
+    int quantos = clamp(int(count + 0.5), 0, 5);
+    if (quantos == 0) {
+        fragColor = agora;
+        return;
+    }
+
+    // Começa do rastro mais VELHO e vai chegando no atual: assim o mais novo
+    // fica por cima, que é a ordem natural de um rastro.
+    vec4 montado = vec4(0.0);
+
+    for (int i = 5; i >= 1; i--) {
+        if (i > quantos) continue;
+
+        vec2 desvio = paraUv(vec2(scatter * float(i), 0.0));
+        vec2 uv = acScreenNorm - desvio;
+
+        vec4 rastro;
+        if (i == 1) rastro = texture(eco1, uv);
+        else if (i == 2) rastro = texture(eco2, uv);
+        else if (i == 3) rastro = texture(eco3, uv);
+        else if (i == 4) rastro = texture(eco4, uv);
+        else rastro = texture(eco5, uv);
+
+        montado = juntar(montado, rastro, pow(max(decay, 0.001), float(i)));
+    }
+
+    // O quadro de agora entra por último, sempre inteiro: o rastro é o que
+    // acompanha, não o que substitui.
+    if (mode == 1) {
+        fragColor = vec4(montado.rgb * (1.0 - agora.a) + agora.rgb * agora.a,
+                         max(montado.a, agora.a));
+    } else {
+        fragColor = sobre(montado, agora);
+    }
+}
+
+    ]]></shader>
+</effect>

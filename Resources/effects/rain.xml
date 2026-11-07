@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CHUVA
+  ============================================================================
+
+  Traços diagonais finos caindo pela tela, com vento, intensidade e cor —
+  gerador em 1 passe, mesma estratégia celular da `snow.xml`.
+
+  ============================================================================
+   O TRAÇO É A RETA ENTRE DOIS INSTANTES DE QUEDA
+  ============================================================================
+
+  Cada célula do grid hospeda UMA gota. A gota cai; o traço VISÍVEL do pingo
+  num exposure longo é o segmento entre onde ela estava e onde está. No shader
+  isso vira a distância do pixel ao SEGMENTO que começa em `(x, y)` e termina
+  em `(x, y − streakLength)`, com y correndo no tempo.
+
+  Para cada pixel: olha a célula atual e as vizinhas acima (porque o traço de
+  uma gota de cima pode entrar nesta célula), mede a distância ao segmento, e
+  acende um traço fino.
+
+  ============================================================================
+   O ESTOURO QUE FAZ CHUVA DE VERDADE
+  ============================================================================
+
+  Chuva não cai inteira de uma vez: tem o conjunto, mas tem um ou outro pingo
+  mais grosso que estoura num ponto. Aqui o `density` controla o volume; cada
+  gota tem um TAMANHO sorteado por hash, que varia um pouco pra cada uma, e
+  dá o "ruído" que separa "efeito de chuva" de "hachura inclinada".
+-->
+<effect
+    id="nova.effect.rain"
+    name="Chuva"
+    name-en="Rain"
+    desc="Traços diagonais de chuva caindo, com vento e intensidade."
+    desc-en="Diagonal rain streaks falling, with wind and intensity."
+    category="procedural"
+    tags="chuva,rain,gotas,tempestade,atmosfera,gerador,inverno">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="density" label="Densidade"
+                default="80.0" min="10.0" max="300.0" step="2.0" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="1.2" min="0.1" max="5.0" step="0.05" snap="0.0" />
+        <slider id="streakLength" label="Comprimento do traço"
+                default="0.08" min="0.01" max="0.4" step="0.005" snap="0.0" />
+        <slider id="wind" label="Vento (°)"
+                default="15.0" min="-45.0" max="45.0" step="1.0" snap="0.0" />
+        <slider id="thickness" label="Espessura"
+                default="0.5" min="0.1" max="2.0" step="0.05" snap="0.0" />
+        <color id="rainColor" label="Cor" default="#CCDDE8FF" />
+        <slider id="intensity" label="Intensidade"
+                default="1.0" min="0.0" max="2.0" step="0.05" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <!-- Na vitrine, mais densidade pra ler como chuva. -->
+    <preview>
+        <set param="density" value="150.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash2(vec2 c) {
+    c += vec2(float(seed) * 13.7);
+    return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+/** A distância de um ponto p ao segmento `a → b` (SDF 2D canônico). */
+float distanciaAoSegmento(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+/** O traço de uma gota dentro de uma célula. Retorna a intensidade em `uvDaTela`. */
+float gotaDaCelula(vec2 celula, vec2 uvDaTela, float t) {
+    // Posição x da gota dentro da célula (hash estável).
+    float xDaGota = hash2(celula + 0.1);
+    float yFase = hash2(celula + 0.3);
+    float tamanho = mix(0.5, 1.2, hash2(celula + 0.7));
+
+    // Y cai no tempo, recomeça ao sair.
+    float y = fract(yFase + t);
+    vec2 topoDaGota = vec2(xDaGota, 1.0 - y);
+    vec2 baseDaGota = topoDaGota - vec2(0.0, streakLength);
+
+    // Vento inclina o segmento: gira em volta do topo.
+    float a = radians(wind);
+    vec2 d = baseDaGota - topoDaGota;
+    d = vec2(d.x * cos(a) - d.y * sin(a), d.x * sin(a) + d.y * cos(a));
+    baseDaGota = topoDaGota + d;
+
+    float dist = distanciaAoSegmento(uvDaTela, topoDaGota, baseDaGota);
+    float largura = 0.0015 * thickness * tamanho;
+    return (1.0 - smoothstep(0.0, largura, dist)) * tamanho;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 grade = vec2(density * 0.1, density * 0.3);
+    vec2 escalado = acScreenNorm * grade;
+    vec2 i = floor(escalado);
+    vec2 f = fract(escalado);
+    float t = acTime * speed;
+
+    // Olha a célula atual + algumas vizinhas acima (o traço pode atravessar).
+    float melhor = 0.0;
+    for (int dy = 0; dy <= 2; dy++) {
+        vec2 celula = i + vec2(0.0, float(dy));
+        melhor = max(melhor, gotaDaCelula(celula, f - vec2(0.0, float(dy)), t));
+    }
+
+    float alfa = clamp(melhor * intensity, 0.0, 1.0) * rainColor.a;
+
+    vec3 cor = mix(original.rgb, rainColor.rgb, alfa);
+    float alfaFinal = max(original.a, alfa);
+
+    fragColor = vec4(cor, alfaFinal);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PSEUDOCOLOR — o S_PseudoColor (Sapphire) do After Effects (0.400.0)
+  ============================================================================
+
+  Pedido do snow (04/10/2026): "agr o S_PseudoColor". MEDIDO no plugin do AE dele (matchName
+  "S_PseudoColor"), numa instância separada do AE: 56 renders em 16 bits sobre uma rampa de
+  cinza, uma cartela de cores e formas, um controle por vez (tools/pseudocolor/benchmark/).
+
+  A CONTA (toda por pixel, sem vizinhos):
+
+    v      = 5/16·R + 8/16·G + 3/16·B                      (o brilho da fonte; pesos ajustados
+                                                             na cartela, resíduo 0,00001)
+    matiz  = Frequency · v − Hue Shift                      (em voltas; preto = vermelho)
+    p      = a cor pura desse matiz (arco-íris de 6 trechos lineares)
+    cor    = 1 − Saturation·(1 − p)        se Saturation ≥ 0   (0 = branco; > 1 estoura)
+           = 1 + Saturation·p              se Saturation < 0   (a cor complementar)
+    cor    = cor · Brightness · mistura(1, corta(v · Scale By Src Amp), Scale By Source)
+    saída  = corta(mistura(cor, fonte, Mix With Source));  o alfa é o da fonte.
+
+  Só o brilho da fonte e a saída são cortados em [0, 1]; o que estoura no meio do caminho
+  (Saturation > 1, Brightness > 1) segue estourado até a mistura — conferido em casos combinados.
+
+  CONTRA O AE (na GPU do PC): 56 casos, erro médio por pixel de 0,001% (mediana) a 0,06% (o pior,
+  Frequency 40, onde o arco-íris dá 40 voltas).
+
+  O padrão de Frequency aqui é 11,5 — o valor da comp do snow (o de fábrica do plugin é 2).
+  Fora: a máscara (Mask from Layer / Path, Blur Mask, Invert Mask) e o Mocha.
+-->
+<effect
+    id="nova.effect.pseudocolor"
+    name="PseudoColor"
+    name-en="PseudoColor"
+    desc="O S_PseudoColor do After Effects (Sapphire): troca o brilho da imagem por um arco-íris que dá várias voltas — visão térmica, psicodélico."
+    desc-en="After Effects' S_PseudoColor (Sapphire): replaces the picture's brightness with a rainbow that wraps several times — thermal vision, psychedelic."
+    category="color"
+    tags="pseudocolor,pseudo color,sapphire,s_pseudocolor,arco-iris,arco-íris,rainbow,termico,térmico,thermal,psicodelico,psicodélico,falsa cor,false color,heatmap">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="frequency" label="Frequency" default="11.5" min="0.0" max="40.0" step="0.1" snap="2.0,11.5" />
+        <slider id="hueShift" label="Hue Shift" default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="saturation" label="Saturation" default="1.0" min="-2.0" max="8.0" step="0.01" snap="0.0,1.0" />
+        <slider id="brightness" label="Brightness" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="scaleBySource" label="Scale By Source" default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="scaleBySrcAmp" label="Scale By Src Amp" default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="mixWithSource" label="Mix With Source" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    vec4 fonte = texture(inputImg, acScreenNorm);
+    float v = dot(fonte.rgb, vec3(0.3125, 0.5, 0.1875));
+    float matiz = fract(frequency * v - hueShift);
+    vec3 p = clamp(abs(mod(matiz * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    vec3 cor = saturation >= 0.0 ? 1.0 - saturation * (1.0 - p) : 1.0 + saturation * p;
+    // Nada é cortado no caminho (medido com casos combinados): só o brilho da fonte e a saída.
+    cor *= brightness * mix(1.0, clamp(v * scaleBySrcAmp, 0.0, 1.0), scaleBySource);
+    fragColor = vec4(clamp(mix(cor, fonte.rgb, mixWithSource), 0.0, 1.0), fonte.a);
+}
+]]></shader>
+</effect>

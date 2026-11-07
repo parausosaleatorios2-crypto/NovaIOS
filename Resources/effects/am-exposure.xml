@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EXPOSIÇÃO/GAMA — o Exposure / Gamma do Alight Motion, conta por conta (0.544.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "faça agora o exposição e gama 100% igual o alight motion", o nono da série
+  "100% iguais ao AM". Mesmos parâmetros, mesmos ids e mesmos padrões do `com.alightcreative.effects.exposure`
+  (um projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM 5.0.281
+  (`assets/effects/exposure.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra no
+  repositório. A conferência é `python tools/amcontour/comparar.py exposicao`: o efeito do AM rodado na GPU do
+  PC ao lado deste.
+
+  A "Exposição" que já existia (`exposure.xml`) é outra conta (multiplica na luz linear, em pontos de -4 a 4);
+  ESTA é a do AM, com o nome dele.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Três números, na ordem do AM: Deslocamento soma, Gama curva, Exposição multiplica.
+      cor = cor + Deslocamento
+      cor = cor ^ (1 / Gama)
+      cor = cor × 2 ^ Exposição
+    Exposição de -2 a 2 (padrão 0), Gama de 0,01 a 9,99 (padrão 1), Deslocamento de -0,9 a 0,9 (padrão 0):
+    com os padrões, a camada sai como entrou. O alfa nunca muda.
+  - Tudo na cor PRÉ-MULTIPLICADA (p = cor × alfa), como o AM: o Deslocamento entra × alfa (a borda suave
+    recebe a parte dela), mas a Gama curva o pré-multiplicado — numa borda de alfa 0,5 a curva vale para
+    0,5 × cor, e não para a cor. Aqui é a mesma conta, na mesma ordem: a cor é pré-multiplicada no shader,
+    o resultado é cortado em 0 e 1 (o buffer de 8 bits do AM) e só então volta para a cor reta do Nova.
+  - A camada do AM é pré-multiplicada EM 8 BITS antes do efeito, e a Gama enxerga isso: o azul 1 de uma
+    borda de alfa 118 vira 0 no AM (1 × 118 ÷ 255 = 0,46 → 0) e 0 continua 0 em qualquer potência; sem o
+    arredondamento, o 0,0018 do Nova virava 0,53 com Gama 9,99 (meio azul a mais na borda). Por isso a cor
+    pré-multiplicada é arredondada a 8 bits aqui, como o Android faz (o arredondamento pelo mais perto).
+  - Deslocamento negativo maior que o canal deixa a base da potência negativa: no GLSL isso não tem
+    resultado definido, e a GPU dá NaN, que o buffer de 8 bits grava como 0. Aqui o negativo vira 0 antes
+    da potência — o mesmo preto, sem depender do driver.
+  - A Gama do AM é um `<spinner>` com `logscale="2.351"`, mas o leitor do AM (`readSpinnerParam`) só lê
+    id, enabled, type, label, default, min, max, step, multiplier e originValue: `logscale`, `snap` e `ticks`
+    não existem no spinner dele, e no AM ela anda em escala linear, como aqui. O `snap` e os `ticks` ficam
+    só como o ímã e as marcas do controle do Nova — não mudam a imagem.
+  - Com Exposição acima de 0 (ou Gama acima de 1) a borda de alfa parcial passa do alfa no AM (o
+    pré-multiplicado cabe no buffer) e a cor reta do Nova corta em 1: por cima de branco dá igual; por cima
+    de preto, a borda do AM sai mais clara. É a mesma diferença do Colorizar e do Gradiente de contorno.
+  - Não mede pixel nem distância: a prévia pode rodar em qualquer resolução.
+-->
+<effect
+    id="nova.effect.am-exposure"
+    name="Exposição/gama"
+    name-en="Exposure / Gamma"
+    desc="Ajusta a exposição, a curva de gama e o deslocamento da camada (o Exposure / Gamma do Alight Motion)."
+    desc-en="Adjusts the exposure, gamma curve and offset of the layer (Alight Motion's Exposure / Gamma)."
+    category="color"
+    tags="exposição,exposicao,gama,gamma,deslocamento,offset,brilho,correção de cor,exposure,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="exposure" label="Exposição" default="0.0" min="-2.0" max="2.0"
+            ticks="-2.0,-1.0,0.0,1.0,2.0" snap="0.0" />
+        <spinner id="gamma" label="Gama" default="1.0" min="0.01" max="9.99" step="0.005"
+            ticks="0.5,1.0,2.0" snap="1.0" />
+        <spinner id="offset" label="Deslocamento" default="0.0" min="-0.9" max="0.9" step="0.01"
+            ticks="0.0" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0) deixa a camada como entrou: um ponto de exposição a mais. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="exposure" value="1.0" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    // A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android).
+    vec3 c = floor(camada.rgb * a * 255.0 + 0.5) / 255.0;
+    c = c + vec3(offset) * a;
+    c = pow(max(c, vec3(0.0)), vec3(1.0 / gamma));               // base negativa: o NaN do AM grava 0
+    c = c * pow(2.0, exposure);
+    vec3 saida = clamp(c, 0.0, 1.0);                             // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = a > 0.0 ? vec4(min(saida / a, vec3(1.0)), a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

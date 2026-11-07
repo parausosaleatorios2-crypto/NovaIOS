@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_heat_wave
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-heat-wave"
+    name="Heat Wave (NV)"
+    name-en="Heat Wave (NV)"
+    desc="NodeVideo Asset Store effect 'heat_wave', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'heat_wave', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_speed" label="Speed" default="0.5" min="0" max="2" step="0.01" />
+        <point id="_offset" label="Offset" defaultX="0" defaultY="0" vetor="true" min="0" max="16" />
+        <slider id="_amplitude" label="Amplitude" default="0.2" min="-1" max="1" step="0.01" />
+        <slider id="_scale" label="Scale" default="1" min="0" max="2" step="0.01" />
+        <slider id="_octaves" label="Octaves" default="6" min="1" max="10" step="0.01" />
+        <slider id="_frequency" label="Frequency" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_direction" label="Direction" default="-125" min="-125" max="360" step="1" />
+        <slider id="_keep_edge" type="integer" label="Keep Edge" default="1" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+// tempo do Node ligado ao motor (tools/nodevideo/ligar_tempo.py)
+#define _cur_time acTime
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+vec2 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+bool u_xlatb3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec2 u_xlat6;
+float u_xlat8;
+vec2 u_xlat9;
+float u_xlat10;
+bool u_xlatb12;
+int u_xlati13;
+bvec2 u_xlatb13;
+vec2 u_xlat14;
+int u_xlati14;
+vec2 u_xlat15;
+vec2 u_xlat16;
+float u_xlat19;
+float u_xlat20;
+int u_xlati20;
+bool u_xlatb20;
+float u_xlat22;
+void main()
+{
+    u_xlat0.x = _cur_time * _speed;
+    u_xlat6.x = _direction + -90.0;
+    u_xlat6.x = u_xlat6.x * 0.0174532942;
+    u_xlat6.y = sin((-u_xlat6.x));
+    u_xlat6.x = cos(u_xlat6.x);
+    u_xlat1 = u_xlat0.xxxx * u_xlat6.yxyx;
+    u_xlat0 = acScreenNorm.xyxy * vec4(_viewport_ratio.x, _viewport_ratio.y, _viewport_ratio.x, _viewport_ratio.y) + (-u_xlat1);
+    u_xlat1.xy = vec2(_offset.x, _offset.y) * vec2(-1.0, 1.0);
+    u_xlat0 = u_xlat0 + vec4(-0.5, -0.5, 24.7999992, 12.3999996);
+    u_xlat0 = u_xlat0 * vec4(_scale);
+    u_xlat0 = u_xlat0 * vec4(3.0, 3.0, 3.0, 3.0) + vec4(0.5, 0.5, 0.5, 0.5);
+    u_xlati13 = int(_octaves);
+    u_xlat2.xy = u_xlat0.xy;
+    u_xlat19 = 0.0;
+    u_xlat14.x = float(0.5);
+    for(int u_xlati_loop_1 = int(0) ; u_xlati_loop_1<u_xlati13 ; u_xlati_loop_1++)
+    {
+        u_xlat3.xy = floor(u_xlat2.xy);
+        u_xlat15.xy = fract(u_xlat2.xy);
+        u_xlat4.x = dot(u_xlat3.xy, vec2(12.9898005, 78.2330017));
+        u_xlat4.x = sin(u_xlat4.x);
+        u_xlat4.x = u_xlat4.x * 43758.5469;
+        u_xlat5 = u_xlat3.xyxy + vec4(1.0, 0.0, 0.0, 1.0);
+        u_xlat10 = dot(u_xlat5.xy, vec2(12.9898005, 78.2330017));
+        u_xlat10 = sin(u_xlat10);
+        u_xlat4.y = u_xlat10 * 43758.5469;
+        u_xlat16.x = dot(u_xlat5.zw, vec2(12.9898005, 78.2330017));
+        u_xlat16.x = sin(u_xlat16.x);
+        u_xlat4.z = u_xlat16.x * 43758.5469;
+        u_xlat4.xyz = fract(u_xlat4.xyz);
+        u_xlat3.xy = u_xlat3.xy + vec2(1.0, 1.0);
+        u_xlat3.x = dot(u_xlat3.xy, vec2(12.9898005, 78.2330017));
+        u_xlat3.x = sin(u_xlat3.x);
+        u_xlat3.x = u_xlat3.x * 43758.5469;
+        u_xlat3.x = fract(u_xlat3.x);
+        u_xlat5.xy = u_xlat15.xy * u_xlat15.xy;
+        u_xlat9.xy = (-u_xlat15.xy) * vec2(2.0, 2.0) + vec2(3.0, 3.0);
+        u_xlat15.xy = u_xlat9.xy * u_xlat5.xy;
+        u_xlat22 = (-u_xlat4.x) + u_xlat4.y;
+        u_xlat22 = u_xlat15.x * u_xlat22 + u_xlat4.x;
+        u_xlat4.x = (-u_xlat4.x) + u_xlat4.z;
+        u_xlat4.x = u_xlat15.y * u_xlat4.x;
+        u_xlat9.x = (-u_xlat5.x) * u_xlat9.x + 1.0;
+        u_xlat9.x = u_xlat4.x * u_xlat9.x + u_xlat22;
+        u_xlat3.x = (-u_xlat4.y) + u_xlat3.x;
+        u_xlat3.x = u_xlat15.x * u_xlat3.x;
+        u_xlat3.x = u_xlat3.x * u_xlat15.y + u_xlat9.x;
+        u_xlat19 = u_xlat14.x * u_xlat3.x + u_xlat19;
+        u_xlat2.xy = u_xlat2.xy * vec2(2.0, 2.0) + u_xlat1.xy;
+        u_xlat14.x = u_xlat14.x * _frequency;
+    }
+    u_xlat0.xy = u_xlat0.zw;
+    u_xlat2.x = float(0.0);
+    u_xlat8 = float(0.5);
+    for(int u_xlati_loop_2 = int(0) ; u_xlati_loop_2<u_xlati13 ; u_xlati_loop_2++)
+    {
+        u_xlat3.xy = floor(u_xlat0.xy);
+        u_xlat15.xy = fract(u_xlat0.xy);
+        u_xlat20 = dot(u_xlat3.xy, vec2(12.9898005, 78.2330017));
+        u_xlat20 = sin(u_xlat20);
+        u_xlat20 = u_xlat20 * 43758.5469;
+        u_xlat20 = fract(u_xlat20);
+        u_xlat4 = u_xlat3.xyxy + vec4(1.0, 0.0, 0.0, 1.0);
+        u_xlat4.x = dot(u_xlat4.xy, vec2(12.9898005, 78.2330017));
+        u_xlat4.x = sin(u_xlat4.x);
+        u_xlat4.x = u_xlat4.x * 43758.5469;
+        u_xlat10 = dot(u_xlat4.zw, vec2(12.9898005, 78.2330017));
+        u_xlat10 = sin(u_xlat10);
+        u_xlat4.y = u_xlat10 * 43758.5469;
+        u_xlat4.xy = fract(u_xlat4.xy);
+        u_xlat3.xy = u_xlat3.xy + vec2(1.0, 1.0);
+        u_xlat3.x = dot(u_xlat3.xy, vec2(12.9898005, 78.2330017));
+        u_xlat3.x = sin(u_xlat3.x);
+        u_xlat3.x = u_xlat3.x * 43758.5469;
+        u_xlat3.x = fract(u_xlat3.x);
+        u_xlat16.xy = u_xlat15.xy * u_xlat15.xy;
+        u_xlat9.xy = (-u_xlat15.xy) * vec2(2.0, 2.0) + vec2(3.0, 3.0);
+        u_xlat15.xy = u_xlat9.xy * u_xlat16.xy;
+        u_xlat22 = (-u_xlat20) + u_xlat4.x;
+        u_xlat22 = u_xlat15.x * u_xlat22 + u_xlat20;
+        u_xlat20 = (-u_xlat20) + u_xlat4.y;
+        u_xlat20 = u_xlat15.y * u_xlat20;
+        u_xlat9.x = (-u_xlat16.x) * u_xlat9.x + 1.0;
+        u_xlat20 = u_xlat20 * u_xlat9.x + u_xlat22;
+        u_xlat3.x = (-u_xlat4.x) + u_xlat3.x;
+        u_xlat3.x = u_xlat15.x * u_xlat3.x;
+        u_xlat20 = u_xlat3.x * u_xlat15.y + u_xlat20;
+        u_xlat2.x = u_xlat8 * u_xlat20 + u_xlat2.x;
+        u_xlat0.xy = u_xlat0.xy * vec2(2.0, 2.0) + u_xlat1.xy;
+        u_xlat8 = u_xlat8 * _frequency;
+    }
+    u_xlat0.x = u_xlat19 + -0.5;
+    u_xlat0.y = u_xlat2.x + -0.5;
+    u_xlat0.xy = u_xlat0.xy * vec2(vec2(_amplitude, _amplitude)) + acScreenNorm.xy;
+    u_xlatb12 = int(_keep_edge)==1;
+    u_xlat1.xy = u_xlat0.xy + vec2(-0.5, -0.5);
+    u_xlat1.xy = u_xlat1.xy * vec2(1.00999999, 1.00999999) + vec2(0.5, 0.5);
+    u_xlatb13.xy = lessThan(u_xlat1.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+    u_xlatb2.xy = lessThan(vec4(1.0, 1.0, 0.0, 0.0), u_xlat1.xyxx).xy;
+    u_xlat14.xy = fract(u_xlat1.xy);
+    u_xlat14.xy = (-u_xlat14.xy) + vec2(1.0, 1.0);
+    u_xlat2.x = (u_xlatb2.x) ? u_xlat14.x : u_xlat1.x;
+    u_xlat2.y = (u_xlatb2.y) ? u_xlat14.y : u_xlat1.y;
+    {
+        vec4 hlslcc_movcTemp = u_xlat1;
+        hlslcc_movcTemp.x = (u_xlatb13.x) ? (-u_xlat1.x) : u_xlat2.x;
+        hlslcc_movcTemp.y = (u_xlatb13.y) ? (-u_xlat1.y) : u_xlat2.y;
+        u_xlat1 = hlslcc_movcTemp;
+    }
+    u_xlat1.xy = u_xlat1.xy + vec2(-0.5, -0.5);
+    u_xlat1.xy = u_xlat1.xy * vec2(0.990099013, 0.990099013) + vec2(0.5, 0.5);
+    u_xlat0.xy = (bool(u_xlatb12)) ? u_xlat1.xy : u_xlat0.xy;
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    if(int(_use_inner_mask) != 0) {
+        u_xlat1 = texture(inputImg, acScreenNorm.xy);
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.outline"
+    name="Contorno"
+    name-en="Outline"
+    desc="Desenha uma borda em volta do recorte da camada, ou detecta bordas internas."
+    desc-en="A stroke around the layer alpha."
+    category="stylize"
+    tags="contorno,borda,sticker,outline,traço">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="thickness" label="Espessura" default="6.0" min="1.0" max="40.0" step="1.0" />
+        <color id="color" label="Cor" default="#FFFFFF" />
+        <selector id="mode" label="Modo" default="0" options="Em volta (sticker)|Bordas internas" />
+        <switch id="hideSource" label="Só o contorno" default="false" />
+    </params>
+
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura" />
+
+    <shader><![CDATA[
+
+const int RINGS = 12;
+const float TAU = 6.28318530718;
+
+void main() {
+    vec4 base = texture(inputImg, acScreenNorm);
+
+    if (mode == 1) {
+        // Sobel: detecta variação de brilho, revelando bordas DENTRO da imagem.
+        // (em pixels da composição: ver o `radius` abaixo)
+        vec2 o = acTexelSize * (thickness * acEscalaDePixel) * 0.25;
+        float tl = dot(texture(inputImg, acScreenNorm + vec2(-o.x,  o.y)).rgb, vec3(0.333));
+        float tm = dot(texture(inputImg, acScreenNorm + vec2( 0.0,  o.y)).rgb, vec3(0.333));
+        float tr = dot(texture(inputImg, acScreenNorm + vec2( o.x,  o.y)).rgb, vec3(0.333));
+        float ml = dot(texture(inputImg, acScreenNorm + vec2(-o.x,  0.0)).rgb, vec3(0.333));
+        float mr = dot(texture(inputImg, acScreenNorm + vec2( o.x,  0.0)).rgb, vec3(0.333));
+        float bl = dot(texture(inputImg, acScreenNorm + vec2(-o.x, -o.y)).rgb, vec3(0.333));
+        float bm = dot(texture(inputImg, acScreenNorm + vec2( 0.0, -o.y)).rgb, vec3(0.333));
+        float br = dot(texture(inputImg, acScreenNorm + vec2( o.x, -o.y)).rgb, vec3(0.333));
+
+        float gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+        float gy =  tl + 2.0 * tm + tr - bl - 2.0 * bm - br;
+        float edge = clamp(length(vec2(gx, gy)), 0.0, 1.0);
+
+        if (hideSource) {
+            fragColor = vec4(color.rgb, edge * color.a);
+        } else {
+            fragColor = vec4(mix(base.rgb, color.rgb, edge * color.a), max(base.a, edge * color.a));
+        }
+        return;
+    }
+
+    // Contorno externo: procura em volta, num anel, se existe pixel opaco. Se
+    // existir e ESTE pixel for transparente, aqui é borda.
+    //
+    // Amostrar em anel (e não num quadrado) é o que faz o contorno ficar
+    // arredondado e uniforme; um quadrado deixaria "orelhas" nos cantos.
+    float maxAlpha = 0.0;
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 radius = acTexelSize * (thickness * acEscalaDePixel);
+    for (int i = 0; i < RINGS; i++) {
+        float angle = TAU * float(i) / float(RINGS);
+        vec2 offset = vec2(cos(angle), sin(angle)) * radius;
+        maxAlpha = max(maxAlpha, texture(inputImg, acScreenNorm + offset).a);
+    }
+
+    float ring = clamp(maxAlpha - base.a, 0.0, 1.0) * color.a;
+
+    if (hideSource) {
+        fragColor = vec4(color.rgb, ring);
+        return;
+    }
+
+    float outAlpha = base.a + ring * (1.0 - base.a);
+    vec3 outRgb = outAlpha > 0.0
+        ? (base.rgb * base.a + color.rgb * ring * (1.0 - base.a)) / outAlpha
+        : vec3(0.0);
+
+    fragColor = vec4(outRgb, outAlpha);
+}
+
+    ]]></shader>
+</effect>

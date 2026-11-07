@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.colorsplash"
+    name="Respingo de Cor (Ultra Motion)"
+    name-en="Color Splash (Ultra Motion)"
+    desc="Mantém uma cor, resto vira cinza — destaque de matiz."
+    desc-en="Keeps one hue, grays out the rest — hue highlight."
+    category="color"
+    tags="ultramotion,splash,hue,bw,gray,color">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="hue"      label="Matiz" default="0.0" min="0.0" max="360.0" step="1.0" />
+        <slider id="tolerance" label="Tolerância" default="30.0" min="1.0" max="120.0" step="1.0" />
+        <slider id="softness" label="Suavidade" default="15.0" min="0.0" max="60.0" step="1.0" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+void main() {
+    vec4 c = texture(inputImg, acScreenNorm);
+    vec3 hsv = rgb2hsv(c.rgb);
+    float h = hsv.x * 360.0;
+    float alvo = mod(hue, 360.0);
+    float diff = abs(h - alvo);
+    diff = min(diff, 360.0 - diff);
+    float k = 1.0 - smoothstep(tolerance, tolerance + softness, diff);
+    // Peso também pela saturação — cinza puro não "é cor".
+    k *= smoothstep(0.1, 0.3, hsv.y);
+    float cinza = dot(c.rgb, LUMA);
+    fragColor = vec4(mix(vec3(cinza), c.rgb, k), c.a);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,441 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SOMBRA DE ANIME — LUZ DE ANIME COM CEL SHADING E LUZ DE CONTORNO
+  ============================================================================
+
+  Pedido de 06/10/2026, com o vídeo do Efecs AnimeShadow (um plugin pago de
+  After Effects): uma luz pontual anda pela cena e a arte 2D ganha luz e SOMBRA
+  DE ANIME — regiões chapadas com borda dura, que seguem o volume do desenho
+  (o nariz faz sombra, a maçã do rosto vira, o cabelo pega luz) sem redesenhar
+  nada. Não é cópia do plugin (não temos o código dele): é a mesma ideia, feita
+  aqui, com o que o Nova já tem.
+
+  ============================================================================
+   DE ONDE VEM O VOLUME
+  ============================================================================
+
+  A luz precisa saber para onde cada pixel "olha" (a NORMAL). Três jeitos, pelo
+  seletor "Tipo do mapa", com a camada do mapa escolhida em "Mapa":
+
+  - **Automático (sem mapa)** — o volume sai da PRÓPRIA arte: a silhueta (o
+    alfa) borrada vira um "travesseiro" (alto no meio, caindo nas bordas), e o
+    traço da arte entra como relevo fino ("Detalhe da arte"). Funciona em
+    qualquer personagem recortado (PNG), sem gerar nada.
+  - **Profundidade** — um mapa de profundidade (branco = perto), o mesmo que a
+    ferramenta de IA "Mapa de profundidade" do app gera. A normal sai da
+    inclinação do mapa.
+  - **Normal (OpenGL / DirectX)** — um mapa de normais pronto (de outro
+    programa ou de uma IA). Verde para cima no OpenGL, para baixo no DirectX.
+
+  Mapa de AO (oclusão) opcional, em outra camada: escurece as dobras antes do
+  corte do cel. Camada de mapa não escolhida chega TRANSPARENTE
+  (`empty="transparent"`), e o pixel sem mapa cai no automático.
+
+  ============================================================================
+   OS PASSES
+  ============================================================================
+
+  0. FONTE (1/8): a fonte de altura reduzida com média 8×8 — sem ela o borrão
+     largo, que pula pixels entre amostras, deixava estrias na parte plana.
+  1. ALTURA H (meia resolução): a fonte de altura borrada na horizontal.
+  2. ALTURA V (meia resolução): na vertical. Empacotada em 16 bits (r + g/255) e
+     lida por `texelFetch` + bilinear à mão — interpolar os dois bytes de um
+     número empacotado daria lixo (a mesma regra do `ao.xml`).
+  3. LUZ: normal, vetor da luz (pontual — com altura e alcance — ou direcional),
+     difusa (N·L), brilho (Blinn) e contorno (rim), mais o AO.
+  4. LIMPEZA: um borrão pequeno da luz ANTES do corte — tira os pontinhos que um
+     mapa ruidoso faria virar ilhas de sombra.
+  5. CEL: o corte em tons (limiar, suavidade, antisserrilhado), sombra
+     colorida, brilho e contorno por cima. O alfa da arte volta intacto.
+
+  A posição da luz é um ponto do efeito: aparece na prévia como uma alça e se
+  arrasta e se anima como qualquer ponto — é a luz andando do vídeo.
+-->
+<effect
+    id="nova.effect.anime-shadow"
+    name="Sombra de anime"
+    name-en="Anime Shadow"
+    desc="Luz de anime numa arte 2D: sombra chapada (cel shading), brilho e luz de contorno que seguem o volume do desenho."
+    desc-en="Anime lighting for 2D art: cel-shaded shadows, highlights and rim light that follow the drawing's volume."
+    category="stylize"
+    tags="anime,sombra,cel shading,cel,toon,luz,relight,iluminação,rim light,contorno,normal,profundidade,mangá,animeshadow">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="fonteBuf" src="buffer" scale="0.125" />
+        <texture id="alturaH" src="buffer" scale="0.5" />
+        <texture id="alturaV" src="buffer" scale="0.5" />
+        <texture id="luzBuf" src="buffer" />
+        <texture id="limpoBuf" src="buffer" />
+
+        <!-- ================================ Luz ============================= -->
+        <selector id="tipoDeLuz" group="Luz" label="Tipo de luz" options="Pontual|Direcional" default="0" />
+        <point id="posicaoDaLuz" group="Luz" label="Posição da luz" defaultX="0.78" defaultY="0.18" min="-1.0" max="2.0" />
+        <slider id="alturaDaLuz" group="Luz" label="Altura da luz" showIf="tipoDeLuz=0"
+                default="0.35" min="0.0" max="2.0" step="0.01" snap="0.35" />
+        <slider id="alcance" group="Luz" label="Alcance" showIf="tipoDeLuz=0"
+                default="0.0" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="direcao" group="Luz" label="Direção" showIf="tipoDeLuz=1"
+                default="-45.0" min="-180.0" max="180.0" step="1.0" type="angle" />
+        <slider id="elevacao" group="Luz" label="Elevação" showIf="tipoDeLuz=1"
+                default="35.0" min="0.0" max="90.0" step="1.0" />
+        <color id="corDaLuz" group="Luz" label="Cor da luz" default="#FFFFF4E6" />
+        <slider id="exposicao" group="Luz" label="Exposição"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+
+        <!-- ============================= Cel shading ======================== -->
+        <slider id="tons" group="Cel shading" label="Tons"
+                default="1" min="1" max="4" step="1" type="integer" />
+        <slider id="limiar" group="Cel shading" label="Limiar"
+                default="0.52" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="suavidade" group="Cel shading" label="Suavidade da borda"
+                default="0.015" min="0.0" max="0.3" step="0.001" snap="0.0" />
+        <color id="corDaSombra" group="Cel shading" label="Cor da sombra" default="#FF26284A" />
+        <slider id="escuridao" group="Cel shading" label="Força da sombra"
+                default="0.78" min="0.0" max="1.0" step="0.01" />
+        <slider id="limpeza" group="Cel shading" label="Limpeza"
+                default="0.6" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="antiSerrilhado" group="Cel shading" label="Antisserrilhado"
+                default="1.0" min="0.0" max="3.0" step="0.01" />
+
+        <!-- ================================ Brilho ========================== -->
+        <slider id="brilho" group="Brilho" label="Brilho"
+                default="0.0" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="tamanhoDoBrilho" group="Brilho" label="Tamanho do brilho"
+                default="0.35" min="0.0" max="1.0" step="0.01" />
+        <color id="corDoBrilho" group="Brilho" label="Cor do brilho" default="#FFFFFFFF" />
+
+        <!-- ============================ Luz de contorno ===================== -->
+        <slider id="contorno" group="Luz de contorno" label="Contorno"
+                default="0.8" min="0.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="larguraDoContorno" group="Luz de contorno" label="Largura"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <color id="corDoContorno" group="Luz de contorno" label="Cor do contorno" default="#FFBFE3FF" />
+        <switch id="contornoSoNoLadoDaLuz" group="Luz de contorno" label="Só do lado da luz" default="true" />
+
+        <!-- ================================ Volume ========================== -->
+        <texture id="mapa" src="layer" group="Volume" label="Mapa (profundidade ou normal)" empty="transparent" />
+        <selector id="tipoDoMapa" group="Volume" label="Tipo do mapa"
+                  options="Automático (sem mapa)|Profundidade|Normal (OpenGL)|Normal (DirectX)" default="0" />
+        <switch id="inverterMapa" group="Volume" label="Inverter profundidade" default="false" showIf="tipoDoMapa=1" />
+        <slider id="volume" group="Volume" label="Volume"
+                default="0.25" min="0.01" max="0.5" step="0.005" />
+        <slider id="relevo" group="Volume" label="Relevo"
+                default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="detalhe" group="Volume" label="Detalhe da arte"
+                default="0.35" min="0.0" max="2.0" step="0.01" />
+        <texture id="mapaAO" src="layer" group="Volume" label="Mapa de oclusão (AO)" empty="transparent" />
+        <slider id="forcaAO" group="Volume" label="Força do AO"
+                default="1.0" min="0.0" max="2.0" step="0.01" />
+        <slider id="ambiente" group="Volume" label="Luz ambiente"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <selector id="ver" label="Ver"
+                  options="Resultado|Só o contorno|Normais|Luz bruta|Volume" default="0" />
+    </params>
+
+    <!-- Amostra: um personagem PNG recortado no xadrez — o volume sai da silhueta (28/10/2026, pedido do snow). -->
+    <preview amostra="recorte" />
+
+    <presets>
+        <!-- O clima do vídeo de referência: cena escura, só o lado da luz aparece. -->
+        <preset id="noite" name="🌙 Noite" name-en="🌙 Night">
+            <value param="corDaSombra" value="#FF0B0C16" />
+            <value param="escuridao" value="0.93" />
+            <value param="corDaLuz" value="#FFE6F0EA" />
+            <value param="exposicao" value="0.95" />
+            <value param="contorno" value="0.0" />
+            <value param="alturaDaLuz" value="0.25" />
+        </preset>
+        <!-- Luz de dia: sombra azulada suave, dois tons e brilho. -->
+        <preset id="dia" name="☀️ Dia" name-en="☀️ Day">
+            <value param="corDaSombra" value="#FF6C74B8" />
+            <value param="escuridao" value="0.45" />
+            <value param="tons" value="2" />
+            <value param="brilho" value="0.6" />
+            <value param="contorno" value="1.0" />
+            <value param="corDoContorno" value="#FFFFF6D8" />
+        </preset>
+    </presets>
+
+    <passes>
+        <pass target="fonteBuf" />
+        <pass target="alturaH" />
+        <pass target="alturaV" />
+        <pass target="luzBuf" />
+        <pass target="limpoBuf" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+vec4 empacotar(float h) {
+    float s = clamp(h, 0.0, 1.0) * 255.0;
+    float alto = floor(s);
+    return vec4(alto / 255.0, s - alto, 0.0, 1.0);
+}
+float desempacotar(vec4 v) { return v.r + v.g / 255.0; }
+
+/** Há mapa NESTE pixel? (camada não escolhida chega transparente) */
+bool temMapa(vec2 uv) { return texture(mapa, uv).a > 0.01; }
+
+/** A fonte de altura: o mapa de profundidade, ou a silhueta da própria arte. */
+float fonteDeAltura(vec2 uv) {
+    if (tipoDoMapa == 1) {
+        vec4 m = texture(mapa, uv);
+        if (m.a > 0.01) {
+            float d = luma(m.rgb);
+            return inverterMapa ? 1.0 - d : d;
+        }
+    }
+    return texture(inputImg, uv).a;
+}
+
+/**
+ * Bilinear à mão sobre um buffer EMPACOTADO (r + g/255): ler o número inteiro nos
+ * quatro texels e só então misturar. Ler por texel mais perto fazia degraus (os
+ * riscos do primeiro teste); deixar o filtro da GPU misturar os bytes daria lixo.
+ */
+float bilinear(sampler2D buf, vec2 uv) {
+    ivec2 t = textureSize(buf, 0);
+    vec2 p = uv * vec2(t) - 0.5;
+    ivec2 i = ivec2(floor(p));
+    vec2 f = fract(p);
+    ivec2 m = t - 1;
+    float a = desempacotar(texelFetch(buf, clamp(i, ivec2(0), m), 0));
+    float b = desempacotar(texelFetch(buf, clamp(i + ivec2(1, 0), ivec2(0), m), 0));
+    float c = desempacotar(texelFetch(buf, clamp(i + ivec2(0, 1), ivec2(0), m), 0));
+    float d = desempacotar(texelFetch(buf, clamp(i + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/** O raio do borrão da altura, em UV (da altura da camada). */
+float raioDaAltura() {
+    return tipoDoMapa == 1 ? volume * 0.12 : volume;
+}
+
+/**
+ * Borrão gaussiano de 49 amostras ao longo de [eixo] (UV). Com 25, a distância
+ * entre amostras passava do detalhe da fonte e a soma ondulava (uma grade fraca
+ * que o corte do cel transformava em degraus).
+ */
+float borrar(vec2 uv, vec2 eixo, bool primeiro) {
+    float raio = raioDaAltura();
+    float soma = 0.0;
+    float peso = 0.0;
+    for (int i = -24; i <= 24; i++) {
+        float f = float(i) / 24.0;
+        float w = exp(-f * f * 4.0);
+        vec2 q = uv + eixo * f * raio;
+        float v = primeiro ? texture(fonteBuf, q).r : bilinear(alturaH, q);
+        soma += v * w;
+        peso += w;
+    }
+    return soma / peso;
+}
+
+/** A altura borrada em qualquer UV: bilinear feito à mão sobre o empacotado. */
+float alturaEm(vec2 uv) { return bilinear(alturaV, uv); }
+
+/**
+ * A normal no espaço da camada (x para a direita, y PARA BAIXO, z para fora da
+ * tela). Do mapa de normais quando há, senão da inclinação da altura — mais o
+ * traço da arte como relevo fino.
+ */
+vec3 normalEm(vec2 uv) {
+    if (tipoDoMapa >= 2) {
+        vec4 m = texture(mapa, uv);
+        if (m.a > 0.01) {
+            vec3 n = m.rgb * 2.0 - 1.0;
+            // OpenGL: verde = para cima, e aqui o y desce.
+            if (tipoDoMapa == 2) n.y = -n.y;
+            n.xy *= relevo;
+            return normalize(n);
+        }
+    }
+    // Passo de 4 texels (meia resolução): a altura interpolada em linha reta tem
+    // inclinação aos saltos de texel em texel; medir mais largo deixa a normal lisa
+    // (com 1,5 o corte do cel pegava uma trama de pontinhos).
+    vec2 passo = vec2(4.0) / vec2(textureSize(alturaV, 0));
+    float hx = alturaEm(uv + vec2(passo.x, 0.0)) - alturaEm(uv - vec2(passo.x, 0.0));
+    float hy = alturaEm(uv + vec2(0.0, passo.y)) - alturaEm(uv - vec2(0.0, passo.y));
+    // A inclinação por UNIDADE de UV (corrigida pelo aspecto), vezes o relevo.
+    vec2 g = vec2(hx / (2.0 * passo.x * acAspect), hy / (2.0 * passo.y));
+    // A borda do "travesseiro" (degrau borrado) inclina até ~1,13/raio; vezes 2,5·raio
+    // dá ~2,8 — a normal deita quase de lado na silhueta, como uma esfera.
+    float escala = relevo * (tipoDoMapa == 1 ? 0.6 : raioDaAltura() * 2.5);
+    g *= escala;
+
+    // O traço da arte: o gradiente da luminância vira um relevo raso.
+    if (detalhe > 0.0) {
+        vec2 px = acTexelSize * 1.5 * acEscalaDePixel;
+        float lx = luma(texture(inputImg, uv + vec2(px.x, 0.0)).rgb) - luma(texture(inputImg, uv - vec2(px.x, 0.0)).rgb);
+        float ly = luma(texture(inputImg, uv + vec2(0.0, px.y)).rgb) - luma(texture(inputImg, uv - vec2(0.0, px.y)).rgb);
+        g += vec2(lx, ly) * detalhe * 0.5;
+    }
+    return normalize(vec3(-g.x, -g.y, 1.0));
+}
+
+/** O vetor que vai do pixel até a luz (normalizado) e quanto a luz chega (alcance). */
+vec4 vetorDaLuz(vec2 uv) {
+    if (tipoDeLuz == 1) {
+        float az = radians(direcao);
+        float el = radians(elevacao);
+        return vec4(normalize(vec3(cos(el) * cos(az), cos(el) * sin(az), sin(el))), 1.0);
+    }
+    vec3 p = vec3(uv.x * acAspect, uv.y, 0.0);
+    vec3 l = vec3(posicaoDaLuz.x * acAspect, posicaoDaLuz.y, alturaDaLuz);
+    vec3 d = l - p;
+    float dist = length(d);
+    float queda = alcance > 0.0 ? 1.0 / (1.0 + pow(dist / alcance, 2.0)) : 1.0;
+    return vec4(d / max(dist, 1e-5), queda);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    if (acPass == 0) {
+        // A fonte reduzida a 1/8 com MÉDIA de 8×8: o borrão largo que vem depois
+        // pula vários pixels entre amostras, e lendo a arte cheia ele "ondulava"
+        // (estrias na parte plana do rosto no primeiro teste).
+        vec2 px = 1.0 / vec2(textureSize(inputImg, 0));
+        float soma = 0.0;
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                soma += fonteDeAltura(uv + (vec2(float(x), float(y)) - 3.5) * px);
+            }
+        }
+        fragColor = vec4(vec3(soma / 64.0), 1.0);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = empacotar(borrar(uv, vec2(1.0 / acAspect, 0.0), true));
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = empacotar(borrar(uv, vec2(0.0, 1.0), false));
+        return;
+    }
+
+    if (acPass == 3) {
+        vec3 n = normalEm(uv);
+        vec4 luz = vetorDaLuz(uv);
+        vec3 l = luz.xyz;
+        float difusa = dot(n, l) * 0.5 + 0.5;
+        difusa *= luz.w;
+        // AO: escurece as dobras ANTES do corte, para a sombra nascer nelas.
+        vec4 ao = texture(mapaAO, uv);
+        if (ao.a > 0.01) difusa *= mix(1.0, luma(ao.rgb), clamp(forcaAO, 0.0, 2.0) * 0.5);
+        difusa = mix(difusa, 1.0, ambiente);
+
+        vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+        float especular = pow(max(dot(n, h), 0.0), mix(160.0, 6.0, tamanhoDoBrilho)) * luz.w;
+
+        // Contorno: o quanto a superfície vira de lado (1 − n.z), e — com "Só do
+        // lado da luz" — só na metade virada para a luz. O corte em largura é no
+        // passe do cel.
+        float borda = clamp(1.0 - n.z, 0.0, 1.0);
+        float lado = contornoSoNoLadoDaLuz
+            ? smoothstep(0.15, 0.55, dot(normalize(n.xy + vec2(1e-5)), normalize(l.xy + vec2(1e-5))))
+            : 1.0;
+        float rim = borda * lado * luz.w;
+
+        fragColor = vec4(clamp(difusa, 0.0, 1.0), rim, clamp(especular, 0.0, 1.0), 1.0);
+        return;
+    }
+
+    if (acPass == 4) {
+        // LIMPEZA: um borrão em disco de 13 amostras, do tamanho pedido.
+        vec4 centro = texture(luzBuf, uv);
+        float raio = limpeza * 4.0;
+        if (raio < 0.01) {
+            fragColor = centro;
+            return;
+        }
+        vec4 soma = centro;
+        float peso = 1.0;
+        for (int i = 0; i < 12; i++) {
+            float a = float(i) * 0.5235988;
+            float r = (i % 2 == 0) ? 1.0 : 0.55;
+            vec2 q = uv + vec2(cos(a), sin(a)) * r * raio * acEscalaDePixel * acTexelSize;
+            soma += texture(luzBuf, q);
+            peso += 1.0;
+        }
+        fragColor = soma / peso;
+        return;
+    }
+
+    // ------------------------------------------------------------- 4. o cel
+    vec4 arte = texture(inputImg, uv);
+    vec4 luz = texture(limpoBuf, uv);
+
+    if (ver == 2) { fragColor = vec4(normalEm(uv) * 0.5 + 0.5, arte.a); return; }
+    if (ver == 3) { fragColor = vec4(vec3(luz.r), arte.a); return; }
+    if (ver == 4) { fragColor = vec4(vec3(alturaEm(uv)), 1.0); return; }
+
+    float v = luz.r;
+    float aa = max(fwidth(v), 1e-4) * antiSerrilhado;
+    float s = suavidade + aa;
+    int n = clamp(int(tons + 0.5), 1, 4);
+    float iluminado = 0.0;
+    for (int i = 0; i < 4; i++) {
+        if (i >= n) break;
+        float corte = limiar + (1.0 - limiar) * float(i) / float(n) * 0.85;
+        iluminado += smoothstep(corte - s, corte + s, v);
+    }
+    iluminado /= float(n);
+
+    vec3 sombra = mix(vec3(1.0), corDaSombra.rgb, escuridao) * (1.0 - escuridao * 0.35);
+    vec3 acesa = corDaLuz.rgb * exposicao;
+    vec3 cor = arte.rgb * mix(sombra, acesa, iluminado);
+
+    float sb = suavidade + max(fwidth(luz.b), 1e-4) * antiSerrilhado;
+    float realce = smoothstep(0.5 - sb, 0.5 + sb, luz.b) * iluminado * brilho;
+    cor += corDoBrilho.rgb * realce;
+
+    /*
+     * A LUZ DE CONTORNO É UM FILETE, NÃO UMA MANCHA. Pela normal (1 − n.z), a
+     * faixa tinha a largura do VOLUME — no automático, um quarto da cabeça. O
+     * filete do anime é colado na borda do lado da luz: um pixel da arte ganha
+     * contorno quando, andando [largura] na direção da luz, ele SAI da arte.
+     * Largura constante, borda dura, sempre no recorte. Sem "Só do lado da luz",
+     * vale a saída mais perto em oito direções (o contorno em volta toda).
+     */
+    float rim = 0.0;
+    float w = larguraDoContorno * 0.03;
+    if (contorno > 0.0 && w > 0.0) {
+        vec2 rumo;
+        if (tipoDeLuz == 1) {
+            rumo = vec2(cos(radians(direcao)), sin(radians(direcao)));
+        } else {
+            rumo = (posicaoDaLuz - uv) * vec2(acAspect, 1.0);
+        }
+        rumo = normalize(rumo + vec2(1e-6)) * vec2(1.0 / acAspect, 1.0);
+        float fora = 0.0;
+        if (contornoSoNoLadoDaLuz) {
+            for (int k = 1; k <= 3; k++) fora += 1.0 - texture(inputImg, uv + rumo * w * float(k) / 3.0).a;
+            fora /= 3.0;
+        } else {
+            for (int k = 0; k < 8; k++) {
+                float a = float(k) * 0.7853982;
+                vec2 d = vec2(cos(a) / acAspect, sin(a)) * w;
+                fora = max(fora, 1.0 - texture(inputImg, uv + d).a);
+            }
+        }
+        float sr = 0.15 + suavidade;
+        rim = smoothstep(0.5 - sr, 0.5 + sr, fora) * arte.a * contorno * vetorDaLuz(uv).w;
+    }
+    if (ver == 1) {
+        cor = arte.rgb * sombra + corDoContorno.rgb * rim;
+    } else {
+        cor += corDoContorno.rgb * rim;
+    }
+
+    fragColor = vec4(cor, arte.a);
+}
+
+    ]]></shader>
+</effect>

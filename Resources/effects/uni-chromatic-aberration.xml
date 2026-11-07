@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  uni.Chromatic Aberration (Red Giant Universe 2, `Universe_Distort_Chromatic_Aberration`) — a engine do plugin.
+
+  O efeito é um SCRIPT em JavaScript (embaralhado com XOR 0x21 dentro do .aex) que chama as funções da
+  Gpu_Shader_Engine_x64.dll; as funções montam GLSL (capturado da memória do AE) e o host faz as contas. Tudo
+  lido no binário e conferido no After Effects (`tools/uchromab/benchmark`, LEIAME.md: 51 renders de 8 bpc).
+
+  `stage="unichromab"`: o efeito roda NA cadeia, mas não por este `<shader>` (a cópia da entrada): o
+  `EffectPipeline` chama o `PasseDaAberracaoDoUniverse`, com a conta do host em
+  `model/ContasDaAberracaoDoUniverse.kt` e os passes em `assets/unichromab`.
+
+  O script, em uma frase por etapa:
+    1. cada canal isolado, escalado no centro com espelho (Scale, em %) e torcido (Distortion × −1 × Master
+       Distortion; a escala da torção mantém no lugar o meio da borda vertical — ou o canto, se k ≥ 0) — só se a
+       Distortion do canal não é 0; os três somados no modo "plus";
+    2. a máscara da borda: uma elipse (Edge Radius em px, a rampa e o joelho pelo Edge Falloff, Aspect) com um
+       pontilhado de ±1/254, invertida;
+    3. o Radial Blur: a imagem (com a máscara no alfa) vira polar, desfoca na vertical (= ao longo do raio) por
+       uma pirâmide de quads 1,3× menores, volta e entra por cima da camada;
+    4. a textura de lente, no modo Luma (Texture Amount), com a sua própria máscara elíptica;
+    5. o Edge Blur: cinco níveis de desfoque (cumulativos, raio (i/5)·Edge Blur/2 % da largura), a máscara
+       escolhe e mistura dois vizinhos;
+    6. a Lens Distortion (a mesma torção, na imagem inteira).
+  Entre os passes a engine grava float16 truncado (até a 1ª elipse, em alvos RGBA8); o bilinear tem 8 bits de
+  fração no peso — refeito aqui.
+
+  As TEXTURAS da Red Giant (Dirt, Bokeh, …, os JPGs do plugin) não vêm com o app: são do plugin. Com uma delas
+  escolhida (ou Layer), o efeito usa a camada de Texture Layer — o JPG do plugin importado como camada dá o
+  mesmo resultado. Sem camada, a textura fica de fora.
+
+  O que NÃO é igual (LEIAME, "O que ainda não é igual"):
+    - o pontilhado da máscara usa o sin() da GPU: na AMD do PC bate em parte; no celular o sin é outro — na
+      faixa de transição da borda, ±1 nível em parte dos pixels;
+    - 1 nível em 1–15% dos px (a ordem das contas em float de cada GPU), até 2 nos presets;
+    - camada com alfa parcial: até 3 níveis na borda semitransparente;
+    - Stretch Map to Fit: a camada da textura entra como aparece na composição (sem o "esticar" do AE);
+    - a escala das texturas da Red Giant numa camada de outro tamanho (FreeImage) não foi medida a fundo.
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.unichromab"
+    name="uni.Chromatic Aberration"
+    name-en="uni.Chromatic Aberration"
+    desc="A aberração cromática do Red Giant Universe: cada canal torcido e escalado, desfoque radial e nas bordas, textura de lente — igual ao After Effects."
+    desc-en="Red Giant Universe's Chromatic Aberration: each channel distorted and scaled, radial and edge blur, lens texture — as in After Effects."
+    category="distort"
+    stage="unichromab"
+    tags="universe,red giant,uni,chromatic aberration,aberracao cromatica,aberração cromática,rgb,lente,lens,distorcer,distort,desfoque,blur,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="masterDistortion" label="Master Distortion" default="1.0" min="0.0" max="8.0" step="0.01" snap="1.0" />
+        <slider id="masterScale" label="Master Scale" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="redDistortion" label="Red Distortion" default="30.0" min="-100.0" max="100.0" step="0.1" snap="0.0,30.0" />
+        <slider id="redScale" label="Red Scale" default="1.01" min="0.0" max="2.0" step="0.001" snap="1.0,1.01" />
+        <slider id="greenDistortion" label="Green Distortion" default="25.0" min="-100.0" max="100.0" step="0.1" snap="0.0,25.0" />
+        <slider id="greenScale" label="Green Scale" default="1.0" min="0.0" max="2.0" step="0.001" snap="1.0" />
+        <slider id="blueDistortion" label="Blue Distortion" default="20.0" min="-100.0" max="100.0" step="0.1" snap="0.0,20.0" />
+        <slider id="blueScale" label="Blue Scale" default="0.99" min="0.0" max="2.0" step="0.001" snap="1.0,0.99" />
+        <slider id="lensDistortion" label="Lens Distortion" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="flatten" label="Flatten" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+
+        <slider id="edgeBlur" group="Blur" label="Edge Blur" default="1.0" min="0.0" max="8.0" step="0.01" snap="1.0" />
+        <slider id="radialBlur" group="Blur" label="Radial Blur" default="3.0" min="0.0" max="20.0" step="0.01" snap="3.0" />
+        <slider id="edgeRadius" group="Blur" label="Edge Radius" default="800.0" min="0.01" max="5000.0" step="1.0" snap="800.0" />
+        <slider id="edgeFalloff" group="Blur" label="Edge Falloff" default="800.0" min="0.0" max="2000.0" step="1.0" snap="800.0" />
+        <slider id="aspect" group="Blur" label="Aspect" default="1.0" min="0.1" max="4.0" step="0.001" snap="1.0" />
+
+        <selector id="lensTexture" group="Lens Texture" label="Lens Texture" default="1"
+                  options="None|Dirt|Bokeh|Dried|Frozen|Salt|Smudges|Soap|Viewfinder|Water Drops|Layer" />
+        <texture id="textureLayer" src="layer" group="Lens Texture" label="Texture Layer" empty="transparent" />
+        <slider id="textureAmount" group="Lens Texture" label="Texture Amount" default="20.0" min="0.0" max="100.0" step="0.1" snap="20.0" />
+        <slider id="maskRadius" group="Lens Texture" label="Mask Radius" default="800.0" min="0.01" max="5000.0" step="1.0" snap="800.0" />
+        <slider id="maskFalloff" group="Lens Texture" label="Mask Falloff" default="800.0" min="0.0" max="2000.0" step="1.0" snap="800.0" />
+        <switch id="textureMask" group="Lens Texture" label="Texture Mask" default="true" />
+        <!-- no AE o Link Aspect Ratios fica depois do grupo; aqui vem antes do Mask Aspect, que ele esconde -->
+        <switch id="linkAspect" group="Lens Texture" label="Link Aspect Ratios" default="true" />
+        <slider id="maskAspect" group="Lens Texture" label="Mask Aspect" default="1.0" min="0.1" max="20.0" step="0.01" snap="1.0" showIf="linkAspect=false" />
+        <switch id="stretchMap" group="Lens Texture" label="Stretch Map to Fit" default="true" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDaAberracaoDoUniverse` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

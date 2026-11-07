@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BALANÇO — o Swing do Alight Motion, conta por conta (0.547.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "pode fazer o efeito balanço/swing 100% igual o do alight motion?", da série
+  "100% iguais ao AM". Mesmos parâmetros, mesmos ids, faixas, passos, marcas e padrões do
+  `com.alightcreative.effects.swing2` (o Swing atual do AM 5.0.281; um projeto do AM importado cai direto aqui).
+  A conta foi LIDA do script do AM (`assets/effects/swing2.xml` do APK descompactado) e escrita de novo em
+  `model/Balanco.kt`; o arquivo do AM não entra no repositório. A conferência é
+  `node tools/ambalanco/referencia.js` → `BalancoAmTest`: o script do próprio AM e o Kotlin daqui, número a número.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Gira a camada (em torno da âncora, somando no giro dela) para lá e para cá, entre o Ângulo 1 e o Ângulo 2:
+      m = sin((ciclos + Fase) · 3,14159)        Onda Seno
+      m = triângulo((ciclos + Fase) / 2)        Onda Triângulo
+      giro = giro + (Ângulo 2 − Ângulo 1) · (m + 1) / 2 + Ângulo 1
+    A camada começa no MEIO dos dois ângulos e vai primeiro para o Ângulo 2. Com os padrões (−30° e 30°),
+    começa parada no giro dela e balança 30° para cada lado.
+  - Frequência 2 = uma ida e volta por segundo (o seno é de `x · π`: a Frequência conta meias voltas). Ela é do
+    tipo "hz" do AM: o script recebe os CICLOS ACUMULADOS desde o começo da camada, então com quadro-chave a
+    camada só passa a balançar mais depressa, sem pular (a mesma soma do Oscilar, a 120 amostras por segundo).
+  - Fase de 0 a 2, em meias voltas: 1 começa no meio indo para o Ângulo 1; 2 é a volta inteira.
+  - Vários Balanços na mesma camada somam, na ordem da lista.
+  - `<spinner>` como no AM: o leitor do AM não lê `snap` no spinner, então aqui também não há `snap` (só as
+    marcas; o ímã no padrão é o de toda régua do Nova).
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele GIRA a camada. Quem executa é
+  `model/Balanco.kt`, dentro de `LayerGeometry.matrizLocal`, por onde passa a matriz de toda camada (prévia,
+  exportação, seleção, filhos e o desfoque de movimento). O shader abaixo só copia a entrada, para o caso de
+  algum caminho que não conhece `stage` executá-lo.
+
+  O Swing ANTIGO do AM (`com.alightcreative.effects.swing`, "deprecated") é o `am-swing-legacy.xml`, fora do
+  catálogo.
+-->
+<effect
+    id="nova.effect.am-swing"
+    name="Balanço"
+    name-en="Swing"
+    desc="Gira a camada para frente e para trás ao longo do tempo e de forma automática (o Swing do Alight Motion)."
+    desc-en="Automatically rotates the layer back and forth over time (Alight Motion's Swing)."
+    category="distort"
+    stage="transform"
+    tags="balanço,balanco,swing,balançar,pêndulo,pendulo,girar,rotação,rotacao,vaivém,automático,transformação,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="freq" label="Frequência" default="2.0" min="0.1" max="16.0" step="0.01"
+            ticks="1.0,2.0,4.0,8.0" type="hz" />
+        <spinner id="a1" label="Ângulo 1" default="-30.0" min="-180.0" max="180.0" step="0.1"
+            ticks="-180.0,-135.0,-90.0,-45.0,0.0,45.0,90.0,135.0,180.0" type="angle" />
+        <spinner id="a2" label="Ângulo 2" default="30.0" min="-180.0" max="180.0" step="0.1"
+            ticks="-180.0,-135.0,-90.0,-45.0,0.0,45.0,90.0,135.0,180.0" type="angle" />
+        <spinner id="phase" label="Fase" default="0.0" min="0.0" max="2.0" step="0.01" ticks="1.0" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,128 @@
+// S_Glow — uma das três caixas de um eixo, em SOMA CORRIDA (`render/PasseDoSGlow`, 0.900.0).
+//
+// Uma invocação por linha (ou coluna): a janela anda pixel a pixel, entra um valor por um lado e sai um pelo outro —
+// duas leituras por pixel e canal, seja qual for a largura. É o jeito do próprio Sapphire (o blur.cxx dele é soma
+// corrida em float, lido no S_GlowAura); o passe do XML somava as 2r + 3 amostras de cada pixel (r até 240), ~95
+// leituras por pixel com a largura dos presets de CC.
+//
+// Os raios, os pesos e a borda são os do `caixa()`/`ler()` do XML: largura inteira W -> raios que somam W; a largura
+// quebrada (Subpixel) põe mais uma ponta de peso menor na caixa que cresce; Reflect espelha repetindo o pixel da
+// borda, Transparent soma zero de fora. A soma corrida é compensada (Kahan-Babuška) para a cauda do halo, que vale
+// milésimos, não andar com o erro de quem passou antes na linha.
+//
+// Montagem (o Kotlin põe antes): `#version 310 es`.
+
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+layout(local_size_x = 32) in;     // 32: na GPU do PC, 16 e 32 empatam e 64 deixa unidades paradas (1080 linhas = 17 grupos)
+
+uniform sampler2D uEntrada;         // a luz (RGBA16F): o limiar, ou a caixa anterior
+layout(rgba16f, binding = 0) writeonly uniform highp image2D uSaida;
+uniform ivec2 uTam;
+uniform bool uVertical;
+uniform int uQual;                  // 0, 1, 2: qual das três caixas do eixo
+uniform float uGlowWidth;
+uniform float uEscalaDePixel;       // o acEscalaDePixel do XML
+uniform vec3 uLarguraRgb;           // Width Red, Green, Blue
+uniform float uLarguraEixo;         // Width X (ou Y, na vertical)
+uniform bool uSubpixel;
+uniform int uEdgeMode;              // 1 = Reflect
+
+const float RAIO_MAX = 240.0;
+
+int espelhar(int i, int n) {
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+/** Infinito ou NaN vira 0: um valor só desses levaria a soma corrida a estragar o resto da linha. */
+float finito(float v) { return (floatBitsToUint(v) & 0x7F800000u) == 0x7F800000u ? 0.0 : v; }
+
+int LINHA;
+int COMPRIMENTO;
+
+/** A luz na posição `j` da linha (ou coluna) desta invocação, com a borda do Edge Mode. */
+vec3 ler(int j) {
+    if (j < 0 || j >= COMPRIMENTO) {
+        if (uEdgeMode != 1) return vec3(0.0);
+        j = espelhar(j, COMPRIMENTO);
+    }
+    ivec2 p = uVertical ? ivec2(LINHA, j) : ivec2(j, LINHA);
+    vec3 v = texelFetch(uEntrada, p, 0).rgb;
+    return vec3(finito(v.r), finito(v.g), finito(v.b));
+}
+
+void main() {
+    LINHA = int(gl_GlobalInvocationID.x);
+    if (LINHA >= (uVertical ? uTam.x : uTam.y)) return;
+    COMPRIMENTO = uVertical ? uTam.y : uTam.x;
+
+    // ---- os raios e os pesos (as contas do `caixa()` do XML) ----
+    vec3 w = uGlowWidth * uEscalaDePixel * uLarguraRgb * uLarguraEixo;
+    w = clamp(w, vec3(0.0), vec3(3.0 * RAIO_MAX));
+    vec3 a = uSubpixel ? floor(w) : floor(w + 0.5);
+    vec3 f = uSubpixel ? w - a : vec3(0.0);
+    vec3 rf = floor((a + float(2 - uQual)) / 3.0 + 1e-4);
+    vec3 cresce = vec3(equal(a - 3.0 * floor(a / 3.0 + 1e-4), vec3(float(uQual))));
+    f *= cresce;
+    vec3 dentro = (1.0 - f) / (2.0 * rf + 1.0) + f / (2.0 * rf + 3.0);
+    vec3 ponta = f / (2.0 * rf + 3.0);
+    ivec3 r = ivec3(rf);
+
+    // ---- a janela [x − r, x + r] de cada canal no começo da linha, e a ponta de fora à esquerda ----
+    vec3 soma = vec3(0.0), comp = vec3(0.0);
+    int rMax = max(r.x, max(r.y, r.z));
+    for (int i = -rMax; i <= rMax; i++) {
+        vec3 v = ler(i);
+        vec3 dentroDaJanela = vec3(lessThanEqual(ivec3(abs(i)), r));
+        vec3 x = v * dentroDaJanela;
+        vec3 t = soma + x;
+        comp += mix((x - t) + soma, (soma - t) + x, vec3(greaterThanEqual(abs(soma), abs(x))));
+        soma = t;
+    }
+    vec3 esquerda = vec3(ler(-r.x - 1).r, ler(-r.y - 1).g, ler(-r.z - 1).b);
+
+    // No meio da linha, onde nenhuma leitura sai dela, vai de 4 em 4: as 24 leituras primeiro, as contas depois (sem a
+    // conta da borda). Cada passo esperava a leitura dele chegar; com as do bloco pedidas juntas, 2× mais rápido na GPU
+    // do PC, os mesmos bits. De 8 em 8 não ganhou mais.
+    int inicioDoMeio = rMax + 1, fimDoMeio = COMPRIMENTO - rMax - 2;
+    int x = 0;
+    for (; x < COMPRIMENTO; x++) {
+        if (x >= inicioDoMeio && x + 3 <= fimDoMeio) {
+            vec3 dir[4]; vec3 sa[4];
+            for (int k = 0; k < 4; k++) {
+                ivec2 b = uVertical ? ivec2(LINHA, x + k) : ivec2(x + k, LINHA);
+                ivec2 e = uVertical ? ivec2(0, 1) : ivec2(1, 0);
+                dir[k] = vec3(texelFetch(uEntrada, b + e * (r.x + 1), 0).r, texelFetch(uEntrada, b + e * (r.y + 1), 0).g, texelFetch(uEntrada, b + e * (r.z + 1), 0).b);
+                sa[k] = vec3(texelFetch(uEntrada, b - e * r.x, 0).r, texelFetch(uEntrada, b - e * r.y, 0).g, texelFetch(uEntrada, b - e * r.z, 0).b);
+            }
+            for (int k = 0; k < 4; k++) {
+                vec3 direita = dir[k];
+                vec3 caixa = dentro * (soma + comp) + ponta * (esquerda + direita);
+                ivec2 p = uVertical ? ivec2(LINHA, x + k) : ivec2(x + k, LINHA);
+                imageStore(uSaida, p, vec4(max(caixa, vec3(0.0)), 0.0));
+                vec3 sai = sa[k];
+                vec3 d = direita - sai;
+                vec3 t = soma + d;
+                comp += mix((d - t) + soma, (soma - t) + d, vec3(greaterThanEqual(abs(soma), abs(d))));
+                soma = t;
+                esquerda = sai;
+            }
+            x += 3;
+            continue;
+        }
+        vec3 direita = vec3(ler(x + r.x + 1).r, ler(x + r.y + 1).g, ler(x + r.z + 1).b);
+        vec3 caixa = dentro * (soma + comp) + ponta * (esquerda + direita);
+        ivec2 p = uVertical ? ivec2(LINHA, x) : ivec2(x, LINHA);
+        imageStore(uSaida, p, vec4(max(caixa, vec3(0.0)), 0.0));
+        vec3 sai = vec3(ler(x - r.x).r, ler(x - r.y).g, ler(x - r.z).b);
+        vec3 d = direita - sai;
+        vec3 t = soma + d;
+        comp += mix((d - t) + soma, (soma - t) + d, vec3(greaterThanEqual(abs(soma), abs(d))));
+        soma = t;
+        esquerda = sai;
+    }
+}

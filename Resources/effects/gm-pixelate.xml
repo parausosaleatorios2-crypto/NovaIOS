@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.pixelate" name="Pixelate" desc="Quantises UVs into square blocks. Block size in pixels, so it stays consistent across resolutions." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/pixelate.png"
+        tags="glitch,pixelate,mosaic,blocks" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Pixelate" />
+<spinner id="size" default="8.0" min="1.0" max="128.0" step="1.0" label="Block Size (px)" />
+<switch id="square" default="true" label="Square Blocks" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec2 sz = vec2(size);
+  if (square) sz = vec2(size * (acScreenSize.y / max(acScreenSize.x, 1.0)), size);
+  vec2 grid = acScreenSize / max(sz, vec2(1.0));
+  vec2 p = (floor(uv * grid) + 0.5) / grid;
+  vec4 a = texture2DCv(inputImg.texture, uv);
+  vec4 b = texture2DCv(inputImg.texture, p);
+  gl_FragColor = mix(a, b, mixAmt);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DEFINIR MATTE (SET MATTE)
+  ============================================================================
+
+  O recorte desta camada passa a vir de OUTRA camada: do alfa dela, do brilho,
+  de um canal de cor. É o "Set Matte" do After Effects, e é o jeito de fazer
+  vídeo dentro de texto, foto dentro de forma, revelação por gradiente animado
+  — sem mexer na ordem das camadas.
+
+  A camada escolhida é desenhada sozinha, mesmo escondida (é o normal: esconde
+  a camada do matte para ela não aparecer por cima). Ver `src="layer"`.
+
+  ============================================================================
+   AS TRÊS CHAVES, E POR QUE AS DUAS ÚLTIMAS NASCEM LIGADAS
+  ============================================================================
+
+  - **Inverter matte**: o que era visível vira buraco. Texto vazado num vídeo.
+  - **Combinar com o alfa original**: o recorte novo MULTIPLICA o que a camada
+    já tinha. Desligado, ele SUBSTITUI — e aí a parte transparente de uma foto
+    recortada reaparece como preto onde o matte for branco. Ligado é o que se
+    espera quase sempre.
+  - **Pré-multiplicar o matte**: a cor da camada do matte é multiplicada pelo
+    alfa dela antes de virar recorte. Sem isso, um texto branco sobre nada daria
+    luminância branca também FORA das letras — o transparente guarda cor, e ela
+    não é necessariamente preta.
+
+  Os três vêm do After Effects com os mesmos padrões.
+
+  ============================================================================
+   O LIMITE, DECLARADO
+  ============================================================================
+
+  O matte é lido no espaço da COMPOSIÇÃO, com a posição e a escala da camada do
+  matte. Esta camada recebe o recorte antes de ser movida: se ela estiver
+  deslocada ou escalada, o matte não acompanha. É o mesmo comportamento do
+  "Deslocar por mapa". Para o caso comum — vídeo de tela cheia com um texto
+  como matte — os dois espaços são o mesmo.
+-->
+<effect
+    id="nova.effect.setmatte"
+    name="Definir matte"
+    name-en="Set Matte"
+    desc="Usa outra camada como recorte desta: pelo alfa, pelo brilho ou por um canal de cor."
+    desc-en="Takes this layer's matte from another layer — alpha, luminance or a channel."
+    category="matte"
+    tags="set matte,track matte,matte,recorte,mascara,alfa,luma,video dentro do texto,revelar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="matteImg" src="layer" label="Pegar o matte da camada" />
+
+        <selector id="matteChannel" label="Usar como matte" default="0"
+                  options="Alfa|Luminância|Vermelho|Verde|Azul|Luminosidade|Saturação|Matiz" />
+
+        <switch id="invertMatte" label="Inverter matte" default="false" />
+        <switch id="combineWithOriginal" label="Combinar com o alfa original" default="true" />
+        <switch id="premultiplyMatte" label="Pré-multiplicar o matte" default="true" />
+    </params>
+
+    <!-- Na vitrine, o matte vem do mapa de vitrine (sem outra camada, ele chega vazio). (vitrine, 0.668.0) -->
+    <preview mapa="true" />
+
+    <shader><![CDATA[
+
+float valorDoMatte(vec4 m) {
+    if (matteChannel == 0) return m.a;
+
+    vec3 c = premultiplyMatte ? m.rgb * m.a : m.rgb;
+
+    if (matteChannel == 1) return dot(c, vec3(0.299, 0.587, 0.114));
+    if (matteChannel == 2) return c.r;
+    if (matteChannel == 3) return c.g;
+    if (matteChannel == 4) return c.b;
+
+    float maior = max(max(c.r, c.g), c.b);
+    float menor = min(min(c.r, c.g), c.b);
+    float luz = (maior + menor) * 0.5;
+    if (matteChannel == 5) return luz;
+
+    float croma = maior - menor;
+    if (matteChannel == 6) {
+        // Saturação do HSL: zero no cinza, e a mesma fórmula nos dois lados
+        // do meio, para branco e preto puros não dividirem por zero.
+        if (croma <= 0.0) return 0.0;
+        return croma / max(1.0 - abs(2.0 * luz - 1.0), 1e-4);
+    }
+
+    // Matiz, de 0 a 1 dando a volta no círculo de cor.
+    if (croma <= 0.0) return 0.0;
+    float h;
+    if (maior == c.r) h = mod((c.g - c.b) / croma, 6.0);
+    else if (maior == c.g) h = (c.b - c.r) / croma + 2.0;
+    else h = (c.r - c.g) / croma + 4.0;
+    return h / 6.0;
+}
+
+void main() {
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float matte = clamp(valorDoMatte(texture(matteImg, acScreenNorm)), 0.0, 1.0);
+    if (invertMatte) matte = 1.0 - matte;
+
+    float alfa = combineWithOriginal ? camada.a * matte : matte;
+    fragColor = vec4(camada.rgb, alfa);
+}
+
+    ]]></shader>
+</effect>

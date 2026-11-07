@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/UI_color_mask_range_bkg
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-ui-color-mask-range-bkg"
+    name="Ui Color Mask Range Bkg (NV)"
+    name-en="Ui Color Mask Range Bkg (NV)"
+    desc="NodeVideo effect 'NodeVideo/UI_color_mask_range_bkg', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/UI_color_mask_range_bkg', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="_CenterColor" label="Centercolor" default="#FFFFFFFF" />
+        <color id="_FeatherColor" label="Feathercolor" default="#FFFFFFFF" />
+        <slider id="_center" label="Center" default="0.5" min="-1.0" max="2.0" step="0.01" />
+        <slider id="_radius" label="Radius" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_feather" label="Feather" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_loop" type="integer" label="Loop" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+ivec3 u_xlati0;
+bvec3 u_xlatb0;
+vec3 u_xlat1;
+bvec3 u_xlatb1;
+vec4 u_xlat2;
+bvec4 u_xlatb2;
+ivec2 u_xlati3;
+bvec2 u_xlatb3;
+ivec3 u_xlati4;
+bvec3 u_xlatb4;
+float u_xlat5;
+float u_xlat6;
+bool u_xlatb6;
+vec2 u_xlat9;
+bool u_xlatb9;
+vec2 u_xlat10;
+bvec2 u_xlatb11;
+bool u_xlatb13;
+void main()
+{
+    u_xlat0.x = acScreenNorm.x + (-_center);
+    u_xlatb0.x = abs(u_xlat0.x)<0.00499999989;
+    if(u_xlatb0.x){
+        fragColor = vec4(1.0, 1.0, 1.0, 1.0);
+        return;
+    }
+    u_xlat0.x = (-_radius) + _center;
+    u_xlat0.y = u_xlat0.x + (-_feather);
+    u_xlat0.z = _radius + _center;
+    u_xlat0.w = u_xlat0.z + _feather;
+    u_xlat1.xz = (-u_xlat0.yz) + acScreenNorm.xx;
+    u_xlat5 = (-u_xlat0.y) + u_xlat0.x;
+    u_xlat1.x = u_xlat1.x / u_xlat5;
+    u_xlat9.x = u_xlat1.z / _feather;
+    u_xlat1.z = (-u_xlat9.x) + 1.0;
+    u_xlatb13 = u_xlat0.y<acScreenNorm.x;
+    u_xlatb2.xyz = lessThan(acScreenNorm.xxxx, u_xlat0.xwzx).xyz;
+    u_xlatb13 = u_xlatb13 && u_xlatb2.x;
+    u_xlatb1.xz = greaterThanEqual(u_xlat1.xxzx, acScreenNorm.yyyy).xz;
+    u_xlatb2.x = u_xlat0.z<acScreenNorm.x;
+    u_xlatb2.x = u_xlatb2.y && u_xlatb2.x;
+    u_xlat1.x = u_xlatb1.x ? float(1.0) : 0.0;
+    u_xlat1.z = u_xlatb1.z ? float(1.0) : 0.0;
+;
+    u_xlat1.xz = u_xlat1.xz * _FeatherColor.xx;
+    u_xlatb6 = u_xlat0.x<acScreenNorm.x;
+    u_xlatb6 = u_xlatb2.z && u_xlatb6;
+    u_xlat6 = u_xlatb6 ? _CenterColor.x : float(0.0);
+    u_xlat9.x = (u_xlatb2.x) ? u_xlat1.z : u_xlat6;
+    u_xlat1.x = (u_xlatb13) ? u_xlat1.x : u_xlat9.x;
+    u_xlatb9 = int(_loop)==1;
+    if(u_xlatb9){
+        u_xlat9.xy = acScreenNorm.xx + vec2(-1.0, 1.0);
+        u_xlat2 = (-u_xlat0.yyzz) + u_xlat9.xyxy;
+        u_xlat2.xy = u_xlat2.xy / vec2(u_xlat5);
+        u_xlat10.xy = u_xlat2.zw / vec2(vec2(_feather, _feather));
+        u_xlat2.zw = (-u_xlat10.xy) + vec2(1.0, 1.0);
+        u_xlatb3.xy = lessThan(u_xlat0.yyyy, u_xlat9.xyxx).xy;
+        u_xlatb11.xy = lessThan(u_xlat9.xyxy, u_xlat0.xxxx).xy;
+        u_xlati3.xy = ivec2(uvec2((uint(u_xlatb11.x) * 0xffffffffu) & (uint(u_xlatb3.x) * 0xffffffffu), (uint(u_xlatb11.y) * 0xffffffffu) & (uint(u_xlatb3.y) * 0xffffffffu)));
+        u_xlatb2 = greaterThanEqual(u_xlat2, acScreenNorm.yyyy);
+        u_xlatb11.xy = lessThan(u_xlat0.zzzz, u_xlat9.xyxy).xy;
+        u_xlatb4.xz = lessThan(u_xlat9.xxyy, u_xlat0.wwww).xz;
+        u_xlati4.xz = ivec2(uvec2((uint(u_xlatb4.x) * 0xffffffffu) & (uint(u_xlatb11.x) * 0xffffffffu), (uint(u_xlatb4.z) * 0xffffffffu) & (uint(u_xlatb11.y) * 0xffffffffu)));
+        u_xlat2.x = u_xlatb2.x ? float(1.0) : 0.0;
+        u_xlat2.y = u_xlatb2.y ? float(1.0) : 0.0;
+        u_xlat2.z = u_xlatb2.z ? float(1.0) : 0.0;
+        u_xlat2.w = u_xlatb2.w ? float(1.0) : 0.0;
+;
+        u_xlat2 = u_xlat2 * _FeatherColor.xxxx;
+        u_xlatb11.xy = lessThan(u_xlat0.xxxx, u_xlat9.xyxy).xy;
+        u_xlatb0.xz = lessThan(u_xlat9.xxyx, u_xlat0.zzzz).xz;
+        u_xlati0.xz = ivec2(uvec2((uint(u_xlatb0.x) * 0xffffffffu) & (uint(u_xlatb11.x) * 0xffffffffu), (uint(u_xlatb0.z) * 0xffffffffu) & (uint(u_xlatb11.y) * 0xffffffffu)));
+        u_xlat0.xz = uintBitsToFloat(uvec2(uint(u_xlati0.x) & uint(floatBitsToUint(_CenterColor.x)), uint(u_xlati0.z) & uint(floatBitsToUint(_CenterColor.x))));
+        {
+            vec4 hlslcc_movcTemp = u_xlat0;
+            hlslcc_movcTemp.x = (u_xlati4.x != 0) ? u_xlat2.z : u_xlat0.x;
+            hlslcc_movcTemp.y = (u_xlati4.z != 0) ? u_xlat2.w : u_xlat0.z;
+            u_xlat0 = hlslcc_movcTemp;
+        }
+        {
+            vec4 hlslcc_movcTemp = u_xlat0;
+            hlslcc_movcTemp.x = (u_xlati3.x != 0) ? u_xlat2.x : u_xlat0.x;
+            hlslcc_movcTemp.y = (u_xlati3.y != 0) ? u_xlat2.y : u_xlat0.y;
+            u_xlat0 = hlslcc_movcTemp;
+        }
+    } else {
+        u_xlat0.x = float(0.0);
+        u_xlat0.y = float(0.0);
+    }
+    u_xlat0.x = u_xlat0.x + u_xlat1.x;
+    fragColor = u_xlat0.yyyy + u_xlat0.xxxx;
+    return;
+}
+    ]]></shader>
+</effect>

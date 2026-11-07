@@ -1,0 +1,2025 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DATAMOSH PRO — um decodificador de vídeo de mentira, errando de propósito
+  ============================================================================
+
+  Feito a partir da "Datamosh Pro V2 — Especificação de pesquisa" que o snow
+  mandou em 22/09. Nenhum código de plugin ou de projeto aberto foi lido ou
+  copiado: a spec descreve técnicas públicas (motion vectors, referência que
+  não atualiza, resíduo quantizado, blocos) e as contas aqui são nossas.
+
+  ============================================================================
+   A AUDITORIA DO DATAMOSH QUE JÁ EXISTIA (item 349 da spec)
+  ============================================================================
+
+  `datamosh.xml` (0.x) continua no app, intocado — projetos salvos com ele não
+  mudam. Respondendo às perguntas da spec sobre ele:
+
+   1. Fonte de movimento: nenhuma. Ele não mede movimento.
+   2. Buffer de referência: não. A "previsão" é a média dos 2 quadros
+      anteriores, lidos do anel de histórico (a camada crua).
+   3. Realimentação temporal: não. Nada do que ele escreve volta no quadro
+      seguinte — o motor nem tinha como guardar.
+   4-6. Histórico de movimento, estado por bloco: não.
+   7. Resíduo: sim, e é a parte boa — a diferença atual − previsão passa por
+      uma DCT 8×8 de verdade, ganho, gama e limiar, e volta.
+   8. Croma: sim, a corrupção em YCbCr.
+   9-10. Seek e exportação: sem estado, então não há o que reconstruir.
+
+  Ou seja: ele é o componente "resíduo" sozinho. Faltava o núcleo inteiro que a
+  spec pede (itens 311 e 351): REFERÊNCIA ≠ ATUAL durante o mosh.
+
+  ============================================================================
+   O QUE ESTE FAZ, NA ORDEM DA SPEC (item 150)
+  ============================================================================
+
+      0  lumas        (1/4)   luminância do quadro atual e do anterior
+      1  lumasB       (1/16)  a mesma coisa, menor
+      2  campoGrosso  (1/32)  busca de blocos grossa: ±64 px, janela de 64 px
+      3  campo        (1/8)   busca fina em volta do vetor grosso + confiança
+      4  tempo        (estado)       corte, gatilho, envelope e idade da referência
+      5  movMedio     (estado, 1/8)  média móvel do movimento (16 bits)
+      6  residuo      (1/8)   resíduo de luma do bloco em 4 coeficientes DCT
+      7  residuoCor   (1/8)   resíduo de croma e alfa do bloco
+      8  referencia   (estado, 1/1)  O MOSH — que vira a referência do próximo
+      9  saída                 a referência, ou uma vista de depuração
+
+  O núcleo é o passe 8: prever = referência do quadro anterior deslocada pelo
+  movimento do quadro ATUAL; somar o resíduo quantizado; corromper blocos e
+  croma; e o resultado vira a referência (item 151: a referência é atualizada
+  DEPOIS do mosh, com o resultado já moshado).
+
+  O estado (`src="state"`) é novo no motor desta versão: um par de buffers que
+  sobrevive ao quadro, com as regras de tempo em `EstadosDeEfeito` (mesmo
+  instante não anda, quadro seguinte anda, pulo recomeça com acStateFresh).
+
+  ============================================================================
+   ENCODIFICAÇÃO (os buffers de efeito são RGBA de 8 bits)
+  ============================================================================
+
+   - vetor em 8 bits: nível 128 = zero, passo de 0,5 px (±64 px);
+   - vetor médio em 16 bits (dois canais por componente): passo de 1/256 px,
+     ±128 px — a média móvel com 8 bits empacava (o passo de cada quadro ficava
+     menor que o degrau e sumia);
+   - coeficiente de resíduo: v·0,5 + 0,5 (±1).
+
+  ============================================================================
+   ENXUGADO (0.187.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 69 controles no painel. Agora são 13: Intensity, Motion, Persistence,
+  Blocks, Residual, Color, Trigger e Direction soltos; Drift X, Drift Y e Zoom
+  (o movimento sintético, que faz o datamosh andar numa imagem parada) no grupo
+  "Movimento"; e o Mosh Map com a camada dele no grupo "Mapa". O resto continua
+  aqui com `hidden="true"`: as 18 predefinições mexem neles (a onda do "Vector
+  Storm", os 5 bits do "Hard Compression"), e um projeto salvo que os usava
+  continua igual.
+
+-->
+<effect
+    id="nova.effect.datamoshpro"
+    name="Datamosh Pro (movimento)"
+    name-en="Datamosh Pro (motion)"
+    desc="Datamosh de verdade: a imagem antiga é arrastada pelo movimento da nova, com blocos, resíduo e cor errada."
+    desc-en="Real datamosh: the old picture is dragged by the new picture's motion, with blocks, residual and chroma errors."
+    category="stylize"
+    blend="true"
+    tags="datamosh,mosh,glitch,melt,derreter,codec,compressao,compression,bloco,block,pframe,iframe,motion,movimento,transicao,transition,corte,cut,anime,amv,mmv,vhs">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="anterior" src="history" offset="1" />
+        <texture id="somImg" src="audio" />
+
+        <texture id="lumas" src="buffer" scale="0.25" />
+        <texture id="lumasB" src="buffer" scale="0.0625" />
+        <texture id="campoGrosso" src="buffer" scale="0.03125" />
+        <texture id="campo" src="buffer" scale="0.125" />
+        <texture id="residuo" src="buffer" scale="0.125" />
+        <texture id="residuoCor" src="buffer" scale="0.125" />
+
+        <texture id="movMedio" src="state" scale="0.125" />
+        <texture id="tempo" src="state" scale="0.03125" />
+        <texture id="referencia" src="state" scale="1.0" />
+
+        <slider id="intensity" label="Intensity"
+                default="1.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="motionStrength" label="Motion"
+                default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="persistence" label="Persistence"
+                default="0.92" min="0.0" max="1.0" step="0.005" snap="0.0,1.0" />
+        <slider id="blocks" label="Blocks"
+                default="0.1" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="residual" label="Residual"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="colorAmt" label="Color"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="referenceMode" label="Trigger" default="0"
+                  options="Always|Periodic|Motion-Based|On Cut|On Beat" />
+        <selector id="direction" label="Direction" default="0"
+                  options="Free|Horizontal|Vertical|Custom Angle|Radial|Mirror X|Mirror Y" />
+
+        <!-- ============================ O SIMPLES (item 336) ============================ -->
+        <selector id="mapSource" group="Mapa" label="Mosh Map" default="0"
+                  options="Off|Motion|Luma|Inverse Luma|Alpha|Layer Luma|Layer Alpha" />
+
+        <!-- ================================== MOTION =================================== -->
+        <slider id="motionAverage" hidden="true" group="Motion" label="Average (frames)" type="integer"
+                default="3" min="0" max="30" step="1" ticks="3,5,10,15,30" />
+        <slider id="deadZone" hidden="true" group="Motion" label="Threshold (px)"
+                default="0.5" min="0.0" max="10.0" step="0.1" />
+        <slider id="directionAngle" hidden="true" group="Motion" label="Angle" type="angle"
+                default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0,90.0,-90.0" />
+        <slider id="stretchX" hidden="true" group="Motion" label="Stretch X"
+                default="1.0" min="-3.0" max="3.0" step="0.01" snap="1.0,0.0" />
+        <slider id="stretchY" hidden="true" group="Motion" label="Stretch Y"
+                default="1.0" min="-3.0" max="3.0" step="0.01" snap="1.0,0.0" />
+        <slider id="pixelSnap" hidden="true" group="Motion" label="Pixel Snap"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="blockSize" hidden="true" group="Motion" label="Block Size (px)" type="integer"
+                default="16" min="4" max="64" step="1" ticks="4,8,16,32,64" />
+        <slider id="blockSoftness" hidden="true" group="Motion" label="Block Softness"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <selector id="warpMode" hidden="true" group="Motion" label="Warp" default="0"
+                  options="Forward|Reverse|Bidirectional" />
+        <slider id="warpSteps" hidden="true" group="Motion" label="Multi-step" type="integer"
+                default="1" min="1" max="3" step="1" />
+        <selector id="edgeMode" hidden="true" group="Motion" label="Edges" default="0"
+                  options="Clamp|Mirror|Repeat|Transparent" />
+
+        <!-- ================================= REFERENCE ================================= -->
+        <slider id="refreshEvery" hidden="true" group="Reference" label="Refresh Every (frames)" type="integer"
+                default="24" min="2" max="240" step="1" ticks="12,24,48" />
+        <slider id="refreshMotion" hidden="true" group="Reference" label="Hold Above Motion (px)"
+                default="2.0" min="0.0" max="20.0" step="0.1" />
+        <slider id="holdTime" hidden="true" group="Reference" label="Hold (s)"
+                default="0.8" min="0.0" max="5.0" step="0.01" />
+        <slider id="releaseTime" hidden="true" group="Reference" label="Release (s)"
+                default="0.5" min="0.0" max="3.0" step="0.01" />
+        <slider id="cooldown" hidden="true" group="Reference" label="Cooldown (s)"
+                default="0.5" min="0.0" max="5.0" step="0.01" />
+        <slider id="cutSensitivity" hidden="true" group="Reference" label="Cut Sensitivity"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="maxAge" hidden="true" group="Reference" label="Max Reference Age (s)"
+                default="0.0" min="0.0" max="10.0" step="0.05" snap="0.0" />
+        <slider id="ageCurve" hidden="true" group="Reference" label="Age To Full Corruption (s)"
+                default="1.0" min="0.0" max="5.0" step="0.05" />
+        <slider id="feedbackBlur" hidden="true" group="Reference" label="Feedback Blur"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="feedbackSharpen" hidden="true" group="Reference" label="Feedback Sharpen"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ================================== BLOCKS =================================== -->
+        <selector id="blockEdge" hidden="true" group="Blocks" label="Block Edges" default="0"
+                  options="Hard|Soft|Organic" />
+        <slider id="blockCarry" hidden="true" group="Blocks" label="Carry (frames)" type="integer"
+                default="6" min="1" max="30" step="1" />
+        <slider id="blockJump" hidden="true" group="Blocks" label="Jump (px)"
+                default="16.0" min="0.0" max="64.0" step="1.0" />
+
+        <!-- ================================= RESIDUAL ================================== -->
+        <slider id="residualThreshold" hidden="true" group="Residual" label="Skip Below"
+                default="0.04" min="0.0" max="0.5" step="0.005" />
+        <slider id="residualQuant" hidden="true" group="Residual" label="Quantization"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="dctNoise" hidden="true" group="Residual" label="DCT Amount"
+                default="0.1" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="dctFrequency" hidden="true" group="Residual" label="DCT Frequency" type="integer"
+                default="2" min="1" max="3" step="1" />
+
+        <!-- ================================== CHROMA =================================== -->
+        <slider id="chromaLag" hidden="true" group="Chroma" label="Chroma Lag"
+                default="0.4" min="0.0" max="2.0" step="0.01" />
+        <slider id="chromaBlock" hidden="true" group="Chroma" label="Chroma Block (px)" type="integer"
+                default="16" min="1" max="64" step="1" ticks="8,16,32" />
+        <selector id="lumaMode" hidden="true" group="Chroma" label="Luma / Chroma" default="0"
+                  options="Full RGB|Luma Stable|Color Melt|Monochrome|Chroma Burst" />
+        <selector id="bitDepth" hidden="true" group="Chroma" label="Bit Depth" default="0"
+                  options="Off|6-bit|5-bit|4-bit|3-bit" />
+
+        <!-- ============================= SYNTHETIC MOTION ============================== -->
+        <!-- Movimento que não vem do vídeo: é o que faz uma FOTO moshar (item 207). -->
+        <slider id="driftX" group="Movimento" label="Drift X (px/frame)"
+                default="0.0" min="-40.0" max="40.0" step="0.1" snap="0.0" />
+        <slider id="driftY" group="Movimento" label="Drift Y (px/frame)"
+                default="0.0" min="-40.0" max="40.0" step="0.1" snap="0.0" />
+        <slider id="zoomMotion" group="Movimento" label="Zoom (px/frame)"
+                default="0.0" min="-20.0" max="20.0" step="0.1" snap="0.0" />
+        <slider id="rotateMotion" hidden="true" group="Synthetic Motion" label="Rotate (°/frame)"
+                default="0.0" min="-10.0" max="10.0" step="0.05" snap="0.0" />
+        <slider id="shake" hidden="true" group="Synthetic Motion" label="Shake (px)"
+                default="0.0" min="0.0" max="40.0" step="0.1" snap="0.0" />
+
+        <!-- ================================ VECTOR OPS ================================= -->
+        <selector id="waveMode" hidden="true" group="Vector Ops" label="Wave" default="0"
+                  options="Off|Sin X|Sin Y|Sin XY|Radial" />
+        <slider id="waveAmount" hidden="true" group="Vector Ops" label="Wave Amount (px)"
+                default="0.0" min="0.0" max="40.0" step="0.1" snap="0.0" />
+        <slider id="waveFrequency" hidden="true" group="Vector Ops" label="Wave Frequency"
+                default="3.0" min="0.1" max="30.0" step="0.1" />
+        <slider id="waveSpeed" hidden="true" group="Vector Ops" label="Wave Speed"
+                default="1.0" min="-10.0" max="10.0" step="0.05" snap="0.0" />
+        <slider id="randomVector" hidden="true" group="Vector Ops" label="Random Blocks (px)"
+                default="0.0" min="0.0" max="40.0" step="0.1" snap="0.0" />
+        <slider id="taper" hidden="true" group="Vector Ops" label="Taper"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ================================= MOSH MAP ================================== -->
+        <texture id="mapLayer" src="layer" group="Mapa" label="Map Layer" empty="transparent" />
+        <slider id="mapAmount" hidden="true" group="Mosh Map" label="Map Amount"
+                default="1.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="mapFeather" hidden="true" group="Mosh Map" label="Feather"
+                default="0.2" min="0.0" max="1.0" step="0.01" />
+        <switch id="mapInvert" hidden="true" group="Mosh Map" label="Invert" default="false" />
+        <switch id="sweepOn" hidden="true" group="Mosh Map" label="Sweep" default="false" />
+        <slider id="sweepProgress" hidden="true" group="Mosh Map" label="Sweep Progress"
+                default="0.5" min="0.0" max="1.0" step="0.005" />
+        <slider id="sweepSpeed" hidden="true" group="Mosh Map" label="Sweep Speed (/s)"
+                default="0.0" min="-3.0" max="3.0" step="0.01" snap="0.0" />
+        <slider id="sweepAngle" hidden="true" group="Mosh Map" label="Sweep Angle" type="angle"
+                default="0.0" min="-180.0" max="180.0" step="1.0" snap="0.0,90.0,-90.0,180.0" />
+        <slider id="sweepSoftness" hidden="true" group="Mosh Map" label="Sweep Softness"
+                default="0.1" min="0.0" max="0.5" step="0.005" />
+
+        <!-- ================================ SWAP MOTION ================================ -->
+        <!--
+          "Swap Motion" (item 118): o movimento vem DESTA camada, e os pixels que
+          ele arrasta vêm de outra. Uma foto derretendo no movimento de um vídeo.
+        -->
+        <selector id="pixelsFrom" hidden="true" group="Swap Motion" label="Pixels From" default="0"
+                  options="This Layer|Other Layer" />
+        <texture id="pixelsLayer" hidden="true" src="layer" group="Swap Motion" label="Pixels Layer" empty="transparent" />
+
+        <!-- ================================== AUDIO ==================================== -->
+        <slider id="audioAmount" hidden="true" group="Audio" label="Audio Drives Intensity"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="beatThreshold" hidden="true" group="Audio" label="Beat Threshold"
+                default="0.6" min="0.05" max="1.0" step="0.01" />
+        <slider id="audioSensitivity" hidden="true" group="Audio" label="Sensitivity"
+                default="1.0" min="0.1" max="4.0" step="0.01" snap="1.0" />
+
+        <!-- ================================= ADVANCED ================================== -->
+        <selector id="quality" hidden="true" group="Advanced" label="Quality" default="1"
+                  options="Performance|Balanced|Quality|Ultra" />
+        <selector id="view" hidden="true" group="Advanced" label="View" default="0"
+                  options="Result|Motion Vectors|Confidence|Reference|Mosh Map|Block Grid|Current vs Reference|Motion Magnitude|Reference Age" />
+        <slider id="seed" hidden="true" group="Advanced" label="Seed"
+                default="0.0" min="0.0" max="100.0" step="1.0" />
+    </params>
+
+    <!-- O mosh arrasta a figura que desliza sobre o transparente (0.669.0). -->
+    <preview amostra="foto" />
+
+    <passes>
+        <pass target="lumas" />        <!-- 0 -->
+        <pass target="lumasB" />       <!-- 1 -->
+        <pass target="campoGrosso" />  <!-- 2 -->
+        <pass target="campo" />        <!-- 3 -->
+        <pass target="tempo" />        <!-- 4: estado -->
+        <pass target="movMedio" />     <!-- 5: estado -->
+        <pass target="residuo" />      <!-- 6 -->
+        <pass target="residuoCor" />   <!-- 7 -->
+        <pass target="referencia" />   <!-- 8: estado — o mosh -->
+        <pass />                       <!-- 9: saída -->
+    </passes>
+
+    <!--
+      As predefinições são as receitas da spec (itens 133-141 e 181-190). Todas
+      citam os mesmos controles principais, inclusive os que zeram — uma
+      predefinição só escreve o que cita, e trocar de "Fera do glitch" para
+      "Mosh suave" não pode deixar a onda ligada. Nenhuma mexe no Mosh Map, no
+      Swap nem na semente: são escolhas da pessoa, não do visual.
+    -->
+    <presets>
+        <!--
+          O PRIMEIRO da lista de propósito: é o que mosha uma FOTO PARADA com força,
+          e visível na hora (movimento sintético pesado + `moshFresco`). Os presets
+          "de vídeo" abaixo (Classic/Deep/Cut) têm Drift 0 e só derretem tocando um
+          vídeo com movimento de verdade. Pedido do snow (24/09/2026): "mais forte".
+        -->
+        <preset id="fotoForte" name="🔥 Foto derretida (forte)" name-en="🔥 Photo Melt (strong)">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="3.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.45" />
+            <value param="residual" value="0.45" />
+            <value param="colorAmt" value="0.5" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.4" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="2" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="8.0" />
+            <value param="zoomMotion" value="5.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="3" />
+            <value param="waveAmount" value="10.0" />
+            <value param="randomVector" value="3.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.6" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.3" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="classicMosh" name="🟪 Mosh clássico" name-en="🟪 Classic Mosh">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.15" />
+            <value param="colorAmt" value="0.15" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="0" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.8" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="deepMelt" name="🫠 Derretimento fundo" name-en="🫠 Deep Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.5" />
+            <value param="persistence" value="0.98" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.25" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="10" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="2" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="cutMelt" name="✂️ Derrete no corte" name-en="✂️ Cut Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.4" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.15" />
+            <value param="colorAmt" value="0.3" />
+            <value param="referenceMode" value="3" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="1.2" />
+            <value param="releaseTime" value="0.6" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="beatMosh" name="🥁 Mosh na batida" name-en="🥁 Beat Mosh">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.3" />
+            <value param="residual" value="0.25" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="4" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.1" />
+            <value param="releaseTime" value="0.25" />
+            <value param="audioAmount" value="0.4" />
+        </preset>
+        <preset id="vectorSoup" name="🌀 Sopa de vetores" name-en="🌀 Vector Soup">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.97" />
+            <value param="blocks" value="0.2" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="15" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.4" />
+            <value param="stretchY" value="1.2" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="3" />
+            <value param="waveAmount" value="6.0" />
+            <value param="randomVector" value="4.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="colorMelt" name="🎨 Cor derretida" name-en="🎨 Color Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.95" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.3" />
+            <value param="colorAmt" value="0.8" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="1.2" />
+            <value param="lumaMode" value="2" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="hardCompression" name="🧱 Compressão pesada" name-en="🧱 Hard Compression">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.95" />
+            <value param="blocks" value="0.35" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="1.0" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="2" />
+            <value param="dctNoise" value="0.5" />
+            <value param="residualQuant" value="0.9" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="softDatamosh" name="☁️ Mosh suave" name-en="☁️ Soft Datamosh">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.8" />
+            <value param="blocks" value="0.02" />
+            <value param="residual" value="0.35" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="5" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.0" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="1.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.0" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.3" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="animeImpact" name="💥 Impacto de anime" name-en="💥 Anime Impact">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.05" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.5" />
+            <value param="referenceMode" value="3" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="1" />
+            <value param="stretchX" value="1.8" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="1" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.4" />
+            <value param="releaseTime" value="0.3" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="glitchBeast" name="👾 Fera do glitch" name-en="👾 Glitch Beast">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.97" />
+            <value param="blocks" value="0.5" />
+            <value param="residual" value="0.5" />
+            <value param="colorAmt" value="0.9" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="3" />
+            <value param="waveAmount" value="10.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="4" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.6" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="fullMelt" name="🔥 Derretimento total" name-en="🔥 Full Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="2.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.45" />
+            <value param="residual" value="0.35" />
+            <value param="colorAmt" value="0.5" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="10" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="2" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.5" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="vhsMosh" name="📼 Mosh de VHS" name-en="📼 VHS Mosh">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.9" />
+            <value param="blocks" value="0.08" />
+            <value param="residual" value="0.3" />
+            <value param="colorAmt" value="0.5" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="4" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="1.5" />
+            <value param="waveMode" value="1" />
+            <value param="waveAmount" value="2.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="1.0" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.2" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="horizontalMelt" name="↔️ Derrete na horizontal" name-en="↔️ Horizontal Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.97" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="1" />
+            <value param="stretchX" value="2.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="2.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="verticalMelt" name="↕️ Derrete na vertical" name-en="↕️ Vertical Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.97" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="2" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="2.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="3.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="radialMelt" name="🎯 Derrete do centro" name-en="🎯 Radial Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.97" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="4" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="3.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="imageMelt" name="🖼️ Foto derretendo" name-en="🖼️ Image Melt">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.05" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="2.0" />
+            <value param="zoomMotion" value="1.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="1" />
+            <value param="waveAmount" value="3.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="motionLag" name="🐢 Movimento atrasado" name-en="🐢 Motion Lag">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="0.9" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.25" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="0" />
+            <value param="motionAverage" value="20" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.5" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+        <preset id="breathingMosh" name="🫁 Mosh que respira" name-en="🫁 Breathing Mosh">
+            <value param="intensity" value="1.0" />
+            <value param="motionStrength" value="1.0" />
+            <value param="persistence" value="1.0" />
+            <value param="blocks" value="0.1" />
+            <value param="residual" value="0.2" />
+            <value param="colorAmt" value="0.2" />
+            <value param="referenceMode" value="1" />
+            <value param="motionAverage" value="3" />
+            <value param="direction" value="0" />
+            <value param="stretchX" value="1.0" />
+            <value param="stretchY" value="1.0" />
+            <value param="pixelSnap" value="0.5" />
+            <value param="blockSize" value="16" />
+            <value param="blockSoftness" value="0.0" />
+            <value param="warpMode" value="0" />
+            <value param="warpSteps" value="1" />
+            <value param="driftX" value="0.0" />
+            <value param="driftY" value="0.0" />
+            <value param="zoomMotion" value="0.0" />
+            <value param="rotateMotion" value="0.0" />
+            <value param="shake" value="0.0" />
+            <value param="waveMode" value="0" />
+            <value param="waveAmount" value="0.0" />
+            <value param="randomVector" value="0.0" />
+            <value param="taper" value="0.0" />
+            <value param="chromaLag" value="0.4" />
+            <value param="lumaMode" value="0" />
+            <value param="bitDepth" value="0" />
+            <value param="dctNoise" value="0.1" />
+            <value param="residualQuant" value="0.5" />
+            <value param="feedbackBlur" value="0.0" />
+            <value param="feedbackSharpen" value="0.0" />
+            <value param="holdTime" value="0.8" />
+            <value param="releaseTime" value="0.4" />
+            <value param="audioAmount" value="0.0" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+const float TAU = 6.28318530718;
+const float PI = 3.14159265359;
+/** O vetor mais longo depois dos operadores (compressão suave, item 11). */
+const float VETOR_MAXIMO = 160.0;
+
+// ============================================================================
+//  ACASO DETERMINÍSTICO (itens 54, 103, 294): semente + quadro + bloco
+// ============================================================================
+
+float semente() {
+    return seed * 17.13 + 3.7;
+}
+
+float hash11(float p) {
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+float hash21(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float hash31(vec3 p) {
+    vec3 p3 = fract(p * 0.1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 hash32(vec3 p) {
+    vec3 p3 = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// ============================================================================
+//  TEMPO, TAMANHO, COR
+// ============================================================================
+
+float duracaoDoQuadro() {
+    return acFrameDuration > 0.0 ? acFrameDuration : 1.0 / 30.0;
+}
+
+float indiceDoQuadro() {
+    return floor(acTime / duracaoDoQuadro() + 0.5);
+}
+
+/** O tamanho da camada em pixels — qualquer passe, qualquer buffer. */
+vec2 camadaPx() {
+    return vec2(textureSize(inputImg, 0));
+}
+
+float luma(vec3 c) {
+    return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+vec3 paraYcc(vec3 c) {
+    return vec3(
+        dot(c, vec3(0.299, 0.587, 0.114)),
+        dot(c, vec3(-0.168736, -0.331264, 0.5)),
+        dot(c, vec3(0.5, -0.418688, -0.081312)));
+}
+
+vec3 deYcc(vec3 y) {
+    return vec3(
+        y.x + 1.402 * y.z,
+        y.x - 0.344136 * y.y - 0.714136 * y.z,
+        y.x + 1.772 * y.y);
+}
+
+vec4 preMultiplicar(vec4 c) {
+    return vec4(c.rgb * c.a, c.a);
+}
+
+// ============================================================================
+//  CODIFICAÇÃO DOS VETORES NOS BUFFERS DE 8 BITS
+// ============================================================================
+
+/** 8 bits: nível 128 = zero, meio pixel por nível (±64 px). Linear: aguenta interpolação. */
+vec2 codificarMv(vec2 v) {
+    return clamp(floor(v * 2.0 + 0.5) + 128.0, 0.0, 255.0) / 255.0;
+}
+
+vec2 decodificarMv(vec2 e) {
+    return (e * 255.0 - 128.0) * 0.5;
+}
+
+/** 16 bits num par de canais: 1/256 px por nível, ±128 px. */
+vec2 codificar16Um(float v) {
+    float n = clamp(floor(v * 256.0 + 0.5) + 32768.0, 0.0, 65535.0);
+    float alto = floor(n / 256.0);
+    return vec2(alto, n - alto * 256.0) / 255.0;
+}
+
+float decodificar16Um(vec2 e) {
+    vec2 b = floor(e * 255.0 + 0.5);
+    return (b.x * 256.0 + b.y - 32768.0) / 256.0;
+}
+
+vec4 codificar16(vec2 v) {
+    return vec4(codificar16Um(v.x), codificar16Um(v.y));
+}
+
+vec2 decodificar16(vec4 e) {
+    return vec2(decodificar16Um(e.rg), decodificar16Um(e.ba));
+}
+
+/** Contador inteiro (0..65535) num par de canais. */
+vec2 codificarContador(float n) {
+    float c = clamp(floor(n + 0.5), 0.0, 65535.0);
+    float alto = floor(c / 256.0);
+    return vec2(alto, c - alto * 256.0) / 255.0;
+}
+
+float decodificarContador(vec2 e) {
+    vec2 b = floor(e * 255.0 + 0.5);
+    return b.x * 256.0 + b.y;
+}
+
+// ============================================================================
+//  A IMAGEM ATUAL (com o Swap Motion) E A REFERÊNCIA
+// ============================================================================
+
+/** Os pixels que o movimento arrasta: esta camada, ou a escolhida no Swap. */
+vec4 atualEm(vec2 uv) {
+    if (pixelsFrom == 1 && textureSize(pixelsLayer, 0).x > 1) {
+        return preMultiplicar(texture(pixelsLayer, uv));
+    }
+    return preMultiplicar(texture(inputImg, uv));
+}
+
+/** A referência (quadro anterior, já moshado), com o modo de borda (item 109). */
+vec4 lerRef(vec2 q) {
+    if (edgeMode == 1) {
+        q = 1.0 - abs(1.0 - mod(q, 2.0));
+    } else if (edgeMode == 2) {
+        q = fract(q);
+    } else if (edgeMode == 3) {
+        if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) return vec4(0.0);
+    }
+    return texture(referencia, q);
+}
+
+/** Com o desfoque e o realce da realimentação (itens 93 e 94). */
+vec4 lerRefFiltrada(vec2 q) {
+    vec4 c = lerRef(q);
+    if (feedbackBlur <= 0.0 && feedbackSharpen <= 0.0) return c;
+    vec2 t = 1.25 / camadaPx();
+    vec4 media = (lerRef(q + vec2(t.x, 0.0)) + lerRef(q - vec2(t.x, 0.0))
+                + lerRef(q + vec2(0.0, t.y)) + lerRef(q - vec2(0.0, t.y))) * 0.25;
+    c = mix(c, media, clamp(feedbackBlur, 0.0, 1.0));
+    c += (c - media) * feedbackSharpen * 1.5;
+    c.a = clamp(c.a, 0.0, 1.0);
+    c.rgb = clamp(c.rgb, 0.0, c.a);
+    return c;
+}
+
+// ============================================================================
+//  SOM
+// ============================================================================
+
+float nivelGrave() {
+    float s = texture(somImg, vec2(0.04, 0.5)).r
+            + texture(somImg, vec2(0.10, 0.5)).r
+            + texture(somImg, vec2(0.17, 0.5)).r;
+    return clamp(s / 3.0 * audioSensitivity, 0.0, 1.0);
+}
+
+/** A intensidade do quadro, com o empurrão do som. */
+float intensidadeAgora() {
+    return clamp(intensity + audioAmount * nivelGrave(), 0.0, 1.0);
+}
+
+/** O quanto do movimento a intensidade libera (ver o passe 8). */
+float fatorDeMovimento() {
+    return smoothstep(0.0, 0.2, intensidadeAgora());
+}
+
+// ============================================================================
+//  O CAMPO DE MOVIMENTO BRUTO (depois da média) E OS OPERADORES (itens 42-57)
+// ============================================================================
+
+/** A média móvel, com interpolação feita à mão (16 bits não se interpolam no hardware). */
+vec2 lerMedio(vec2 uv) {
+    vec2 tam = vec2(textureSize(movMedio, 0));
+    vec2 p = uv * tam - 0.5;
+    ivec2 i = ivec2(floor(p));
+    vec2 f = fract(p);
+    ivec2 limite = ivec2(tam) - 1;
+    vec2 a = decodificar16(texelFetch(movMedio, clamp(i, ivec2(0), limite), 0));
+    vec2 b = decodificar16(texelFetch(movMedio, clamp(i + ivec2(1, 0), ivec2(0), limite), 0));
+    vec2 c = decodificar16(texelFetch(movMedio, clamp(i + ivec2(0, 1), ivec2(0), limite), 0));
+    vec2 d = decodificar16(texelFetch(movMedio, clamp(i + ivec2(1, 1), ivec2(0), limite), 0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/**
+ * Este quadro é um corte? O relógio (passe 4) guarda a resposta no texel
+ * (1,0), canal B, para todos os passes seguintes.
+ */
+bool corteAgora() {
+    return texelFetch(tempo, ivec2(1, 0), 0).b > 0.5;
+}
+
+/**
+ * O vetor medido (ou a média dele), em pixels da camada.
+ *
+ * No quadro do corte, o que a busca "mediu" compara o fim de um plano com o
+ * começo de outro — não é movimento, é lixo, e realimentado ele embaralha a
+ * imagem inteira no primeiro quadro. Num codec, o quadro do corte é o I-frame
+ * que o datamosh remove: ele não tem vetor nenhum. Então aqui também não: o
+ * vetor é zero (ou a média continua a de antes), e o movimento do plano novo
+ * começa a arrastar a imagem velha no quadro seguinte.
+ */
+vec2 campoBruto(vec2 uv) {
+    if (motionAverage >= 0.5) return lerMedio(uv);
+    if (corteAgora()) return vec2(0.0);
+    return decodificarMv(texture(campo, uv).rg);
+}
+
+/** O centro do macrobloco; "Organic" tremula a borda (item 97). */
+vec2 centroDoBloco(vec2 p, float lado) {
+    vec2 q = p;
+    if (blockEdge == 2) {
+        vec2 celula = floor(p / 4.0);
+        q += (vec2(hash21(celula + semente()), hash21(celula + semente() + 7.0)) - 0.5) * lado * 0.3;
+    }
+    return (floor(q / lado) + 0.5) * lado;
+}
+
+/**
+ * O vetor que o decodificador usa neste ponto: o bruto, no macrobloco, com
+ * todos os operadores, em pixels da camada. `fator` é o Mosh Map.
+ */
+vec2 movimentoFinal(vec2 uv, float fator) {
+    vec2 camada = camadaPx();
+    vec2 p = uv * camada;
+    float lado = max(blockSize, 1.0);
+    vec2 pb = centroDoBloco(p, lado);
+    float suave = clamp(blockSoftness, 0.0, 1.0);
+    vec2 m = mix(campoBruto(pb / camada), campoBruto(uv), suave);
+
+    // Zona morta: tremor de medição não é movimento (item 297).
+    m *= smoothstep(deadZone, deadZone + 0.75, length(m));
+
+    // Movimento sintético, também por bloco (item 207).
+    vec2 q = mix(pb, p, suave);
+    vec2 c = q - camada * 0.5;
+    float meiaDiagonal = 0.5 * length(camada);
+    m += vec2(driftX, driftY);
+    if (zoomMotion != 0.0) m += c / max(meiaDiagonal, 1.0) * zoomMotion;
+    if (rotateMotion != 0.0) {
+        float a = radians(-rotateMotion);
+        vec2 girado = vec2(c.x * cos(a) - c.y * sin(a), c.x * sin(a) + c.y * cos(a));
+        m += c - girado;
+    }
+    float quadro = indiceDoQuadro();
+    if (shake > 0.0) {
+        m += (hash32(vec3(quadro, semente(), 1.7)) - 0.5) * 2.0 * shake;
+    }
+
+    // Direção (itens 47, 98).
+    if (direction == 1) {
+        m.y = 0.0;
+    } else if (direction == 2) {
+        m.x = 0.0;
+    } else if (direction == 3) {
+        vec2 d = vec2(cos(radians(directionAngle)), sin(radians(directionAngle)));
+        m = d * dot(m, d);
+    } else if (direction == 4) {
+        vec2 r = c / max(length(c), 0.001);
+        m = r * dot(m, r);
+    } else if (direction == 5) {
+        m.x = -m.x;
+    } else if (direction == 6) {
+        m.y = -m.y;
+    }
+    m *= vec2(stretchX, stretchY);
+
+    // Onda (itens 50-52, 102).
+    if (waveMode > 0 && waveAmount > 0.0) {
+        float t = acTime * waveSpeed * TAU;
+        vec2 w = uv * waveFrequency * TAU;
+        vec2 onda;
+        if (waveMode == 1) {
+            onda = vec2(sin(w.y + t), 0.0);
+        } else if (waveMode == 2) {
+            onda = vec2(0.0, sin(w.x + t));
+        } else if (waveMode == 3) {
+            onda = vec2(sin(w.y + t), cos(w.x + t));
+        } else {
+            vec2 r = c / max(length(c), 0.001);
+            onda = r * sin(length(c) / camada.y * waveFrequency * TAU - t);
+        }
+        m += onda * waveAmount;
+    }
+
+    // Blocos aleatórios, que ficam alguns quadros (itens 55, 69).
+    if (randomVector > 0.0) {
+        vec2 bloco = floor(q / lado);
+        float carrega = max(blockCarry, 1.0);
+        float epoca = floor((quadro + hash21(bloco + semente()) * carrega) / carrega);
+        m += (hash32(vec3(bloco, epoca + semente())) - 0.5) * 2.0 * randomVector;
+    }
+
+    // Afunilar: some nas bordas (positivo) ou no meio (negativo) — item 100.
+    if (taper != 0.0) {
+        vec2 n = c / (camada * 0.5);
+        float r2 = clamp(dot(n, n) * 0.5, 0.0, 1.0);
+        m *= taper > 0.0 ? 1.0 - taper * r2 : 1.0 + taper * (1.0 - r2);
+    }
+
+    m *= motionStrength * fator;
+
+    // Encaixe no pixel (itens 57, 111) e o teto suave (item 11).
+    m = mix(m, floor(m + 0.5), clamp(pixelSnap, 0.0, 1.0));
+    float tamanho = length(m);
+    if (tamanho > 0.001) m *= VETOR_MAXIMO * tanh(tamanho / VETOR_MAXIMO) / tamanho;
+    return m;
+}
+
+// ============================================================================
+//  O MOSH MAP (itens 5, 29, 30, 81, 101, 127)
+// ============================================================================
+
+float mapaEm(vec2 uv, vec4 atual, float magnitude) {
+    float m = 1.0;
+    if (mapSource == 1) {
+        m = smoothstep(0.5, 0.5 + 6.0 * (0.2 + mapFeather), magnitude);
+    } else if (mapSource == 2) {
+        m = luma(atual.rgb);
+    } else if (mapSource == 3) {
+        m = atual.a - luma(atual.rgb);
+    } else if (mapSource == 4) {
+        m = atual.a;
+    } else if (mapSource >= 5) {
+        // Sem camada escolhida (empty="transparent" → 1×1), o mapa não existe.
+        if (textureSize(mapLayer, 0).x > 1) {
+            float r = mapFeather * 0.02;
+            vec4 t = texture(mapLayer, uv) * 0.4
+                   + (texture(mapLayer, uv + vec2(r, 0.0)) + texture(mapLayer, uv - vec2(r, 0.0))
+                    + texture(mapLayer, uv + vec2(0.0, r)) + texture(mapLayer, uv - vec2(0.0, r))) * 0.15;
+            m = mapSource == 5 ? luma(t.rgb) * t.a : t.a;
+        }
+    }
+    if (mapInvert) m = 1.0 - m;
+    m = mix(1.0, clamp(m, 0.0, 1.0), clamp(mapAmount, 0.0, 1.0));
+
+    if (sweepOn) {
+        float a = radians(sweepAngle);
+        vec2 d = vec2(cos(a), sin(a));
+        float alcance = 0.5 * (abs(d.x) + abs(d.y));
+        float coord = dot(uv - 0.5, d) / max(alcance, 0.0001) * 0.5 + 0.5;
+        float avanco = sweepSpeed != 0.0 ? fract(sweepProgress + acTime * sweepSpeed) : sweepProgress;
+        avanco = mix(-sweepSoftness, 1.0 + sweepSoftness, avanco);
+        m *= 1.0 - smoothstep(avanco - sweepSoftness, avanco + sweepSoftness + 0.0001, coord);
+    }
+    return clamp(m, 0.0, 1.0);
+}
+
+// ============================================================================
+//  O ENVELOPE DA REFERÊNCIA (itens 32, 89-92, 285)
+// ============================================================================
+
+float envelopeGlobal(float timer, float quadro) {
+    float fd = duracaoDoQuadro();
+    if (referenceMode == 1) {
+        float periodo = max(floor(refreshEvery + 0.5), 1.0);
+        float fase = mod(quadro, periodo);
+        float soltar = releaseTime / fd;
+        return soltar >= 1.0 ? smoothstep(0.0, soltar, fase) : step(0.5, fase);
+    }
+    if (referenceMode == 3 || referenceMode == 4) {
+        float segurar = holdTime / fd;
+        float soltar = max(releaseTime / fd, 1.0);
+        if (timer <= segurar) return 1.0;
+        return 1.0 - smoothstep(0.0, soltar, timer - segurar);
+    }
+    return 1.0;
+}
+
+// ============================================================================
+//  PASSES 0 E 1 — A LUMINÂNCIA DE AGORA E DA ANTERIOR
+// ============================================================================
+
+/**
+ * O que a busca compara: luminância com um piso para o alfa, para um adesivo
+ * preto sobre transparente também ter o que seguir.
+ */
+float traco(vec4 c) {
+    return (0.7 * luma(c.rgb) + 0.3) * c.a;
+}
+
+vec4 passeLumas() {
+    vec2 d = acTexelSize * 0.25;
+    float atual = 0.0;
+    float antes = 0.0;
+    float alfaAntes = 0.0;
+    for (int i = 0; i < 4; i++) {
+        vec2 o = vec2(i == 0 || i == 2 ? -d.x : d.x, i < 2 ? -d.y : d.y);
+        atual += traco(texture(inputImg, acScreenNorm + o));
+        vec4 h = texture(anterior, acScreenNorm + o);
+        antes += traco(h);
+        alfaAntes += h.a;
+    }
+    return vec4(atual * 0.25, antes * 0.25, alfaAntes * 0.25, 1.0);
+}
+
+vec4 passeLumasB() {
+    vec2 d = acTexelSize * 0.25;
+    vec4 s = texture(lumas, acScreenNorm + vec2(-d.x, -d.y)) + texture(lumas, acScreenNorm + vec2(d.x, -d.y))
+           + texture(lumas, acScreenNorm + vec2(-d.x, d.y)) + texture(lumas, acScreenNorm + vec2(d.x, d.y));
+    return vec4(s.rgb * 0.25, 1.0);
+}
+
+// ============================================================================
+//  PASSES 2 E 3 — A BUSCA DE BLOCOS (itens 23, 159-163)
+// ============================================================================
+
+/**
+ * Grossa: cada texel é um bloco de 32 px; a janela é 4×4 texels do lumasB
+ * (64 px), procurando ±4 texels (±64 px) em todas as 81 posições. A soma das
+ * diferenças absolutas (SAD) ganha um pequeno custo por distância — o que os
+ * codificadores fazem para não inventar movimento em área lisa.
+ *
+ * Saída: RG = vetor, B = diferença média no melhor encaixe (a base do detector
+ * de corte), A = textura do bloco.
+ */
+vec4 passeGrosso() {
+    vec2 zero = codificarMv(vec2(0.0));
+    if (acStateFresh == 1) return vec4(zero, 0.0, 0.0);
+    vec2 tx = 1.0 / vec2(textureSize(lumasB, 0));
+    vec2 c0 = acScreenNorm;
+    if (texture(lumasB, c0).b < 0.5) return vec4(zero, 0.0, 0.0);
+
+    float atual[16];
+    float media = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            float v = texture(lumasB, c0 + (vec2(float(i), float(j)) - 1.5) * tx).r;
+            atual[j * 4 + i] = v;
+            media += v;
+        }
+    }
+    media /= 16.0;
+    float textura = 0.0;
+    for (int k = 0; k < 16; k++) textura += abs(atual[k] - media);
+    textura /= 16.0;
+
+    float melhor = 1e9;
+    vec2 melhorD = vec2(0.0);
+    for (int dy = -4; dy <= 4; dy++) {
+        for (int dx = -4; dx <= 4; dx++) {
+            vec2 d = vec2(float(dx), float(dy));
+            float sad = 0.0;
+            for (int j = 0; j < 4; j++) {
+                for (int i = 0; i < 4; i++) {
+                    vec2 o = vec2(float(i), float(j)) - 1.5;
+                    sad += abs(atual[j * 4 + i] - texture(lumasB, c0 + (o - d) * tx).g);
+                }
+            }
+            sad += 0.02 * length(d);
+            if (sad < melhor) {
+                melhor = sad;
+                melhorD = d;
+            }
+        }
+    }
+    vec2 mvPx = melhorD * camadaPx() * tx;
+    float diferenca = (melhor - 0.02 * length(melhorD)) / 16.0;
+    return vec4(codificarMv(mvPx), clamp(diferenca, 0.0, 1.0), clamp(textura * 4.0, 0.0, 1.0));
+}
+
+/**
+ * Um passo de Lucas-Kanade: o deslocamento (em texels do lumas) que, somado a
+ * `d`, melhor encaixa o anterior no atual — mínimos quadrados sobre a janela,
+ * com o gradiente do anterior no ponto já deslocado. Limitado a ±1 texel.
+ */
+vec2 passoLk(float atual[16], vec2 c0, vec2 tx, vec2 d) {
+    float gxx = 0.0;
+    float gxy = 0.0;
+    float gyy = 0.0;
+    vec2 b = vec2(0.0);
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 q = c0 + (vec2(float(i), float(j)) - 1.5 - d) * tx;
+            float centro = texture(lumas, q).g;
+            float gx = (texture(lumas, q + vec2(0.5 * tx.x, 0.0)).g - texture(lumas, q - vec2(0.5 * tx.x, 0.0)).g);
+            float gy = (texture(lumas, q + vec2(0.0, 0.5 * tx.y)).g - texture(lumas, q - vec2(0.0, 0.5 * tx.y)).g);
+            // anterior(s − d − δ) ≈ anterior(s − d) − ∇·δ ; queremos isso = atual(s)
+            float e = centro - atual[j * 4 + i];
+            gxx += gx * gx;
+            gxy += gx * gy;
+            gyy += gy * gy;
+            b += vec2(gx, gy) * e;
+        }
+    }
+    float det = gxx * gyy - gxy * gxy;
+    if (det < 1e-7) return vec2(0.0);
+    vec2 delta = vec2(gyy * b.x - gxy * b.y, gxx * b.y - gxy * b.x) / det;
+    return clamp(delta, -1.0, 1.0);
+}
+
+/** SAD da janela 4×4 do lumas com deslocamento `d` (em texels do lumas). */
+float sadFino(float atual[16], vec2 c0, vec2 tx, vec2 d) {
+    float sad = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 o = vec2(float(i), float(j)) - 1.5;
+            sad += abs(atual[j * 4 + i] - texture(lumas, c0 + (o - d) * tx).g);
+        }
+    }
+    return sad;
+}
+
+/**
+ * Fina: cada texel é um bloco de 8 px; a janela é 4×4 texels do lumas (16 px),
+ * procurando em volta do vetor grosso (±1 texel = ±4 px no Balanced, ±2 no
+ * Quality e Ultra) e também no zero. O texel do lumas tem 4 px — um pan lento
+ * de 3 px por quadro sairia 0 ou 4 —, então a fração vem de um passo de
+ * Lucas-Kanade (dois no Ultra): o gradiente do quadro anterior diz para onde
+ * deslizar o encaixe. A primeira versão usava uma parábola nos vizinhos, e a
+ * simulação mostrou o porquê de não: ela errava 1 px em Y num pan puramente
+ * horizontal, e 1 px por quadro, realimentado, vira lixo em oito quadros. No
+ * Performance, fica o grosso.
+ *
+ * A CONFIANÇA (itens 26-27): bloco liso (sem textura) ou que não encaixa em
+ * lugar nenhum (oclusão, corte) não é confiável. O vetor final mistura o fino
+ * com o grosso pela confiança — o grosso vem de uma janela maior e erra menos
+ * em área lisa.
+ */
+vec4 passeFino() {
+    vec2 zero = codificarMv(vec2(0.0));
+    if (acStateFresh == 1) return vec4(zero, 0.0, 1.0);
+    vec2 c0 = acScreenNorm;
+    if (texture(lumas, c0).b < 0.5) return vec4(zero, 0.0, 1.0);
+
+    vec4 g = texture(campoGrosso, c0);
+    vec2 mvGrosso = decodificarMv(g.rg);
+    float confGrossa = smoothstep(0.01, 0.06, g.a) * (1.0 - smoothstep(0.04, 0.15, g.b));
+    if (quality == 0) return vec4(codificarMv(mvGrosso * confGrossa), confGrossa, 1.0);
+
+    vec2 tx = 1.0 / vec2(textureSize(lumas, 0));
+    vec2 pxPorTexel = camadaPx() * tx;
+    float atual[16];
+    float media = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            float v = texture(lumas, c0 + (vec2(float(i), float(j)) - 1.5) * tx).r;
+            atual[j * 4 + i] = v;
+            media += v;
+        }
+    }
+    media /= 16.0;
+    float textura = 0.0;
+    for (int k = 0; k < 16; k++) textura += abs(atual[k] - media);
+    textura /= 16.0;
+
+    int alcance = quality == 1 ? 1 : 2;
+    vec2 base = mvGrosso / pxPorTexel;
+    float melhor = sadFino(atual, c0, tx, vec2(0.0));
+    vec2 melhorD = vec2(0.0);
+    for (int dy = -2; dy <= 2; dy++) {
+        for (int dx = -2; dx <= 2; dx++) {
+            if (abs(dx) > alcance || abs(dy) > alcance) continue;
+            vec2 d = base + vec2(float(dx), float(dy));
+            float sad = sadFino(atual, c0, tx, d) + 0.02 * length(d);
+            if (sad < melhor) {
+                melhor = sad;
+                melhorD = d;
+            }
+        }
+    }
+    // A fração: Lucas-Kanade, e só fica se o encaixe melhorar.
+    int iteracoes = quality == 3 ? 2 : 1;
+    for (int it = 0; it < 2; it++) {
+        if (it >= iteracoes) break;
+        vec2 d = melhorD + passoLk(atual, c0, tx, melhorD);
+        float sad = sadFino(atual, c0, tx, d);
+        if (sad < melhor) {
+            melhor = sad;
+            melhorD = d;
+        }
+    }
+    vec2 mvFino = melhorD * pxPorTexel;
+    float diferenca = melhor / 16.0;
+    float conf = smoothstep(0.006, 0.03, textura) * (1.0 - smoothstep(0.03, 0.12, diferenca));
+    vec2 efetivo = mix(mvGrosso * confGrossa, mvFino, conf);
+    return vec4(codificarMv(efetivo), conf, 1.0);
+}
+
+// ============================================================================
+//  PASSES 4 E 5 — OS ESTADOS: A MÉDIA DO MOVIMENTO E O RELÓGIO
+// ============================================================================
+
+/** Média móvel exponencial: equivale à média dos últimos N quadros (itens 10, 114, 115). */
+vec4 passeMedia() {
+    vec2 agora = decodificarMv(texture(campo, acScreenNorm).rg);
+    if (acStateFresh == 1 || motionAverage < 0.5) return codificar16(agora);
+    vec2 antes = decodificar16(texelFetch(movMedio, ivec2(gl_FragCoord.xy), 0));
+    // No corte, a média não engole o vetor de lixo (ver `campoBruto`).
+    if (corteAgora()) return codificar16(antes);
+    return codificar16(mix(antes, agora, 1.0 / (1.0 + motionAverage)));
+}
+
+/**
+ * O corte (item 76). Não é a diferença pura: uma cena de textura forte erra
+ * mais no melhor encaixe do que uma lisa, e um limiar fixo ou dispara à toa ou
+ * nunca. É a RAZÃO entre o erro do melhor encaixe e a textura do bloco — num
+ * plano contínuo o encaixe acha o bloco e a razão fica baixa (0,2 a 0,35 na
+ * simulação); num corte não há o que achar, e ela salta (0,77).
+ */
+float pontuacaoDeCorte() {
+    float soma = 0.0;
+    for (int j = 0; j < 3; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 uv = (vec2(float(i), float(j)) + 0.5) / vec2(4.0, 3.0);
+            vec4 g = texture(campoGrosso, uv);
+            soma += g.b / max(g.a * 0.25, 0.01);
+        }
+    }
+    return soma / 12.0;
+}
+
+/**
+ * O relógio global. Todo texel faz a mesma conta; o texel (0,0) guarda o
+ * contador desde o último gatilho e a idade da referência (16 bits cada), e o
+ * (1,0) guarda o grave do quadro anterior (para o gatilho pegar a SUBIDA).
+ */
+vec4 passeTempo() {
+    bool primeiro = acStateFresh == 1;
+    vec4 a0 = texelFetch(tempo, ivec2(0, 0), 0);
+    vec4 a1 = texelFetch(tempo, ivec2(1, 0), 0);
+    float timer = primeiro ? 65535.0 : decodificarContador(a0.rg);
+    float idade = primeiro ? 0.0 : decodificarContador(a0.ba);
+    float graveAntes = primeiro ? 1.0 : a1.r;
+    float corte = primeiro ? 0.0 : pontuacaoDeCorte();
+    float grave = nivelGrave();
+    float espera = cooldown / duracaoDoQuadro();
+
+    // O corte precisa passar de um piso E saltar em relação ao quadro anterior.
+    float corteAntes = primeiro ? 100.0 : a1.g * 4.0;
+    bool saltou = corte > mix(1.0, 0.4, cutSensitivity) && corte > corteAntes * mix(2.5, 1.4, cutSensitivity);
+    bool dispara = false;
+    if (referenceMode == 3 && saltou && timer > espera) dispara = true;
+    if (referenceMode == 4 && grave > beatThreshold && graveAntes <= beatThreshold && timer > espera) dispara = true;
+    timer = dispara ? 0.0 : min(timer + 1.0, 65535.0);
+
+    float segurando = persistence * envelopeGlobal(timer, indiceDoQuadro());
+    idade = segurando > 0.5 ? min(idade + 1.0, 65535.0) : (segurando < 0.05 ? 0.0 : idade);
+
+    if (int(gl_FragCoord.x) == 0) return vec4(codificarContador(timer), codificarContador(idade));
+    return vec4(grave, clamp(corte * 0.25, 0.0, 1.0), saltou ? 1.0 : 0.0, 1.0);
+}
+
+// ============================================================================
+//  PASSES 6 E 7 — O RESÍDUO DO BLOCO (itens 58-62, 222-223)
+// ============================================================================
+
+/**
+ * O resíduo de verdade é atual − previsão. Aqui ele é medido por bloco de 8 px
+ * e guardado em 4 coeficientes de cosseno (o DC, uma meia-onda em X, uma em Y
+ * e a cruzada) — a mesma base da DCT, só as quatro frequências mais baixas.
+ * É o que dá o visual de codec com pouca banda: o bloco novo chega como um
+ * gradiente borrado, e o detalhe fino da referência antiga continua por cima.
+ */
+vec4 passeResiduo() {
+    if (acStateFresh == 1) return vec4(0.5);
+    vec2 camada = camadaPx();
+    vec2 bloco = floor(acScreenNorm * acResolution);
+    vec2 centro = (bloco + 0.5) / acResolution;
+    vec4 atualC = atualEm(centro);
+    float fator = mapaEm(centro, atualC, length(campoBruto(centro))) * fatorDeMovimento();
+    vec2 m = movimentoFinal(centro, fator);
+    float dc = 0.0;
+    float x1 = 0.0;
+    float y1 = 0.0;
+    float xy = 0.0;
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            vec2 f = (vec2(float(i), float(j)) + 0.5) / 4.0;
+            vec2 uv = (bloco + f) / acResolution;
+            float r = luma(atualEm(uv).rgb) - luma(lerRef(uv - m / camada).rgb);
+            float bx = cos(PI * f.x);
+            float by = cos(PI * f.y);
+            dc += r;
+            x1 += r * bx;
+            y1 += r * by;
+            xy += r * bx * by;
+        }
+    }
+    vec4 k = vec4(dc, x1 * 2.0, y1 * 2.0, xy * 4.0) / 16.0;
+    return clamp(k * 0.5 + 0.5, 0.0, 1.0);
+}
+
+vec4 passeResiduoCor() {
+    if (acStateFresh == 1) return vec4(0.5, 0.5, 0.5, 1.0);
+    vec2 camada = camadaPx();
+    vec2 bloco = floor(acScreenNorm * acResolution);
+    vec2 centro = (bloco + 0.5) / acResolution;
+    vec4 atualC = atualEm(centro);
+    float fator = mapaEm(centro, atualC, length(campoBruto(centro))) * fatorDeMovimento();
+    vec2 m = movimentoFinal(centro, fator);
+    vec3 soma = vec3(0.0);
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 2; i++) {
+            vec2 uv = (bloco + (vec2(float(i), float(j)) + 0.5) / 2.0) / acResolution;
+            vec4 a = atualEm(uv);
+            vec4 p = lerRef(uv - m / camada);
+            soma += vec3(paraYcc(a.rgb).yz - paraYcc(p.rgb).yz, a.a - p.a);
+        }
+    }
+    return vec4(clamp(soma * 0.25 * 0.5 + 0.5, 0.0, 1.0), 1.0);
+}
+
+// ============================================================================
+//  PASSE 8 — O MOSH (itens 31-41, 58-72, 95-97, 219, 278-282)
+// ============================================================================
+
+/** Um caminho pelo campo, de 1 a 3 passos seguindo o fluxo (item 39). */
+vec4 amostrarCaminho(vec2 uv, vec2 m0, int passos, float sinal, float fator) {
+    vec2 texel = 1.0 / camadaPx();
+    vec2 q = uv;
+    vec2 m = m0;
+    for (int i = 0; i < 3; i++) {
+        if (i >= passos) break;
+        q -= sinal * m * texel;
+        if (i + 1 < passos) m = movimentoFinal(q, fator);
+    }
+    return lerRefFiltrada(q);
+}
+
+/** A previsão: a referência antiga, arrastada pelo movimento novo (itens 35-40). */
+vec4 predizer(vec2 uv, vec2 m, float fator) {
+    int teto = quality == 0 ? 1 : (quality == 1 ? 2 : 3);
+    int passos = min(int(clamp(warpSteps, 1.0, 3.0)), teto);
+    passos = min(passos, 1 + int(length(m) / 8.0));
+    if (warpMode == 1) return amostrarCaminho(uv, m, passos, -1.0, fator);
+    vec4 frente = amostrarCaminho(uv, m, passos, 1.0, fator);
+    if (warpMode == 2) return (frente + amostrarCaminho(uv, m, passos, -1.0, fator)) * 0.5;
+    return frente;
+}
+
+/**
+ * O MOSH DO PRIMEIRO QUADRO (e do quadro PARADO).
+ *
+ * Sem estado ainda (primeiro quadro, cursor arrastado, vídeo parado), a referência
+ * nasceria do quadro atual LIMPO — e aí, parado, o efeito não mostrava nada e não
+ * dava pra ajustar sem tocar a timeline (relato do snow, 24/09/2026). Aqui, quando
+ * há movimento (o medido do vídeo OU o sintético — Drift/Zoom/Onda), a imagem atual
+ * é ARRASTADA ao longo desse movimento num rastro acumulado: um derretimento
+ * visível JÁ no primeiro quadro e com o vídeo parado. Sem movimento nenhum (foto
+ * parada e sem Drift), não há o que derreter, e volta o quadro limpo.
+ */
+vec4 moshFresco(vec2 uv, vec4 atual) {
+    vec2 camada = camadaPx();
+    float fator = mapaEm(uv, atual, length(campoBruto(uv)));
+    vec2 m = movimentoFinal(uv, fator * fatorDeMovimento());
+    if (length(m) < 0.01) return atual;
+    float I = intensidadeAgora();
+    // Quanto mais intensidade, mais longe o rastro arrasta.
+    float rastro = 0.5 + 1.5 * I;
+    vec4 acc = atual;
+    float wsum = 1.0;
+    const int N = 12;
+    for (int i = 1; i <= N; i++) {
+        float t = float(i) / float(N);
+        float w = 1.0 - t;
+        acc += atualEm(uv - m * t * rastro / camada) * w;
+        wsum += w;
+    }
+    vec4 r = acc / wsum;
+    r.a = clamp(r.a, 0.0, 1.0);
+    r.rgb = clamp(r.rgb, 0.0, r.a);
+    return r;
+}
+
+vec4 passeMosh() {
+    vec2 uv = acScreenNorm;
+    vec4 atual = atualEm(uv);
+    // Sem quadro anterior de verdade (primeiro quadro, cursor arrastado, parado):
+    // a referência já nasce MOSHADA pelo movimento, para o efeito aparecer na hora
+    // e dar pra ajustar sem tocar a timeline. Ver [moshFresco].
+    if (acStateFresh == 1) return moshFresco(uv, atual);
+
+    vec2 camada = camadaPx();
+    vec2 p = uv * camada;
+    float fd = duracaoDoQuadro();
+    float quadro = indiceDoQuadro();
+    float s = semente();
+
+    vec4 g0 = texelFetch(tempo, ivec2(0, 0), 0);
+    float timer = decodificarContador(g0.rg);
+    float idadeSeg = decodificarContador(g0.ba) * fd;
+
+    /*
+     * A INTENSIDADE NÃO É LINEAR (itens 278-282): o slider libera os
+     * componentes em faixas. Até 0,3 é só arrasto e memória; os blocos entram
+     * entre 0,45 e 0,75; o ruído de DCT entre 0,5 e 0,8; a cor por último.
+     */
+    float I = intensidadeAgora();
+    float kMemoria = smoothstep(0.0, 0.3, I);
+    float kMovimento = fatorDeMovimento();
+    float kBlocos = smoothstep(0.45, 0.75, I);
+    float kDct = smoothstep(0.5, 0.8, I);
+    float kCor = smoothstep(0.6, 1.0, I);
+
+    float magnitude = length(campoBruto(uv));
+    float fator = mapaEm(uv, atual, magnitude);
+    // O fator entra DENTRO dos operadores (o encaixe no pixel e o teto vêm
+    // depois dele), e é o mesmo que os passes do resíduo e o multi-step usam.
+    vec2 m = movimentoFinal(uv, fator * kMovimento);
+
+    float segura = persistence * kMemoria * envelopeGlobal(timer, quadro) * fator;
+    if (referenceMode == 2) segura *= smoothstep(refreshMotion * 0.5, refreshMotion * 1.5 + 0.01, magnitude);
+    if (maxAge > 0.0) segura *= 1.0 - smoothstep(maxAge * 0.85, maxAge, idadeSeg);
+    float fatorIdade = ageCurve > 0.0 ? smoothstep(0.0, ageCurve, idadeSeg) : 1.0;
+
+    vec4 pred = predizer(uv, m, fator * kMovimento);
+
+    // Onde nada se mexe, pouca corrupção (itens 28 e 297): bloco e ruído de
+    // DCT seguem o movimento. Sem isso, a corrupção caía no fundo parado a cada
+    // quadro, realimentava, e em oito quadros a imagem inteira era ruído.
+    float ondeMexe = mix(0.1, 1.0, smoothstep(0.5, 4.0, length(m)));
+    vec3 pY = paraYcc(pred.rgb);
+    vec3 cY = paraYcc(atual.rgb);
+
+    // --------------------------------------------- o resíduo do codec
+    vec2 tamR = vec2(textureSize(residuo, 0));
+    ivec2 celR = clamp(ivec2(uv * tamR), ivec2(0), ivec2(tamR) - 1);
+    vec2 f = fract(uv * tamR);
+    vec4 k = (texelFetch(residuo, celR, 0) - 0.5) * 2.0;
+    float degrau = mix(0.02, 0.25, clamp(residualQuant, 0.0, 1.0));
+    vec4 kq = floor(k / degrau + 0.5) * degrau;
+    // Bloco com resíduo pequeno é PULADO, como o codificador faz: a
+    // referência errada continua ali (item 62).
+    float usa = step(residualThreshold, abs(k.x) + 0.5 * (abs(k.y) + abs(k.z)));
+    float bx = cos(PI * f.x);
+    float by = cos(PI * f.y);
+    float rY = (kq.x + kq.y * bx + kq.z * by + kq.w * bx * by) * usa;
+
+    float ladoCor = max(chromaBlock, 1.0);
+    vec2 pc = (floor(p / ladoCor) + 0.5) * ladoCor;
+    vec2 tamC = vec2(textureSize(residuoCor, 0));
+    ivec2 celC = clamp(ivec2(pc / camada * tamC), ivec2(0), ivec2(tamC) - 1);
+    vec3 rC = (texelFetch(residuoCor, celC, 0).xyz - 0.5) * 2.0;
+    rC.xy = floor(rC.xy / degrau + 0.5) * degrau * step(residualThreshold, abs(rC.x) + abs(rC.y));
+
+    vec3 mY = pY + residual * vec3(rY, rC.xy);
+    float mA = pred.a + residual * rC.z;
+
+    // --------------------------------------------- ruído de DCT (item 60)
+    if (dctNoise > 0.0 && quality >= 1) {
+        vec2 b8 = vec2(celR);
+        float carrega = max(blockCarry, 1.0);
+        float epoca = floor((quadro + hash21(b8 + s) * carrega) / carrega);
+        float chance = dctNoise * kDct * fator * (0.4 + 0.6 * fatorIdade) * ondeMexe;
+        if (hash31(vec3(b8, epoca + s)) < chance) {
+            vec2 h = hash32(vec3(b8, epoca + s + 3.1));
+            float fx = 1.0 + floor(h.x * dctFrequency);
+            float fy = floor(h.y * (dctFrequency + 1.0));
+            float amp = (hash31(vec3(b8, epoca + s + 9.7)) - 0.5) * 0.4;
+            mY.x += amp * cos(PI * fx * f.x) * cos(PI * fy * f.y);
+            mY.yz += (h - 0.5) * amp * 0.5;
+        }
+    }
+    vec4 M = vec4(deYcc(mY), mA);
+
+    // --------------------------------------------- macroblocos (itens 66-69)
+    float lado = max(blockSize, 1.0);
+    vec2 pOrg = p;
+    if (blockEdge == 2) {
+        vec2 celula = floor(p / 4.0);
+        pOrg += (vec2(hash21(celula + s), hash21(celula + s + 7.0)) - 0.5) * lado * 0.3;
+    }
+    vec2 bid = floor(pOrg / lado);
+    float carrega = max(blockCarry, 1.0);
+    float epoca = floor((quadro + hash21(bid + s + 1.3) * carrega) / carrega);
+    float chanceBloco = blocks * kBlocos * fator * (0.5 + 0.5 * fatorIdade) * ondeMexe;
+    if (hash31(vec3(bid, epoca + s)) < chanceBloco) {
+        float tipo = hash31(vec3(bid, epoca + s + 7.7));
+        vec4 fonte;
+        if (tipo < 0.35) {
+            fonte = lerRef(uv);                                // referência parada
+        } else if (tipo < 0.55) {
+            vec4 h = preMultiplicar(texture(anterior, uv));    // o quadro anterior cru
+            fonte = h.a > 0.0 ? h : lerRef(uv);
+        } else if (tipo < 0.75) {
+            vec2 viz = floor(hash32(vec3(bid, epoca + s + 2.2)) * 3.0) - 1.0;
+            fonte = lerRef(uv + viz * lado / camada);          // o bloco vizinho
+        } else if (tipo < 0.9) {
+            vec2 salto = (hash32(vec3(bid, epoca + s + 5.5)) - 0.5) * 2.0 * blockJump;
+            fonte = lerRef(uv - (m + salto) / camada);         // o vetor errado
+        } else {
+            fonte = lerRef((bid + 0.5) * lado / camada - m / camada);   // o bloco chapado
+        }
+        float w = 1.0;
+        if (blockEdge == 1) {
+            vec2 dentro = fract(pOrg / lado);
+            float borda = min(min(dentro.x, 1.0 - dentro.x), min(dentro.y, 1.0 - dentro.y));
+            w = smoothstep(0.0, 0.2, borda);
+        }
+        M = mix(M, fonte, w);
+    }
+
+    // --------------------------------------------- a cor (itens 63-65, 95-96)
+    vec3 Y2 = paraYcc(M.rgb);
+    float kc = colorAmt * kCor * fator;
+    if (kc > 0.0) {
+        float atraso = chromaLag * (lumaMode == 2 ? 2.0 : 1.0);
+        vec4 arrastada = lerRef(uv - m * (1.0 + atraso * 2.0) / camada);
+        Y2.yz = mix(Y2.yz, paraYcc(arrastada.rgb).yz, clamp(kc * (0.5 + atraso), 0.0, 1.0));
+        vec4 blocoDeCor = lerRef(pc / camada - m / camada);
+        Y2.yz = mix(Y2.yz, paraYcc(blocoDeCor.rgb).yz, kc * 0.6);
+        // O ganho vale para o erro de cor DESTE quadro (em relação à previsão),
+        // e não para o desvio acumulado em relação ao quadro limpo: aquele,
+        // realimentado, crescia 1,14× por quadro e virava confete.
+        float ganho = 1.0 + kc * (lumaMode == 4 ? 3.0 : 1.2);
+        Y2.yz = pY.yz + (Y2.yz - pY.yz) * ganho;
+    }
+    if (lumaMode == 1) {
+        Y2.x = mix(Y2.x, cY.x, 0.85);
+    } else if (lumaMode == 2) {
+        Y2.x = mix(Y2.x, cY.x, 0.5);
+    }
+    M.rgb = deYcc(Y2);
+
+    // --------------------------------------------- profundidade de bits (item 219)
+    if (bitDepth > 0) {
+        float niveis = pow(2.0, float(7 - bitDepth));
+        M.rgb = floor(M.rgb * niveis + 0.5) / niveis;
+    }
+    M.a = clamp(M.a, 0.0, 1.0);
+    M.rgb = clamp(M.rgb, 0.0, M.a);
+
+    // A referência nova: o resultado, e não o quadro limpo (itens 88, 151).
+    vec4 saida = mix(atual, M, clamp(segura, 0.0, 1.0));
+    if (lumaMode == 3) saida.rgb = vec3(luma(saida.rgb));
+    return saida;
+}
+
+// ============================================================================
+//  PASSE 9 — A SAÍDA E AS VISTAS DE DEPURAÇÃO (itens 146-149)
+// ============================================================================
+
+vec3 corDoVetor(vec2 v) {
+    float mag = clamp(length(v) / 16.0, 0.0, 1.0);
+    float h = atan(v.y, v.x) / TAU + 0.5;
+    vec3 roda = clamp(abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+    return mix(vec3(0.5), roda, mag) * (0.3 + 0.7 * mag);
+}
+
+vec4 semPreMultiplicar(vec4 c) {
+    return c.a > 0.0001 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);
+}
+
+vec4 passeSaida() {
+    vec2 uv = acScreenNorm;
+    vec4 moshado = texture(referencia, uv);
+    if (view == 0) return semPreMultiplicar(moshado);
+
+    vec2 camada = camadaPx();
+    vec2 p = uv * camada;
+    vec4 atual = atualEm(uv);
+    if (view == 1) return vec4(corDoVetor(campoBruto(uv)), 1.0);
+    if (view == 2) return vec4(vec3(texture(campo, uv).b), 1.0);
+    if (view == 3) {
+        // A referência guardada, sem a mesclagem do efeito, sobre um xadrez
+        // (o transparente dela aparece).
+        vec2 casa = floor(p / 16.0);
+        vec3 xadrez = vec3(0.25 + 0.15 * mod(casa.x + casa.y, 2.0));
+        return vec4(moshado.rgb + xadrez * (1.0 - moshado.a), 1.0);
+    }
+    if (view == 4) {
+        float fator = mapaEm(uv, atual, length(campoBruto(uv)));
+        vec4 g0 = texelFetch(tempo, ivec2(0, 0), 0);
+        float segura = persistence * envelopeGlobal(decodificarContador(g0.rg), indiceDoQuadro()) * fator;
+        return vec4(vec3(clamp(segura, 0.0, 1.0)), 1.0);
+    }
+    if (view == 5) {
+        vec2 dentro = fract(p / max(blockSize, 1.0)) * max(blockSize, 1.0);
+        float linha = step(min(dentro.x, dentro.y), 1.0);
+        vec4 base = semPreMultiplicar(moshado);
+        return vec4(mix(base.rgb, vec3(0.1, 1.0, 0.4), linha * 0.8), 1.0);
+    }
+    if (view == 6) {
+        vec4 lado = uv.x < 0.5 ? semPreMultiplicar(atual) : semPreMultiplicar(moshado);
+        float divisa = 1.0 - step(1.5, abs(p.x - camada.x * 0.5));
+        return vec4(mix(lado.rgb, vec3(1.0, 0.2, 0.2), divisa), 1.0);
+    }
+    if (view == 7) {
+        float mag = clamp(length(campoBruto(uv)) / 24.0, 0.0, 1.0);
+        return vec4(mix(vec3(0.02, 0.02, 0.1), vec3(1.0, 0.9, 0.3), sqrt(mag)), 1.0);
+    }
+    // 8: a idade da referência, em barra no topo, sobre o mapa do segurar.
+    vec4 g0 = texelFetch(tempo, ivec2(0, 0), 0);
+    float idadeSeg = decodificarContador(g0.ba) * duracaoDoQuadro();
+    float barra = step(1.0 - uv.y, 0.04) * step(uv.x, clamp(idadeSeg / 5.0, 0.0, 1.0));
+    vec4 base = semPreMultiplicar(moshado);
+    return vec4(mix(base.rgb * 0.4, vec3(1.0, 0.5, 0.1), barra), 1.0);
+}
+
+void main() {
+    if (acPass == 0) { fragColor = passeLumas(); return; }
+    if (acPass == 1) { fragColor = passeLumasB(); return; }
+    if (acPass == 2) { fragColor = passeGrosso(); return; }
+    if (acPass == 3) { fragColor = passeFino(); return; }
+    if (acPass == 4) { fragColor = passeTempo(); return; }
+    if (acPass == 5) { fragColor = passeMedia(); return; }
+    if (acPass == 6) { fragColor = passeResiduo(); return; }
+    if (acPass == 7) { fragColor = passeResiduoCor(); return; }
+    if (acPass == 8) { fragColor = passeMosh(); return; }
+    fragColor = passeSaida();
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   NEVE
+  ============================================================================
+
+  Flocos caindo pela tela, com velocidade, tamanho e jitter horizontal — um
+  gerador completo em um passe de shader.
+
+  ============================================================================
+   NEVE SEM GUARDAR PARTÍCULA NENHUMA
+  ============================================================================
+
+  Partículas de verdade precisam de estado entre quadros (posição guardada que
+  o passo do tempo atualiza). O shader de fragmento não tem isso. O jeito é
+  CELULAR: o plano vira um grid, cada célula hospeda um floco cuja POSIÇÃO é
+  uma função fechada do tempo — não precisa guardar nada.
+
+  O floco da célula (ix, iy): nasce no topo da célula, cai com velocidade
+  `speed`, e quando sai pelo fundo RECOMEÇA no topo (um `fract` do tempo).
+  O índice horizontal é `ix` fixo, mas com um pequeno balanço por seno (vento).
+  O tamanho e a opacidade vêm do hash da célula — flocos diferentes de tamanhos
+  diferentes, parados no mesmo lugar por toda a vida (porque o hash é
+  determinístico).
+
+  ============================================================================
+   AS CAMADAS DE PROFUNDIDADE
+  ============================================================================
+
+  Uma cena nevando tem flocos perto (grandes, rápidos, fora de foco) e longe
+  (pequenos, lentos, nítidos). O shader faz `layers` passadas do mesmo grid
+  com densidades e velocidades diferentes — a sensação de 3D sem parallax de
+  verdade, barata e convincente.
+-->
+<effect
+    id="nova.effect.snow"
+    name="Neve"
+    name-en="Snow"
+    desc="Flocos de neve caindo pela tela, com camadas de profundidade."
+    desc-en="Snowflakes falling across the screen, with depth layers."
+    category="procedural"
+    tags="neve,snow,flocos,inverno,partículas,gerador,atmosfera">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="density" label="Densidade"
+                default="40.0" min="5.0" max="200.0" step="1.0" snap="0.0" />
+        <slider id="speed" label="Velocidade"
+                default="0.15" min="0.01" max="1.5" step="0.01" snap="0.0" />
+        <slider id="size" label="Tamanho do floco"
+                default="0.35" min="0.05" max="1.0" step="0.01" snap="0.0" />
+        <slider id="wind" label="Vento"
+                default="0.1" min="-0.5" max="0.5" step="0.01" snap="0.0" />
+        <slider id="layers" label="Camadas de profundidade"
+                default="3" min="1" max="5" step="1" type="integer" />
+        <color id="flakeColor" label="Cor do floco" default="#FFFFFFFF" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <!-- Na vitrine, mais flocos pra ler como neve. -->
+    <preview>
+        <set param="density" value="70.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+const int MAXIMO_DE_CAMADAS = 5;
+
+float hash2(vec2 c) {
+    c += vec2(float(seed) * 13.7);
+    return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+/**
+ * O brilho do floco numa camada: 1 passe pelo grid dessa camada.
+ * Cada célula tem UM floco, cujo lugar na célula é fixo (hash) e cujo Y
+ * cai com o tempo, voltando ao topo ao sair.
+ */
+float neveDaCamada(vec2 uv, float t, float densidadeDaCamada, float velocidadeDaCamada, float tamanhoDaCamada) {
+    vec2 grade = vec2(densidadeDaCamada, densidadeDaCamada);
+    vec2 escalado = uv * grade;
+    vec2 i = floor(escalado);
+    vec2 f = fract(escalado);
+
+    float xDoFloco = hash2(i + 0.1);
+    float yFase = hash2(i + 0.3);
+    float tamDoFloco = mix(0.25, 1.0, hash2(i + 0.7));
+
+    // Y cai no tempo, começa em uma fase diferente para cada célula; vento desloca x.
+    float y = fract(yFase + t * velocidadeDaCamada);
+    float x = fract(xDoFloco + t * wind);
+
+    vec2 pontoDoFloco = vec2(x, 1.0 - y);
+    vec2 dentroDaCelula = (f - pontoDoFloco);
+    float d = length(dentroDaCelula);
+
+    float raio = tamanhoDaCamada * tamDoFloco * 0.3;
+    float floco = 1.0 - smoothstep(0.0, raio, d);
+    return floco;
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    int n = clamp(int(layers + 0.5), 1, MAXIMO_DE_CAMADAS);
+    float acumulado = 0.0;
+
+    for (int k = 0; k < MAXIMO_DE_CAMADAS; k++) {
+        if (k >= n) break;
+        float profundidade = (float(k) + 1.0) / float(n);           // 1/n a 1: 1 = frente
+        float dens = density * (0.5 + 0.5 * profundidade);
+        float vel = speed * (0.6 + profundidade);
+        float tam = size * profundidade;
+        acumulado = max(acumulado, neveDaCamada(acScreenNorm, acTime, dens, vel, tam) * profundidade);
+    }
+
+    float alfaFloco = clamp(acumulado, 0.0, 1.0) * flakeColor.a;
+
+    vec3 cor = mix(original.rgb, flakeColor.rgb, alfaFloco);
+    float alfa = max(original.a, alfaFloco);
+
+    fragColor = vec4(cor, alfa);
+}
+
+    ]]></shader>
+</effect>

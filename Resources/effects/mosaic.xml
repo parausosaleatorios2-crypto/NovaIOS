@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MOSAIC — o do After Effects
+  ============================================================================
+
+  Pedido do snow (22/09/2026). Pela documentação pública da Adobe ("Stylize
+  effects"): a camada vira retângulos de cor chapada — Horizontal Blocks
+  colunas por Vertical Blocks linhas —, cada um com a cor MÉDIA da região da
+  imagem que ele cobre; com Sharp Colors, a cor do pixel do CENTRO da região.
+  As bordas dos retângulos são suavizadas (no AE, em qualidade Best).
+
+  O "Pixelizar" do catálogo é outra coisa: o bloco dele tem tamanho em pixels
+  e pega a cor de um ponto. Aqui o que manda é a CONTAGEM de blocos, e a cor é
+  a média de verdade — é isso que faz o Mosaic esconder rosto sem piscar
+  quando a imagem se mexe.
+
+  ============================================================================
+   A MÉDIA DE UM BLOCO SEM LER O BLOCO INTEIRO
+  ============================================================================
+
+  Um bloco de 10×10 numa camada 1080p tem 192×108 pixels; ler todos, em todo
+  pixel, seria impossível. Então a imagem desce numa pirâmide (1/2, 1/4…
+  1/128), cada nível a média 2×2 do anterior (em cor pré-multiplicada: o
+  transparente não escurece a média). Para cada bloco escolhe-se o nível em
+  que um texel tem ~1/4 do bloco, e 16 leituras bem espalhadas (cada uma já a
+  média de 2×2 texels do nível) cobrem o bloco inteiro. As leituras dependem só
+  do BLOCO, então todo pixel dele sai com exatamente a mesma cor.
+
+   passes 0..6 → p1..p7: a pirâmide
+   passe 7     → saída:  a cor de cada bloco, e a borda suavizada
+-->
+<effect
+    id="nova.effect.mosaic"
+    name="Mosaico"
+    name-en="Mosaic"
+    desc="Retângulos de cor chapada com a média de cada região. Pixelado de tela antiga ou para esconder rosto."
+    desc-en="Solid-colour rectangles with each region's average colour — low-res look or face hiding."
+    category="stylize"
+    blend="true"
+    tags="mosaic,mosaico,pixel,pixelar,pixelate,censura,censor,blur face,esconder,blocos,blocks,low res,8 bit"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="p1" src="buffer" scale="0.5" />
+        <texture id="p2" src="buffer" scale="0.25" />
+        <texture id="p3" src="buffer" scale="0.125" />
+        <texture id="p4" src="buffer" scale="0.0625" />
+        <texture id="p5" src="buffer" scale="0.03125" />
+        <texture id="p6" src="buffer" scale="0.015625" />
+        <texture id="p7" src="buffer" scale="0.0078125" />
+
+        <slider id="horizontalBlocks" label="Horizontal Blocks" type="integer"
+                default="10" min="1" max="4000" step="1" snap="10" />
+        <slider id="verticalBlocks" label="Vertical Blocks" type="integer"
+                default="10" min="1" max="4000" step="1" snap="10" />
+        <switch id="sharpColors" label="Sharp Colors" default="false" />
+        <!-- Extra (o AE não tem): blocos quadrados, contando só pelas colunas. -->
+        <switch id="squareBlocks" label="Blocos quadrados" default="false" />
+    </params>
+
+    <passes>
+        <pass target="p1" />
+        <pass target="p2" />
+        <pass target="p3" />
+        <pass target="p4" />
+        <pass target="p5" />
+        <pass target="p6" />
+        <pass target="p7" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+vec4 preMultiplicar(vec4 c) {
+    return vec4(c.rgb * c.a, c.a);
+}
+
+/** A primeira descida: a média de 2×2 pixels da imagem, texel a texel. */
+vec4 descerDaImagem() {
+    ivec2 tam = textureSize(inputImg, 0);
+    ivec2 base = ivec2(floor(acScreenNorm * vec2(tam) - 0.5));
+    vec4 s = vec4(0.0);
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 2; i++) {
+            ivec2 t = clamp(base + ivec2(i, j), ivec2(0), tam - 1);
+            s += preMultiplicar(texelFetch(inputImg, t, 0));
+        }
+    }
+    return s * 0.25;
+}
+
+/** As outras: uma leitura bilinear no canto entre quatro texels é a média deles. */
+vec4 descer(sampler2D origem) {
+    return texture(origem, acScreenNorm);
+}
+
+vec2 contagem() {
+    float h = max(floor(horizontalBlocks + 0.5), 1.0);
+    float v = squareBlocks
+        ? max(floor(h / max(acAspect, 0.0001) + 0.5), 1.0)
+        : max(floor(verticalBlocks + 0.5), 1.0);
+    return vec2(h, v);
+}
+
+vec4 lerNivel(int n, vec2 uv) {
+    if (n <= 0) return preMultiplicar(texture(inputImg, uv));
+    if (n == 1) return texture(p1, uv);
+    if (n == 2) return texture(p2, uv);
+    if (n == 3) return texture(p3, uv);
+    if (n == 4) return texture(p4, uv);
+    if (n == 5) return texture(p5, uv);
+    if (n == 6) return texture(p6, uv);
+    return texture(p7, uv);
+}
+
+/** A cor (pré-multiplicada) do bloco de índice `bloco`. */
+vec4 corDoBloco(vec2 bloco, vec2 blocos) {
+    vec2 lado = 1.0 / blocos;
+    vec2 inicio = bloco * lado;
+    if (sharpColors) {
+        // O pixel do centro da região, sem mistura com o vizinho.
+        ivec2 tam = textureSize(inputImg, 0);
+        ivec2 t = clamp(ivec2(floor((inicio + lado * 0.5) * vec2(tam))), ivec2(0), tam - 1);
+        return preMultiplicar(texelFetch(inputImg, t, 0));
+    }
+    // O nível em que um texel tem ~1/4 do lado maior do bloco.
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    float px = max(lado.x * tam.x, lado.y * tam.y);
+    int n = int(clamp(floor(log2(max(px * 0.25, 1.0))), 0.0, 7.0));
+    vec4 s = vec4(0.0);
+    for (int j = 0; j < 4; j++) {
+        for (int i = 0; i < 4; i++) {
+            s += lerNivel(n, inicio + lado * (vec2(float(i), float(j)) + 0.5) * 0.25);
+        }
+    }
+    return s * 0.0625;
+}
+
+void main() {
+    if (acPass == 0) { fragColor = descerDaImagem(); return; }
+    if (acPass == 1) { fragColor = descer(p1); return; }
+    if (acPass == 2) { fragColor = descer(p2); return; }
+    if (acPass == 3) { fragColor = descer(p3); return; }
+    if (acPass == 4) { fragColor = descer(p4); return; }
+    if (acPass == 5) { fragColor = descer(p5); return; }
+    if (acPass == 6) { fragColor = descer(p6); return; }
+
+    vec2 blocos = contagem();
+    vec2 f = acScreenNorm * blocos;          // onde o pixel está, em blocos
+    vec2 meioPixel = 0.5 * blocos * acTexelSize;
+    vec2 ultimo = blocos - 1.0;
+    vec4 cor;
+
+    if (meioPixel.x < 0.5 && meioPixel.y < 0.5) {
+        // A borda suavizada: o pixel que cai em cima da divisa entre dois
+        // blocos leva cada um na proporção do que cobre. `b0` é o bloco da
+        // ponta esquerda/de cima do pixel; `w`, quanto dele passa para o próximo.
+        vec2 b0 = clamp(floor(f - meioPixel), vec2(0.0), ultimo);
+        vec2 w = clamp((f + meioPixel - (b0 + 1.0)) / (2.0 * meioPixel), 0.0, 1.0);
+        vec2 b1 = min(b0 + 1.0, ultimo);
+        if (b1.x == b0.x) w.x = 0.0;
+        if (b1.y == b0.y) w.y = 0.0;
+        cor = corDoBloco(b0, blocos);
+        if (w.x > 0.0 || w.y > 0.0) {
+            vec4 dx = w.x > 0.0 ? corDoBloco(vec2(b1.x, b0.y), blocos) : cor;
+            vec4 dy = w.y > 0.0 ? corDoBloco(vec2(b0.x, b1.y), blocos) : cor;
+            vec4 dxy = (w.x > 0.0 && w.y > 0.0) ? corDoBloco(b1, blocos) : (w.x > 0.0 ? dx : dy);
+            cor = mix(mix(cor, dx, w.x), mix(dy, dxy, w.x), w.y);
+        }
+    } else {
+        // Bloco menor que um pixel: não há borda para suavizar.
+        cor = corDoBloco(clamp(floor(f), vec2(0.0), ultimo), blocos);
+    }
+    fragColor = vec4(cor.a > 0.0001 ? cor.rgb / cor.a : vec3(0.0), cor.a);
+}
+    ]]></shader>
+</effect>

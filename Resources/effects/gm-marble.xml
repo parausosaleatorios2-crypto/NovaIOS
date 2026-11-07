@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.marble" name="Marble" desc="Sine-banded fractal noise for a stone texture. Colour A and B are the vein colours." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/marble.png"
+        tags="procedural,marble,stone,texture" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Marble" />
+<spinner id="scale" default="3.0" min="0.3" max="20.0" step="0.1" label="Scale" />
+<spinner id="veins" default="6.0" min="1.0" max="30.0" step="0.5" label="Veins" />
+<spinner id="amount" default="0.75" min="0.0" max="1.0" step="0.01" label="Amount" />
+<color id="colorA" default="#FFF2F2F0" label="Base" />
+<color id="colorB" default="#FF3A3A42" label="Vein" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float gmNoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gmHash(i), gmHash(i + vec2(1.0, 0.0)), u.x),
+             mix(gmHash(i + vec2(0.0, 1.0)), gmHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float gmFbm(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 5; i++){ s += a * gmNoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float n = gmFbm(uv * scale);
+  float m = 0.5 + 0.5 * sin((uv.x + n * 1.6) * veins * 3.14159);
+  vec3 marble = mix(colorA.rgb, colorB.rgb, m);
+  vec3 col = mix(c, marble, amount * mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * a, a);
+}
+]]></shader>
+</effect>

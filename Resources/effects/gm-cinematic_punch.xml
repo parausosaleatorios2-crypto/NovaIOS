@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.cinematic_punch" name="Cinematic Punch Pro" desc="Aggressive blockbuster grade with hard teal-orange separation, strong contrast, saturation and a controlled edge crush." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/cinematic_punch.png"
+        tags="color,pro,strong,grade,contrast,cinematic" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Cinematic Punch" />
+<spinner id="contrast" default="1.30" min="0.50" max="2.00" step="0.01" label="Contrast" />
+<spinner id="saturation" default="1.30" min="0.00" max="2.00" step="0.01" label="Saturation" />
+<spinner id="split" default="0.85" min="0.00" max="1.50" step="0.01" label="Teal / Orange Split" />
+<spinner id="vignette" default="0.45" min="0.00" max="1.00" step="0.01" label="Edge Crush" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  float sh = 1.0 - smoothstep(0.0, 0.58, l);
+  float hi = smoothstep(0.40, 1.0, l);
+  vec3 grade = c;
+  grade = mix(grade, grade * vec3(0.55, 1.05, 1.18) * 1.18, sh * split);
+  grade = mix(grade, grade * vec3(1.30, 0.92, 0.62) * 1.16, hi * split);
+  grade = clamp((grade - 0.5) * contrast + 0.5, 0.0, 1.0);
+  grade = mix(vec3(l), grade, saturation);
+  vec2 p = (uv - 0.5) * vec2(acScreenSize.x / acScreenSize.y, 1.0);
+  float edge = 1.0 - smoothstep(0.42, 0.82, length(p));
+  grade *= mix(1.0, edge, vignette);
+  vec3 col = mix(c, grade, mixAmt);
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0) * src.a, src.a);
+}
+]]></shader>
+</effect>

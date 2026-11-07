@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_MATHOPS — o Math Ops do Sapphire (Boris FX), lido do plugin (0.773.0)
+  ============================================================================
+
+  Pedido do snow (23/10/2026): "poderia fazer o s_mathops 100% igual do after effects?". É o
+  Sapphire Composite › S_MathOps: combina duas camadas por uma operação matemática escolhida num
+  menu, com ajuste de Lights/Darks/Saturation por entrada e na saída. Três presets de CC do kl4ps
+  (`kl4ps cc 1/2`, `kl4ps opium cc`) usam este efeito; o `.aep` do Speed Mirrage Text também.
+
+  DE ONDE VEIO (texto da DLL, sem benchmark):
+
+  - A definição das 17 operações, do grading por entrada e do grading de saída está em texto na
+    `C:\Program Files\BorisFX\Sapphire 2024 Adobe\lib64\sapphire_ae.dll` — uma linguagem tipo Lisp
+    (`def_effect Math_Ops_Add` até `Math_Ops_Xor_Bits`, `defun math_ops_common`, `math_ops_set_dest`),
+    e o `docs/MathOps.html` confirma a ordem e o padrão (Add). `tools/sapphire/extrair.py` puxa.
+  - A conta é a mesma para TODAS as operações:
+
+        a = swap_inputs ? B : A         (vec4 RGBA)
+        b = swap_inputs ? A : B
+        i1 = (A_lights − A_darks) · sat_scale(a, A_saturation) + A_darks
+        i2 = (B_lights − B_darks) · sat_scale(b, B_saturation) + B_darks
+        d  = OPERAÇÃO(i1, i2)
+        saída = (dest_lights − dest_darks) · sat_scale(d, dest_saturation) + dest_darks
+
+    `sat_scale(c, s) = luma + (c − luma)·s`, com `luma = 0.3·R + 0.59·G + 0.11·B` (o legacy do Sapphire,
+    Rec.601 arredondado — é o que a DLL usa em todos os `sat_scale`). O alfa não é tocado pelo
+    `sat_scale` (fica como passou pelo lights/darks); o grading é por canal.
+
+  - As 17 operações (em `def_effect Math_Ops_X`):
+
+        Add         d = i1 + i2
+        Subtract    d = i1 − i2
+        Multiply    d = i1 · i2
+        Divide      d = i1 / i2             (per channel; i2 ≈ 0 vira ±∞ do IEEE, como no plugin)
+        Screen      d = 1 − (1 − i1)·(1 − i2) = i1 + i2 − i1·i2
+        Average     d = (i1 + i2) · 0.5
+        Overlay     d = i2 > 0.5 ? 2·screen(i1,i2) − 1 : 2·i1·i2
+        Minimum     d = min(i1, i2)
+        Maximum     d = max(i1, i2)
+        Difference  d = |i1 − i2|
+        Xor         d = bounce(clamp(i1,0,1) + clamp(i2,0,1), 1)   (triangular, dobra em 1)
+        Xor_Bits    d = (round(i1·255) ^ round(i2·255)) / 255      (bitwise em 8 bits)
+        And_Bits    d = (round(i1·255) & round(i2·255)) / 255
+        Or_Bits     d = (round(i1·255) | round(i2·255)) / 255
+        Mod         d = i1 − i2·floor(i1 / i2)                     (mod IEEE do GLSL)
+        Bounce      d = bounce(i1, i2) = i2 − |mod(i1, 2·i2) − i2| (triangular com período 2·i2)
+        Round       d = round(i1 / i2) · i2
+
+  - SourceB em "None" no AE = camada transparente preta (vec4(0,0,0,0)). O grading de B levanta esse
+    preto para `(B_lights − B_darks)·0 + B_darks` por canal — não é a mesma coisa que "sem B".
+
+  O QUE NÃO ENTROU (`docs/PENDENCIAS-DOS-EFEITOS-AE.md`): Mask (o input Mask do plugin, com Mask Use e
+  Blur Mask), Mocha (o `_Autogen` em volta de cada op), Opacity (All_Opaque / Normal / As_Premult), e
+  o Load/Save Preset — este manifesto fica em Normal (o padrão), que é como todos os presets do snow
+  (CC/opium) usam. O importador do AE marca aviso quando esses controles saem do padrão.
+
+  COMO PASSAR UMA CAMADA EM SOURCE B: no painel, "Source B" é uma linha de camada (o
+  `LayerSourceRow` padrão); sem nenhuma, a entrada chega 1×1 transparente — exatamente como o AE
+  trata "None".
+-->
+<effect
+    id="nova.effect.smathops"
+    name="S_MathOps"
+    name-en="S_MathOps"
+    desc="O Math Ops do Sapphire: combina duas camadas (A e B) por uma de 17 operações matemáticas, com Lights/Darks/Saturation em cada entrada e na saída."
+    desc-en="Sapphire's Math Ops: combines two layers (A and B) through one of 17 math operations, with per-input and output lights/darks/saturation grading."
+    category="color"
+    tags="mathops,s_mathops,sapphire,math,add,subtract,multiply,divide,screen,overlay,difference,minimum,maximum,xor,and,or,mod,bounce,round,composite,mistura">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="sourceB" src="layer" label="Source B" empty="transparent" />
+
+        <selector id="operation" label="Operation" default="0"
+                  options="Add|Subtract|Multiply|Divide|Screen|Average|Overlay|Minimum|Maximum|Difference|Xor|Xor Bits|And Bits|Or Bits|Mod|Bounce|Round" />
+        <switch id="swapInputs" label="Swap Inputs" default="false" />
+
+        <slider id="aLights" group="Source A" label="A Lights" default="1.0" min="-8.0" max="2.0" step="0.001" snap="1.0" />
+        <slider id="aDarks" group="Source A" label="A Darks" default="0.0" min="-8.0" max="2.0" step="0.001" snap="0.0" />
+        <slider id="aSaturation" group="Source A" label="A Saturation" default="1.0" min="0.0" max="5.0" step="0.001" snap="1.0" />
+
+        <slider id="bLights" group="Source B" label="B Lights" default="1.0" min="-8.0" max="2.0" step="0.001" snap="1.0" />
+        <slider id="bDarks" group="Source B" label="B Darks" default="0.0" min="-8.0" max="2.0" step="0.001" snap="0.0" />
+        <slider id="bSaturation" group="Source B" label="B Saturation" default="1.0" min="0.0" max="5.0" step="0.001" snap="1.0" />
+
+        <slider id="destLights" group="Dest" label="Dest Lights" default="1.0" min="-8.0" max="2.0" step="0.001" snap="1.0" />
+        <slider id="destDarks" group="Dest" label="Dest Darks" default="0.0" min="-8.0" max="2.0" step="0.001" snap="0.0" />
+        <slider id="destSaturation" group="Dest" label="Dest Saturation" default="1.0" min="0.0" max="5.0" step="0.001" snap="1.0" />
+    </params>
+
+    <shader><![CDATA[
+// `sat_scale` do Sapphire (legacy luma, 0.3/0.59/0.11 — Rec.601 arredondado). O alfa não é tocado.
+vec4 satScale(vec4 c, float s) {
+    float y = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
+    return vec4(y + (c.rgb - y) * s, c.a);
+}
+
+// bounce(x, b) = b − |mod(x, 2b) − b|. Com b = 0 o resultado é 0 (o plugin trata o degenerado
+// quieto; se alguém colocar Round com Dest B = 0, cai aqui também).
+vec4 bounce4(vec4 x, vec4 b) {
+    vec4 twoB = 2.0 * b;
+    vec4 m = mod(x, max(twoB, vec4(1e-30)));
+    vec4 r = b - abs(m - b);
+    return mix(r, vec4(0.0), vec4(lessThanEqual(abs(b), vec4(1e-30))));
+}
+
+// Bitwise em 8 bits, canal a canal. O plugin converte para inteiro antes da operação.
+vec4 andBits(vec4 a, vec4 b) {
+    ivec4 ia = ivec4(clamp(a, 0.0, 1.0) * 255.0 + 0.5);
+    ivec4 ib = ivec4(clamp(b, 0.0, 1.0) * 255.0 + 0.5);
+    return vec4(ia & ib) / 255.0;
+}
+vec4 orBits(vec4 a, vec4 b) {
+    ivec4 ia = ivec4(clamp(a, 0.0, 1.0) * 255.0 + 0.5);
+    ivec4 ib = ivec4(clamp(b, 0.0, 1.0) * 255.0 + 0.5);
+    return vec4(ia | ib) / 255.0;
+}
+vec4 xorBits(vec4 a, vec4 b) {
+    ivec4 ia = ivec4(clamp(a, 0.0, 1.0) * 255.0 + 0.5);
+    ivec4 ib = ivec4(clamp(b, 0.0, 1.0) * 255.0 + 0.5);
+    return vec4(ia ^ ib) / 255.0;
+}
+
+// Round do Sapphire: snap(i1 / i2) · i2. Com i2 = 0 o quociente estoura; o plugin pisa igual
+// (resultado NaN/∞). Devolver 0 ali evita a propagação de NaN sem reaproximar a conta.
+vec4 roundOp(vec4 a, vec4 b) {
+    vec4 safeB = mix(b, vec4(1e-30), vec4(equal(b, vec4(0.0))));
+    vec4 q = floor(a / safeB + 0.5);
+    return mix(q * b, vec4(0.0), vec4(equal(b, vec4(0.0))));
+}
+
+vec4 aplicarGrading(vec4 c, float lights, float darks, float sat) {
+    vec4 g = satScale(c, sat);
+    return (lights - darks) * g + darks;
+}
+
+void main() {
+    vec4 srcA = texture(inputImg, acScreenNorm);
+    // SourceB em "None" (textura 1×1 transparente, como o `empty="transparent"` entrega) =
+    // vec4(0,0,0,0), como o AE trata.
+    vec4 srcB = textureSize(sourceB, 0).x <= 1 ? vec4(0.0) : texture(sourceB, acScreenNorm);
+
+    vec4 a = swapInputs ? srcB : srcA;
+    vec4 b = swapInputs ? srcA : srcB;
+
+    vec4 i1 = aplicarGrading(a, aLights, aDarks, aSaturation);
+    vec4 i2 = aplicarGrading(b, bLights, bDarks, bSaturation);
+
+    vec4 d;
+    if (operation == 0) {           // Add
+        d = i1 + i2;
+    } else if (operation == 1) {    // Subtract
+        d = i1 - i2;
+    } else if (operation == 2) {    // Multiply
+        d = i1 * i2;
+    } else if (operation == 3) {    // Divide
+        d = i1 / i2;
+    } else if (operation == 4) {    // Screen
+        d = i1 + i2 - i1 * i2;
+    } else if (operation == 5) {    // Average
+        d = 0.5 * (i1 + i2);
+    } else if (operation == 6) {    // Overlay
+        vec4 screenV = i1 + i2 - i1 * i2;
+        vec4 multiV = i1 * i2;
+        d = mix(2.0 * multiV, 2.0 * screenV - 1.0, vec4(greaterThan(i2, vec4(0.5))));
+    } else if (operation == 7) {    // Minimum
+        d = min(i1, i2);
+    } else if (operation == 8) {    // Maximum
+        d = max(i1, i2);
+    } else if (operation == 9) {    // Difference
+        d = abs(i1 - i2);
+    } else if (operation == 10) {   // Xor (triangular)
+        d = bounce4(clamp(i1, 0.0, 1.0) + clamp(i2, 0.0, 1.0), vec4(1.0));
+    } else if (operation == 11) {   // Xor Bits
+        d = xorBits(i1, i2);
+    } else if (operation == 12) {   // And Bits
+        d = andBits(i1, i2);
+    } else if (operation == 13) {   // Or Bits
+        d = orBits(i1, i2);
+    } else if (operation == 14) {   // Mod
+        vec4 safe = mix(i2, vec4(1e-30), vec4(equal(i2, vec4(0.0))));
+        d = i1 - i2 * floor(i1 / safe);
+    } else if (operation == 15) {   // Bounce
+        d = bounce4(i1, i2);
+    } else {                        // Round
+        d = roundOp(i1, i2);
+    }
+
+    fragColor = aplicarGrading(d, destLights, destDarks, destSaturation);
+}
+]]></shader>
+</effect>

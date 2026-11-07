@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bordas rasgadas.
+
+  Come a borda da camada com ruído. Serve para tirar o ar de "vetor perfeito" de
+  um texto ou de uma forma: papel rasgado, tinta seca, giz, carimbo gasto,
+  desgaste de filme.
+
+  Só faz sentido em camada com alfa — texto, forma, imagem recortada. Num sólido
+  que preenche a composição inteira não existe borda para rasgar.
+-->
+<effect
+    id="nova.effect.roughenedges"
+    name="Bordas rasgadas"
+    name-en="Roughen Edges"
+    desc="Come a borda da camada com ruído: papel rasgado, giz, tinta seca."
+    desc-en="Eats the alpha edge with noise."
+    category="stylize"
+    tags="borda,rasgado,ruido,papel,giz,tinta,desgaste,carimbo">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="border" label="Profundidade"
+                default="14.0" min="0.0" max="120.0" step="1.0" snap="0.0" />
+
+        <slider id="scale" label="Tamanho do grão"
+                default="1.0" min="0.05" max="6.0" step="0.01" snap="1.0" />
+
+        <slider id="octaves" label="Complexidade"
+                default="4.0" min="1.0" max="8.0" step="1.0" type="integer" />
+
+        <slider id="sharpness" label="Nitidez do corte"
+                default="0.12" min="0.005" max="0.5" step="0.005" />
+
+        <slider id="evolution" label="Evolução"
+                default="0.0" min="-20.0" max="20.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura" />
+
+    <shader><![CDATA[
+
+const int MAX_OCTAVES = 8;
+
+float hash21(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+
+float valueNoise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    vec2 w = f * f * (3.0 - 2.0 * f);
+    float a = hash21(cell);
+    float b = hash21(cell + vec2(1.0, 0.0));
+    float c = hash21(cell + vec2(0.0, 1.0));
+    float d = hash21(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+}
+
+float fbm(vec2 p, int levels) {
+    float sum = 0.0;
+    float amplitude = 1.0;
+    float norm = 0.0;
+    for (int i = 0; i < MAX_OCTAVES; i++) {
+        if (i >= levels) break;
+        sum += valueNoise(p) * amplitude;
+        norm += amplitude;
+        p *= 2.0;
+        amplitude *= 0.5;
+    }
+    return sum / max(norm, 0.0001);
+}
+
+void main() {
+    int levels = clamp(int(octaves + 0.5), 1, MAX_OCTAVES);
+
+    vec2 p = acScreenNorm * vec2(acAspect, 1.0) / max(scale, 0.01) * 12.0 + vec2(evolution);
+    vec2 shift = vec2(
+        fbm(p, levels) - 0.5,
+        fbm(p + vec2(19.3, 7.7), levels) - 0.5
+    ) * border * acEscalaDePixel * acTexelSize * 2.0;
+
+    // Empurrar a amostragem e depois cortar o alfa de novo é o que rasga a
+    // borda. No meio da camada o alfa já é 1, então o empurrão não aparece — o
+    // efeito se concentra sozinho onde existe transição.
+    vec4 color = texture(inputImg, clamp(acScreenNorm + shift, 0.0, 1.0));
+    float alpha = smoothstep(0.5 - sharpness, 0.5 + sharpness, color.a);
+
+    fragColor = vec4(color.rgb, alpha);
+}
+
+    ]]></shader>
+</effect>

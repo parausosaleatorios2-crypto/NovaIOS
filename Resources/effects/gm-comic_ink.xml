@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.comic_ink" name="Comic Ink" desc="Posterised colour with a black ink outline drawn from a luminance edge detect." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/comic_ink.png"
+        tags="stylize,comic,ink,outline,toon" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Colour" />
+<spinner id="steps" default="5.0" min="2.0" max="16.0" step="1.0" label="Colour Steps" type="integer" />
+<spinner id="saturation" default="1.3" min="0.0" max="3.0" step="0.01" label="Saturation" />
+<section text="Ink" />
+<spinner id="inkThickness" default="1.0" min="0.2" max="4.0" step="0.05" label="Ink Thickness" />
+<spinner id="inkThreshold" default="0.25" min="0.0" max="1.0" step="0.01" label="Ink Threshold" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  vec3 sat = mix(vec3(l), c, saturation);
+  float n = max(steps, 2.0) - 1.0;
+  vec3 flat = floor(sat * n + 0.5) / n;
+  float px = inkThickness / max(acScreenSize.y, 1.0);
+  float lx = gmLum(texture2DCv(inputImg.texture, uv + vec2(px, 0.0)).rgb / max(texture2DCv(inputImg.texture, uv + vec2(px, 0.0)).a, 1e-4));
+  float ly = gmLum(texture2DCv(inputImg.texture, uv + vec2(0.0, px)).rgb / max(texture2DCv(inputImg.texture, uv + vec2(0.0, px)).a, 1e-4));
+  float edge = abs(l - lx) + abs(l - ly);
+  float ink = smoothstep(inkThreshold * 0.5, inkThreshold, edge * 6.0);
+  vec3 col = mix(flat, vec3(0.0), ink);
+  col = mix(c, col, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

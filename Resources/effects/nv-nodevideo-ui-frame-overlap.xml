@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/UI_frame_overlap
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-ui-frame-overlap"
+    name="Ui Frame Overlap (NV)"
+    name-en="Ui Frame Overlap (NV)"
+    desc="NodeVideo effect 'NodeVideo/UI_frame_overlap', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/UI_frame_overlap', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_x_scale" label="X Scale" default="1.0" min="0.0" max="3.0" step="0.01" />
+        <slider id="_y_scale" label="Y Scale" default="1.0" min="0.0" max="3.0" step="0.01" />
+        <color id="_outline_color" label="Outline Color" default="#FFFFFFFF" />
+        <slider id="_outline_size" label="Outline Size" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_blur" label="Blur" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_style" type="integer" label="Style" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+bool u_xlatb0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+bool u_xlatb2;
+float u_xlat3;
+bool u_xlatb3;
+float u_xlat4;
+vec2 u_xlat6;
+vec2 u_xlat7;
+float u_xlat9;
+void main()
+{
+    u_xlat0.x = min(_y_scale, _x_scale);
+    u_xlat3 = u_xlat0.x * 0.5 + (-_outline_size);
+    u_xlat3 = min(u_xlat3, _blur);
+    u_xlat0.y = max(u_xlat3, 0.0);
+    u_xlat0.x = u_xlat0.x * 0.5 + (-u_xlat0.y);
+    u_xlat0.x = u_xlat0.x + (-_outline_size);
+    u_xlat0.x = min(u_xlat0.x, u_xlat0.y);
+    u_xlat0.x = max(u_xlat0.x, 0.0);
+    u_xlat6.x = u_xlat0.y + _outline_size;
+    u_xlat1.xy = acScreenNorm.xy * vec2(_x_scale, _y_scale);
+    u_xlat7.xy = vec2(_x_scale, _y_scale) * vec2(0.5, 0.5);
+    u_xlat9 = min(u_xlat7.x, 0.0);
+    u_xlat9 = min(u_xlat7.y, u_xlat9);
+    u_xlat7.x = acScreenNorm.y * _y_scale + u_xlat7.y;
+    u_xlat2.xy = vec2(_x_scale, _y_scale) * vec2(0.5, 0.5) + (-vec2(u_xlat9));
+    u_xlat1.xy = abs(u_xlat1.xy) + (-u_xlat2.xy);
+    u_xlat2.xy = max(u_xlat1.xy, vec2(0.0, 0.0));
+    u_xlat1.x = max(u_xlat1.y, u_xlat1.x);
+    u_xlat1.x = min(u_xlat1.x, 0.0);
+    u_xlat4 = dot(u_xlat2.xy, u_xlat2.xy);
+    u_xlat4 = sqrt(u_xlat4);
+    u_xlat1.x = u_xlat4 + u_xlat1.x;
+    u_xlat6.y = u_xlat9 + (-u_xlat1.x);
+    u_xlat6.x = (-u_xlat6.x) + u_xlat6.y;
+    u_xlat0.xy = u_xlat6.xy / u_xlat0.xy;
+    u_xlat0.xy = clamp(u_xlat0.xy, 0.0, 1.0);
+    u_xlat2 = u_xlat0.xxxx * (-_outline_color) + _outline_color;
+    u_xlat2.w = u_xlat0.y * u_xlat2.w;
+    u_xlat0.x = (-_outline_size) * 3.0 + _y_scale;
+    u_xlatb0 = u_xlat7.x<u_xlat0.x;
+    u_xlatb3 = _outline_size==0.0;
+    u_xlatb0 = u_xlatb0 || u_xlatb3;
+    u_xlat1 = (bool(u_xlatb3)) ? vec4(0.0, 0.0, 0.0, 0.0) : u_xlat2;
+    u_xlat0 = (bool(u_xlatb0)) ? vec4(0.0, 0.0, 0.0, 0.0) : u_xlat2;
+    u_xlatb2 = int(_style)==1;
+    fragColor = (bool(u_xlatb2)) ? u_xlat0 : u_xlat1;
+    return;
+}
+    ]]></shader>
+</effect>

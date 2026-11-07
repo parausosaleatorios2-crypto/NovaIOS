@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_GLOWAURA — o GlowAura do Sapphire (Boris FX), igual ao do After Effects (0.817.0)
+  ============================================================================
+
+  Pedido do snow (26/10/2026): "faça o efeito S_glowaura 100% igual o after effects".
+
+  DE ONDE VEIO (tools/sglowaura/benchmark):
+
+  - A definição do efeito está em texto na sapphire_ae.dll (`def_effect Glow_Aura`):
+        s   = Fonte (misturada com o alfa por Glow From Alpha);   th = Threshold + Threshold Add Color
+        bw  = max(0, monochrome(s − th));   k = 4 / max(0,01, 1 − min(th))
+        pic = k · blur(bw, Glow Width, filtro 3, subpixel)
+        a   = grad_direction(pic) + pic · largura · Twist / 4
+        luz = sat_scale(nsin(a · Frequency · (fR, fG, fB) − (Phase + (pR, pG, pB) + Phase Speed · tempo)),
+                        Glow Saturation) · min(1, pic · 4 · Outer Brightness · largura) · Brightness · Color
+        saída = glow_rgba_combine(...)   (a mesma mistura do S_Glow: Combine, Affect Alpha, Glow Under
+                                          Source, Light Background, Source Opacity, Show)
+  - Lidos no código:
+      * `nsin` (0x180ec0410): 0,5 + 0,5 · sen(2π · x), o seno em float;
+      * `monochrome` (0x180f26020): (0,3125 R + 0,5 G) + 0,1875 B em float;
+      * `grad_direction` (o laço por pixel em 0x180b72be0): gx = p(x + 1) − p(x − 1), gy = p(linha de cima)
+        − p(linha de baixo), na borda um lado só vezes 2; fract(atan2(gy, gx) / 2π); 0 quando
+        gx² + gy² < 1e-8.
+  - Medido no After Effects (131 renders, 16 e 8 bpc):
+      * o desfoque "filtro 3" são as MESMAS três caixas do S_Glow/S_Hotspots (resíduo < 0,006 nível no
+        núcleo de um pixel, 0,5 a 64 px); o k entra como escala do desfoque;
+      * a `largura` interna (a do Twist e do Outer Brightness) = Glow Width em px ÷ (largura da CAMADA ÷ 8)
+        — exata no pixel aceso em 640 e 1920 de largura e na camada menor que a composição;
+      * o y do gradiente: linha de cima menos a de baixo da imagem; o tempo é o da camada, em segundos;
+      * um canal negativo da luz (Glow Saturation fora de 0..1) não escurece a fonte; o Overlay vale nos
+        quatro canais; As Premult devolve o resultado pré-multiplicado como cor reta;
+      * a Matte multiplica a fonte pela cor PRÉ-multiplicada dela, canal a canal; o Background entra
+        debaixo da fonte (Bg Brightness na cor dele) e no Light Background.
+    O modelo em numpy (tools/sglowaura/benchmark/modelo.py) fica a 0,01–0,1 nível médio do AE de 16 bpc.
+
+  COMO É FEITO AQUI (o buffer do motor é RGBA8):
+    0     ga  bw (o float inteiro nos 4 bytes do texel, como nos outros)
+    1..3  as três caixas em x, entre ga e gb
+    4..6  as três caixas em y; a última já vezes k: o campo fica em ga
+    7     a direção, a cor da aura e a mistura com a fonte
+  Cada caixa soma a janela com peso igual; a que cresce de ⌊W⌋ para ⌊W⌋ + 1 leva as pontas com o peso da
+  fração (o mesmo do S_Glow). Antes (o núcleo das três caixas num passe só, com o peso de cada leitura
+  calculado em inteiros) eram ~250 ms por quadro em 1080p na GPU do PC; assim, 30 ms (60 com Glow Width 200,
+  `tempo.py`). As caixas e
+  a direção usam a borda da CAMADA do AE (`acCamada`), não a do buffer.
+
+  O QUE NÃO É IGUAL (docs/PENDENCIAS-DOS-EFEITOS-AE.md):
+  - O plugin desfoca com SOMA CORRIDA em float (blur.cxx, variante AVX2: soma inicial em 16 faixas,
+    `acc = (entrou − saiu) + acc`); aqui cada janela é somada direto, que é mais exato. O gradiente é uma
+    diferença de vizinhos e o Frequency multiplica o ângulo: os poucos ulp de diferença no campo viram,
+    no AE de 8 bpc, 1 nível em 3–18% dos px (até ~30% com campo muito largo em 1080p) e mais de 1 nível em
+    0,01–2,5% — nos topos planos do campo (gradiente ~1e-5) o ângulo é decidido pelo arredondamento e
+    pode sair qualquer cor. Soma corrida não dá para repetir num shader (cada pixel dependeria da linha
+    inteira antes dele).
+  - Matte from Path, Expand Borders e Mocha. Background e Matte de outra camada entram como estão na
+    composição (o conversor não as liga: avisa).
+  Nada rodou em aparelho.
+-->
+<effect
+    id="nova.effect.sglowaura"
+    name="S_GlowAura"
+    name-en="S_GlowAura"
+    desc="O GlowAura do Sapphire: linhas de cor em volta das áreas claras, seguindo o contorno delas, igual ao After Effects."
+    desc-en="Sapphire's GlowAura: colored aura lines around the bright areas, following their contours, as in After Effects."
+    category="stylize"
+    tags="s_glowaura,glowaura,glow aura,aura,sapphire,glow,brilho,luz,arco-íris,rainbow,boris,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="ga" src="buffer" />
+        <texture id="gb" src="buffer" />
+        <texture id="bgImg" src="layer" group="Layers" label="Background" empty="transparent" />
+        <texture id="matteImg" src="layer" group="Layers" label="Matte from Layer" empty="transparent" />
+
+        <slider id="brightness" label="Brightness" default="0.8" min="0.0" max="10.0" step="0.01" snap="0.8,1.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <slider id="outerBrightness" label="Outer Brightness" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="glowSaturation" label="Glow Saturation" default="1.0" min="-2.0" max="8.0" step="0.01" snap="0.0,1.0" />
+        <slider id="threshold" label="Threshold" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <color id="thresholdAddColor" label="Threshold Add Color" default="#000000" />
+        <slider id="glowWidth" label="Glow Width" default="96.0" min="0.0" max="720.0" step="0.1" snap="96.0" />
+        <switch id="subpixel" label="Subpixel" default="true" />
+        <slider id="frequency" group="Frequency" label="Frequency" default="8.0" min="0.0" max="50.0" step="0.01" snap="8.0" />
+        <slider id="frequencyRed" group="Frequency" label="Frequency Red" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="frequencyGreen" group="Frequency" label="Frequency Green" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="frequencyBlue" group="Frequency" label="Frequency Blue" default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="phase" group="Phase" label="Phase" default="0.0" min="-5.0" max="5.0" step="0.01" snap="0.0" />
+        <slider id="phaseSpeed" group="Phase" label="Phase Speed" default="1.0" min="-10.0" max="10.0" step="0.01" snap="0.0,1.0" />
+        <slider id="phaseRed" group="Phase" label="Phase Red" default="0.2" min="-5.0" max="5.0" step="0.01" snap="0.2" />
+        <slider id="phaseGreen" group="Phase" label="Phase Green" default="0.1" min="-5.0" max="5.0" step="0.01" snap="0.1" />
+        <slider id="phaseBlue" group="Phase" label="Phase Blue" default="0.0" min="-5.0" max="5.0" step="0.01" snap="0.0" />
+        <slider id="twist" label="Twist" default="1.0" min="-20.0" max="20.0" step="0.01" snap="0.0,1.0" />
+        <selector id="show" label="Show" default="0" options="Result|Threshold" />
+        <selector id="combine" label="Combine" default="2" options="Mult|Add|Screen|Difference|Overlay" />
+        <slider id="affectAlpha" group="Alpha" label="Affect Alpha" default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="glowFromAlpha" group="Alpha" label="Glow From Alpha" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="glowUnderSource" group="Alpha" label="Glow Under Source" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="lightBackground" group="Alpha" label="Light Background" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="sourceOpacity" group="Alpha" label="Source Opacity" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="bgBrightness" group="Layers" label="Bg Brightness" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <switch id="invertMatte" group="Layers" label="Invert Matte" default="false" />
+        <selector id="opacity" label="Opacity" default="1" options="All Opaque|Normal|As Premult" />
+    </params>
+
+    <passes>
+        <pass target="ga" />    <!-- 0: bw -->
+        <pass target="gb" />    <!-- 1..3: as três caixas em x -->
+        <pass target="ga" />
+        <pass target="gb" />
+        <pass target="ga" />    <!-- 4..6: as três caixas em y (a última vezes k) -->
+        <pass target="gb" />
+        <pass target="ga" />
+        <pass />                <!-- 7: a direção, a aura e a mistura -->
+    </passes>
+
+    <shader><![CDATA[
+const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
+
+// Os sliders do Sapphire chegam em ponto fixo 16.16 (medido no S_Hotspots: o 0,3 é 0,3000031 no AE).
+float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+
+// ---- a camada do AE no buffer --------------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+float gEscala;     // a prévia reduzida (o Glow Width é em px da composição)
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+}
+
+/** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
+int espelhar(int i, int n) {
+    if (i >= 0 && i < n) return i;
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+ivec2 naCamada(ivec2 q) {
+    return gInicio + ivec2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
+}
+
+// ---- um float inteiro nos 4 bytes do texel ---------------------------------------------------
+vec4 guardar(float f) {
+    uint b = floatBitsToUint(f);
+    return vec4(float(b & 255u), float((b >> 8u) & 255u), float((b >> 16u) & 255u), float(b >> 24u)) / 255.0;
+}
+
+float lido(vec4 c) {
+    uvec4 b = uvec4(floor(c * 255.0 + 0.5));
+    return uintBitsToFloat(b.r | (b.g << 8u) | (b.b << 16u) | (b.a << 24u));
+}
+
+// ---- a fonte --------------------------------------------------------------------------------
+// Opacity (medido no S_Hotspots): Normal (1) trabalha na cor pré-multiplicada; All Opaque (0) e As Premult
+// (2), na cor reta.
+vec4 entrada(ivec2 p) {
+    vec4 s = texelFetch(inputImg, p, 0);
+    return opacity == 1 ? vec4(s.rgb * s.a, s.a) : s;
+}
+
+bool temMatte() { return textureSize(matteImg, 0).x > 1; }
+bool temFundo() { return textureSize(bgImg, 0).x > 1; }
+
+// As camadas de entrada no lugar delas na composição, pré-multiplicadas.
+vec4 camada(sampler2D t, ivec2 p) {
+    vec4 c = texture(t, (vec2(p) + 0.5) / vec2(gT));
+    return vec4(c.rgb * c.a, c.a);
+}
+
+vec3 limiarTh() { return fixo(threshold) + floor(thresholdAddColor.rgb * 255.0 + 0.5) / 255.0; }
+
+// bw = max(0, monochrome(s − th)), na ordem do plugin
+float bw(ivec2 p) {
+    vec4 e = entrada(p);
+    vec3 s = mix(e.rgb, vec3(e.a), fixo(glowFromAlpha));
+    // a Matte (medido): a cor pré-multiplicada dela, canal a canal, multiplica a fonte antes de tudo
+    if (temMatte()) {
+        vec3 m = camada(matteImg, p).rgb;
+        s *= invertMatte ? 1.0 - m : m;
+    }
+    vec3 c = s - limiarTh();
+    return max(0.0, (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b);
+}
+
+float escalaK() {
+    vec3 th = limiarTh();
+    return 4.0 / max(0.01, 1.0 - min(th.r, min(th.g, th.b)));
+}
+
+// A largura do desfoque em px do buffer.
+float larguraPx() {
+    float w = fixo(glowWidth) * gEscala;
+    if (!subpixel) w = floor(w + 0.5);
+    return clamp(w, 0.0, LARGURA_MAX);
+}
+
+/**
+ * Uma das três caixas (`qual` = 0, 1, 2) de um eixo, lendo o passe anterior. Largura inteira W -> raios
+ * (W + 2 − qual) div 3, que somam W; com a largura quebrada só a caixa (⌊W⌋ mod 3) cresce, e ela leva as duas
+ * pontas com o peso da fração: (1 − f)·caixa(r) + f·caixa(r + 1).
+ */
+float caixa(ivec2 q, bool emX, int qual, bool deA) {
+    float w = larguraPx();
+    int a = int(floor(w));
+    float f = w - float(a);
+    int r = (a + 2 - qual) / 3;
+    bool cresce = f > 0.0 && a - (a / 3) * 3 == qual;
+    float soma = 0.0;
+    for (int d = -r; d <= r; d++) {
+        ivec2 p = naCamada(q + (emX ? ivec2(d, 0) : ivec2(0, d)));
+        soma += lido(deA ? texelFetch(ga, p, 0) : texelFetch(gb, p, 0));
+    }
+    float n = float(2 * r + 1);
+    if (!cresce) return soma / n;
+    ivec2 e = naCamada(q - (emX ? ivec2(r + 1, 0) : ivec2(0, r + 1)));
+    ivec2 g = naCamada(q + (emX ? ivec2(r + 1, 0) : ivec2(0, r + 1)));
+    float pontas = deA ? lido(texelFetch(ga, e, 0)) + lido(texelFetch(ga, g, 0)) : lido(texelFetch(gb, e, 0)) + lido(texelFetch(gb, g, 0));
+    return soma * ((1.0 - f) / n + f / (n + 2.0)) + pontas * (f / (n + 2.0));
+}
+
+float picEm(ivec2 q) { return lido(texelFetch(ga, gInicio + q, 0)); }
+
+// grad_direction (0x180b72be0): diferença central; na borda da camada, um lado só vezes 2.
+float direcao(ivec2 q, float p0) {
+    float gx, gy;
+    if (gN.x < 2) gx = 0.0;
+    else if (q.x == 0) gx = (picEm(q + ivec2(1, 0)) - p0) * 2.0;
+    else if (q.x == gN.x - 1) gx = (p0 - picEm(q - ivec2(1, 0))) * 2.0;
+    else gx = picEm(q + ivec2(1, 0)) - picEm(q - ivec2(1, 0));
+    // a linha de CIMA da imagem menos a de baixo; no buffer de conteúdo a linha 0 é o topo, numa cena
+    // guardada de pé (acEntradaDePe) é a base
+    int cima = acEntradaDePe == 1 ? 1 : -1;
+    int yc = q.y + cima, yb = q.y - cima;
+    if (gN.y < 2) gy = 0.0;
+    else if (yc < 0 || yc >= gN.y) gy = (p0 - picEm(ivec2(q.x, yb))) * 2.0;
+    else if (yb < 0 || yb >= gN.y) gy = (picEm(ivec2(q.x, yc)) - p0) * 2.0;
+    else gy = picEm(ivec2(q.x, yc)) - picEm(ivec2(q.x, yb));
+    if (gx * gx + gy * gy < 1e-8) return 0.0;
+    float t = atan(gy, gx) * 0.15915494;
+    return t - floor(t);
+}
+
+vec4 tela(vec4 a, vec4 b) { return a + b - a * b; }
+float tela(float a, float b) { return a + b - a * b; }
+
+// Combine (glow_rgba_combine; medido: o Overlay vale nos quatro canais, decidido pela base)
+vec4 combinar(vec4 g, vec4 b) {
+    if (combine == 4) return mix(2.0 * g * b, 1.0 - 2.0 * (1.0 - g) * (1.0 - b), vec4(greaterThanEqual(b, vec4(0.5))));
+    if (combine == 3) return vec4(abs(g.rgb - b.rgb), tela(g.a, b.a));
+    if (combine == 2) return tela(g, b);
+    if (combine == 1) return g + b;
+    return g * b;
+}
+
+void main() {
+    preparar();
+    ivec2 t = min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    bool fora = any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN));
+
+    if (acPass == 0) {
+        fragColor = fora ? vec4(0.0) : guardar(bw(t));
+        return;
+    }
+    if (acPass <= 6) {
+        // 1..3 em x, 4..6 em y; os passes ímpares leem ga, os pares gb
+        float c = fora ? 0.0 : caixa(q, acPass <= 3, (acPass - 1) - ((acPass - 1) / 3) * 3, (acPass & 1) == 1);
+        fragColor = guardar(acPass == 6 ? escalaK() * c : c);
+        return;
+    }
+
+    vec4 s = texelFetch(inputImg, t, 0);
+    if (fora) {
+        fragColor = s;
+        return;
+    }
+    vec4 S = entrada(t);
+    vec4 r;
+    if (show == 1) {
+        r = vec4(vec3(bw(t) * escalaK()), 1.0);
+    } else {
+        float p0 = picEm(q);
+        // a largura interna do Sapphire (medido): px ÷ (largura da camada ÷ 8)
+        float wn = fixo(glowWidth) / (float(gN.x) / gEscala / 8.0);
+        float a = direcao(q, p0) + p0 * (wn * fixo(twist) / 4.0);
+        vec3 ph = fixo(phase) + vec3(fixo(phaseRed), fixo(phaseGreen), fixo(phaseBlue)) + fixo(phaseSpeed) * acTime;
+        vec3 fq = fixo(frequency) * vec3(fixo(frequencyRed), fixo(frequencyGreen), fixo(frequencyBlue));
+        vec3 g = 0.5 + 0.5 * sin(6.2831853 * (a * fq - ph));
+        float sat = fixo(glowSaturation);
+        float luma = (0.3125 * g.r + 0.5 * g.g) + 0.1875 * g.b;
+        g = g * sat + luma * (1.0 - sat);
+        vec3 luz = g * min(1.0, p0 * (4.0 * fixo(outerBrightness) * wn)) * (fixo(brightness) * color.rgb);
+
+        // glow_rgba_combine (da definição; medido: um canal negativo da luz não escurece)
+        float claro = fixo(lightBackground);
+        bool fundo = temFundo();
+        vec4 B = fundo ? camada(bgImg, t) : vec4(0.0);
+        vec3 glowB = max(luz, vec3(0.0)) * (1.0 + (2.0 * (fundo ? B.rgb : S.rgb) - 1.0) * claro);
+        vec4 gl = vec4(glowB, max(glowB.r, max(glowB.g, glowB.b)) * fixo(affectAlpha));
+        vec4 src = S * fixo(sourceOpacity);
+        vec4 back = vec4(B.rgb * fixo(bgBrightness), B.a);
+        vec4 fonteNoFundo = src + back * (1.0 - src.a);
+        vec4 sobreFonte = combinar(gl, fonteNoFundo);
+        vec4 sobreFundo = combinar(gl, back);
+        vec4 x = mix(sobreFonte, fonteNoFundo + gl, claro);
+        vec4 y = mix(sobreFundo, back + gl, claro);
+        y = src + y * (1.0 - src.a);
+        r = mix(x, y, tela(fixo(glowUnderSource), claro));
+    }
+    r = clamp(r, 0.0, 1.0);
+    if (opacity == 0) r.a = 1.0;
+    // As Premult (medido): o resultado pré-multiplicado sai como cor reta
+    vec3 reta = opacity == 2 ? r.rgb : (r.a > 0.0 ? min(r.rgb / r.a, vec3(1.0)) : vec3(0.0));
+    // a saída em níveis inteiros, arredondada como o AE de 8 bpc
+    fragColor = vec4(floor(reta * 255.0 + 0.5) / 255.0, r.a);
+}
+]]></shader>
+</effect>

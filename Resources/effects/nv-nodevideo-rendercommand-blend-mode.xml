@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand__blend_mode
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-blend-mode"
+    name="Rendercommand  Blend Mode (NV)"
+    name-en="Rendercommand  Blend Mode (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand__blend_mode', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand__blend_mode', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="g_OverlayTex" src="content" empty="transparent" />
+        <slider id="_blend_mode" type="integer" label="Blend Mode" default="0" min="0" max="1" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+bvec2 u_xlatb0;
+vec4 u_xlat1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec3 u_xlat5;
+vec3 u_xlat8;
+void main()
+{
+    u_xlatb0.xy = equal(ivec4(int(_blend_mode)), ivec4(1, 2, 0, 0)).xy;
+    u_xlat1 = texture(g_OverlayTex, acScreenNorm.xy);
+    u_xlat2 = (-u_xlat1.wxyz) + vec4(1.0, 1.0, 1.0, 1.0);
+    u_xlat3 = texture(inputImg, acScreenNorm.xy);
+    u_xlat4.xyz = (-u_xlat3.xyz) + vec3(1.0, 1.0, 1.0);
+    u_xlat8.xyz = (-u_xlat2.yzw) * u_xlat4.xyz + vec3(1.0, 1.0, 1.0);
+    u_xlat4 = u_xlat2.xxxx * u_xlat3;
+    u_xlat4 = u_xlat1 * u_xlat1.wwww + u_xlat4;
+    u_xlat5.xyz = u_xlat1.xyz + u_xlat3.xyz;
+    u_xlat1 = u_xlat1 * u_xlat3;
+    u_xlat3.xyz = (u_xlatb0.y) ? u_xlat5.xyz : u_xlat8.xyz;
+    u_xlat0 = (u_xlatb0.x) ? u_xlat1 : u_xlat3;
+    fragColor = (int(_blend_mode) != 0) ? u_xlat0 : u_xlat4;
+    return;
+}
+    ]]></shader>
+</effect>

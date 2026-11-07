@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.zoom_blur" name="Zoom Blur" desc="Radial blur that samples outward from a centre point. Reads as a fast dolly or a punch-in." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/zoom_blur.png"
+        tags="blur,zoom,radial,speed" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Zoom" />
+<spinner id="centerX" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre X" />
+<spinner id="centerY" default="0.50" min="0.0" max="1.0" step="0.01" label="Centre Y" />
+<spinner id="amount" default="0.06" min="0.0" max="0.4" step="0.001" label="Amount" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 12;
+void main(){
+  vec2 uv = acScreenNorm;
+  vec2 c = vec2(centerX, centerY);
+  vec4 sum = vec4(0.0);
+  for (int i = 0; i < TAPS; i++){
+    float t = float(i) / float(TAPS - 1);
+    float sc = 1.0 - amount * t * mixAmt;
+    vec2 p = c + (uv - c) * sc;
+    sum += texture2DCv(inputImg.texture, p);
+  }
+  gl_FragColor = sum / float(TAPS);
+}
+]]></shader>
+</effect>

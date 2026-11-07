@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   EXPANDIR BORDAS  (Grow Bounds)
+  ============================================================================
+
+  O "Grow Bounds" do After Effects. Sozinho ele não muda um pixel: ele dá uma
+  FOLGA transparente em volta do conteúdo da camada, para que o glow, o brilho e
+  o desfoque dos OUTROS efeitos possam crescer ALÉM da caixa da camada, em vez de
+  baterem na borda e serem cortados.
+
+  É o que faltava quando um Deep Glow, um bloom ou um desfoque grande saía com a
+  ponta reta, cortada na borda — mais ainda com a camada reduzida. Ligando este
+  efeito, o brilho transborda naturalmente.
+
+  ============================================================================
+   POR QUE ESTE ARQUIVO NÃO TEM O SHADER DE VERDADE
+  ============================================================================
+
+  `stage="growbounds"`: como o Desfoque de movimento e a extrusão 3D, este é uma
+  DIRETIVA para o motor, não um passe da cadeia. A cadeia o pula
+  (`EffectPipeline.applyChain`); quem lê a folga é o compositor, ao dimensionar o
+  buffer do conteúdo — ver `SceneRenderer.margemDeEfeitoEfetiva`.
+
+  Por isso a posição dele na lista de efeitos não importa (ele serve a TODOS os
+  efeitos da camada), e o parâmetro abaixo é lido pelo motor, não pelo shader. O
+  shader daqui só copia a entrada, e só roda se algum caminho que não conhece
+  `stage` o executar.
+
+  Custa memória (o buffer do conteúdo cresce), por isso não vem ligado sozinho:
+  quem quer a folga aplica o efeito, igual ao AE.
+-->
+<effect
+    id="nova.effect.growbounds"
+    name="Expandir bordas"
+    name-en="Grow Bounds"
+    desc="Dá uma folga em volta da camada para o glow e o desfoque dos outros efeitos crescerem além da caixa, sem serem cortados."
+    desc-en="Gives the layer extra room so glow and blur from other effects can grow past its box instead of being clipped."
+    category="other"
+    stage="growbounds"
+    tags="grow bounds,expandir,bordas,folga,margem,glow,brilho,desfoque,recorte,corte,transbordar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          A folga, em fração da TELA por lado. 0,25 é o padrão do antigo "Expandir
+          bordas": buffer 1,5× em cada lado. O teto (0,5) dobra o buffer em cada
+          lado (4× a área) — folga generosa sem estourar a memória de um celular.
+          Ver `SceneRenderer.MARGEM_DE_EFEITO_MAX`. Mostrado em % da tela.
+        -->
+        <slider id="margem" label="Folga"
+                type="relative-percent"
+                default="0.25" min="0.05" max="0.5" step="0.01" snap="0.25" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

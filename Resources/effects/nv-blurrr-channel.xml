@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.channel"
+    name="Desfoque por Canal (Blurrr)"
+    name-en="Channel Blur (Blurrr)"
+    desc="Desfoque gaussiano separado por canal RGBA — foco químico."
+    desc-en="Per-channel Gaussian blur — chemical focus."
+    category="blur"
+    tags="blurrr,channel,canal,rgb,alpha,desfoque,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+        <slider id="red"   label="R" default="4.0"  min="0.0" max="40.0" passo="0.5" />
+        <slider id="green" label="G" default="4.0"  min="0.0" max="40.0" passo="0.5" />
+        <slider id="blue"  label="B" default="4.0"  min="0.0" max="40.0" passo="0.5" />
+        <slider id="alpha" label="A" default="0.0"  min="0.0" max="40.0" passo="0.5" />
+    </params>
+
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const int N = 11;
+const float OFF[11] = float[11](-5.0,-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0,5.0);
+const float WT[11]  = float[11](0.027,0.065,0.121,0.175,0.198,0.198,0.198,0.175,0.121,0.065,0.027);
+
+vec4 gaussCanal(vec2 uv, vec2 d, float raio) {
+    if (raio <= 0.0) {
+        return (acPass == 0) ? texture(inputImg, uv) : texture(hblur, uv);
+    }
+    vec2 passo = d * acTexelSize * (raio * acEscalaDePixel);
+    vec4 soma = vec4(0.0);
+    float pesoTot = 0.0;
+    for (int i = 0; i < N; i++) {
+        vec2 u = uv + passo * OFF[i];
+        vec4 c = (acPass == 0) ? texture(inputImg, u) : texture(hblur, u);
+        soma += c * WT[i];
+        pesoTot += WT[i];
+    }
+    return soma / pesoTot;
+}
+
+void main() {
+    vec2 d = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 r = gaussCanal(acScreenNorm, d, red);
+    vec4 g = gaussCanal(acScreenNorm, d, green);
+    vec4 b = gaussCanal(acScreenNorm, d, blue);
+    vec4 a = gaussCanal(acScreenNorm, d, alpha);
+    fragColor = vec4(r.r, g.g, b.b, a.a);
+}
+    ]]></shader>
+</effect>

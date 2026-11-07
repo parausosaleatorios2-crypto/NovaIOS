@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Chromatic Aberration (`chab`, linear): `FXKernel_ChromAb`, escalas do host (`0x18043bfe0`), filtro
+  linear com o peso em 8 bits como a GPU do AE. Até 1 nível em 0,02% dos valores.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.chromab"
+    name="Looks: Chromatic Aberration"
+    name-en="Looks: Chromatic Aberration"
+    desc="A ferramenta Chromatic Aberration do Magic Bullet Looks: cada canal com o próprio zoom a partir do meio."
+    desc-en="Magic Bullet Looks' Chromatic Aberration tool: each channel zoomed by its own amount from the center."
+    category="looks"
+    stage="mblooks"
+    looks="chab"
+    tags="magic bullet,looks,red giant,chromatic aberration,aberracao cromatica,rgb split">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="redCyan" label="Red/Cyan" default="0.0" min="-30.0" max="30.0" step="0.01" />
+        <slider id="greenMagenta" label="Green/Magenta" default="0.0" min="-30.0" max="30.0" step="0.01" />
+        <slider id="blueYellow" label="Blue/Yellow" default="0.0" min="-30.0" max="30.0" step="0.01" />
+    </params>
+
+    <!-- Na vitrine, o padrão (0) não separa as cores: separação forte. (vitrine, 0.668.0) -->
+    <preview>
+        <set param="redCyan" value="15.0" />
+        <set param="blueYellow" value="-15.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

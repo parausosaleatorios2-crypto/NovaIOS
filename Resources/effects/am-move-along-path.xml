@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MOVER AO LONGO DO CAMINHO — o Move Along Path do Alight Motion, conta por conta (0.827.0)
+  ============================================================================
+
+  Pedido do snow (28/10/2026): "faça o efeito move along path 100% igual do alight motion". Mesmos parâmetros,
+  mesmos ids, faixas, passos, marcas e padrões do `com.alightcreative.effect.movealongpath3` do AM 5.0.281 (um
+  projeto do AM importado cai direto aqui); os textos são os do AM em português (`values-pt-rBR`). O script dele não
+  é JavaScript: é Kotlin dentro do APK (`MoveAlongPathKt.script_moveAlongPath3`), lido do bytecode e escrito de novo
+  em `model/MoverPeloCaminho.kt` (o arquivo do AM não entra no repositório).
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - O caminho é o CONTORNO da camada imediatamente abaixo (a anterior na pilha, no mesmo grupo) — ou, se esta camada
+    tem camada mãe, o contorno da MÃE. Com o efeito ligado a camada deixa de seguir a mãe (o AM pula o parentesco
+    dela): a mãe só empresta o caminho.
+  - A âncora da camada vai para o ponto a Progresso × comprimento do caminho, medido pelo `PathMeasure` do Android —
+    o mesmo que o AM usa, então a distância ao longo da curva é a mesma. Só o PRIMEIRO contorno conta.
+  - Girar Automaticamente: a camada gira para acompanhar a direção do caminho naquele ponto; a Orientação soma por
+    cima (com a chave desligada, só a Orientação).
+  - Inserção/Desvio afasta a camada do caminho na perpendicular (positivo = para fora num contorno no sentido
+    horário, como o retângulo e o círculo); o Deslocamento soma em px, por último.
+  - O contorno é o do AM: retângulo começando no canto de cima à esquerda, círculo começando em cima, os dois no
+    sentido horário; desenho da caneta na ordem dos pontos; mídia e sólido pelo retângulo deles. Texto, grupo, nulo e
+    áudio não têm contorno no AM: lá a camada some (a conta dá NaN) — aqui também some.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele move a camada. Quem executa é
+  `model/MoverPeloCaminho.kt`, dentro de `LayerGeometry.matrizLocal`, por onde passa a matriz de toda camada (prévia,
+  exportação, seleção, filhos e o desfoque de movimento). O shader abaixo só copia a entrada, para o caso de algum
+  caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-move-along-path"
+    name="Mover ao longo do caminho"
+    name-en="Move Along Path"
+    desc="Posiciona a camada num ponto ao longo do contorno da camada imediatamente abaixo — ou da camada mãe (o Move Along Path do Alight Motion)."
+    desc-en="Positions the layer at a point partway along the outline path of the layer immediately beneath — or of its parent layer (Alight Motion's Move Along Path)."
+    category="distort"
+    stage="transform"
+    tags="mover,caminho,ao longo do caminho,seguir caminho,trajeto,trajetória,contorno,forma,progresso,tangente,girar,move along path,follow path,path,motion path,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="progress" label="Progresso" default="0.0" min="0.0" max="1.0" step="0.001" type="percent"
+            ticks="-1.0,0.0,1.0" />
+        <spinner id="angle" label="Orientação" default="0.0" min="-1800.0" max="1800.0" step="1" type="angle"
+            ticks="-90,-45,0,45,90" />
+        <switch id="tangent" label="Girar Automaticamente" default="true" />
+        <spinner id="inset" label="Inserção/Desvio" default="0.0" min="-500.0" max="500.0" step="1" ticks="0.0" />
+        <point id="offset" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

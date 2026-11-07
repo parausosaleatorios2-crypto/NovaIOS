@@ -1,0 +1,686 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ADD GRAIN (o do After Effects, "VISINF Grain Implant")
+  ============================================================================
+  O Add Grain do AE é o Grain Implant da Visual Infinity (Grain Surgery): um
+  grafo de nós, todo em float. Lido do AddGrain.aex e conferido pixel a pixel
+  contra o AE 2023 do snow (tools/addgrain/benchmark, 10/10/2026):
+
+  1. RUÍDO. Gaussiana N(0,1) por canal, do `ran2` do Numerical Recipes com o
+     método polar. O gerador é semeado a cada 32 px da linha, com a posição:
+     ((x + 256) alinhado a 32) XOR ((y + 256) << 16), + 1, XOR a semente; o
+     pixel k do trecho usa as gaussianas 3k, 3k+1 e 3k+2. Por isso o grão do
+     app é O MESMO do AE, número por número (o modelo em Python bateu com o
+     render a 1/65535).
+  2. ANIMAÇÃO. A semente é Random Seed XOR ⌊Animation Speed · quadro⌋ (o
+     quadro é o tempo da CAMADA). Com Animate Smoothly, mistura o ruído da
+     semente seguinte pela fração, e normaliza por 1/√((1−t)² + t²).
+  3. COR. A matriz s·I + (1−s)/3 (s = Saturation / 2; Monochromatic = 0),
+     vezes a intensidade de cada canal: Intensity · max(Size, 1) · 0,1 ·
+     max(Softness·Size, 1) · a do canal · a Tint (a cor dividida pela média,
+     misturada com 1 pela Tint Amount).
+  4. TAMANHO. Gaussiana 2D normalizada, σ = Softness·Size·(o Size do canal),
+     × Aspect Ratio na horizontal, num núcleo de max(9, ⌊6·Softness·Size⌋) px
+     (× Aspect na largura) — o mesmo para os três canais.
+  5. APLICAÇÃO. O grão × a curva do canal da imagem (Shadows→Midtones abaixo
+     do Midpoint, Midtones→Highlights acima, × o Channel Balance), e o modo:
+     Add o + g; Multiply o·eᵍ; Film 1 − (1 − o)·eᵍ; Screen e Overlay na conta
+     do plugin. Recorte em 0..1. A cor é a RETA; o alfa passa.
+  6. BLEND WITH ORIGINAL. A máscara do casamento de cor (RGB, Hue, Chroma,
+     Luminance, um canal: a média dos quadrados das diferenças menos
+     Tolerance², caindo com 1/Softness²) e/ou da camada de máscara, desfocada
+     pelo Blur Matte; o resultado volta para o original por máscara · Amount.
+     Sem casamento e sem camada, a máscara é 0 (o Amount não faz nada).
+  7. VIEWING MODE. Preview: o grão só na caixa (o resto é o original), com a
+     borda de 2 px; Blending Matte: a máscara.
+
+  Os passes. O buffer é RGBA8, e cada valor vai em 21 bits (normalizado pelo
+  desvio do próprio canal): os três canais em DOIS buffers. Com 11 + 11 + 10
+  bits num só, 1 a 8% dos px saíam a 1 nível do AE; gerando tudo na hora, sem
+  buffer, nenhum — os 21 bits dão o mesmo que a conta inteira.
+    0  agN0, agN1  o ruído, já na matriz de cor (as duas palavras);
+    1  agH0, agH1  a convolução horizontal (as duas palavras);
+    2  agN0  a máscara do Blend (só com Blur Matte);
+    3  agN1  ...desfocada em x;
+    4  agN0  ...e em y;
+    5  a saída: a convolução vertical, a aplicação, o Blend e a vista.
+  Os passes 0 e 1 escrevem nos DOIS buffers de uma vez (`target="agN0,agN1"`,
+  `fragColor1`, 0.660.0). Até a 0.659 eram quatro passes, e o ruído inteiro
+  era gerado DUAS vezes, uma para cada palavra: na GPU do PC, a 1080, eram
+  26 ms de cada lado num efeito de 57. A conta é a mesma, bit a bit.
+  Fora da camada o grão do AE continua: os quatro buffers têm uma MOLDURA de
+  128 px em volta da camada (`margin`, 0.569.0) — o ruído e a convolução
+  horizontal são calculados lá também, uma vez, nos passes de sempre. Antes
+  eram gerados na hora por cada pixel da borda que os lia (o mesmo número
+  refeito de 36 a ~1500 vezes, conforme o núcleo), e o gerador dentro da
+  convolução e da saída deixava esses passes caros inteiros: na GPU do PC,
+  a 1080, 101 → ~50 ms no padrão, e o grão grande (Size 3, Softness 2) saía
+  de mais de 2 s por quadro. A diferença para a conta de antes é o grão da
+  moldura também passar pelos 21 bits do buffer.
+
+  Diferenças que ficam (ver docs/PENDENCIAS-DOS-EFEITOS-AE.md):
+  - Preset (os Film Stocks: núcleos 2D de 64 × 64 lidos de arquivo): fora.
+  - O grão é em px do BUFFER: numa foto/vídeo escalada, o AE granula em px da
+    mídia.
+  - Em 8 bpc o casamento de cor por Hue e o Blur Matte erram 1 nível em
+    0,25% dos px (conversões internas do AE que não dá para ler).
+  - A camada de máscara chega como está na composição (o If Mask Size Differs
+    do AE — Center / Stretch to Fit, sobre a fonte da camada — não existe aqui).
+  - No AE o efeito nasce em Viewing Mode = Preview; aqui nasce em Final Output.
+-->
+<effect
+    id="nova.effect.addgrain"
+    name="Adicionar grão (Add Grain)"
+    name-en="Add Grain"
+    desc="O Add Grain do After Effects: grão de filme com tamanho, cor, curva de sombras/luzes e animação — o mesmo grão do AE, pixel a pixel."
+    desc-en="After Effects' Add Grain: film grain with size, color, shadow/highlight response and animation — the same grain as AE, pixel for pixel."
+    category="stylize"
+    tags="grão,grain,ruído,noise,filme,film,add grain,after effects,textura,analógico">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- margin = MARGEM do shader: a moldura cobre o maior raio do núcleo (127 px) -->
+        <texture id="agN0" src="buffer" margin="128" />
+        <texture id="agN1" src="buffer" margin="128" />
+        <texture id="agH0" src="buffer" margin="128" />
+        <texture id="agH1" src="buffer" margin="128" />
+        <texture id="maskImg" src="layer" label="Mask Layer" empty="transparent" />
+
+        <selector id="viewMode" label="Viewing Mode" default="2"
+                  options="Preview|Blending Matte|Final Output" />
+
+        <point id="previewCenter" group="Preview Region" label="Center" defaultX="0.5" defaultY="0.5"
+               min="-1.0" max="2.0" unit="px" />
+        <slider id="previewWidth" group="Preview Region" label="Width" type="integer"
+                default="200" min="50" max="1024" step="1" />
+        <slider id="previewHeight" group="Preview Region" label="Height" type="integer"
+                default="200" min="50" max="1024" step="1" />
+        <switch id="showBox" group="Preview Region" label="Show Box" default="true" />
+        <color id="boxColor" group="Preview Region" label="Box Color" default="#FFFFFF" />
+
+        <slider id="intensity" group="Tweaking" label="Intensity"
+                default="1.0" min="0.0" max="100.0" step="0.01" snap="1.0" />
+        <slider id="grainSize" group="Tweaking" label="Size"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="softness" group="Tweaking" label="Softness"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="aspectRatio" group="Tweaking" label="Aspect Ratio"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="redIntensity" group="Tweaking" label="Red Intensity"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="greenIntensity" group="Tweaking" label="Green Intensity"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="blueIntensity" group="Tweaking" label="Blue Intensity"
+                default="1.0" min="0.0" max="10.0" step="0.01" snap="1.0" />
+        <slider id="redSize" group="Tweaking" label="Red Size"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="greenSize" group="Tweaking" label="Green Size"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="blueSize" group="Tweaking" label="Blue Size"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+
+        <switch id="monochromatic" group="Color" label="Monochromatic" default="false" />
+        <slider id="saturation" group="Color" label="Saturation" showIf="monochromatic=false"
+                default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <slider id="tintAmount" group="Color" label="Tint Amount"
+                default="100.0" min="0.0" max="100.0" step="0.1" />
+        <color id="tintColor" group="Color" label="Tint Color" default="#FFFFFF" />
+
+        <selector id="blendingMode" group="Application" label="Blending Mode" default="0"
+                  options="Film|Multiply|Add|Screen|Overlay" />
+        <slider id="shadows" group="Application" label="Shadows"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="midtones" group="Application" label="Midtones"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="highlights" group="Application" label="Highlights"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="midpoint" group="Application" label="Midpoint"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="redShadows" group="Channel Balance" label="Red Shadows"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="redMidtones" group="Channel Balance" label="Red Midtones"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="redHighlights" group="Channel Balance" label="Red Highlights"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="greenShadows" group="Channel Balance" label="Green Shadows"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="greenMidtones" group="Channel Balance" label="Green Midtones"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="greenHighlights" group="Channel Balance" label="Green Highlights"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="blueShadows" group="Channel Balance" label="Blue Shadows"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="blueMidtones" group="Channel Balance" label="Blue Midtones"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+        <slider id="blueHighlights" group="Channel Balance" label="Blue Highlights"
+                default="1.0" min="0.0" max="5.0" step="0.01" snap="1.0" />
+
+        <slider id="animationSpeed" group="Animation" label="Animation Speed"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <switch id="animateSmoothly" group="Animation" label="Animate Smoothly" default="false" />
+        <slider id="randomSeed" group="Animation" label="Random Seed" type="integer"
+                default="0" min="0" max="10000" step="1" />
+
+        <slider id="blendAmount" group="Blend with Original" label="Amount"
+                default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <selector id="combineMatchAndMask" group="Blend with Original" label="Combine Match and Mask Using" default="0"
+                  options="Multiply|Screen" />
+        <slider id="blurMatte" group="Blend with Original" label="Blur Matte"
+                default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <selector id="matchColorUsing" group="Color Matching" label="Match Color Using" default="1"
+                  options="Off|RGB|Hue|Chroma|Luminance|Red Channel|Green Channel|Blue Channel" />
+        <slider id="matchingTolerance" group="Color Matching" label="Matching Tolerance"
+                default="0.1" min="0.0" max="1.0" step="0.001" />
+        <slider id="matchingSoftness" group="Color Matching" label="Matching Softness"
+                default="0.1" min="0.0" max="1.0" step="0.001" />
+        <switch id="invertMatch" group="Color Matching" label="Invert Match" default="false" />
+        <color id="matchingColor" group="Color Matching" label="Matching Color" default="#7F7F7F" />
+        <selector id="maskingMode" group="Masking Layer" label="Masking Mode" default="0"
+                  options="Intensity|Alpha|Inverted Intensity|Inverted Alpha" />
+    </params>
+
+    <!-- Na vitrine, o grão padrão some a 64 dp: grosso e forte. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="intensity" value="8.0" />
+        <set param="grainSize" value="2.5" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="agN0,agN1" />                     <!-- 0: o ruído, as duas palavras -->
+        <pass target="agH0,agH1" />                     <!-- 1: a convolução em x, as duas palavras -->
+        <pass target="agN0" skipIfZero="blurMatte" />   <!-- 2: a máscara do Blend -->
+        <pass target="agN1" skipIfZero="blurMatte" />   <!-- 3: desfocada em x -->
+        <pass target="agN0" skipIfZero="blurMatte" />   <!-- 4: e em y -->
+        <pass />                                        <!-- 5: a saída -->
+    </passes>
+
+    <shader><![CDATA[
+
+// ============================================================================
+// Os sliders do AE são em ponto fixo 16.16 (0x1800097e0: int · 1/65536).
+float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+
+// ---- o ran2 do Numerical Recipes (0x18000d630) e a gaussiana polar (0x18000dc00) ----
+// Em inteiros de 32 bits pelo método de Schrage: nenhum produto passa de 2³¹.
+int gIdum;
+int gIdum2;
+int gIy;
+int gIv[32];
+bool gTem;
+float gGset;
+
+void semear(int s) {
+    // 0x18000dd70: o positivo vira negativo; a primeira chamada toma o módulo (0 seria o relógio no AE)
+    int idum = max(abs(s), 1);
+    gIdum2 = idum;
+    for (int j = 39; j >= 0; j--) {
+        int k = idum / 53668;
+        idum = 40014 * (idum - k * 53668) - k * 12211;
+        if (idum < 0) idum += 2147483563;
+        if (j < 32) gIv[j] = idum;
+    }
+    gIdum = idum;
+    gIy = gIv[0];
+    gTem = false;
+}
+
+float uniforme() {
+    int k = gIdum / 53668;
+    gIdum = 40014 * (gIdum - k * 53668) - k * 12211;
+    if (gIdum < 0) gIdum += 2147483563;
+    k = gIdum2 / 52774;
+    gIdum2 = 40692 * (gIdum2 - k * 52774) - k * 3791;
+    if (gIdum2 < 0) gIdum2 += 2147483399;
+    int j = gIy / 67108862;
+    gIy = gIv[j] - gIdum2;
+    gIv[j] = gIdum;
+    if (gIy < 1) gIy += 2147483562;
+    // AM e RNMX exatamente como o plugin os tem em float
+    return min(float(gIy) * uintBitsToFloat(0x30000001u), uintBitsToFloat(0x3f7ffffeu));
+}
+
+float gaussiana() {
+    if (gTem) {
+        gTem = false;
+        return gGset;
+    }
+    float v1 = 0.0;
+    float v2 = 0.0;
+    float rsq = 0.5;
+    for (int tentativa = 0; tentativa < 64; tentativa++) {
+        v1 = 2.0 * uniforme() - 1.0;
+        v2 = 2.0 * uniforme() - 1.0;
+        rsq = v2 * v2 + v1 * v1;
+        if (rsq < 1.0 && rsq != 0.0) break;
+    }
+    float fac = sqrt(-2.0 * log(rsq) / rsq) * 0.5;
+    gGset = fac * v2;
+    gTem = true;
+    return fac * v1;
+}
+
+// O NoiseNode (0x1800156c0): o trecho de 32 px da linha tem o próprio gerador; o pixel k dele usa as
+// gaussianas 3k..3k+2 (× 2: o nó é gaussiana · 2 + 0). `q` em px da camada.
+vec3 ruidoDe(ivec2 q, int semente) {
+    int X = q.x + 256;
+    int Y = q.y + 256;
+    int bloco = X - (X & 31);
+    semear((((bloco & 0xffff) ^ (Y << 16)) + 1) ^ semente);
+    int pular = (X & 31) * 3;
+    for (int i = 0; i < pular; i++) gaussiana();
+    float a = gaussiana();
+    float b = gaussiana();
+    float c = gaussiana();
+    return vec3(a, b, c) * 2.0;
+}
+
+// ---- o que todos os passes dividem -----------------------------------------------------------
+ivec2 gT;          // o buffer
+ivec2 gN;          // a camada do AE dentro dele, em px
+ivec2 gInicio;     // o canto da camada no buffer
+int gSemente1;
+int gSemente2;
+float gFade;
+float gNorma;
+float gA;          // a matriz de cor (0x18000ae50): a·I + b (todos os elementos)
+float gB;
+vec3 gSigma0;      // o desvio de cada canal do ruído depois da matriz
+float gEscala;     // a resolução reduzida da prévia (o downsample do AE)
+float gMac;        // Softness · Size (o σ base)
+int gW;            // o núcleo
+int gH;
+vec3 gSigX;        // o σ de cada canal
+vec3 gSigY;
+
+void preparar() {
+    gT = textureSize(inputImg, 0);
+    gN = clamp(ivec2(floor(max(acCamada, vec2(0.001)) * vec2(gT) + 0.5)), ivec2(1), gT);
+    gInicio = (gT - gN) / 2;
+    gEscala = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+
+    // a semente e a mistura (0x1800073a0): o quadro é o tempo da camada
+    float dq = acFrameDuration > 0.0 ? acFrameDuration : 1.0 / 30.0;
+    int quadro = int(floor(max(acTime, 0.0) / dq + 0.001));
+    int semente = int(randomSeed + 0.5);
+    float vel = fixo(animationSpeed);
+    gSemente1 = semente;
+    gSemente2 = semente;
+    gFade = 0.0;
+    if (vel != 0.0) {
+        float x = vel * float(quadro);
+        int e = int(x);
+        gSemente1 = semente ^ e;
+        gSemente2 = semente ^ (e + 1);
+        if (animateSmoothly) gFade = x - float(e);
+    }
+    float x0 = gFade + gFade;
+    gNorma = 1.0 / sqrt(x0 * gFade - x0 + 1.0);
+
+    // a matriz: s = Saturation / 2 (Monochromatic = 0)
+    float s = monochromatic ? 0.0 : fixo(saturation) * 0.5;
+    gA = 1.0 - abs(1.0 - s) + max(s - 1.0, 0.0);
+    gB = max(1.0 - s, 0.0) * (1.0 / 3.0);
+    float sig = sqrt((gA + gB) * (gA + gB) + 2.0 * gB * gB);
+    gSigma0 = vec3(sig);
+
+    // o núcleo (0x180006ee0)
+    float tam = fixo(grainSize);
+    tam = tam > 0.0 ? tam : 0.001;
+    gMac = fixo(softness) * tam;
+    gMac = gMac > 0.0 ? gMac : 0.001;
+    float asp = fixo(aspectRatio);
+    asp = asp > 0.0 ? asp : 0.001;
+    gW = clamp(int(gEscala * gMac * asp * 6.0), 9, 255);
+    gH = clamp(int(gMac * gEscala * 6.0), 9, 255);
+    vec3 sc = vec3(fixo(redSize), fixo(greenSize), fixo(blueSize)) * gMac;
+    sc = mix(vec3(0.001), sc, greaterThan(sc, vec3(0.0)));
+    gSigX = gEscala * sc * asp;
+    gSigY = gEscala * sc;
+}
+
+// O ruído de um px da camada, já misturado (Animate Smoothly), normalizado e na matriz de cor.
+vec3 ruidoV(ivec2 q) {
+    vec3 n = ruidoDe(q, gSemente1);
+    if (gFade == 1.0) {
+        n = ruidoDe(q, gSemente2);
+    } else if (gFade != 0.0) {
+        vec3 n2 = ruidoDe(q, gSemente2);
+        n = n + (n2 - n) * gFade;
+    }
+    n *= gNorma;
+    return gA * n + gB * (n.x + n.y + n.z);
+}
+
+// O que vai nos buffers é o valor dividido por FAIXA desvios do próprio canal (passar de 8σ é 1 em 10¹⁵).
+const float FAIXA = 8.0;
+
+// 3 valores em [−1, 1] em 63 bits — 21 por canal —, em duas palavras de 32 bits (dois buffers RGBA8).
+uvec2 palavras(vec3 u) {
+    uvec3 q = uvec3(floor((clamp(u, -1.0, 1.0) * 0.5 + 0.5) * 2097151.0 + 0.5));
+    return uvec2(q.x | (q.y << 21), (q.y >> 11) | (q.z << 10));
+}
+
+vec4 bytesDe(uint b) {
+    return vec4(uvec4(b & 255u, (b >> 8) & 255u, (b >> 16) & 255u, b >> 24)) / 255.0;
+}
+
+uint palavraDe(vec4 c) {
+    uvec4 o = uvec4(floor(c * 255.0 + 0.5));
+    return o.x | (o.y << 8) | (o.z << 16) | (o.w << 24);
+}
+
+vec3 valores(vec4 c0, vec4 c1) {
+    uint a = palavraDe(c0);
+    uint b = palavraDe(c1);
+    uvec3 q = uvec3(a & 2097151u, (a >> 21) | ((b & 1023u) << 11), b >> 10);
+    return vec3(q) / 2097151.0 * 2.0 - 1.0;
+}
+
+// O peso do tap i (gaussiana de σ) — a soma normaliza depois.
+vec3 peso(int i, vec3 sigma) {
+    float fi = float(i * i);
+    return exp(-0.5 * fi / (sigma * sigma));
+}
+
+// A soma e a soma dos quadrados do núcleo de um eixo (para normalizar e guardar).
+void somas(int n, vec3 sigma, out vec3 soma, out vec3 quad) {
+    soma = vec3(0.0);
+    quad = vec3(0.0);
+    for (int k = 0; k < n; k++) {
+        vec3 w = peso(k - (n >> 1), sigma);
+        soma += w;
+        quad += w * w;
+    }
+}
+
+// A moldura dos quatro buffers (o `margin` deles): o texel (0, 0) de agN*/agH* é o (−MARGEM, −MARGEM) do buffer
+// da camada. Cobre o maior raio do núcleo (127): todo tap que sai da camada cai nela.
+const int MARGEM = 128;
+
+// ---- Blend with Original: a máscara (0x18000cf50) ------------------------------------------------
+vec3 hsv(vec3 c) {
+    float mx = max(max(max(0.0, c.r), c.g), c.b);
+    float mn = min(min(min(1.0, c.r), c.g), c.b);
+    float s = mx == 0.0 ? 0.0 : (mx - mn) / mx;
+    if (s == 0.0) return vec3(0.0, 0.0, mx);
+    float d = mx - mn;
+    float h = c.r == mx ? (c.g - c.b) / d : (c.g == mx ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0);
+    h *= 60.0;
+    if (h < 0.0) h += 360.0;
+    return vec3(h / 360.0, s, mx);
+}
+
+// O espaço do casamento. Na IMAGEM, o ColorspaceNode do plugin trabalha no formato do AE (8 bits): trunca e
+// fica com o byte de baixo — o I/Q negativo do Chroma dá a volta (−0,1 vira ~0,9).
+vec3 espaco(vec3 c, int modo, bool imagem) {
+    if (modo == 1) return c;
+    if (modo == 2) return hsv(c);
+    vec3 r;
+    if (modo == 3) {
+        r = vec3(0.0, dot(c, vec3(0.596, -0.275, -0.321)), dot(c, vec3(0.212, -0.523, 0.311)));
+    } else if (modo == 4) {
+        r = vec3(uintBitsToFloat(0x3eaaaaabu) * (c.r + c.g + c.b));
+    } else {
+        r = vec3(modo == 5 ? c.r : (modo == 6 ? c.g : c.b));
+    }
+    if (!imagem) return r;
+    ivec3 b = ivec3(trunc(r * 255.0)) & 255;
+    return vec3(b) / 255.0;
+}
+
+// O valor da máscara num texel do buffer (antes do desfoque).
+float mascara(ivec2 t) {
+    vec4 o = texelFetch(inputImg, t, 0);
+    float casa = -1.0;
+    int modo = matchColorUsing;           // 0 Off, 1 RGB, 2 Hue, 3 Chroma, 4 Luminance, 5..7 R/G/B
+    if (modo != 0) {
+        vec3 p = espaco(o.rgb, modo, true);
+        vec3 c = espaco(floor(matchingColor.rgb * 255.0 + 0.5) / 255.0, modo, false);
+        vec3 d = p - c;
+        float x = (d.x * d.x + d.y * d.y + d.z * d.z) * (1.0 / 3.0);
+        float tol = fixo(matchingTolerance);
+        float mac = fixo(matchingSoftness);
+        x -= tol * tol;
+        float k = mac > 0.0 ? 1.0 / (mac * mac) : 1e35;
+        casa = x < 0.0 ? 1.0 : max(1.0 - x * k, 0.0);
+        casa = floor(casa * 255.0) / 255.0;          // a máscara sai em 8 bits (truncada) no AE de 8 bpc
+        if (invertMatch) casa = 1.0 - casa;
+    }
+    float mask = -1.0;
+    if (textureSize(maskImg, 0).x > 1) {
+        // a camada de máscara no lugar dela na composição (sem o If Mask Size Differs: ver o cabeçalho)
+        vec4 m = texture(maskImg, (vec2(t) + 0.5) / vec2(gT));
+        int mm = maskingMode;              // 0 Intensity, 1 Alpha, 2 Inverted Intensity, 3 Inverted Alpha
+        // a "intensidade" do plugin é a média dos três canais (0x1800111f0)
+        float v = (mm == 1 || mm == 3) ? m.a : (m.r + m.g + m.b) / 3.0;
+        mask = (mm == 2 || mm == 3) ? 1.0 - v : v;
+    }
+    if (casa < 0.0 && mask < 0.0) return 0.0;
+    if (mask < 0.0) return casa;
+    if (casa < 0.0) return mask;
+    // Combine Match and Mask Using: Multiply (o·g) ou Screen
+    return combineMatchAndMask == 0 ? casa * mask : 1.0 - (1.0 - casa) * (1.0 - mask);
+}
+
+// A máscara num buffer: 16 bits nos dois primeiros bytes.
+vec4 gravarMascara(float m) {
+    float a = floor(clamp(m, 0.0, 1.0) * 65535.0 + 0.5);
+    return vec4(floor(a / 256.0), mod(a, 256.0), 0.0, 255.0) / 255.0;
+}
+
+float lerMascara(vec4 v) {
+    vec2 b = floor(v.rg * 255.0 + 0.5);
+    return (b.x * 256.0 + b.y) / 65535.0;
+}
+
+// O desfoque da máscara: gaussiana de W = max(9, ⌊3·blur⌋) e σ = blur, com a borda espelhada na CAMADA.
+float desfocarMascara(ivec2 t, bool emX) {
+    float blur = fixo(blurMatte);              // em px da camada (o plugin não o reduz na prévia)
+    int W = clamp(int(blur * 3.0), 9, 255);
+    int r = W >> 1;
+    float soma = 0.0;
+    float acc = 0.0;
+    int eixo = emX ? 0 : 1;
+    int lo = gInicio[eixo];
+    int n = gN[eixo];
+    for (int k = 0; k < W; k++) {
+        int i = k - r;
+        float w = exp(-0.5 * float(i * i) / (blur * blur));
+        soma += w;
+        ivec2 p = t;
+        int c = p[eixo] + i - lo;
+        c = c < 0 ? -c - 1 : (c >= n ? 2 * n - 1 - c : c);
+        p[eixo] = clamp(c, 0, n - 1) + lo;
+        vec4 v = emX ? texelFetch(agN0, p + MARGEM, 0) : texelFetch(agN1, p + MARGEM, 0);
+        acc += w * lerMascara(v);
+    }
+    return clamp(acc / soma, 0.0, 1.0);
+}
+
+void main() {
+    preparar();
+    // Os passes 0 a 4 escrevem nos buffers com moldura: o texel deles é o do buffer da camada + MARGEM.
+    ivec2 t = acPass <= 4 ? ivec2(gl_FragCoord.xy) - MARGEM
+                          : min(ivec2(floor(acScreenNorm * vec2(gT))), gT - ivec2(1));
+    ivec2 q = t - gInicio;
+    int rx = gW >> 1;
+    int ry = gH >> 1;
+
+    if (acPass == 0) {
+        // o ruído, só onde a convolução vai ler (a camada e a margem do núcleo; fora do buffer, na moldura)
+        if (any(lessThan(q, -ivec2(rx, ry))) || any(greaterThanEqual(q, gN + ivec2(rx, ry)))) {
+            fragColor = vec4(0.0);
+            fragColor1 = vec4(0.0);
+            return;
+        }
+        uvec2 w = palavras(ruidoV(q) / (FAIXA * gSigma0));
+        fragColor = bytesDe(w.x);       // agN0
+        fragColor1 = bytesDe(w.y);      // agN1
+        return;
+    }
+
+    if (acPass == 1) {
+        // as linhas da camada e as da margem do núcleo, também as que caem fora do buffer (a saída as lê)
+        if (any(lessThan(q, ivec2(0, -ry))) || any(greaterThanEqual(q, gN + ivec2(0, ry)))) {
+            fragColor = vec4(0.0);
+            fragColor1 = vec4(0.0);
+            return;
+        }
+        vec3 somaX;
+        vec3 quadX;
+        somas(gW, gSigX, somaX, quadX);
+        vec3 acc = vec3(0.0);
+        for (int k = 0; k < gW; k++) {
+            ivec2 p = ivec2(t.x + k - rx, t.y) + MARGEM;
+            vec3 v = valores(texelFetch(agN0, p, 0), texelFetch(agN1, p, 0)) * FAIXA * gSigma0;
+            acc += peso(k - rx, gSigX) * v;
+        }
+        // normalizado pelo desvio dele: σ0 · √(Σk²) / Σk
+        vec3 sigH = gSigma0 * sqrt(quadX) / somaX;
+        uvec2 w = palavras(acc / somaX / (FAIXA * sigH));
+        fragColor = bytesDe(w.x);       // agH0
+        fragColor1 = bytesDe(w.y);      // agH1
+        return;
+    }
+
+    if (acPass == 2) {
+        if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN))) {
+            fragColor = vec4(0.0);
+            return;
+        }
+        fragColor = gravarMascara(mascara(t));
+        return;
+    }
+
+    if (acPass == 3 || acPass == 4) {
+        if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN))) {
+            fragColor = vec4(0.0);
+            return;
+        }
+        fragColor = gravarMascara(desfocarMascara(t, acPass == 3));
+        return;
+    }
+
+    // ---- 7: a saída ----
+    vec4 original = texelFetch(inputImg, t, 0);
+    if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gN))) {
+        fragColor = original;          // fora da camada do AE
+        return;
+    }
+
+    // a máscara do Blend (a desfocada vem dos passes 2–4)
+    float amount = fixo(blendAmount) / 100.0;
+    bool temMascara = matchColorUsing != 0 || textureSize(maskImg, 0).x > 1;
+    float m = 0.0;
+    if (temMascara && (amount > 0.0 || viewMode == 1)) {
+        if (fixo(blurMatte) > 0.0) {
+            m = lerMascara(texelFetch(agN0, t + MARGEM, 0));
+        } else {
+            m = mascara(t);
+        }
+    }
+    if (viewMode == 1) {
+        fragColor = vec4(vec3(floor(m * 255.0 + 0.5) / 255.0), 1.0);
+        return;
+    }
+
+    // a convolução vertical
+    vec3 somaX;
+    vec3 quadX;
+    somas(gW, gSigX, somaX, quadX);
+    vec3 somaY;
+    vec3 quadY;
+    somas(gH, gSigY, somaY, quadY);
+    vec3 sigH = gSigma0 * sqrt(quadX) / somaX;
+    vec3 g = vec3(0.0);
+    for (int j = 0; j < gH; j++) {
+        int y = t.y + j - ry;
+        // fora do buffer, até 24 linhas: a linha da moldura (o grão que o AE continua além da camada); mais
+        // longe (núcleo enorme encostado na borda), a linha mais perto
+        if ((y < 0 || y >= gT.y) && abs(j - ry) > 24) y = clamp(y, 0, gT.y - 1);
+        ivec2 p = ivec2(t.x, y) + MARGEM;
+        vec3 w = valores(texelFetch(agH0, p, 0), texelFetch(agH1, p, 0)) * FAIXA * sigH;
+        g += peso(j - ry, gSigY) * w;
+    }
+    g /= somaY;
+
+    // a amplitude de cada canal (0x180006ee0 + a Tint de 0x1800073a0)
+    float tam = fixo(grainSize);
+    tam = tam > 0.0 ? tam : 0.001;
+    float amp = max(0.0, fixo(intensity) * max(tam, 1.0)) * 0.1 * (gEscala * max(gMac, 1.0));
+    vec3 vec = monochromatic ? vec3(amp)
+        : vec3(fixo(redIntensity), fixo(greenIntensity), fixo(blueIntensity)) * amp;
+    vec3 cor = floor(tintColor.rgb * 255.0 + 0.5) / 255.0;
+    float soma = cor.r + cor.g + cor.b;
+    vec3 tinta = soma == 0.0 ? vec3(1.0) : cor / (soma / 3.0);
+    float qt = fixo(tintAmount);
+    vec = vec * (qt * tinta / 100.0 + (1.0 - qt / 100.0));
+    g *= vec;
+
+    // a curva de cada canal pela imagem (o MultiplierNode)
+    vec3 o = original.rgb;
+    float mid = fixo(midpoint);
+    float k1 = mid == 0.0 ? 1e30 : 1.0 / mid;
+    float k2 = mid == 1.0 ? 1e30 : 1.0 / (1.0 - mid);
+    vec3 S = fixo(shadows) * vec3(fixo(redShadows), fixo(greenShadows), fixo(blueShadows));
+    vec3 M = fixo(midtones) * vec3(fixo(redMidtones), fixo(greenMidtones), fixo(blueMidtones));
+    vec3 L = fixo(highlights) * vec3(fixo(redHighlights), fixo(greenHighlights), fixo(blueHighlights));
+    vec3 resp;
+    for (int c = 0; c < 3; c++) {
+        resp[c] = mid > o[c] ? (M[c] - S[c]) * o[c] * k1 + S[c] : (o[c] - mid) * (L[c] - M[c]) * k2 + M[c];
+    }
+    vec3 gg = resp * g;
+
+    // o modo (o BlendNode do plugin)
+    vec3 r;
+    int modo = blendingMode;            // 0 Film, 1 Multiply, 2 Add, 3 Screen, 4 Overlay
+    if (modo == 0) {
+        r = 1.0 - (1.0 - o) * exp(gg);
+    } else if (modo == 1) {
+        r = exp(gg) * o;
+    } else if (modo == 2) {
+        r = o + gg;
+    } else if (modo == 3) {
+        vec3 a = mix(1.0 - gg, gg + 1.0, lessThan(gg, vec3(0.0)));
+        vec3 b = mix(1.0 - o, o + 1.0, lessThan(o, vec3(0.0)));
+        r = 1.0 - b * a;
+    } else {
+        vec3 g5 = gg + 0.5;
+        r = mix(g5 * 2.0 * o, 1.0 - (1.0 - g5) * 2.0 * (1.0 - o), greaterThan(o, vec3(0.5)));
+    }
+    r = clamp(r, 0.0, 1.0);
+
+    // Blend with Original: o grão vai em 8 bits para o MatteNode (o AE de 8 bpc)
+    if (temMascara && amount > 0.0) {
+        r = floor(r * 255.0 + 0.5) / 255.0;
+        r = r + (o - r) * m * amount;
+    }
+
+    // Preview: o grão só na caixa, com a borda de 2 px
+    if (viewMode == 0) {
+        vec2 c = floor(previewCenter * vec2(gN));
+        int cx = clamp(int(c.x), 0, gN.x);
+        int cy = clamp(int(c.y), 0, gN.y);
+        int lw = int(floor(previewWidth + 0.5) * gEscala);
+        int lh = int(floor(previewHeight + 0.5) * gEscala);
+        int x0 = cx - int(float(lw) * 0.5);
+        int y0 = cy + int(float(lh) * -0.5);
+        int x1 = x0 + lw;
+        int y1 = y0 + lh;
+        if (q.x < x0 || q.x >= x1 || q.y < y0 || q.y >= y1) {
+            fragColor = original;
+            return;
+        }
+        if (showBox && (q.x < x0 + 2 || q.x >= x1 - 2 || q.y < y0 + 2 || q.y >= y1 - 2)) {
+            r = floor(boxColor.rgb * 255.0 + 0.5) / 255.0;
+        }
+    }
+    // Em níveis inteiros, como o AE de 8 bpc (arredonda): o RGBA8 da GPU não arredonda igual em todo aparelho.
+    fragColor = vec4(floor(r * 255.0 + 0.5) / 255.0, original.a);
+}
+
+    ]]></shader>
+</effect>

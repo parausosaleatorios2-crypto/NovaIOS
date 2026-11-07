@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Blur gaussiano separável. É o exemplo que justifica todo o sistema de passes.
+
+  A conta que importa:
+
+  Um blur de raio R, feito num passe só, precisa amostrar uma área de
+  (2R+1) × (2R+1) pixels. Com R=20, são 1.681 leituras de textura POR PIXEL.
+  Numa tela 1080p isso é mais de 3 bilhões de leituras por quadro. Não roda.
+
+  Só que a gaussiana é "separável": borrar na horizontal e depois na vertical
+  dá o mesmo resultado matemático que borrar nas duas direções de uma vez. E
+  isso custa (2R+1) + (2R+1) = 82 leituras em vez de 1.681. Vinte vezes menos.
+
+  É por isso que <passes> existe: o passe 0 escreve no buffer `hblur`, o passe
+  1 lê esse buffer e escreve no destino final.
+
+  Em cima disso, <iterations> repete o par de passes. Três repetições de um
+  blur médio ficam mais suaves (e mais parecidas com uma gaussiana real) do que
+  uma repetição de um blur enorme — e ainda saem mais baratas.
+-->
+<effect
+    id="nova.effect.gaussianblur"
+    name="Desfoque gaussiano"
+    name-en="Gaussian Blur"
+    desc="Suaviza a camada. Use iterações para um desfoque mais macio."
+    desc-en="The standard blur, separable in two passes."
+    category="blur"
+    tags="blur,desfoque,suavizar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- Buffer intermediário: onde o passe horizontal deposita o resultado. -->
+        <texture id="hblur" src="buffer" />
+
+        <slider id="radius" label="Raio"
+                default="8.0" min="0.0" max="64.0" step="0.5" ticks="0.0,16.0,32.0,64.0" />
+
+        <slider id="iterations" label="Iterações"
+                default="2" min="1" max="6" step="1" type="integer" />
+    </params>
+
+    <iterations param="iterations" />
+
+    <passes>
+        <pass target="hblur" />  <!-- passe 0: horizontal -->
+        <pass />                 <!-- passe 1: vertical, para o destino final -->
+    </passes>
+
+    <shader><![CDATA[
+
+// Gaussiana de 9 amostras fundida em 5 leituras bilineares (truque bilinear):
+// cada par de amostras adjacentes vira uma única leitura no ponto que reproduz
+// a mesma média ponderada pela interpolação bilinear da GPU — ~44% menos leituras
+// por passe, mesma "suavidade" de gaussiana.
+// offsets = média ponderada dos pares adjacentes; weights = soma dos pares.
+const int   SAMPLE_COUNT = 5;
+const float OFFSETS[5] = float[5](-3.2307692308, -1.3846153846, 0.0, 1.3846153846, 3.2307692308);
+const float WEIGHTS[5] = float[5](0.0702702703, 0.3162162162, 0.2270270270, 0.3162162162, 0.0702702703);
+
+void main() {
+    if (radius <= 0.0) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+
+    // O passe 0 caminha em X, o passe 1 em Y. Um shader, duas direções.
+    //
+    // Cuidado com nomes aqui: `sample` é palavra RESERVADA no GLSL ES 3.00 e
+    // `step` é uma função nativa. Usar qualquer um dos dois como variável dá
+    // erro de compilação (ou, pior, sombreia a função nativa sem avisar).
+    vec2 direction = (acPass == 0) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 stepUv = direction * acTexelSize * (radius * acEscalaDePixel / 4.0);
+
+    vec4 sum = vec4(0.0);
+    for (int i = 0; i < SAMPLE_COUNT; i++) {
+        // O passe 1 lê o buffer que o passe 0 escreveu, não a entrada original.
+        vec2 uv = acScreenNorm + stepUv * OFFSETS[i];
+        vec4 texel = (acPass == 0)
+            ? texture(inputImg, uv)
+            : texture(hblur, uv);
+        sum += texel * WEIGHTS[i];
+    }
+
+    fragColor = sum;
+}
+
+    ]]></shader>
+</effect>

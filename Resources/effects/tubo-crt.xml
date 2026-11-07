@@ -1,0 +1,800 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TUBO DE IMAGEM — o CRT de verdade, em seis passes
+  ============================================================================
+
+  O outro CRT deste app (`crt.xml`) é um passe só: linhas horizontais, uma
+  curvatura e uma vinheta. Serve, e é barato.
+
+  Este é outra categoria de efeito. Ele simula o que faz uma tela de tubo
+  parecer uma tela de tubo quando a câmera filma ela de perto:
+
+   1. **a máscara de sombra** — a imagem não é feita de pixels, e sim de trios
+      de fósforos vermelho/verde/azul. É o que se vê ao aproximar a lente, e é
+      a diferença entre "tem linha na tela" e "isso é um tubo";
+   2. **o vidro** — a superfície é curva, então a imagem estufa no meio e as
+      bordas fogem;
+   3. **o brilho que vaza** — fósforo aceso espalha luz no vidro. Branco não
+      fica branco: fica branco com um halo gordo em volta, e é ele que dá a
+      sensação de LUZ em vez de imagem;
+   4. **a lente que erra** — o vidro grosso separa as cores nas bordas
+      (aberração cromática);
+   5. **a varredura** — o feixe percorre a tela e a câmera não acompanha, daí a
+      faixa de brilho que sobe.
+
+  ============================================================================
+   A PEÇA DE ARQUITETURA QUE ESTE EFEITO ESTREIA
+  ============================================================================
+
+  O halo (item 3) é o que separa um CRT convincente de um filtro de scanline. E
+  ele é caro: é a soma de desfoques de raios muito diferentes — um apertado em
+  volta de cada fósforo e um enorme cobrindo meia tela.
+
+  Fazer isso em resolução cheia não fecha: o raio grande pediria centenas de
+  amostras por pixel. O jeito que o mundo inteiro faz é **descer de resolução** a
+  cada nível, e é exatamente o que o `scale` dos buffers passou a permitir aqui
+  (ver `TextureParam.scale`):
+
+  ```
+    passe 0  →  tela      (1/1)    vidro curvo + fósforos + varredura
+    passe 1  →  brilhoA   (1/4)    corte de brilho + redução
+    passe 2  →  brilhoB   (1/8)    desfoque
+    passe 3  →  brilhoC   (1/16)   desfoque
+    passe 4  →  brilhoD   (1/32)   desfoque
+    passe 5  →  saída     (1/1)    tela + halo + aberração + cor
+  ```
+
+  O nível de 1/32 num vídeo 1080p é um buffer de 33×60: oito amostras ali cobrem
+  meia tela e custam nada. Somados, os quatro níveis dão um halo contínuo, do
+  aperto ao estouro, que nenhum desfoque único produz.
+
+  ============================================================================
+   O QUE ISTO NÃO É
+  ============================================================================
+
+  Não é cópia de código de ninguém: é a mesma FÍSICA, escrita aqui. Máscara de
+  sombra, estufamento, corte de brilho por limiar, disco de Vogel e aberração
+  linear são técnicas públicas, de artigo e de livro.
+
+  E não é um clone de interface: o plugin de referência tem trinta e poucos
+  controles, vários deles dois jeitos de dizer a mesma coisa. Aqui são vinte e
+  quatro, em quatro grupos, escolhidos pelo que muda a imagem de verdade num
+  celular.
+
+  ============================================================================
+   O QUE FAZ ELE PARECER LIGADO, E NÃO UMA FOTO DE TELA
+  ============================================================================
+
+  Três coisas que só existem juntas num tubo de verdade, e que este efeito trata
+  como um sistema só:
+
+   - **o foco cai para as bordas.** O feixe chega torto nas quinas e o ponto
+     abre. Sai da MESMA distância radial do estufamento — não são dois efeitos,
+     é uma geometria;
+   - **o halo esfria ao espalhar.** Perto do fósforo ele tem a cor dele; longe,
+     puxa para o azul, porque azul espalha mais. Por isso os dois níveis largos
+     da cadeia têm cor própria;
+   - **nada fica parado.** A alta tensão oscila: o fósforo sai do lugar, a
+     fileira escorrega e o brilho respira. É o que só aparece em movimento — e o
+     que falta em todo filtro de scanline que se vê por aí.
+
+  ============================================================================
+   ENXUGADO (0.192.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 29 controles no painel. Agora nascem 16 à vista, em quatro grupos:
+  Tela (Máscara, Força da máscara, Tamanho do fósforo, Linhas de varredura,
+  Curvatura do vidro, Faixa de varredura, Instabilidade do feixe), Brilho
+  (Força, Alcance e Corte do halo), Vidro (Separação das cores, Lustro do
+  vidro, Força do reflexo) e Cor (Tinta do fósforo, Saturação, Vinheta). O
+  grupo Aberração virou parte do Vidro: é o vidro grosso que separa as cores.
+
+  Sem predefinições, como o Blob Tracker e o Vidro líquido, então o que só
+  vale num caso aparece só nele (`showIf`): a Força da máscara só com uma
+  máscara; a camada do reflexo e a distância dele só com a Força do reflexo
+  acima de zero.
+
+  Saíram de vez, nos padrões: o Centro do vidro, a Velocidade da varredura,
+  Posterizar (há o efeito Posterizar), a Suavidade do corte, as duas cores do
+  halo (branco perto, azulado longe), a Perda de foco nas bordas, a Direção da
+  aberração, o Espelhar o reflexo (ligado, que é o que um vidro faz), a Gama
+  e o Segurar as altas.
+
+-->
+<effect
+    id="nova.effect.tubocrt"
+    name="Tubo de imagem"
+    name-en="CRT Studio"
+    desc="A tela de tubo inteira: fósforos RGB, vidro curvo, halo de brilho e aberração."
+    desc-en="Full CRT simulation: shadow mask, curved glass, bloom chain and chromatic aberration."
+    category="stylize"
+    tags="crt,tubo,tv,retro,vhs,scanline,fosforo,shadow mask,bloom,glow,aberracao,monitor,arcade,game"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!--
+          A cadeia de buffers. As frações não são arbitrárias: cada nível é
+          metade do anterior, que é o que faz a soma deles cobrir todos os raios
+          sem buraco entre um e outro.
+        -->
+        <texture id="tela"    src="buffer" scale="1.0" />
+        <texture id="brilhoA" src="buffer" scale="0.25" />
+        <texture id="brilhoB" src="buffer" scale="0.125" />
+        <texture id="brilhoC" src="buffer" scale="0.0625" />
+        <texture id="brilhoD" src="buffer" scale="0.03125" />
+
+        <!-- ================================ O PAINEL ================================ -->
+        <selector id="formatoDaTela" group="Tela" label="Máscara" default="1"
+                  options="Nenhuma|Tiras verticais|Tiras horizontais|Pontos|Alvenaria" />
+
+        <!--
+          Quanto a máscara apaga os vizinhos. 0 = sem máscara; 1 = cada célula só
+          acende o canal dela, que é o tubo cru de perto.
+        -->
+        <slider id="forcaDaMascara" showIf="formatoDaTela!=0" group="Tela" label="Força da máscara"
+                default="0.75" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+        <!--
+          O tamanho de UM fósforo, em pixels. O trio RGB ocupa três destes, então
+          o padrão de 3 px dá um trio de 9 px — que é onde o olho ainda separa os
+          pontos num celular e mesmo assim soma de volta para branco.
+
+          Foi medido numa simulação, não chutado: com 6 px por fósforo (o valor
+          que eu tinha posto primeiro) o trio fica com 18 px e a imagem vira
+          confete vermelho-verde-azul em vez de tela de tubo.
+        -->
+        <slider id="pontoDeTela" group="Tela" label="Tamanho do fósforo"
+                default="3.0" min="1.0" max="24.0" step="0.5" ticks="2.0,3.0,6.0,12.0" />
+        <slider id="linhas" group="Tela" label="Linhas de varredura"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="curvatura" group="Tela" label="Curvatura do vidro"
+                default="0.18" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="tremida" group="Tela" label="Faixa de varredura"
+                default="0.25" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!--
+          A INSTABILIDADE DO FEIXE.
+
+          Um tubo nunca está parado: a alta tensão oscila, o feixe treme, e a
+          imagem "respira". É o que separa um CRT vivo de uma textura de
+          scanline colada por cima — e é a coisa que só aparece em movimento,
+          por isso é fácil de esquecer em quem só olha print.
+
+          Um controle só, mexendo em três coisas ao mesmo tempo: o fósforo sai
+          um pouco do lugar, a fileira inteira escorrega de leve, e o brilho
+          respira.
+        -->
+        <slider id="instabilidade" group="Tela" label="Instabilidade do feixe"
+                default="0.15" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="forcaDoBrilho" group="Brilho" label="Força do halo"
+                default="0.9" min="0.0" max="4.0" step="0.01" snap="0.0,1.0" />
+        <slider id="raioDoBrilho" group="Brilho" label="Alcance do halo"
+                default="1.0" min="0.2" max="3.0" step="0.01" snap="1.0" />
+        <slider id="corte" group="Brilho" label="Corte de brilho"
+                default="0.55" min="0.0" max="1.0" step="0.01" />
+        <slider id="deslocamento" group="Vidro" label="Separação das cores"
+                default="0.25" min="0.0" max="3.0" step="0.01" snap="0.0" />
+
+        <!--
+          O BRILHO DO AMBIENTE — e este funciona sem camada nenhuma.
+
+          Mesmo num quarto escuro, o vidro tem um lustro: uma mancha larga de luz
+          vinda de cima e a borda acendendo de raspão. É o mínimo que separa
+          "tela" de "retângulo com imagem", e por isso ele vem ligado.
+        -->
+        <slider id="brilhoDoVidro" group="Vidro" label="Lustro do vidro"
+                default="0.18" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!--
+          ====================================================================
+           O REFLEXO NO VIDRO
+          ====================================================================
+
+          A frente de um tubo é vidro grosso e convexo, e vidro reflete o que
+          está na frente dele. Filmar uma TV ligada num quarto sempre pega a
+          janela, o abajur, quem está filmando — e é isso que faz o olho
+          entender "isto é uma tela de verdade, num lugar de verdade" em vez de
+          "isto é um filtro".
+
+          A camada é escolhida por você (`src="layer"`): uma foto do quarto, uma
+          janela, um vídeo de nuvem passando. O plugin de referência faz igual —
+          ele tem uma entrada de textura para isto.
+
+          Sem camada escolhida, o motor devolve a PRÓPRIA imagem do efeito (é a
+          regra dele, para nada aparecer quebrado), e é por isso que a força
+          nasce em zero: refletir o próprio vídeo seria um resultado esquisito
+          que ninguém pediu. Com a camada escolhida, suba a força.
+        -->
+        <slider id="forcaDoReflexo" group="Vidro" label="Força do reflexo"
+                default="0.0" min="0.0" max="2.0" step="0.01" snap="0.0" />
+        <texture id="reflexo" showIf="forcaDoReflexo>0" group="Vidro" src="layer" label="Camada do reflexo" />
+
+        <!--
+          O quanto o reflexo cabe no vidro. Acima de 1 ele afasta (pega mais do
+          ambiente); abaixo, aproxima. Um reflexo de janela quase sempre quer
+          afastar, porque a janela é maior que a tela.
+        -->
+        <slider id="escalaDoReflexo" showIf="forcaDoReflexo>0" group="Vidro" label="Distância do reflexo"
+                default="1.2" min="0.4" max="3.0" step="0.01" snap="1.0" />
+        <color id="corDaTela" group="Cor" label="Tinta do fósforo" default="#FFFFFFFF" />
+        <slider id="saturacao" group="Cor" label="Saturação"
+                default="1.15" min="0.0" max="2.5" step="0.01" snap="1.0" />
+        <slider id="vinheta" group="Cor" label="Vinheta"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <!-- ===== ESCONDIDOS (hidden): nos padrões; o painel não mostra ===== -->
+        <point id="centro" hidden="true" group="Tela" label="Centro do vidro" defaultX="0.5" defaultY="0.5" />
+
+        <slider id="varredura" hidden="true" group="Tela" label="Velocidade da varredura"
+                default="0.35" min="-3.0" max="3.0" step="0.01" snap="0.0" />
+
+        <slider id="posterizar" hidden="true" group="Tela" label="Posterizar"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="suavidadeDoCorte" hidden="true" group="Brilho" label="Suavidade do corte"
+                default="0.2" min="0.01" max="0.6" step="0.01" />
+
+        <color id="corDoBrilho" hidden="true" group="Brilho" label="Cor do halo" default="#FFFFFFFF" />
+
+        <!--
+          A SEGUNDA COR DO HALO.
+
+          Num tubo, o halo perto do fósforo tem a cor dele, e o que espalha pelo
+          vidro esfria — é dispersão, o azul espalha mais. Por isso os dois
+          níveis largos da cadeia ganham cor própria, e o padrão é um branco
+          puxado para o azul.
+
+          Igualar as duas cores desliga o efeito sem precisar de mais um
+          controle.
+        -->
+        <color id="corDoHaloLargo" hidden="true" group="Brilho" label="Cor do halo largo" default="#FFBBD6FF" />
+
+        <!--
+          O FOCO DO TUBO.
+
+          Tela de tubo não é nítida igual no meio e na beirada: o feixe chega
+          torto nos cantos e o ponto abre. É o mesmo sistema radial do
+          estufamento — uma coisa só, como no plugin de referência, e não dois
+          efeitos separados.
+
+          Zero deixa a tela uniforme; 1 abre bastante nas quinas.
+        -->
+        <slider id="foco" hidden="true" group="Brilho" label="Perda de foco nas bordas"
+                default="0.35" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="anguloDaAberracao" hidden="true" group="Aberração" label="Direção" type="angle"
+                default="0.0" min="-180.0" max="180.0" step="1.0" />
+
+        <!--
+          Reflexo em espelho é invertido — quem olha para a tela vê o quarto
+          espelhado. Ligado por padrão porque é o que acontece; desligar serve
+          para quando a camada já foi feita espelhada.
+        -->
+        <switch id="espelharReflexo" hidden="true" group="Vidro" label="Espelhar o reflexo" default="true" />
+
+        <slider id="gama" hidden="true" group="Cor" label="Gama"
+                default="1.0" min="0.4" max="2.5" step="0.01" snap="1.0" />
+
+        <slider id="tonemap" hidden="true" group="Cor" label="Segurar as altas"
+                default="0.45" min="0.0" max="1.0" step="0.01" snap="0.0" />
+
+    </params>
+
+    <passes>
+        <pass target="tela" />     <!-- 0: vidro + fósforos + varredura -->
+        <pass target="brilhoA" />  <!-- 1: corte de brilho, 1/4 -->
+        <pass target="brilhoB" />  <!-- 2: desfoque, 1/8 -->
+        <pass target="brilhoC" />  <!-- 3: desfoque, 1/16 -->
+        <pass target="brilhoD" />  <!-- 4: desfoque, 1/32 -->
+        <pass />                   <!-- 5: junta tudo, resolução cheia -->
+    </passes>
+
+    <shader><![CDATA[
+
+// ============================================================================
+//  FERRAMENTAS
+// ============================================================================
+
+const float TAU = 6.28318530718;
+
+/** Disco de Vogel: pontos espalhados por ângulo dourado, sem aglomerar. */
+vec2 vogel(int i, int total, float giro) {
+    float dourado = 2.39996323;
+    float r = sqrt(float(i) + 0.5) / sqrt(float(total));
+    float a = float(i) * dourado + giro;
+    return r * vec2(cos(a), sin(a));
+}
+
+/** Ruído barato e determinístico, de 0 a 1. */
+float ruido(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+/** Dois ruídos de uma vez, para deslocar em X e Y. */
+vec2 ruido2(vec2 p) {
+    return vec2(ruido(p), ruido(p + 37.19));
+}
+
+/**
+ * A OSCILAÇÃO DA ALTA TENSÃO.
+ *
+ * Três senos de frequências bem diferentes somados — o truque clássico para ter
+ * algo que parece aleatório sem textura de ruído e sem estado. Some rápido, mas
+ * nunca repete de um jeito que o olho perceba, porque as três frequências não
+ * são múltiplas entre si.
+ */
+float tremorDaFonte(float t) {
+    return sin(t * 99.542) * 0.5 + sin(t * 26.523) * 0.3 + sin(t * 9.802) * 0.2;
+}
+
+/**
+ * O VIDRO É CURVO.
+ *
+ * A UV é empurrada para fora proporcionalmente ao quadrado da distância ao
+ * centro — é o estufamento de uma superfície esférica vista de frente. O eixo X
+ * é corrigido pela proporção antes da conta, senão um vídeo deitado estufaria
+ * mais na largura que na altura.
+ */
+vec2 curvar(vec2 uv) {
+    vec2 p = uv - centro;
+    p.x *= acAspect;
+    float d = dot(p, p);
+    p *= 1.0 + curvatura * d * 0.75;
+    p.x /= acAspect;
+    return centro + p;
+}
+
+/**
+ * ============================================================================
+ *  A MÁSCARA DE SOMBRA
+ * ============================================================================
+ *
+ * A tela é dividida em células do tamanho de um fósforo. Cada célula acende UM
+ * canal (R, G ou B) — quem decide é a posição dela na grade, e o arranjo muda
+ * com o formato escolhido.
+ *
+ * Duas coisas fazem isto parecer tubo em vez de grade desenhada por cima:
+ *
+ *  - **a cor vem do CENTRO da célula**, e não do pixel. É o que faz a imagem
+ *    virar fósforo de verdade: dentro de um fósforo não há detalhe, ele é uma
+ *    coisa só acesa;
+ *  - **o fósforo tem forma**, e o `preenchimento` decide o quanto ele enche a
+ *    célula. Baixo, sobra preto em volta e a grade aparece; alto, os fósforos
+ *    se encostam e a máscara quase some.
+ *
+ * O `* 3.0` compensa a energia: como cada célula acende só um dos três canais,
+ * sem ele a tela sairia com um terço do brilho.
+ */
+vec4 fosforos(vec2 uv) {
+    float lado = max(1.0, pontoDeTela);
+    vec2 celulas = acResolution / lado;
+    vec2 gradeUV = uv * celulas;
+    vec2 indice = floor(gradeUV);
+
+    /*
+     * A INSTABILIDADE, PARTE 1: O FÓSFORO SAI DO LUGAR.
+     *
+     * Cada célula sorteia um deslocamento próprio, refeito algumas vezes por
+     * segundo (o `floor(acTime * 18)` é o que segura o sorteio por um tempo —
+     * sem ele o ruído troca a cada quadro e vira chiado de TV sem sinal).
+     *
+     * E a FILEIRA inteira escorrega junto, com um ruído só dela: é o
+     * "tracking" tremendo, que é o que mais lembra fita e tubo velho.
+     */
+    vec2 desvio = vec2(0.0);
+    if (instabilidade > 0.001) {
+        float quadro = floor(acTime * 18.0);
+        vec2 sorteio = ruido2(indice + quadro) - 0.5;
+        float fileira = ruido(vec2(indice.y, quadro)) - 0.5;
+        desvio = (sorteio * 0.6 + vec2(fileira, 0.0)) * instabilidade / celulas;
+    }
+
+    // A cor do fósforo inteiro: uma amostra no centro da célula. É o que faz a
+    // imagem virar fósforo em vez de ganhar uma grade por cima — dentro de um
+    // fósforo não há detalhe, ele é uma coisa só acesa.
+    vec2 centroDaCelula = (indice + 0.5) / celulas + desvio;
+    vec4 fonte = texture(inputImg, clamp(centroDaCelula, 0.0, 1.0));
+
+    if (formatoDaTela == 0 || forcaDaMascara <= 0.001) return fonte;
+
+    int canal;
+    if (formatoDaTela == 1) {
+        canal = int(mod(indice.x, 3.0));                       // tiras verticais
+    } else if (formatoDaTela == 2) {
+        canal = int(mod(indice.y, 3.0));                       // tiras horizontais
+    } else if (formatoDaTela == 3) {
+        canal = int(mod(indice.x + indice.y, 3.0));            // pontos em diagonal
+    } else {
+        // Alvenaria: cada fileira anda meia célula, como tijolo.
+        canal = int(mod(indice.x + floor(indice.y * 0.5), 3.0));
+    }
+
+    /*
+     * ========================================================================
+     *  A MÁSCARA ESCURECE OS VIZINHOS — ELA NÃO APAGA A IMAGEM
+     * ========================================================================
+     *
+     * A primeira versão multiplicava a cor por uma máscara que nascia em ZERO:
+     * cada célula acendia um canal e matava os outros dois. Simulei antes de
+     * mandar, e o resultado foi este — a imagem vira confete de RGB, o branco
+     * some e a tela perde metade do brilho.
+     *
+     * O certo é a máscara ser uma MODULAÇÃO: o canal da célula fica cheio, os
+     * outros caem até `1 - força`. Com força 0 não há máscara; com 1 é o tubo
+     * cru visto de perto.
+     *
+     * O ganho recompõe o brilho: com força 1, a média de energia cai para um
+     * terço, então multiplica-se por três. A conta é `3/(1+2(1-força))`, que
+     * vale 1 sem máscara e 3 na máscara cheia — a tela não muda de brilho quando
+     * se mexe no controle, que é o mínimo que um controle deve prometer.
+     */
+    float fundo = 1.0 - clamp(forcaDaMascara, 0.0, 1.0);
+    vec3 mascara = vec3(fundo);
+    if (canal == 0) mascara.r = 1.0;
+    else if (canal == 1) mascara.g = 1.0;
+    else mascara.b = 1.0;
+
+    float ganho = 3.0 / (1.0 + 2.0 * fundo);
+
+    // A forma do fósforo dentro da célula: mais aceso no meio, apagando para a
+    // borda. Sem isso a máscara vira listra de cor chapada, que lê como filtro,
+    // não como fósforo.
+    vec2 local = fract(gradeUV) * 2.0 - 1.0;
+
+    /*
+     * A FORMA DO FÓSFORO — e ela muda com o tipo de máscara.
+     *
+     * Grade de abertura (as tiras) tem fósforo COMPRIDO: ele só apaga para os
+     * lados, e por isso a queda olha só o eixo X. Máscara de sombra (os pontos)
+     * tem fósforo REDONDO, que apaga em todas as direções — é a diferença
+     * visível entre um Trinitron e uma TV comum, e vale reproduzir.
+     */
+    float distancia;
+    if (formatoDaTela == 1) {
+        distancia = local.x * local.x;                 // tiras verticais
+    } else if (formatoDaTela == 2) {
+        distancia = local.y * local.y;                 // tiras horizontais
+    } else {
+        distancia = clamp(dot(local, local), 0.0, 1.0); // pontos e alvenaria
+    }
+    float queda = (formatoDaTela >= 3) ? 0.75 : 0.45;
+    float forma = 1.0 - queda * distancia * forcaDaMascara;
+
+    /*
+     * AS LINHAS DE VARREDURA, que são outra coisa.
+     *
+     * A máscara é vertical (os trios); a linha é horizontal (as passadas do
+     * feixe). Num tubo de verdade as duas coexistem, e é a soma delas que dá a
+     * textura característica. A linha anda a cada DOIS fósforos: uma acesa, uma
+     * apagada.
+     */
+    float linha = 1.0;
+    if (linhas > 0.001) {
+        float faixaY = mod(floor(gradeUV.y), 2.0);
+        linha = mix(1.0, 1.0 - linhas, faixaY);
+        // Compensa o escurecimento médio das linhas, pelo mesmo motivo do ganho:
+        // metade das fileiras cai para (1-linhas), então a média é 1 - linhas/2.
+        linha *= 2.0 / (2.0 - linhas);
+    }
+
+    // O ALFA NÃO ENTRA NA MÁSCARA, de propósito. Furar o alfa de acordo com a
+    // grade transformaria a camada numa tela de mosquiteiro — a imagem
+    // apareceria recortada sobre o que estiver embaixo. O fósforo modula LUZ,
+    // e luz é cor.
+    return vec4(fonte.rgb * mascara * ganho * forma * linha, fonte.a);
+}
+
+/**
+ * A FAIXA DE VARREDURA.
+ *
+ * Dente de serra com rampa trapezoidal — sobe rápido, segura, desce rápido —, e
+ * não um seno: o feixe de um tubo não oscila suave, ele varre e volta. Com um
+ * seno a faixa fica com cara de "brilho pulsando", que é outra coisa.
+ */
+float varrer(vec2 uv) {
+    if (tremida <= 0.001) return 1.0;
+    float faixa = fract(uv.x * 0.2 - acTime * varredura + uv.y * 1.2);
+    float trapezio = min(faixa * 2.0, 1.0) - max(0.0, (faixa - 0.95) * 20.0);
+    return mix(1.0, trapezio, clamp(tremida, 0.0, 1.0));
+}
+
+/**
+ * ============================================================================
+ *  ABERRAÇÃO CROMÁTICA
+ * ============================================================================
+ *
+ * Os três canais são lidos em posições diferentes ao longo da MESMA reta. É o
+ * que o vidro grosso de um tubo faz: ele não separa as cores em anel (isso é
+ * lente de câmera), separa numa direção.
+ *
+ * O verde fica parado e vermelho e azul andam para lados opostos — é o arranjo
+ * que mantém a imagem no lugar. Separar os três para o mesmo lado deslocaria a
+ * cena inteira, e aí seria mais fácil mover a camada.
+ */
+vec4 comAberracao(vec2 uv) {
+    vec4 base = texture(tela, clamp(uv, 0.0, 1.0));
+    if (deslocamento <= 0.001) return base;
+
+    float rad = radians(anguloDaAberracao);
+    vec2 direcao = vec2(cos(rad), sin(rad) * acAspect) * acTexelSize * deslocamento * acEscalaDePixel * 4.0;
+
+    base.r = texture(tela, clamp(uv + direcao, 0.0, 1.0)).r;
+    base.b = texture(tela, clamp(uv - direcao, 0.0, 1.0)).b;
+    return base;
+}
+
+/**
+ * ============================================================================
+ *  O QUE O VIDRO DEVOLVE
+ * ============================================================================
+ *
+ * Duas coisas somadas, e as duas são LUZ que chega à lente sem passar pelos
+ * fósforos — por isso entram no fim, depois da máscara e do halo, e não são
+ * moduladas por eles.
+ *
+ * ## O reflexo é um espelho CONVEXO
+ *
+ * A imagem do tubo estufa para fora (`1 + k·d²`); o reflexo faz o contrário,
+ * ele **encolhe** para as bordas (`1 / (1 + k·d²)`). É o que todo espelho
+ * convexo faz — o mesmo motivo de o retrovisor de carro caber o mundo inteiro e
+ * avisar que os objetos estão mais perto do que parecem.
+ *
+ * Inverter o sinal aqui não é detalhe estético: com o reflexo estufando junto
+ * com a imagem, os dois andam juntos e o cérebro lê tudo como uma coisa só —
+ * some a sensação de que existe uma superfície na frente.
+ *
+ * ## E ele acende de raspão
+ *
+ * Fresnel: vidro reflete pouco de frente e muito de lado. Numa tela curva, "de
+ * lado" é a borda — daí o reflexo ser fraco no meio e forte na moldura. É a
+ * pista que o olho usa para saber que a superfície é curva.
+ */
+vec3 reflexoDoVidro(vec2 uv, float distanciaRadial) {
+    vec3 total = vec3(0.0);
+
+    // ---------------------------------------------------- o lustro do ambiente
+    if (brilhoDoVidro > 0.001) {
+        // Uma mancha larga vinda de cima à esquerda, que é de onde vem a luz em
+        // quase todo lugar filmado (janela ou luminária de teto).
+        vec2 g = uv - vec2(0.28, 0.22);
+        g.x *= acAspect;
+        float mancha = exp(-dot(g, g) * 3.2);
+
+        // Mais a borda acendendo: é o mesmo Fresnel, e é o que desenha o
+        // CONTORNO do vidro.
+        float borda = distanciaRadial * distanciaRadial;
+
+        total += vec3(mancha * 0.7 + borda * 0.5) * brilhoDoVidro;
+    }
+
+    // ------------------------------------------------------ a camada refletida
+    if (forcaDoReflexo > 0.001) {
+        vec2 p = uv - centro;
+        p.x *= acAspect;
+
+        // Espelho convexo: encolhe para as bordas, ao contrário da imagem.
+        p /= 1.0 + curvatura * dot(p, p) * 1.5;
+        p /= max(escalaDoReflexo, 0.05);
+        p.x /= acAspect;
+
+        vec2 uvReflexo = centro + p;
+        if (espelharReflexo) uvReflexo.x = 1.0 - uvReflexo.x;
+
+        /*
+         * A BORDA DA CAMADA REFLETIDA SAI SUAVE.
+         *
+         * Repetir a borda esticaria um pixel pela tela toda; cortar seco deixa
+         * uma LINHA RETA no meio do vidro, que denuncia o truque na hora — foi
+         * o que a simulação mostrou, atravessando o canto superior direito.
+         *
+         * Quatro por cento de esmaecimento resolvem: o reflexo termina como
+         * reflexo termina, apagando.
+         */
+        vec2 suave = smoothstep(vec2(0.0), vec2(0.04), uvReflexo) *
+            smoothstep(vec2(0.0), vec2(0.04), 1.0 - uvReflexo);
+        float dentro = suave.x * suave.y;
+
+        if (dentro > 0.001) {
+            vec4 amostraDoReflexo = texture(reflexo, clamp(uvReflexo, 0.0, 1.0));
+            float fresnel = mix(0.25, 1.0, distanciaRadial);
+            // O alfa da camada refletida conta: um reflexo com fundo
+            // transparente reflete só o que tem lá.
+            total += amostraDoReflexo.rgb * amostraDoReflexo.a *
+                forcaDoReflexo * fresnel * dentro;
+        }
+    }
+
+    return total;
+}
+
+/** Desfoque em disco no buffer anterior. Poucas amostras, porque ele é pequeno. */
+vec3 desfocar(sampler2D fonte, vec2 uv, float raio) {
+    vec3 soma = vec3(0.0);
+    float giro = ruido(uv * acResolution) * TAU;
+    for (int i = 0; i < 12; i++) {
+        vec2 desvio = vogel(i, 12, giro) * acTexelSize * raio * acEscalaDePixel;
+        soma += texture(fonte, clamp(uv + desvio, 0.0, 1.0)).rgb;
+    }
+    return soma / 12.0;
+}
+
+// ============================================================================
+//  OS SEIS PASSES
+// ============================================================================
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    // ---------------------------------------------- passe 0: a tela do tubo
+    if (acPass == 0) {
+        vec2 curvo = curvar(uv);
+
+        // Fora do vidro não há imagem. Transparente, e não preto: a camada
+        // continua sendo uma camada, e o que está embaixo aparece.
+        if (curvo.x < 0.0 || curvo.x > 1.0 || curvo.y < 0.0 || curvo.y > 1.0) {
+            fragColor = vec4(0.0);
+            return;
+        }
+
+        vec4 cor = fosforos(curvo);
+        cor.rgb *= varrer(uv);
+        cor.rgb *= corDaTela.rgb;
+
+        // A INSTABILIDADE, PARTE 2: o brilho respira. A fonte oscila, e a tela
+        // inteira acompanha — de leve, senão vira estroboscópio.
+        if (instabilidade > 0.001) {
+            cor.rgb *= 1.0 + tremorDaFonte(acTime) * instabilidade * 0.06;
+        }
+
+        if (posterizar > 0.001) {
+            float niveis = mix(16.0, 2.0, min(posterizar, 0.98));
+            cor.rgb = floor(cor.rgb * niveis) / niveis;
+        }
+
+        fragColor = cor;
+        return;
+    }
+
+    // ------------------------------- passe 1: o que é brilhante o bastante
+    //
+    // O corte é o que separa "luz" de "imagem": só o que passa dele vira halo.
+    // Sem ele, o brilho seria a imagem borrada por cima da imagem — o que
+    // deixa tudo leitoso em vez de aceso.
+    if (acPass == 1) {
+        vec3 cor = desfocar(tela, uv, 1.4);
+        float luz = dot(cor, vec3(0.299, 0.587, 0.114));
+        float peso = smoothstep(corte - suavidadeDoCorte, corte + suavidadeDoCorte, luz);
+        fragColor = vec4(cor * peso, 1.0);
+        return;
+    }
+
+    // ------------------------- passes 2 a 4: a escada de desfoque, descendo
+    //
+    // Cada nível tem metade da resolução do anterior, então o MESMO raio em
+    // texels cobre o dobro da tela. É daí que sai o halo contínuo: quatro
+    // alcances somados, sem degrau entre eles.
+    if (acPass == 2) { fragColor = vec4(desfocar(brilhoA, uv, 2.2 * raioDoBrilho), 1.0); return; }
+    if (acPass == 3) { fragColor = vec4(desfocar(brilhoB, uv, 2.2 * raioDoBrilho), 1.0); return; }
+    if (acPass == 4) { fragColor = vec4(desfocar(brilhoC, uv, 2.2 * raioDoBrilho), 1.0); return; }
+
+    // ----------------------------------------------- passe 5: juntar tudo
+    vec4 cor = comAberracao(uv);
+
+    /*
+     * ========================================================================
+     *  O FOCO CAI PARA AS BORDAS — O MESMO SISTEMA RADIAL DO VIDRO
+     * ========================================================================
+     *
+     * Bulge, foco e halo saem todos da MESMA distância ao centro. Não são três
+     * efeitos: é uma geometria só, e é isso que faz a imagem parecer uma
+     * superfície, e não filtros empilhados.
+     *
+     * O desfoque cresce com o QUADRADO da distância, como a aberração de uma
+     * lente simples: o meio fica cravado e as quinas abrem.
+     */
+    vec2 doCentro = uv - centro;
+    doCentro.x *= acAspect;
+    float distanciaRadial = clamp(dot(doCentro, doCentro) * 2.0, 0.0, 1.0);
+
+    if (foco > 0.001) {
+        float raioDoFoco = foco * distanciaRadial * 5.0;
+        vec3 borrado = vec3(0.0);
+        float giro = ruido(uv * acResolution) * TAU;
+        for (int i = 0; i < 6; i++) {
+            vec2 desvioFoco = vogel(i, 6, giro) * acTexelSize * raioDoFoco * acEscalaDePixel;
+            borrado += texture(tela, clamp(uv + desvioFoco, 0.0, 1.0)).rgb;
+        }
+        cor.rgb = mix(cor.rgb, borrado / 6.0, clamp(distanciaRadial * foco * 1.6, 0.0, 1.0));
+    }
+
+    /*
+     * A SOMA DOS QUATRO NÍVEIS, EM DUAS CORES.
+     *
+     * O peso cai com o alcance: o halo apertado é o que se vê, o largo é o que
+     * se sente. E os dois largos levam a segunda cor — perto do fósforo o halo
+     * tem a cor dele, espalhado pelo vidro ele esfria, porque o azul espalha
+     * mais. Ver `corDoHaloLargo`.
+     */
+    vec3 haloPerto =
+        texture(brilhoA, uv).rgb * 0.40 +
+        texture(brilhoB, uv).rgb * 0.30;
+    vec3 haloLargo =
+        texture(brilhoC, uv).rgb * 0.20 +
+        texture(brilhoD, uv).rgb * 0.10;
+
+    // O halo cresce para as bordas junto com o foco: onde o ponto abre, a luz
+    // espalha mais. É de graça — a distância radial já está calculada.
+    float ganhoDeBorda = 1.0 + distanciaRadial * foco * 0.8;
+
+    vec3 luz = (haloPerto * corDoBrilho.rgb + haloLargo * corDoHaloLargo.rgb) *
+        forcaDoBrilho * ganhoDeBorda;
+    cor.rgb += luz;
+
+    /*
+     * O HALO CRIA A PRÓPRIA COBERTURA.
+     *
+     * Fora do vidro a tela é transparente, e o alfa lá é zero. Sem esta linha o
+     * brilho existiria em RGB e **não apareceria**: com alfa reto, `vec4(cor, 0)`
+     * compõe como nada.
+     *
+     * Só que luz de tubo vaza para fora do vidro — é metade do charme de filmar
+     * um CRT no escuro. Então o brilho traz alfa junto, proporcional à própria
+     * força. Onde a tela já é opaca isto não muda coisa alguma (o `max` segura).
+     */
+    cor.a = max(cor.a, clamp(dot(luz, vec3(0.299, 0.587, 0.114)), 0.0, 1.0));
+
+    /*
+     * ========================================================================
+     *  O VIDRO, POR ÚLTIMO — PORQUE ELE ESTÁ NA FRENTE
+     * ========================================================================
+     *
+     * Reflexo e lustro são luz que bate na superfície e volta SEM passar pelos
+     * fósforos. Por isso entram aqui: depois da máscara, depois do halo, sem
+     * serem modulados por nenhum dos dois.
+     *
+     * Só dentro do vidro, porém. Fora da moldura não há superfície — e é a
+     * mesma conta do passe 0 que decide, refeita aqui em três linhas em vez de
+     * carregada num canal.
+     *
+     * Antes do tonemap, de propósito: reflexo estourado tem que rolar junto com
+     * o resto da luz, senão ele vira uma mancha branca chapada sobre uma imagem
+     * que foi comprimida.
+     */
+    vec2 dobra = curvar(uv);
+    bool noVidro = dobra.x >= 0.0 && dobra.x <= 1.0 && dobra.y >= 0.0 && dobra.y <= 1.0;
+
+    if (noVidro) {
+        vec3 vidro = reflexoDoVidro(uv, distanciaRadial);
+        cor.rgb += vidro;
+        // O vidro também cobre: um reflexo forte sobre a parte transparente da
+        // tela precisa aparecer. Mesma regra do halo, logo acima.
+        cor.a = max(cor.a, clamp(dot(vidro, vec3(0.299, 0.587, 0.114)), 0.0, 1.0));
+    }
+
+    // Segurar as altas: sem isto, o halo estoura em branco chapado e some o
+    // desenho da luz. Reinhard, que é o mais barato que funciona.
+    if (tonemap > 0.001) {
+        vec3 comprimido = cor.rgb / (1.0 + cor.rgb);
+        cor.rgb = mix(cor.rgb, comprimido * 1.35, tonemap);
+    }
+
+    float cinza = dot(cor.rgb, vec3(0.299, 0.587, 0.114));
+    cor.rgb = mix(vec3(cinza), cor.rgb, saturacao);
+
+    cor.rgb = pow(max(cor.rgb, 0.0), vec3(1.0 / max(gama, 0.05)));
+
+    if (vinheta > 0.001) {
+        vec2 v = (uv - 0.5) * 2.0;
+        v.x *= acAspect;
+        float escuro = 1.0 - vinheta * dot(v, v) * 0.5;
+        cor.rgb *= clamp(escuro, 0.0, 1.0);
+    }
+
+    fragColor = vec4(clamp(cor.rgb, 0.0, 1.0), cor.a);
+}
+
+    ]]></shader>
+</effect>

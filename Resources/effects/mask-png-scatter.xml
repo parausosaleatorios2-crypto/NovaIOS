@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MaskPNGScatter (`ADBE MaskPNGSc`, o `MaskPNGScatter.aex`): espalha cópias de um PNG onde o matte tem alfa.
+
+  A conta foi lida no binário do plugin (só leitura) e conferida no After Effects em 8 bpc
+  (`tools/maskpngscatter/benchmark`, LEIAME.md: 6 rodadas, a validação com tudo junto a no máximo 1 nível em
+  2–17 px por quadro — empates de meio nível no esticamento).
+
+  `stage="maskpngscatter"`: o efeito roda NA cadeia, mas na CPU: o `PasseDoMaskPngScatter` lê o buffer, faz a conta
+  de `model/MaskPngScatter.kt` e sobe o resultado. O `<shader>` é só a cópia da entrada.
+
+  Em uma frase por etapa:
+    1. o AE pede ao efeito a composição com 10% a mais de cada lado e o plugin estica a camada nesse retângulo
+       (numa camada do tamanho da composição, a imagem sai 1,2× maior — é o que o AE mostra);
+    2. uma grade a cada Size/4 px; entra o ponto onde o matte (Matte Layer, ou a própria camada) tem alfa;
+    3. por PNG, o gerador do plugin sorteia o ponto e o giro (± Max Rotation);
+    4. Global Scale e Global Rotation movem as POSIÇÕES em volta do centro (o Global Rotation não gira os PNGs);
+       X/Y Offset somam (px inteiros);
+    5. o PNG num quadrado de Size × Global Scale px (esticado, sem manter a proporção), pelo px mais próximo, com
+       a mistura do plugin: a cor do PNG não é multiplicada pelo alfa e a soma dá a volta nos 8 bits.
+
+  As camadas: o PNG e o matte entram no tamanho próprio, sem a transformação deles (como o AE dá ao plugin). Uma
+  camada de imagem entra com os pixels do arquivo; outra camada (texto, forma, vídeo…) entra como aparece no quadro.
+-->
+<effect
+    id="nova.effect.maskpngscatter"
+    name="MaskPNGScatter"
+    name-en="MaskPNGScatter"
+    desc="Espalha cópias de uma camada de PNG onde a camada de matte tem alfa: quantidade, tamanho, semente e giro — igual ao After Effects."
+    desc-en="Scatters copies of a PNG layer wherever the matte layer has alpha: count, size, seed and rotation — as in After Effects."
+    category="generate"
+    stage="maskpngscatter"
+    tags="mask png scatter,maskpngscatter,png,scatter,espalhar,espalhamento,adesivo,sticker,partículas,particulas,matte,máscara,mascara,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="pngLayer" src="layer" label="PNG Layer" empty="transparent" />
+        <texture id="matteLayer" src="layer" label="Matte Layer" empty="transparent" />
+        <slider id="pngCount" label="PNG Count" type="integer" default="10" min="1" max="1000" step="1" snap="10" />
+        <slider id="pngSize" label="PNG Size" default="100.0" min="10.0" max="500.0" step="1.0" snap="100.0" />
+        <slider id="randomSeed" label="Random Seed" type="integer" default="42" min="0" max="9999" step="1" snap="42" />
+        <slider id="maxRotation" label="Max Rotation (deg)" default="0.0" min="0.0" max="180.0" step="0.1" snap="0.0" />
+        <slider id="xOffset" label="X Offset" default="0.0" min="-2000.0" max="2000.0" step="1.0" snap="0.0" />
+        <slider id="yOffset" label="Y Offset" default="0.0" min="-2000.0" max="2000.0" step="1.0" snap="0.0" />
+        <slider id="globalRotation" label="Global Rotation (deg)" default="0.0" min="-180.0" max="180.0" step="0.1" snap="0.0" />
+        <slider id="globalScale" label="Global Scale" default="1.0" min="0.1" max="5.0" step="0.01" snap="1.0" />
+    </params>
+
+    <preview amostra="escuro">
+        <set param="pngCount" value="18" />
+        <set param="pngSize" value="70.0" />
+        <set param="maxRotation" value="40.0" />
+    </preview>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoMaskPngScatter` (ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

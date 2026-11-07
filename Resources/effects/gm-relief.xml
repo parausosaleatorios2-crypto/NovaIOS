@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.relief" name="Height Relief" desc="Builds a normal from the luminance gradient and lights it. Real surface relief from a flat image." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/relief.png"
+        tags="3d,relief,lighting,normal,height" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Relief" />
+<spinner id="depth" default="1.0" min="0.0" max="5.0" step="0.05" label="Depth" />
+<spinner id="lightAngle" default="135.0" min="-180.0" max="180.0" step="0.5" label="Light Angle" type="angle" />
+<spinner id="ambient" default="0.35" min="0.0" max="1.0" step="0.01" label="Ambient" />
+<color id="lightColor" default="#FFFFF2D6" label="Light Colour" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float px = 1.0 / max(acScreenSize.y, 1.0);
+  float l = gmLum(c);
+  float lx = gmLum(texture2DCv(inputImg.texture, uv + vec2(px, 0.0)).rgb) - l;
+  float ly = gmLum(texture2DCv(inputImg.texture, uv + vec2(0.0, px)).rgb) - l;
+  float rad = radians(lightAngle);
+  float lambert = clamp((lx * cos(rad) + ly * sin(rad)) * depth * 20.0 + ambient, 0.0, 1.5);
+  vec3 lit = c * mix(vec3(1.0), lightColor.rgb, 0.5) * lambert;
+  vec3 col = mix(c, clamp(lit, 0.0, 1.0), mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

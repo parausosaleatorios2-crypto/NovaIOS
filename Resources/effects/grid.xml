@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Grade — gerador de linhas. Serve de guia de composição, de fundo técnico e de
+  base para animação de "planta baixa".
+
+  ## Só a grade, ou a grade por cima da camada
+
+  A grade é um GERADOR: num sólido ou numa forma, o que se quer quase sempre é a
+  grade e mais nada — o sólido que estava por baixo tem que sumir. Foi o relato
+  ("adiciono o efeito grid num sólido e ele não some"): a grade era composta POR
+  CIMA da camada, então o sólido continuava ali, e um Motion Tile em cima
+  repetia grade E sólido.
+
+  `gridOnly` (ligado por padrão, como o After Effects, cujo modo de mistura
+  padrão do Grid é "Nenhum") descarta a camada e devolve as linhas sobre
+  transparência. Desligado, volta ao que era: a grade como guia de composição
+  sobre uma foto ou um vídeo.
+-->
+<effect
+    id="nova.effect.grid"
+    name="Grade"
+    name-en="Grid"
+    desc="Gera linhas de grade com espessura e cor ajustáveis."
+    desc-en="A generated grid, with spacing and line width."
+    category="procedural"
+    blend="mode"
+    tags="grade,grid,linhas,guia,fundo,tecnico,blueprint">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <switch id="gridOnly" label="Só a grade (esconde a camada)" default="true" />
+        <point id="origin" label="Origem" defaultX="0.5" defaultY="0.5" />
+        <slider id="cells" label="Divisões na largura"
+                default="10.0" min="1.0" max="60.0" step="1.0" />
+        <slider id="thickness" label="Espessura"
+                default="2.0" min="0.5" max="20.0" step="0.5" />
+        <slider id="subdivisions" label="Subdivisões"
+                default="0.0" min="0.0" max="8.0" step="1.0" type="integer" />
+        <slider id="subOpacity" label="Opacidade das subdivisões"
+                default="0.35" min="0.0" max="1.0" step="0.01" />
+        <color id="lineColor" label="Cor da linha" default="#7AA2F7" />
+    </params>
+
+    <shader><![CDATA[
+
+/**
+ * A cobertura de uma linha de grade com `divisions` divisões.
+ *
+ * `fwidth` mede quanto a coordenada muda de um pixel para o vizinho. Dividir a
+ * espessura por ele é o que faz a linha ter a MESMA grossura na tela em qualquer
+ * densidade e em qualquer zoom — sem isso, uma grade fina desaparece num
+ * aparelho de tela densa.
+ */
+float gridLines(vec2 uv, float divisions, float width) {
+    vec2 scaled = uv * divisions;
+    vec2 distanceToLine = abs(fract(scaled) - 0.5) / max(fwidth(scaled), 0.0001);
+    float nearest = min(distanceToLine.x, distanceToLine.y);
+    return 1.0 - smoothstep(0.0, width, nearest);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 uv = (acScreenNorm - origin) * vec2(acAspect, 1.0);
+    float divisions = max(cells, 1.0);
+
+    float major = gridLines(uv, divisions, thickness);
+
+    float minor = 0.0;
+    int subs = clamp(int(subdivisions + 0.5), 0, 8);
+    if (subs > 0) {
+        minor = gridLines(uv, divisions * float(subs + 1), thickness * 0.6) * subOpacity;
+    }
+
+    float coverage = max(major, minor) * lineColor.a;
+    vec4 drawn = vec4(lineColor.rgb, coverage);
+
+    // O que está POR BAIXO da grade: a camada, ou nada. Com `gridOnly` a camada
+    // é descartada e as linhas saem sobre transparência.
+    vec4 under = gridOnly ? vec4(0.0) : original;
+
+    // Composto sobre o que está por baixo, não misturado com ele: a grade é uma
+    // coisa desenhada POR CIMA, e onde não há linha o que estava tem que continuar.
+    float outAlpha = drawn.a + under.a * (1.0 - drawn.a);
+    vec3 outColor = outAlpha > 0.0
+        ? (drawn.rgb * drawn.a + under.rgb * under.a * (1.0 - drawn.a)) / outAlpha
+        : vec3(0.0);
+
+    fragColor = vec4(outColor, outAlpha);
+}
+
+    ]]></shader>
+</effect>

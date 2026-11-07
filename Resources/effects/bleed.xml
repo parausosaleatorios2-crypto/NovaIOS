@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SANGUE ESCORRENDO — o template "Bleed" do After Effects num efeito só (0.404.0)
+  ============================================================================
+
+  Pedido do snow (04/10/2026): "transformar esse efeito de texto de sangue em um efeito de fato […]
+  quero que faça os benchmarks também pra ficar 100% igual". O Bleed (v1.6) é um TEMPLATE: quatro
+  comps e uns vinte efeitos do AE ligados por expressões a um painel "Bleed Settings". Aqui a cadeia
+  inteira virou um efeito: aplica na camada (texto, forma, imagem com alfa) e sai o sangue.
+
+  MEDIDO no AE dele, numa instância separada, a partir do molde original: cada camada e cada efeito
+  da cadeia renderizado sozinho (16 bits, 1920×1080), com duas fontes e 23 combinações dos
+  controles — tools/bleed/benchmark/ (o LEIAME tem os números).
+
+  A CADEIA (o que cada passe refaz):
+
+  - Estêncil: Minimax vertical 500 + Offset 500 = o máximo do alfa nos 1000 px acima. As gotas só
+    existem nas colunas da forma, dela para baixo.
+  - Gotas: CC Particle World (riscos com ponta redonda, 576 px/s² × Pressure/25, ~110 por segundo
+    × Density/25). O sorteio do plugin não é público: as gotas daqui NÃO são as mesmas, mas batem
+    a quantidade, o tamanho, a forma e a queda.
+  - CC Vector Blur ×2 ("Direction Fading", 500 e 75): junta a imagem ao longo de uma reta com peso
+    que cai até zero; o ângulo da reta é o brilho (R+G+B)/3 do próprio pixel. Por isso a Blood
+    Color muda para que lado o sangue escorre DENTRO da forma.
+  - Calculations: "Copy" = a segunda camada por cima com a opacidade; "Stencil/Silhouette Alpha".
+  - CC Threshold 110/255 no alfa: é o que solda as gotas à forma.
+  - Displacement Map pela forma na Object Color (vermelho = X, verde = Y, ±10 px).
+  - Roughen Edges (Border 8): na prática um borrão σ 3 com limiar — arredonda e derrete as pontas.
+  - Gaussian Blur: σ = 0,283 × Blurriness. Map Softness dos CC: σ = 0,4 × Softness.
+  - Linear Wipe: transição a `completion`% entre os cantos; faixa suave de 4/3 do Feather.
+  - Estilos de camada: Satin = 1 − |borrão(p + d) − borrão(p − d)| (σ 6, 11 px); Bevel and Emboss
+    com a luz quase a pino = realce branco em Add (20%) só onde o relevo sobe de leve para a luz.
+  - Bevel em Screen sobre o corpo, preso ao alfa dele; Bevel Type = o modo do Calculations
+    (Copy, Lighten, Darken, Stencil Alpha, Stencil Luma).
+  - CC Glass: reflexo branco fino onde a inclinação do relevo (alfa das gotas, σ 4,8) aponta
+    para a luz a 200°.
+
+  QUANTO BATE (GPU do PC × AE, 1080p): com o mesmo mapa de gotas, erro mediano de 0,16% do quadro
+  (pior 0,37%); olhando só os pixels da figura, 1,3% a 6,9%. O que sobra é o ruído fractal do
+  Roughen Edges (aqui a borda é lisa), a posição exata dos reflexos do CC Glass e o sorteio das gotas.
+
+  FORA: MotionBlure (CC Force Motion Blur) e o som (SoundFX / Sound Level).
+  As medidas do template são em pixels de uma comp 1920×1080; aqui escalam com o quadro.
+-->
+<effect
+    id="nova.effect.bleed"
+    name="Sangue escorrendo"
+    name-en="Bleed"
+    desc="O texto (ou qualquer forma) vira sangue escorrendo: gotas que descem, corpo brilhante, bisel e reflexos — o template Bleed do After Effects."
+    desc-en="Turns text (or any shape) into dripping blood: falling drips, glossy body, bevel and reflections — After Effects' Bleed template."
+    category="stylize"
+    tags="bleed,sangue,blood,escorrendo,dripping,drip,gotas,terror,horror,halloween,texto,text,liquido,líquido,liquid,tinta,paint,derreter,melt"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="est" src="buffer" scale="0.25" />
+        <texture id="mapa" src="buffer" scale="0.5" />
+        <texture id="b1h" src="buffer" scale="0.25" />
+        <texture id="b1" src="buffer" scale="0.25" />
+        <texture id="v1" src="buffer" scale="0.5" />
+        <texture id="b2h" src="buffer" scale="0.25" />
+        <texture id="b2" src="buffer" scale="0.25" />
+        <texture id="v2" src="buffer" scale="0.5" />
+        <texture id="gotas" src="buffer" scale="1.0" />
+        <texture id="c1h" src="buffer" scale="0.5" />
+        <texture id="c1" src="buffer" scale="0.5" />
+        <texture id="bvh" src="buffer" scale="0.5" />
+        <texture id="bv" src="buffer" scale="0.5" />
+        <texture id="e1h" src="buffer" scale="0.5" />
+        <texture id="e1" src="buffer" scale="0.5" />
+
+        <color id="objectColor" group="Colors" label="Object Color" default="#FFFF0000" />
+        <color id="bloodColor" group="Colors" label="Blood Color" default="#FF750000" />
+
+        <slider id="density" group="Dripping" label="Density" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="pressure" group="Dripping" label="Pressure" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="randomSeed" group="Dripping" label="Random Seed" type="integer" default="0.0" min="0.0" max="1000.0" step="1.0" />
+
+        <slider id="completion" group="Wipe Up" label="Transition Completion" default="30.0" min="0.0" max="100.0" step="1.0" snap="30.0" />
+        <slider id="angle" group="Wipe Up" label="Angle" type="angle" default="170.0" min="-360.0" max="360.0" step="1.0" snap="170.0" />
+        <slider id="feather" group="Wipe Up" label="Feather" default="30.0" min="0.0" max="100.0" step="1.0" snap="30.0" />
+
+        <slider id="bevelOpacity" group="Bevel" label="Bevel Opacity" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <selector id="bevelType" group="Bevel" label="Bevel Type" default="0" options="Type 1|Type 2|Type 3|Type 4|Type 5" />
+    </params>
+
+    <preview amostra="palavra" />
+
+    <passes>
+        <pass target="est" />     <!-- 0: o estêncil: as colunas embaixo da forma -->
+        <pass target="mapa" />    <!-- 1: as gotas que caem (CC Particle World) × estêncil -->
+        <pass target="b1h" />     <!-- 2: borrões da forma, X -->
+        <pass target="b1" />      <!-- 3: R = borrão 100 de (1 − alfa), G = borrão do mapa de ângulo -->
+        <pass target="v1" />      <!-- 4: CC Vector Blur 500 na forma -->
+        <pass target="b2h" />     <!-- 5 -->
+        <pass target="b2" />      <!-- 6: o mapa de ângulo do segundo borrão -->
+        <pass target="v2" />      <!-- 7: CC Vector Blur 75 -->
+        <pass target="gotas" />   <!-- 8: limiar + Displacement Map: R = gotas, G = gotas ∪ forma, B = cor -->
+        <pass target="c1h" />     <!-- 9 -->
+        <pass target="c1" />      <!-- 10: R = Roughen Edges (borrão), G = relevo do CC Glass -->
+        <pass target="bvh" />     <!-- 11 -->
+        <pass target="bv" />      <!-- 12: a camada Bevel borrada (Gaussian Blur 20) -->
+        <pass target="e1h" />     <!-- 13 -->
+        <pass target="e1" />      <!-- 14: os borrões dos estilos (Satin, Bevel and Emboss) -->
+        <pass />                  <!-- 15: corpo + bisel + reflexo -->
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265358979;
+
+// Tudo no template é em pixels de uma comp 1920×1080: `K` é quantos pixels da imagem valem um desses.
+vec2 tamanhoCheio() { return vec2(textureSize(inputImg, 0)); }
+float K() { vec2 r = tamanhoCheio(); return min(r.x / 1920.0, r.y / 1080.0); }
+/** Um pixel de referência, em UV. */
+vec2 px() { return K() / tamanhoCheio(); }
+bool dentro(vec2 uv) { return uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0; }
+/** O alfa da forma (0 fora do quadro). */
+float forma(vec2 uv) { return dentro(uv) ? texture(inputImg, uv).a : 0.0; }
+float media(vec3 c) { return (c.r + c.g + c.b) / 3.0; }
+
+float h1(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec3 h3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+
+// ------------------------------------------------------------------ 0: o estêncil
+// Medido: Minimax (máximo vertical, raio 500) + Offset de 500 para baixo = o máximo do alfa nos
+// 1000 px ACIMA do pixel. As gotas só existem nas colunas da forma, dela para baixo.
+float estencil() {
+    vec2 p = px();
+    float m = 0.0;
+    for (int i = 0; i <= 125; i++) m = max(m, forma(acScreenNorm - vec2(0.0, float(i) * 8.0 * p.y)));
+    return m;
+}
+
+// ------------------------------------------------------------------ 1: as gotas
+// O CC Particle World do template, medido em 90 quadros seguidos: ~110 gotas por segundo no quadro
+// (Density 25), nascendo entre 70 e 720 px de altura, caindo com 576 px/s² (× Pressure/25) a partir de
+// −40 px/s; cada uma é um risco de ~25 × 205 px (× 0,5 a 1,5) com a ponta redonda embaixo, que
+// clareia para cima e aparece aos poucos (opacidade 0,62 → 1 em 0,75 s). O tempo do mapa anda a
+// Pressure/25. O sorteio do plugin não é público: batem a quantidade, o tamanho, a forma e a queda.
+float gota(vec2 d, float larg, float alt) {
+    // d: do centro da ponta redonda, em px de referência (y para baixo)
+    float u = d.x / larg;
+    float v = 0.94 + d.y / alt;
+    float cauda = exp(-0.5 * u * u / (0.18 * 0.18)) * (0.07 + 0.8 * v) * smoothstep(0.0, 0.03, v) * (1.0 - smoothstep(0.93, 0.99, v));
+    float rh = 0.36 * larg;
+    float ponta = 0.89 * (1.0 - smoothstep(0.55 * rh, 1.3 * rh, length(d)));
+    return max(cauda, ponta);
+}
+
+float gotasQueCaem() {
+    float k = K();
+    vec2 P = acScreenNorm * tamanhoCheio() / k;          // px de referência
+    float a = 576.0 * max(pressure, 0.0) / 25.0;
+    if (a <= 0.0 || density <= 0.0) return 0.0;
+    float tau = acTime * pressure / 25.0;
+    float T = clamp(sqrt(2.0 * 1150.0 / a) + 0.3, 1.0, 4.0);   // quanto a gota leva para sair do quadro
+    const float CW = 48.0;
+    float quantas = min(2.75 * T * density / 25.0, 24.0);     // gotas vivas por faixa de 48 px
+    float c0 = floor(P.x / CW);
+    float resto = 1.0;
+    for (int dc = -1; dc <= 1; dc++) {
+        float c = c0 + float(dc);
+        for (int s = 0; s < 24; s++) {
+            if (float(s) >= quantas) break;
+            vec2 id = vec2(c, float(s) + 31.0 * randomSeed);
+            if (float(s) + 1.0 > quantas && h1(id + 7.7) > fract(quantas)) continue;
+            float fase = tau / T + h1(id);
+            float n = floor(fase);
+            float idade = (fase - n) * T;
+            vec3 r = h3(vec3(id, n) + 0.37);
+            float tam = 0.5 + r.z;
+            float larg = 25.0 * tam;
+            float alt = 205.0 * tam * (1.0 + 0.17 * idade);
+            vec2 cab = vec2((c + r.x) * CW, mix(70.0, 720.0, r.y) - 40.0 * idade + 0.5 * a * idade * idade);
+            vec2 d = P - cab;
+            if (abs(d.x) > 0.6 * larg || d.y > 0.5 * larg || d.y < -alt) continue;
+            float op = min(1.0, 0.62 + 0.5 * idade) * (1.0 - smoothstep(T - 0.15, T, idade));
+            resto *= 1.0 - op * gota(d, larg, alt);
+        }
+    }
+    return 1.0 - resto;
+}
+
+// ------------------------------------------------------------------ borrões gaussianos
+// Medido no AE: Gaussian Blur com Blurriness B = gaussiana de σ = 0,283·B px; o Map Softness dos
+// efeitos CC (Vector Blur, Glass) = σ de 0,4 × Softness; o Size do Satin (14) = σ 6.
+float peso(float i, float n) { float x = 3.0 * i / n; return exp(-0.5 * x * x); }
+
+/** Borrão de um canal de `t` ao longo de `eixo` (UV por px de referência), σ em px de referência. */
+vec4 borrar(sampler2D t, vec2 eixo, vec4 sigma) {
+    const float N = 20.0;
+    vec4 soma = vec4(0.0); float total = 0.0;
+    for (float i = -N; i <= N; i += 1.0) {
+        float w = peso(i, N);
+        vec4 desloc = 3.0 * sigma * i / N;
+        soma.r += w * texture(t, clamp(acScreenNorm + eixo * desloc.r, 0.0, 1.0)).r;
+        soma.g += w * texture(t, clamp(acScreenNorm + eixo * desloc.g, 0.0, 1.0)).g;
+        soma.b += w * texture(t, clamp(acScreenNorm + eixo * desloc.b, 0.0, 1.0)).b;
+        soma.a += w * texture(t, clamp(acScreenNorm + eixo * desloc.a, 0.0, 1.0)).a;
+        total += w;
+    }
+    return soma / total;
+}
+
+// ------------------------------------------------------------------ CC Vector Blur
+// Medido (Type "Direction Fading", sem Vector Map): cada pixel JUNTA a imagem ao longo de uma reta de
+// `Amount` px, com peso que cai em linha reta até zero; a direção da reta é o brilho do próprio
+// pixel — a média (R+G+B)/3 da cor premultiplicada, borrada pelo Map Softness — virado em ângulo
+// (0 = para cima, 1 = uma volta, horário). Fora da forma o brilho é 0 e a reta sobe: a forma
+// "escorre" para baixo. Dentro, a cor do sangue decide para que lado: por isso a cor muda o desenho.
+vec2 direcao(float brilho) { float th = 2.0 * PI * brilho; return vec2(sin(th), -cos(th)); }
+
+/** O alfa da camada Drops antes do segundo Vector Blur: 50% do borrão 500 sobre forma × borrão(1 − forma). */
+vec2 antesDoSegundo(vec2 uv) {
+    if (!dentro(uv)) return vec2(0.0);
+    float v = 0.5 * texture(v1, uv).r;
+    float d3 = texture(inputImg, uv).a * texture(b1, uv).r;
+    return vec2(v + d3 * (1.0 - v), v);      // (alfa, quanto dele é sangue)
+}
+
+// ------------------------------------------------------------------ Linear Wipe
+// Medido: a transição fica a `completion`% do caminho entre o primeiro e o último canto do quadro na
+// direção do ângulo, e a faixa suave tem 4/3 do Feather.
+float wipe(vec2 uv) {
+    float k = K();
+    vec2 q = tamanhoCheio() / k;                     // o quadro, em px de referência
+    float a = radians(angle);
+    vec2 u = vec2(sin(a), -cos(a));
+    float t = dot(uv * q, u);
+    float t0 = min(min(0.0, q.x * u.x), min(q.y * u.y, dot(q, u)));
+    float t1 = max(max(0.0, q.x * u.x), max(q.y * u.y, dot(q, u)));
+    float tc = mix(t0, t1, completion / 100.0);
+    return clamp((t - tc) / max(feather * 4.0 / 3.0, 0.001) + 0.5, 0.0, 1.0);
+}
+
+// ------------------------------------------------------------------ a camada Bevel
+// Medido: Calculations 1 = a forma na Object Color a 50%; Calculations 2 junta a camada Drops com a
+// opacidade do Bevel Opacity e o modo do Bevel Type (Copy, Lighten, Darken, Stencil Alpha, Stencil
+// Luma); fora da forma a cor reta da camada é BRANCA (é o que o Lighten e o Darken enxergam).
+vec4 camadaBevel(vec2 uv) {
+    float s = forma(uv);
+    vec4 g = dentro(uv) ? texture(gotas, uv) : vec4(0.0);
+    float op = clamp(bevelOpacity / 100.0, 0.0, 1.0);
+    float D = g.r;
+    vec3 cd = bloodColor.rgb * g.b;                  // a cor reta das gotas
+    vec3 ca = mix(vec3(1.0), objectColor.rgb, clamp(s * 60.0, 0.0, 1.0));
+    float aa = 0.5 * s;
+    vec4 apm = vec4(objectColor.rgb * aa, aa);
+    if (bevelType == 0) return vec4(apm.rgb * (1.0 - op * D) + cd * op * D, op * D + aa * (1.0 - op * D));
+    if (bevelType == 1) { float al = aa + op * D - aa * op * D; return vec4(mix(ca, max(ca, cd), op) * al, al); }
+    if (bevelType == 2) { float al = D * op; return vec4(mix(ca, min(ca, cd), op) * al, al); }
+    if (bevelType == 3) return apm * mix(1.0, D, op);
+    return apm * mix(1.0, dot(cd * D, vec3(0.299, 0.587, 0.114)), op);
+}
+
+/** O Satin dos estilos de camada: 1 − |borrão(alfa)(p + d) − borrão(alfa)(p − d)|, d = 11 px no ângulo. */
+float satin(float graus, int canal) {
+    float a = radians(graus);
+    vec2 d = 11.0 * vec2(cos(a), -sin(a)) * px();
+    vec4 m = texture(e1, clamp(acScreenNorm + d, 0.0, 1.0)), n = texture(e1, clamp(acScreenNorm - d, 0.0, 1.0));
+    return 1.0 - abs(canal == 0 ? m.r - n.r : m.g - n.g);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 p = px();
+
+    if (acPass == 0) { fragColor = vec4(estencil(), 0.0, 0.0, 1.0); return; }
+    if (acPass == 1) {
+        // o Gaussian Blur 20 do estêncil
+        float e = 0.0, tot = 0.0;
+        for (int i = -2; i <= 2; i++) for (int j = -2; j <= 2; j++) {
+            float w = exp(-0.5 * float(i * i + j * j) * 16.0 / (5.66 * 5.66));
+            e += w * texture(est, clamp(uv + vec2(float(i), float(j)) * 4.0 * p, 0.0, 1.0)).r; tot += w;
+        }
+        fragColor = vec4(gotasQueCaem() * e / tot, 0.0, 0.0, 1.0); return;
+    }
+    if (acPass == 2) {
+        // X: R = (1 − forma) com σ 28,3 (Gaussian Blur 100, repetindo a borda); G = forma com σ 6 (Map Softness 15)
+        const float N = 24.0;
+        vec2 soma = vec2(0.0); float tot = 0.0;
+        for (float i = -N; i <= N; i += 1.0) {
+            float w = peso(i, N);
+            soma.r += w * (1.0 - texture(inputImg, clamp(uv + vec2(3.0 * 28.3 * i / N * p.x, 0.0), 0.0, 1.0)).a);
+            soma.g += w * forma(uv + vec2(3.0 * 6.0 * i / N * p.x, 0.0));
+            tot += w;
+        }
+        fragColor = vec4(soma / tot, 0.0, 1.0); return;
+    }
+    if (acPass == 3) { fragColor = vec4(borrar(b1h, vec2(0.0, p.y), vec4(28.3, 6.0, 0.0, 0.0)).rg, 0.0, 1.0); return; }
+    if (acPass == 4) {
+        // CC Vector Blur, Amount 500, na forma pintada de Blood Color
+        vec2 dir = direcao(media(bloodColor.rgb) * texture(b1, uv).g) * p;
+        const float N = 125.0;
+        float soma = 0.0, tot = 0.0;
+        for (float i = 0.0; i < N; i += 1.0) {
+            float w = 1.0 - i / N;
+            soma += w * forma(uv + dir * i * 4.0); tot += w;
+        }
+        fragColor = vec4(soma / tot, 0.0, 0.0, 1.0); return;
+    }
+    if (acPass == 5) { fragColor = vec4(borrar(v1, vec2(p.x, 0.0), vec4(6.0, 0.0, 0.0, 0.0)).r, 0.0, 0.0, 1.0); return; }
+    if (acPass == 6) { fragColor = vec4(borrar(b2h, vec2(0.0, p.y), vec4(6.0, 0.0, 0.0, 0.0)).r, 0.0, 0.0, 1.0); return; }
+    if (acPass == 7) {
+        // CC Vector Blur, Amount 75
+        vec2 dir = direcao(media(bloodColor.rgb) * 0.5 * texture(b2, uv).r) * p;
+        const float N = 38.0;
+        vec2 soma = vec2(0.0); float tot = 0.0;
+        for (float i = 0.0; i < N; i += 1.0) {
+            float w = 1.0 - i / N;
+            soma += w * antesDoSegundo(uv + dir * i * (75.0 / N)); tot += w;
+        }
+        fragColor = vec4(soma / tot, 0.0, 1.0); return;
+    }
+    if (acPass == 8) {
+        // Calculations 4 (o mapa de gotas a 50% por cima) + CC Threshold 110/255 no alfa + Displacement Map
+        // (a forma, na Object Color: vermelho empurra em X, verde em Y, ±10 px; fora da forma não mexe).
+        float s = forma(uv);
+        vec2 desl = vec2(10.0 * (2.0 * objectColor.r - 1.0), -10.0 * (2.0 * objectColor.g - 1.0)) * s;
+        vec2 q = clamp(uv + desl * p, 0.0, 1.0);
+        float m = 0.5 * texture(mapa, q).r;
+        vec2 v = texture(v2, q).rg;
+        float a6 = m + (1.0 - m) * v.r;
+        float larg = max(fwidth(a6), 1e-4);
+        float D = smoothstep(0.43137 - larg, 0.43137 + larg, a6);
+        fragColor = vec4(D, D + s * (1.0 - D), clamp((1.0 - m) * v.g / max(a6, 1e-4), 0.0, 1.0), 1.0); return;
+    }
+    if (acPass == 9) { fragColor = vec4(borrar(gotas, vec2(p.x, 0.0), vec4(4.8, 3.0, 0.0, 0.0)).gr, 0.0, 1.0); return; }
+    if (acPass == 10) { fragColor = vec4(borrar(c1h, vec2(0.0, p.y), vec4(3.0, 4.8, 0.0, 0.0)).rg, 0.0, 1.0); return; }
+    if (acPass == 11) {
+        const float N = 16.0;
+        vec4 soma = vec4(0.0); float tot = 0.0;
+        for (float i = -N; i <= N; i += 1.0) { float w = peso(i, N); soma += w * camadaBevel(uv + vec2(3.0 * 5.66 * i / N * p.x, 0.0)); tot += w; }
+        fragColor = soma / tot; return;
+    }
+    if (acPass == 12) { fragColor = borrar(bvh, vec2(0.0, p.y), vec4(5.66)); return; }
+
+    // O alfa do corpo: Roughen Edges (Border 8) medido como borrão σ 3 + limiar 0,48 de borda firme.
+    if (acPass == 13 || acPass == 14) {
+        const float N = 16.0;
+        vec2 eixo = acPass == 13 ? vec2(p.x, 0.0) : vec2(0.0, p.y);
+        vec2 soma = vec2(0.0); float tot = 0.0;
+        for (float i = -N; i <= N; i += 1.0) {
+            float w = peso(i, N);
+            vec2 q = clamp(uv + eixo * 3.0 * 6.0 * i / N, 0.0, 1.0);
+            if (acPass == 13) soma += w * vec2(clamp((texture(c1, q).r - 0.48) * 4.0 + 0.5, 0.0, 1.0), texture(bv, q).a * wipe(q));
+            else soma += w * texture(e1h, q).rg;
+            tot += w;
+        }
+        fragColor = vec4(soma / tot, 0.0, 1.0); return;
+    }
+
+    // ---------------------------------------------------------------- 15: a imagem
+    float ao = clamp((texture(c1, uv).r - 0.48) * 4.0 + 0.5, 0.0, 1.0);
+
+    // Object: Fill com a Blood Color + Satin (preto, Multiply 50%, 45°, invertido)
+    vec3 corpo = bloodColor.rgb * (1.0 - 0.5 * satin(45.0, 0));
+
+    // Bevel: a camada borrada, cortada pelo Linear Wipe; Satin a 19° e o Bevel and Emboss.
+    vec4 b = texture(bv, uv) * wipe(uv);
+    vec3 cb = b.a > 1e-4 ? b.rgb / b.a : vec3(0.0);
+    // Bevel and Emboss (Inner Bevel, luz a 90° e 85° de altura, realce branco em Add a 20%): com a luz
+    // quase a pino, acende onde o relevo sobe de leve na direção da luz e apaga nas bordas íngremes.
+    const float G = 12.0;
+    float hx = (texture(e1, clamp(uv + vec2(G * p.x, 0.0), 0.0, 1.0)).g - texture(e1, clamp(uv - vec2(G * p.x, 0.0), 0.0, 1.0)).g) / (2.0 * G);
+    float hy = (texture(e1, clamp(uv + vec2(0.0, G * p.y), 0.0, 1.0)).g - texture(e1, clamp(uv - vec2(0.0, G * p.y), 0.0, 1.0)).g) / (2.0 * G);
+    const float KB = 6.0, SA = 0.9961947, CA = 0.0871557;
+    float nl = (KB * hy * CA + SA) / sqrt(1.0 + KB * KB * (hx * hx + hy * hy));
+    float realce = clamp(3000.0 * (nl - SA), 0.0, 1.0);
+    vec3 bisel = cb * (1.0 - 0.5 * satin(19.0, 1)) + 0.2 * realce;
+
+    // A camada Bevel em Screen sobre o corpo, presa ao alfa dele.
+    vec3 cor = corpo + b.a * bisel * (1.0 - corpo);
+
+    // CC Glass (relevo = o alfa das gotas, Softness 12; luz distante a 200°, Specular 100, Roughness 0,002):
+    // um reflexo branco e fino onde a inclinação do relevo aponta para a luz.
+    const float E = 2.0;
+    float gx = (texture(c1, clamp(uv + vec2(E * p.x, 0.0), 0.0, 1.0)).g - texture(c1, clamp(uv - vec2(E * p.x, 0.0), 0.0, 1.0)).g) / (2.0 * E);
+    float gy = (texture(c1, clamp(uv + vec2(0.0, E * p.y), 0.0, 1.0)).g - texture(c1, clamp(uv - vec2(0.0, E * p.y), 0.0, 1.0)).g) / (2.0 * E);
+    vec2 dg = vec2(gx, gy) - vec2(0.01368, -0.03759);
+    float reflexo = 2.5 * exp(-dot(dg, dg) / (2.0 * 0.006 * 0.006));
+
+    fragColor = vec4(min(cor + reflexo, 1.0), ao);
+}
+]]></shader>
+</effect>

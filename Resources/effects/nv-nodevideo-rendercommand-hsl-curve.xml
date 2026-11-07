@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand_hsl_curve
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<!-- Fora do catálogo (0.910.0): o shader precisa de os pontos da curva, que o Node mandava pelo C# e o conversor
+     não trouxe. Não compila em GPU nenhuma; para voltar, portar essa parte. -->
+<effect
+    catalog="false"
+    id="nv.effect.nodevideo-rendercommand-hsl-curve"
+    name="Rendercommand Hsl Curve (NV)"
+    name-en="Rendercommand Hsl Curve (NV)"
+    desc="NodeVideo effect 'NodeVideo/RenderCommand_hsl_curve', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/RenderCommand_hsl_curve', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_hslcurve_segs" type="integer" label="Hslcurve Segs" default="0" min="0" max="10" step="1" />
+        <slider id="_hslcurve_mode" type="integer" label="Hslcurve Mode" default="0" min="0" max="10" step="1" />
+        <slider id="_amount" label="Amount" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_smooth_gradient" type="integer" label="Smooth Gradient" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec4 u_xlat2;
+int u_xlati2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+bvec3 u_xlatb3;
+vec4 u_xlat4;
+int u_xlati4;
+vec4 u_xlat5;
+bool u_xlatb5;
+float u_xlat8;
+bool u_xlatb8;
+float u_xlat10;
+int u_xlati10;
+bool u_xlatb10;
+float u_xlat13;
+vec2 u_xlat14;
+float u_xlat15;
+int u_xlati15;
+bool u_xlatb15;
+float u_xlat16;
+bool u_xlatb16;
+float u_xlat19;
+int u_xlati19;
+bool u_xlatb19;
+float u_xlat20;
+float u_xlat21;
+int u_xlati21;
+int u_xlati22;
+int int_bitfieldInsert(int base, int insert, int offset, int bits) {
+    uint mask = uint(~(int(~0) << uint(bits)) << uint(offset));
+    return int((uint(base) & ~mask) | ((uint(insert) << uint(offset)) & mask));
+}
+
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb1 = u_xlat0.y>=u_xlat0.z;
+    u_xlat1.x = u_xlatb1 ? 1.0 : float(0.0);
+    u_xlat2.xy = u_xlat0.zy;
+    u_xlat2.z = float(-1.0);
+    u_xlat2.w = float(0.666666687);
+    u_xlat3.xy = u_xlat0.yz + (-u_xlat2.xy);
+    u_xlat3.z = float(1.0);
+    u_xlat3.w = float(-1.0);
+    u_xlat1 = u_xlat1.xxxx * u_xlat3 + u_xlat2;
+    u_xlatb2.x = u_xlat0.x>=u_xlat1.x;
+    u_xlat2.x = u_xlatb2.x ? 1.0 : float(0.0);
+    u_xlat3.xyz = u_xlat1.xyw;
+    u_xlat3.w = u_xlat0.x;
+    u_xlat1.xyw = u_xlat3.wyx;
+    u_xlat1 = (-u_xlat3) + u_xlat1;
+    u_xlat1 = u_xlat2.xxxx * u_xlat1.yxzw + u_xlat3.yxzw;
+    u_xlat2.x = min(u_xlat1.x, u_xlat1.w);
+    u_xlat2.x = u_xlat1.y + (-u_xlat2.x);
+    u_xlat19 = (-u_xlat1.x) + u_xlat1.w;
+    u_xlat8 = u_xlat2.x * 6.0 + 1.00000001e-10;
+    u_xlat19 = u_xlat19 / u_xlat8;
+    u_xlat13 = u_xlat19 + u_xlat1.z;
+    u_xlat3.x = abs(u_xlat13);
+    u_xlat13 = u_xlat1.y + 1.00000001e-10;
+    u_xlat13 = u_xlat2.x / u_xlat13;
+    u_xlatb19 = _hslcurve_points[0].x>=u_xlat3.x;
+    if(u_xlatb19){
+        u_xlati19 = int(_hslcurve_segs << (1 & int(0x1F)));
+        u_xlati19 = u_xlati19 + int(0xFFFFFFFEu);
+        u_xlati2 = u_xlati19 + 1;
+        u_xlat8 = (-_hslcurve_points[u_xlati19].x) + _hslcurve_points[u_xlati2].x;
+        u_xlat14.x = u_xlat3.x + (-_hslcurve_points[u_xlati19].x);
+        u_xlat14.x = u_xlat14.x + 1.0;
+        u_xlat8 = u_xlat14.x / u_xlat8;
+        u_xlat14.xy = _hslcurve_points[u_xlati2].yw;
+        u_xlat2.x = _hslcurve_points[u_xlati19].y;
+        u_xlat19 = _hslcurve_points[u_xlati19].w;
+    } else {
+        u_xlati15 = int(_hslcurve_segs << (1 & int(0x1F)));
+        u_xlati15 = u_xlati15 + int(0xFFFFFFFEu);
+        u_xlatb15 = u_xlat3.x>=_hslcurve_points[u_xlati15].x;
+        if(u_xlatb15){
+            u_xlati15 = int(_hslcurve_segs << (1 & int(0x1F)));
+            u_xlati15 = u_xlati15 + int(0xFFFFFFFEu);
+            u_xlati21 = u_xlati15 + 1;
+            u_xlat4.x = (-_hslcurve_points[u_xlati15].x) + _hslcurve_points[u_xlati21].x;
+            u_xlat10 = u_xlat3.x + (-_hslcurve_points[u_xlati15].x);
+            u_xlat8 = u_xlat10 / u_xlat4.x;
+            u_xlat14.xy = _hslcurve_points[u_xlati21].yw;
+            u_xlat2.x = _hslcurve_points[u_xlati15].y;
+            u_xlat19 = _hslcurve_points[u_xlati15].w;
+        } else {
+            u_xlati15 = _hslcurve_segs + int(0xFFFFFFFFu);
+            u_xlati21 = 0;
+            u_xlat8 = 0.0;
+            u_xlati4 = 0;
+            while(true){
+                u_xlatb10 = u_xlati4>=u_xlati15;
+                if(u_xlatb10){break;}
+                u_xlati10 = int(u_xlati4 << (1 & int(0x1F)));
+                u_xlatb16 = u_xlat3.x>=_hslcurve_points[u_xlati10].x;
+                u_xlati22 = int(int_bitfieldInsert(1, u_xlati4, 1 & int(0x1F), 31));
+                u_xlatb5 = _hslcurve_points[u_xlati22].x>=u_xlat3.x;
+                u_xlatb16 = u_xlatb16 && u_xlatb5;
+                if(u_xlatb16){
+                    u_xlat16 = u_xlat3.x + (-_hslcurve_points[u_xlati10].x);
+                    u_xlat10 = (-_hslcurve_points[u_xlati10].x) + _hslcurve_points[u_xlati22].x;
+                    u_xlat8 = u_xlat16 / u_xlat10;
+                    u_xlati21 = u_xlati4;
+                    break;
+                }
+                u_xlati4 = u_xlati4 + 1;
+                u_xlati21 = 0;
+                u_xlat8 = 0.0;
+            }
+            u_xlati15 = int(u_xlati21 << (1 & int(0x1F)));
+            u_xlati21 = int(int_bitfieldInsert(1, u_xlati21, 1 & int(0x1F), 31));
+            u_xlat14.xy = _hslcurve_points[u_xlati21].yw;
+            u_xlat2.x = _hslcurve_points[u_xlati15].y;
+            u_xlat19 = _hslcurve_points[u_xlati15].w;
+        }
+    }
+    u_xlat15 = u_xlat19 + (-u_xlat2.x);
+    u_xlat21 = u_xlat15 * 3.0;
+    u_xlat19 = (-u_xlat19) + u_xlat14.y;
+    u_xlat19 = u_xlat19 * 3.0 + (-u_xlat21);
+    u_xlat14.x = (-u_xlat2.x) + u_xlat14.x;
+    u_xlat14.x = (-u_xlat15) * 3.0 + u_xlat14.x;
+    u_xlat14.x = (-u_xlat19) + u_xlat14.x;
+    u_xlat20 = u_xlat8 * u_xlat8;
+    u_xlat15 = u_xlat8 * u_xlat20;
+    u_xlat19 = u_xlat19 * u_xlat20;
+    u_xlat19 = u_xlat14.x * u_xlat15 + u_xlat19;
+    u_xlat19 = u_xlat21 * u_xlat8 + u_xlat19;
+    u_xlat19 = u_xlat2.x + u_xlat19;
+    u_xlat19 = u_xlat19 + -0.300000012;
+    u_xlat19 = u_xlat19 * 1.42857146 + -0.5;
+    if(_hslcurve_mode == 0) {
+        u_xlatb2.x = _smooth_gradient==1;
+        u_xlat8 = u_xlat1.y * u_xlat13;
+        u_xlat8 = u_xlat8 * _amount;
+        u_xlat8 = u_xlat19 * u_xlat8 + u_xlat13;
+        u_xlat14.x = u_xlat19 * _amount + u_xlat13;
+        u_xlat13 = (u_xlatb2.x) ? u_xlat8 : u_xlat14.x;
+        u_xlat13 = clamp(u_xlat13, 0.0, 1.0);
+        u_xlat1.x = u_xlat3.x;
+    } else {
+        u_xlat2.x = u_xlat19 * _amount + u_xlat3.x;
+        u_xlatb8 = 1.0<u_xlat2.x;
+        u_xlat14.x = u_xlat2.x + -1.0;
+        u_xlat2.x = (u_xlatb8) ? u_xlat14.x : u_xlat2.x;
+        u_xlatb8 = u_xlat2.x<0.0;
+        u_xlat14.x = u_xlat2.x + 1.0;
+        u_xlat1.x = (u_xlatb8) ? u_xlat14.x : u_xlat2.x;
+        u_xlatb2.xy = equal(ivec4(_hslcurve_mode, _smooth_gradient, _hslcurve_mode, _hslcurve_mode), ivec4(1, 1, 0, 0)).xy;
+        u_xlat14.x = u_xlat1.y * u_xlat13;
+        u_xlat14.x = u_xlat14.x * _amount;
+        u_xlat14.x = u_xlat19 * u_xlat14.x + u_xlat1.y;
+        u_xlat20 = u_xlat19 * _amount + u_xlat1.y;
+        u_xlat8 = (u_xlatb2.y) ? u_xlat14.x : u_xlat20;
+        u_xlat14.x = u_xlat13 * u_xlat8;
+        u_xlat19 = u_xlat19 * u_xlat14.x;
+        u_xlat3.y = u_xlat19 * 4.0 + u_xlat8;
+        u_xlat3.y = clamp(u_xlat3.y, 0.0, 1.0);
+        u_xlat1.xy = (u_xlatb2.x) ? u_xlat1.xy : u_xlat3.xy;
+    }
+    u_xlat2.xyz = u_xlat1.xxx * vec3(6.0, 6.0, 6.0) + vec3(0.0, 4.0, 2.0);
+    u_xlat2.xyz = u_xlat2.xyz * vec3(0.166666672, 0.166666672, 0.166666672);
+    u_xlatb3.xyz = greaterThanEqual(u_xlat2.xyzx, (-u_xlat2.xyzx)).xyz;
+    u_xlat2.xyz = fract(abs(u_xlat2.xyz));
+    {
+        vec4 hlslcc_movcTemp = u_xlat2;
+        hlslcc_movcTemp.x = (u_xlatb3.x) ? u_xlat2.x : (-u_xlat2.x);
+        hlslcc_movcTemp.y = (u_xlatb3.y) ? u_xlat2.y : (-u_xlat2.y);
+        hlslcc_movcTemp.z = (u_xlatb3.z) ? u_xlat2.z : (-u_xlat2.z);
+        u_xlat2 = hlslcc_movcTemp;
+    }
+    u_xlat2.xyz = u_xlat2.xyz * vec3(6.0, 6.0, 6.0) + vec3(-3.0, -3.0, -3.0);
+    u_xlat2.xyz = abs(u_xlat2.xyz) + vec3(-1.0, -1.0, -1.0);
+    u_xlat2.xyz = clamp(u_xlat2.xyz, 0.0, 1.0);
+    u_xlat2.xyz = u_xlat2.xyz + vec3(-1.0, -1.0, -1.0);
+    u_xlat1.xzw = vec3(u_xlat13) * u_xlat2.xyz + vec3(1.0, 1.0, 1.0);
+    u_xlat1.xyz = u_xlat1.xzw * u_xlat1.yyy;
+    u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+    if(_use_inner_mask != 0) {
+        u_xlatb2.xy = equal(ivec4(_show_inner_mask, _b_clip_mask, _show_inner_mask, _show_inner_mask), ivec4(1, 1, 0, 0)).xy;
+        u_xlat1.w = u_xlat0.w;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat5 = u_xlat0 * u_xlat5;
+        u_xlat3 = u_xlat3 * u_xlat4 + u_xlat5;
+        u_xlat0.x = u_xlat4.x * u_xlat3.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat0.x : u_xlat3.w;
+        fragColor.xyz = u_xlat3.xyz;
+    } else {
+        fragColor.xyz = u_xlat1.xyz;
+        fragColor.w = u_xlat0.w;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/UI_preview_cover
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-ui-preview-cover"
+    name="Ui Preview Cover (NV)"
+    name-en="Ui Preview Cover (NV)"
+    desc="NodeVideo effect 'NodeVideo/UI_preview_cover', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/UI_preview_cover', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="_outline_color" label="Outline Color" default="#FFFFFFFF" />
+        <slider id="_left" label="Left" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_right" label="Right" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_width" label="Width" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_height" label="Height" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_blur" label="Blur" default="1.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="_ratio" label="Ratio" default="0.0" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec2 u_xlat0;
+bool u_xlatb0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec2 u_xlat2;
+bvec2 u_xlatb2;
+vec3 u_xlat3;
+bvec3 u_xlatb3;
+float u_xlat4;
+bool u_xlatb4;
+float u_xlat6;
+bool u_xlatb6;
+float u_xlat7;
+float u_xlat9;
+bool u_xlatb9;
+float u_xlat10;
+void main()
+{
+    u_xlat0.x = _blur * _ratio + _height;
+    u_xlat3.x = (-u_xlat0.x) + _height;
+    u_xlat0.x = (-u_xlat0.x) + acScreenNorm.y;
+    u_xlat3.x = float(1.0) / u_xlat3.x;
+    u_xlat0.x = u_xlat3.x * u_xlat0.x;
+    u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+    u_xlat3.x = u_xlat0.x * -2.0 + 3.0;
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat0.x = u_xlat0.x * u_xlat3.x;
+    u_xlat3.x = (-_height) + 1.0;
+    u_xlat6 = (-_blur) * _ratio + u_xlat3.x;
+    u_xlat9 = (-u_xlat6) + u_xlat3.x;
+    u_xlat6 = (-u_xlat6) + acScreenNorm.y;
+    u_xlatb3.x = acScreenNorm.y>=u_xlat3.x;
+    u_xlat9 = float(1.0) / u_xlat9;
+    u_xlat6 = u_xlat9 * u_xlat6;
+    u_xlat6 = clamp(u_xlat6, 0.0, 1.0);
+    u_xlat9 = u_xlat6 * -2.0 + 3.0;
+    u_xlat6 = u_xlat6 * u_xlat6;
+    u_xlat3.y = u_xlat6 * u_xlat9;
+    u_xlatb3.z = 1.0>=acScreenNorm.y;
+    u_xlat3.x = u_xlatb3.x ? float(1.0) : 0.0;
+    u_xlat3.z = u_xlatb3.z ? float(1.0) : 0.0;
+;
+    u_xlat3.xy = u_xlat3.zz * u_xlat3.xy;
+    u_xlatb9 = acScreenNorm.y>=0.0;
+    u_xlat9 = u_xlatb9 ? 1.0 : float(0.0);
+    u_xlat0.x = u_xlat9 * u_xlat0.x + u_xlat3.y;
+    u_xlat6 = _width + _left;
+    u_xlat1.x = u_xlat6 + _blur;
+    u_xlat4 = u_xlat6 + (-u_xlat1.x);
+    u_xlat1.x = (-u_xlat1.x) + acScreenNorm.x;
+    u_xlatb6 = u_xlat6>=acScreenNorm.x;
+    u_xlat6 = u_xlatb6 ? 1.0 : float(0.0);
+    u_xlat4 = float(1.0) / u_xlat4;
+    u_xlat1.x = u_xlat4 * u_xlat1.x;
+    u_xlat1.x = clamp(u_xlat1.x, 0.0, 1.0);
+    u_xlat4 = u_xlat1.x * -2.0 + 3.0;
+    u_xlat1.x = u_xlat1.x * u_xlat1.x;
+    u_xlat1.x = u_xlat1.x * u_xlat4;
+    u_xlatb4 = acScreenNorm.x>=_left;
+    u_xlat4 = u_xlatb4 ? 1.0 : float(0.0);
+    u_xlat1.x = u_xlat1.x * u_xlat4;
+    u_xlat0.x = max(u_xlat0.x, u_xlat1.x);
+    u_xlat1.x = (-_width) + _right;
+    u_xlat7 = u_xlat1.x + (-_blur);
+    u_xlat10 = (-u_xlat7) + u_xlat1.x;
+    u_xlat7 = (-u_xlat7) + acScreenNorm.x;
+    u_xlatb1 = acScreenNorm.x>=u_xlat1.x;
+    u_xlat1.x = u_xlatb1 ? 1.0 : float(0.0);
+    u_xlat10 = float(1.0) / u_xlat10;
+    u_xlat7 = u_xlat10 * u_xlat7;
+    u_xlat7 = clamp(u_xlat7, 0.0, 1.0);
+    u_xlat10 = u_xlat7 * -2.0 + 3.0;
+    u_xlat7 = u_xlat7 * u_xlat7;
+    u_xlat7 = u_xlat7 * u_xlat10;
+    u_xlatb2.xy = greaterThanEqual(vec4(_right, _height, _right, _right), acScreenNorm.xyxx).xy;
+    u_xlat2.x = u_xlatb2.x ? float(1.0) : 0.0;
+    u_xlat2.y = u_xlatb2.y ? float(1.0) : 0.0;
+;
+    u_xlat7 = u_xlat7 * u_xlat2.x;
+    u_xlat0.x = max(u_xlat0.x, u_xlat7);
+    u_xlat6 = u_xlat6 * u_xlat4;
+    u_xlat3.x = u_xlat9 * u_xlat2.y + u_xlat3.x;
+    u_xlat3.x = u_xlat4 * u_xlat3.x;
+    u_xlat3.x = u_xlat3.x * u_xlat2.x + u_xlat6;
+    u_xlat3.x = u_xlat1.x * u_xlat2.x + u_xlat3.x;
+    u_xlat0.xy = u_xlat0.xx * vec2(0.0, 0.899999976) + u_xlat3.xx;
+    u_xlat0.xy = min(u_xlat0.xy, vec2(1.0, 1.0));
+    u_xlat1.xyz = _outline_color.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat1.xyz = _outline_color.xyz * u_xlat1.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat1.xyz = u_xlat1.xyz * _outline_color.xyz;
+    u_xlat1.xyz = u_xlat0.xxx * u_xlat1.xyz;
+    u_xlat1.w = u_xlat0.y * _outline_color.w;
+    u_xlatb0 = acScreenNorm.x<_left;
+    u_xlatb3.x = _right<acScreenNorm.x;
+    u_xlatb0 = u_xlatb3.x || u_xlatb0;
+    fragColor = (bool(u_xlatb0)) ? vec4(0.0, 0.0, 0.0, 0.800000012) : u_xlat1;
+    return;
+}
+    ]]></shader>
+</effect>

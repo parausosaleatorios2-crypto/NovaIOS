@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  OSCILAR (ANTIGO) — o `com.alightcreative.effects.oscillate` do Alight Motion, o primeiro (0.561.0).
+
+  O AM marca este como "deprecated" (o atual é o `oscillate3`, `am-oscillate.xml`), mas os projetos feitos antes ainda
+  o trazem: existe para a importação e fica fora do catálogo. Lido do script dele (`model/Oscilar.deslocamentoDoAmV1`):
+  o Ângulo direto (0° a 180°, 0° é para baixo), `posição += (sin a, cos a) · Magnitude · m` com
+  m = sin(tempo · duração · Frequência · 3,14159), ou triângulo(tempo · duração · Frequência / 2). A Frequência NÃO é
+  do tipo "hz": entra a do instante vezes o tempo, e com quadro-chave a camada pula (como no Balanço antigo).
+
+  Os passos são os que o AM dá a quem não tem `step`: o `<spinner>` pela potência de 10 abaixo de (máx − mín) ÷ 100,
+  limitada pela do mínimo quando ele é > 0 (`UserParamParserKt.readSpinnerParam`): 1 no Ângulo, 0,1 na Frequência; o
+  `<slider>` da Magnitude anda (máx − mín) ÷ 100 = 4,99 (`readSliderParam`).
+-->
+<effect
+    id="nova.effect.am-oscillate-legacy"
+    name="Oscilar (antigo)"
+    name-en="Oscillate (legacy)"
+    desc="O Oscilar antigo do Alight Motion (a primeira versão), dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Oscillate (its first version), from projects made before its current version."
+    category="distort"
+    stage="transform"
+    catalog="false"
+    tags="oscilar,oscillate,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="angle" label="Ângulo" default="45.0" min="0.0" max="180.0" step="1.0" type="angle" />
+        <spinner id="freq" label="Frequência" default="2.0" min="0.1" max="16.0" step="0.1" />
+        <slider id="mag" label="Magnitude" default="25.0" min="1.0" max="500.0" step="4.99" />
+        <selector id="type" label="Onda" options="Seno|Triângulo" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

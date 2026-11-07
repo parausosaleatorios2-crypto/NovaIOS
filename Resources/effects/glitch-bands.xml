@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   GLITCH EM FAIXAS
+  ============================================================================
+
+  A tela "sacode" em faixas horizontais: cada faixa pula uns pixels pra um
+  lado, o canal vermelho e o azul se separam, tudo trocando num ritmo nervoso.
+  O look de clipe cyberpunk, de "tela corrompida", de sinal cortando.
+
+  ============================================================================
+   FAIXAS CELULARES + HASH DO TEMPO = JITTER LIMPO
+  ============================================================================
+
+  A tela é cortada em `bandCount` faixas horizontais iguais. Cada faixa
+  pergunta: "estou glitchando agora?" (hash do tempo e do índice da faixa) e,
+  se sim, por quanto pular (outro hash). Isso dá o padrão SEM GUARDAR ESTADO
+  — o mesmo instante vai dar sempre o mesmo glitch (preview e render casam).
+
+  ============================================================================
+   RGB SPLIT NAS FAIXAS QUE GLITCHAM
+  ============================================================================
+
+  Uma faixa em glitch não só pula — ela AMASSA as cores. Cada canal lê a
+  imagem em uma UV ligeiramente diferente: R desloca pra um lado, B pro
+  outro, G fica. O espectro se abre nas bordas do pulo, igual uma lente barata
+  tentando capturar movimento rápido.
+-->
+<effect
+    id="nova.effect.glitch-bands"
+    name="Glitch em faixas"
+    name-en="Glitch Bands"
+    desc="Faixas horizontais pulando lateralmente com separação de canais."
+    desc-en="Horizontal bands jumping sideways with RGB channel splitting."
+    category="stylize"
+    tags="glitch,faixas,cyberpunk,bandas,rgb,split,corrupto,corromper">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="bandCount" label="Número de faixas"
+                default="40" min="4" max="200" step="1" type="integer" />
+        <slider id="jumpAmount" label="Tamanho do pulo"
+                default="0.03" min="0.0" max="0.3" step="0.005" snap="0.0" />
+        <slider id="chance" label="Chance de glitch (0-1)"
+                default="0.3" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="rgbSplit" label="Separação RGB"
+                default="0.4" min="0.0" max="2.0" step="0.02" snap="0.0" />
+        <slider id="rate" label="Taxa (Hz)"
+                default="15.0" min="1.0" max="60.0" step="0.5" snap="0.0" />
+        <slider id="seed" label="Semente"
+                default="0" min="0" max="99" step="1" type="integer" />
+    </params>
+
+    <preview>
+        <set param="chance" value="0.6" />
+        <set param="rgbSplit" value="0.8" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash2(vec2 c) {
+    c += vec2(float(seed) * 13.7);
+    return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+void main() {
+    // Quadro rítmico: congela o glitch por 1/rate segundos; muda só nas trocas.
+    float quadro = floor(acTime * rate);
+
+    // Índice da faixa deste pixel.
+    float n = max(float(int(bandCount + 0.5)), 1.0);
+    float faixa = floor(acScreenNorm.y * n);
+
+    // Essa faixa, nesse quadro, está glitchando?
+    float sorteia = hash2(vec2(faixa, quadro));
+    float deslocamento = 0.0;
+    if (sorteia < chance) {
+        // Sim: pula; a direção e a força vêm de outro hash.
+        float quanto = (hash2(vec2(faixa, quadro + 7.0)) * 2.0 - 1.0) * jumpAmount;
+        deslocamento = quanto;
+    }
+
+    vec2 uv = acScreenNorm + vec2(deslocamento, 0.0);
+
+    // Separação RGB: cada canal lê em UV ligeiramente diferente.
+    float sep = rgbSplit * 0.003 * abs(deslocamento) * 20.0;  // split maior onde o glitch é maior
+    float r = texture(inputImg, uv + vec2(sep, 0.0)).r;
+    float g = texture(inputImg, uv).g;
+    float b = texture(inputImg, uv - vec2(sep, 0.0)).b;
+    float a = texture(inputImg, uv).a;
+
+    fragColor = vec4(r, g, b, a);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.turbulence" name="Turbulence Displace" desc="Displaces the image with animated fractal noise. The go-to organic wobble." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/turbulence.png"
+        tags="distort,turbulence,noise,displace" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Turbulence" />
+<spinner id="amount" default="0.03" min="0.0" max="0.3" step="0.001" label="Amount" />
+<spinner id="scale" default="4.0" min="0.5" max="40.0" step="0.1" label="Noise Scale" />
+<spinner id="speed" default="0.5" min="0.0" max="5.0" step="0.05" label="Speed" />
+<spinner id="complexity" default="1.0" min="0.2" max="3.0" step="0.05" label="Complexity" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[float gmHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float gmNoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gmHash(i), gmHash(i + vec2(1.0, 0.0)), u.x),
+             mix(gmHash(i + vec2(0.0, 1.0)), gmHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float gmFbm(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 5; i++){ s += a * gmNoise(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+void main(){
+  vec2 uv = acScreenNorm;
+  float t = acTime * speed;
+  float n1 = gmFbm(uv * scale + vec2(t, 0.0));
+  float n2 = gmFbm(uv * scale + vec2(0.0, t) + 17.3);
+  vec2 o = (vec2(n1, n2) - 0.5) * 2.0 * amount * complexity * mixAmt;
+  uv += o;
+  gl_FragColor = texture2DCv(inputImg.texture, uv);
+}
+]]></shader>
+</effect>

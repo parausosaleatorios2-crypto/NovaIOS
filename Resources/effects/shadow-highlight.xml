@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sombras e luzes.
+
+  Clareia o que está escuro e recupera o que está estourado, cada um por conta.
+  É o ajuste que salva foto com contraluz, e o que "Níveis" não faz: níveis mexe
+  na faixa inteira, este mexe só nas pontas.
+
+  Dois controles, como no Alight Motion (Realces e Sombras) e no básico do After
+  Effects (Shadow Amount e Highlight Amount). Até a 0.183 eram cinco: onde a
+  sombra acaba, onde a luz começa e o contraste dos médios ficaram fixos nos
+  valores de sempre (0,4, 0,6 e 0) — os dois que sobraram entregam o mesmo
+  resultado, e três controles a mais só confundiam (pedido do snow, 22/09/2026).
+-->
+<effect
+    id="nova.effect.shadowhighlight"
+    name="Sombras e luzes"
+    name-en="Shadow and Highlight"
+    desc="Clareia sombras e recupera luzes estouradas, separadamente."
+    desc-en="Opens the shadows and recovers the highlights."
+    category="color"
+    blend="true"
+    tags="sombra,luz,contraluz,hdr,recuperar,exposicao,correcao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="shadows" label="Sombras"
+                default="0.3" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="highlights" label="Realces"
+                default="0.3" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <!-- Amostra: a paisagem, que tem sombra funda e realce forte (vitrine, 0.665.0). -->
+    <preview amostra="paisagem" />
+
+    <shader><![CDATA[
+
+const float FIM_DA_SOMBRA = 0.4;
+const float COMECO_DA_LUZ = 0.6;
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+
+    // Duas máscaras suaves, uma para cada ponta. `smoothstep` em vez de corte
+    // seco: um limite duro deixaria uma linha visível atravessando o degradê da
+    // imagem, exatamente onde a máscara termina.
+    float shadowMask = 1.0 - smoothstep(0.0, FIM_DA_SOMBRA, luma);
+    float highlightMask = smoothstep(COMECO_DA_LUZ, 1.0, luma);
+
+    vec3 result = color.rgb;
+    // Levantar sombra puxando para o branco na proporção que falta: assim o
+    // ajuste não pode estourar, porque ele nunca passa de 1.
+    result += shadows * shadowMask * (1.0 - result) * 0.9;
+    result -= highlights * highlightMask * result * 0.6;
+
+    fragColor = vec4(clamp(result, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

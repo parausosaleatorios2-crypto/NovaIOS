@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Duotone: remapeia o brilho da imagem entre duas cores.
+
+  Os pontos de preto e de branco existem para dar contraste antes do remapeamento.
+  Uma foto de contraste baixo remapeada direto vira uma mancha de cor média; com
+  os pontos ajustados, ela recupera a separação entre sombra e luz.
+
+  Este É o "Tint" pedido — duas cores mapeadas por luminância é a definição
+  do Tint clássico (Photoshop/Premiere), não um efeito diferente. Por isso
+  não existe um `tint.xml` separado fazendo a mesma conta; "tint" entrou nas
+  tags pra aparecer na busca por esse nome também.
+-->
+<effect
+    id="nova.effect.duotone"
+    name="Duas cores"
+    name-en="Duotone"
+    desc="Pinta sombras e luzes com duas cores escolhidas."
+    desc-en="Maps the image onto two colours."
+    category="color"
+    blend="mode"
+    tags="duotone,poster,capa,spotify,estilo,tint,tingir">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="shadowColor" label="Sombras" default="#1B1B4B" />
+        <color id="highlightColor" label="Luzes" default="#FF6B6B" />
+
+        <slider id="blackPoint" label="Ponto de preto"
+                default="0.0" min="0.0" max="0.9" step="0.01" />
+
+        <slider id="whitePoint" label="Ponto de branco"
+                default="1.0" min="0.1" max="1.0" step="0.01" />
+
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+
+    float range = max(whitePoint - blackPoint, 0.001);
+    luma = clamp((luma - blackPoint) / range, 0.0, 1.0);
+
+    vec3 duo = mix(shadowColor.rgb, highlightColor.rgb, luma);
+    fragColor = vec4(duo, color.a);
+}
+
+    ]]></shader>
+</effect>

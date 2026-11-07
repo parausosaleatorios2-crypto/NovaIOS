@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.duotone" name="Duotone Mapper" desc="Maps luminance between two colours. The fastest way to get a bold poster or album-cover look." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/duotone.png"
+        tags="color,duotone,map,poster" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Colors" />
+<color id="colorA" default="#FF0B1B3A" label="Shadow Color" />
+<color id="colorB" default="#FFFFC24B" label="Highlight Color" />
+<spinner id="contrast" default="1.0" min="0.2" max="3.0" step="0.01" label="Contrast" />
+<spinner id="pivot" default="0.5" min="0.0" max="1.0" step="0.01" label="Pivot" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  float l = gmLum(c);
+  float t = clamp((l - pivot) * contrast + 0.5, 0.0, 1.0);
+  vec3 col = mix(colorA.rgb, colorB.rgb, t);
+  col = mix(c, col, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

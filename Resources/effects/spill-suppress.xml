@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   LIMPAR DERRAME
+  ============================================================================
+
+  O par natural do chroma key, e o passo que quase todo mundo esquece.
+
+  Chavear tira o fundo verde. O que ele NÃO tira é o verde que o fundo jogou no
+  assunto: a luz que bateu no pano e voltou, acendendo o contorno do cabelo, a
+  orelha, o ombro, qualquer borda translúcida. O recorte fica certo e a pessoa
+  fica com uma auréola verde — e é isso que denuncia, em um segundo, que houve
+  chroma key ali.
+
+  ============================================================================
+   COMO O DERRAME É MEDIDO
+  ============================================================================
+
+  Não por "quanto verde tem": um agasalho verde legítimo também tem. O que se
+  mede é **o quanto o croma do pixel aponta para a direção da cor-chave**.
+
+  Croma é a cor sem o brilho (`c - luminância`). Nesse espaço, a cor-chave vira
+  uma DIREÇÃO, e o derrame é a projeção do pixel nessa direção. Subtrair essa
+  projeção tira o verde emprestado e deixa o resto da cor intacto — inclusive um
+  verde que aponte para outro lado do croma.
+
+  ============================================================================
+   POR QUE PRESERVAR A LUMINÂNCIA
+  ============================================================================
+
+  Tirar uma componente de cor sempre ESCURECE o pixel: some energia de um canal.
+  Numa borda de cabelo, o efeito é uma linha escura no lugar da linha verde —
+  trocou um defeito por outro. Devolver a luminância que havia antes, distribuída
+  pelos três canais, mantém o brilho e muda só o matiz, que é o que se queria.
+
+  Três controles, os do Spill Suppressor do After Effects (a cor, a precisão e a
+  força). Até a 0.183 eram seis: "Preservar o brilho" ficou sempre ligado, "Só
+  perto da borda" e "Ver o que está sendo tirado" saíram (22/09/2026).
+-->
+<effect
+    id="nova.effect.spillsuppress"
+    name="Limpar derrame"
+    name-en="Spill Suppress"
+    desc="Tira o verde (ou azul) que o fundo jogou na borda do assunto, depois do chroma."
+    desc-en="Removes the green the background threw on the subject edge."
+    category="matte"
+    tags="chroma,derrame,spill,verde,chave,limpar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="spillColor" label="Cor do fundo que vazou" default="#00C000" />
+        <slider id="amount" label="Força"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="tolerance" label="Tolerância"
+                default="0.2" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+/** A cor sem o brilho: é neste espaço que "direção da cor" faz sentido. */
+vec3 croma(vec3 c) {
+    return c - dot(c, LUMA);
+}
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    if (cor.a <= 0.0) {
+        fragColor = cor;
+        return;
+    }
+
+    vec3 alvo = croma(spillColor.rgb);
+    float forcaAlvo = length(alvo);
+    // Cor-chave cinza não tem direção de croma — nada a suprimir, e normalizar
+    // um vetor de comprimento zero daria NaN espalhado pela tela.
+    if (forcaAlvo < 1e-4 || amount <= 0.0) {
+        fragColor = cor;
+        return;
+    }
+
+    vec3 direcao = alvo / forcaAlvo;
+    float quanto = dot(croma(cor.rgb), direcao);
+
+    // A tolerância é o quanto de cor legítima naquela direção fica de pé. Sem
+    // ela, um agasalho verde perderia o verde junto com o derrame.
+    float excesso = max(quanto - tolerance * forcaAlvo, 0.0) * amount;
+
+    vec3 limpa = cor.rgb - direcao * excesso;
+
+    // Devolve o brilho perdido igualmente nos três canais: mexe no matiz, não
+    // na exposição (sempre — tirar o verde não pode escurecer a pele).
+    float antes = dot(cor.rgb, LUMA);
+    float depois = dot(limpa, LUMA);
+    limpa += (antes - depois);
+
+    fragColor = vec4(clamp(limpa, 0.0, 1.0), cor.a);
+}
+
+    ]]></shader>
+</effect>

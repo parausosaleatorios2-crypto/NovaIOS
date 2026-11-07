@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   YY SHOCKRING — o YY_ShockRing (Andrew Yang), tirado do próprio plugin
+  ============================================================================
+
+  As contas saíram do YY_ShockRing.aex desmontado (`tools/shockring/benchmark/`,
+  ver o LEIAME) e foram conferidas contra o plugin no AE 2023.
+
+  Para cada pixel (x, y inteiros), d = distância ao Center:
+    dentro (d < Radius):  v = d / (Expansion · Radius) + 1 − 1/Expansion   (Expansion 0: v = 0)
+                          (o anel sobe de Radius·(1 − Expansion) até Radius)
+    fora:                 v = 1 − (d − Radius) / Feather     (Feather 0: v = 0)
+    Scatter:              v += (hash(x, y) mod 512 − 256) · Scatter · 10⁻⁶
+    v = clamp(v, 0, 1); Smooth: v = (1 − cos πv)/2; m = v · Opacity
+    cor = Color 2 + (Color 1 − Color 2) · m
+  Blend Mode (A = alfa da camada):
+    None:                       a cor, alfa m
+    Normal:                     o anel POR CIMA (alfa 1 − (1 − m)(1 − A))
+    Add:                        o mesmo alfa; cor k·(cor + A·camada) + (1 − k)·camada, k = m/alfa
+    (Stencil) Multiply:         camada · A · cor · m, alfa 1
+    (Stencil) Multiply+Alpha:   o mesmo, dividido pelo maior canal, que vira o alfa
+-->
+<effect
+    id="nova.effect.shockring"
+    name="YY ShockRing"
+    name-en="YY ShockRing"
+    desc="Um anel de onda de choque com degradê de duas cores, suave e com dispersão: impactos, pulsos e ondas."
+    desc-en="A two-color shockwave ring, smooth and scattered: impacts, pulses and waves."
+    category="generate"
+    tags="yy shockring,shockring,shock ring,onda de choque,shockwave,anel,ring,pulso,pulse,impacto,impact,andrew yang">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" min="-1.0" max="2.0" unit="px" />
+        <slider id="radius" label="Radius" default="100.0" min="0.0" max="3000.0" step="1.0" snap="100.0" />
+        <slider id="feather" label="Feather" default="3.0" min="0.0" max="3000.0" step="0.1" snap="3.0" />
+        <slider id="expansion" label="Expansion" default="50.0" min="0.0" max="100.0" step="0.1" snap="50.0" />
+        <!-- Escondido no plugin (fica em 100); entra aqui igual. -->
+        <slider id="opacity" label="Opacity" hidden="true" default="100.0" min="0.0" max="100.0" step="1.0" />
+        <slider id="scatter" label="Scatter" default="0.0" min="0.0" max="512.0" step="1.0" snap="0.0" />
+        <color id="color1" label="Color 1" default="#FFFFFFFF" />
+        <color id="color2" label="Color 2" default="#FF007FFF" />
+        <switch id="suave" label="Smooth" default="true" />
+        <selector id="blend" label="Blend Mode" default="0"
+                  options="None|Normal|Add|(Stencil) Multiply|(Stencil) Multiply+Alpha" />
+    </params>
+
+    <shader><![CDATA[
+
+/** O ruído do Scatter, com o hash inteiro do plugin (0x45d9f3b) e o resto em C. */
+float ruido(int x, int y, float semente) {
+    uint s = uint(int(semente));
+    uint h = uint(y) * uint(y) + s + uint(x);
+    h = ((h >> 16u) ^ h) * 0x45d9f3bu;
+    h = ((h >> 16u) ^ h) * 0x45d9f3bu;
+    h = (h >> 16u) ^ h;
+    // h % 512 com o sinal de int32 (truncado para zero, como em C).
+    bool negativo = (h >> 31u) != 0u;
+    uint modulo = (negativo ? (~h + 1u) : h) & 511u;
+    int r = negativo ? -int(modulo) : int(modulo);
+    return float(r - 256);
+}
+
+void main() {
+    vec4 fonte = texture(inputImg, acScreenNorm);
+    float esc = max(acEscalaDePixel, 1e-4);
+    ivec2 p = ivec2(floor(acScreenNorm * acResolution));
+    vec2 c = center * acResolution;
+    float d = length(vec2(p) - c);
+    float R = radius * esc;
+    float F = feather * esc;
+    float ex = expansion / 100.0;
+
+    float v = -2.0;
+    if (R > d) {
+        if (ex > 0.0) v = d / (ex * R) + 1.0 - 1.0 / ex;
+    } else if (F > 0.0) {
+        v = 1.0 - (d - R) / F;
+    }
+    if (scatter > 0.0) {
+        v += ruido(p.x, p.y, scatter * scatter * 256.0) * scatter * 1e-6;
+    }
+    v = clamp(v, 0.0, 1.0);
+    if (suave) v = (1.0 - cos(v * 3.14159265359)) * 0.5;
+    float m = v * (opacity / 100.0);
+    vec3 cor = color2.rgb + (color1.rgb - color2.rgb) * m;
+
+    float A = fonte.a;
+    vec4 o;
+    if (blend == 0) {
+        o = vec4(cor, m);
+    } else if (blend == 1 || blend == 2) {
+        float a = 1.0 - (1.0 - m) * (1.0 - A);
+        float k = a != 0.0 ? m / a : 0.0;
+        vec3 rgb = blend == 1
+            ? cor * k + fonte.rgb * (1.0 - k)
+            : min(k * (cor + A * fonte.rgb) + (1.0 - k) * fonte.rgb, vec3(1.0));
+        o = vec4(rgb, a);
+    } else {
+        vec3 t = fonte.rgb * A * cor * m;
+        if (blend == 3) {
+            o = vec4(t, 1.0);
+        } else {
+            float a = max(t.r, max(t.g, t.b));
+            o = a > 0.0 ? vec4(t / a, a) : vec4(0.0);
+        }
+    }
+    fragColor = o;
+}
+
+    ]]></shader>
+</effect>

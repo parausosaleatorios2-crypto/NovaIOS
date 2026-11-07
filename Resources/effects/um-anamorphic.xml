@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.anamorphic"
+    name="Faixa Anamórfica (Ultra Motion)"
+    name-en="Anamorphic Streak (Ultra Motion)"
+    desc="Rastro horizontal azul nos brilhos — lente de cinema."
+    desc-en="Horizontal blue streak on highlights — cinema lens."
+    category="stylize"
+    tags="ultramotion,anamorphic,streak,lens,flare,glow">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="hblur" src="buffer" />
+        <slider id="reach"     label="Comprimento" default="0.25" min="0.0" max="0.6" step="0.005" />
+        <slider id="threshold" label="Limiar"    default="0.7" min="0.0" max="1.0" step="0.01" />
+        <slider id="intensity" label="Intensidade" default="1.4" min="0.0" max="4.0" step="0.05" />
+        <color  id="tint"      label="Cor"       default="#ff80bfff" />
+    </params>
+
+    <passes>
+        <pass target="hblur" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+void main() {
+    if (acPass == 0) {
+        vec3 soma = vec3(0.0);
+        float pt = 0.0;
+        for (int i = -24; i <= 24; i++) {
+            float t = float(i) / 24.0;
+            vec2 off = vec2(t * reach, 0.0);
+            vec3 c = texture(inputImg, acScreenNorm + off).rgb;
+            float l = dot(c, LUMA);
+            float k = smoothstep(threshold, threshold + 0.1, l);
+            float w = exp(-t * t * 3.0);
+            soma += c * k * w;
+            pt += w;
+        }
+        fragColor = vec4(soma / pt, 1.0);
+    } else {
+        // mini desfoque vertical no streak + tint
+        vec3 soma = vec3(0.0);
+        float pt = 0.0;
+        for (int i = -3; i <= 3; i++) {
+            vec2 off = vec2(0.0, float(i) * acTexelSize.y * 2.0);
+            soma += texture(hblur, acScreenNorm + off).rgb;
+            pt += 1.0;
+        }
+        vec3 streak = (soma / pt) * tint.rgb * tint.a;
+        vec4 orig = texture(inputImg, acScreenNorm);
+        fragColor = vec4(orig.rgb + streak * intensity, orig.a);
+    }
+}
+    ]]></shader>
+</effect>

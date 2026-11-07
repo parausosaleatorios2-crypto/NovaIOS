@@ -1,0 +1,826 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   CC VECTOR BLUR (Cycore, nativo do After Effects) — a conta do plugin (0.494.0)
+  ============================================================================
+
+  Pedido do snow (12/10/2026): "faz o cc vector blur agora, 100% igual o do after effects com benchmark e
+  tudo mais". O algoritmo foi LIDO do VectorBlur.aex (CycoreFXHD; tools/ccvectorblur/benchmark/desmontar.py),
+  reescrito em Python com as mesmas contas (modelo.py) e conferido com o After Effects 2023 em 8 bpc. A
+  leitura sub-pixel não está no plugin (ele chama a do AE): foi MEDIDA com 12 milhões de amostras. Os
+  números do benchmark estão em tools/ccvectorblur/LEIAME.md.
+
+  O QUE O PLUGIN FAZ (e este shader repete):
+
+  - Passe 0: a PROPRIEDADE do mapa (o Vector Map, ou a própria camada) em float32 — R, G, B, A ou
+    Saturation × (1/255 em float); Luminance (117 R + 204 G + 64 B)·A e Lightness (R + G + B)·A divididos em
+    double (aqui: a divisão inteira arredondada, que dá o mesmo float nos 9,2 milhões de valores possíveis);
+    Hue com os ramos do plugin.
+  - Passes 1 e 2: o Map Softness, duas passadas (horizontal e vertical) com o núcleo (3 − 2x)·x² do plugin,
+    em float32 na mesma ordem; na borda, o resto do núcleo vai todo no pixel da ponta.
+  - Passe 3: Natural / Constant Length / Perpendicular — o gradiente (diferença para o vizinho da esquerda e
+    o de cima) vira o vetor v = g · Amount / √(|g|² + (Ridge · 0,002)²); N = trunc(|v|) + 2 amostras a partir
+    do pixel (Natural) ou centradas nele, em ponto fixo 16.16, fora do quadro não conta.
+    Direction Center / Direction Fading — o ângulo sai do VALOR do mapa (Ridge Smoothness = voltas);
+    N = floor(|Amount| / 1,414) + 2; o Fading pesa N, N − 1, … e para na borda.
+  - A leitura sub-pixel do AE (medida): pesos bilineares em float32 a partir da fração de 16 bits, alfa =
+    soma de peso × alfa; cor reta (os 4 vizinhos com o MESMO alfa) ou ponderada pelo alfa; arredonda meio para
+    cima.
+
+  A PRECISÃO: o plugin faz os vetores em DOUBLE, e com Ridge 0 e Amount inteiro o número de amostras depende
+  do último bit da conta (|v| sai 9,999… ou 10). A GPU não tem double: aqui ele é EMULADO com inteiros
+  (`dSoma`, `dMul`, `dDiv`, `dSqrt`: IEEE-754, arredondamento ao par, conferidos bit a bit no PC) — dá o mesmo
+  resultado em qualquer GPU. Seno e cosseno (só no Angle Offset e nos tipos Direction) são os do fdlibm, a
+  até 1 ulp dos do runtime C. As contas de float32 rodam na GPU com `um` (ver abaixo), para nenhum produto
+  ser fundido com a soma seguinte. Entre os passes o float32 vai inteiro nos 4 bytes do buffer.
+
+  A ORIENTAÇÃO: numa camada de ajuste (e no grupo solto, no modelo 3D) a cena chega de pé — a base da imagem na
+  linha 0 (`acEntradaDePe`). A conta é feita na orientação da IMAGEM (`naImagem`): o vizinho "de cima" do
+  gradiente, o ângulo e o passo das amostras saem como no AE, e não espelhados.
+
+  DIFERENÇAS QUE FICAM: o mapa é a camada como ela aparece na tela, no tamanho do buffer desta camada (no AE é
+  a fonte da camada esticada para o tamanho dela: iguais quando as duas ocupam a composição inteira); na prévia
+  reduzida o Amount e o Softness vão na escala, como o AE em resolução reduzida.
+-->
+<effect
+    id="nova.effect.ccvectorblur"
+    name="CC Vector Blur"
+    name-en="CC Vector Blur"
+    desc="O CC Vector Blur do After Effects, conta por conta: borra ao longo das curvas de nível (ou do ângulo) de um mapa."
+    desc-en="After Effects' CC Vector Blur, step by step: blurs along the contours (or the angle) of a map."
+    category="blur"
+    tags="vector,blur,desfoque,cc,cycore,vetor,mapa,after effects,fluido,pincel">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="mapImg" src="layer" label="Vector Map" />
+        <texture id="valor" src="buffer" />
+        <texture id="valorH" src="buffer" />
+        <texture id="valorSuave" src="buffer" />
+
+        <selector id="tipo" label="Type" default="0" options="Natural|Constant Length|Perpendicular|Direction Center|Direction Fading" />
+        <slider id="amount" label="Amount" default="0.0" min="-500.0" max="500.0" step="0.1" snap="0.0,10.0" />
+        <slider id="angleOffset" label="Angle Offset" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" snap="0.0,90.0,180.0,270.0" />
+        <slider id="ridge" label="Ridge Smoothness" default="1.0" min="0.0" max="100.0" step="0.1" snap="0.0,1.0" />
+        <selector id="mapProperty" label="Property" default="5" options="Red|Green|Blue|Alpha|Luminance|Lightness|Hue|Saturation" />
+        <slider id="mapSoftness" label="Map Softness" default="15.0" min="0.0" max="500.0" step="0.1" snap="0.0,15.0" />
+    </params>
+
+    <passes>
+        <pass target="valor" />                                  <!-- 0: a propriedade do mapa (float32) -->
+        <pass target="valorH" skipIfZero="mapSoftness" />        <!-- 1: o Map Softness, horizontal -->
+        <pass target="valorSuave" skipIfZero="mapSoftness" />    <!-- 2: o Map Softness, vertical -->
+        <pass />                                                 <!-- 3: o desfoque -->
+    </passes>
+
+    <!-- O Amount padrão é o do AE (0, o efeito não faz nada): a miniatura usa um que se vê. -->
+    <preview>
+        <set param="amount" value="20.0" />
+    </preview>
+
+    <shader><![CDATA[
+// ============================================================ o float32 do plugin
+// `um` vale 1, mas o compilador não sabe (vem de `acIterationCount`, que é 1 neste efeito). (a·b)·um não se
+// funde com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
+float um;
+int z0;
+ivec2 tam;
+bool dePe;
+
+/** O pixel do buffer de um pixel da IMAGEM (e vice-versa): numa cena de pé, a linha 0 é a base. */
+ivec2 naImagem(ivec2 p) { return dePe ? ivec2(p.x, tam.y - 1 - p.y) : p; }
+
+float fixa(float x) { return x * um; }
+vec3 fixa3(vec3 x) { return x * um; }
+float mul(float a, float b) { return (a * b) * um; }
+vec3 mul3(float a, vec3 b) { return (a * b) * um; }
+
+/** a·b = p + e, exato (Dekker). */
+vec2 produtoExato(float a, float b) {
+    float p = mul(a, b);
+    float t = mul(4097.0, a);
+    float ah = t - fixa(t - a);
+    float al = a - ah;
+    t = mul(4097.0, b);
+    float bh = t - fixa(t - b);
+    float bl = b - bh;
+    float e = fixa(fixa(fixa(mul(ah, bh) - p) + mul(ah, bl)) + mul(al, bh)) + mul(al, bl);
+    return vec2(p, e);
+}
+
+float restoDaDivisao(float a, float b, float q) {
+    vec2 p = produtoExato(q, b);
+    return fixa(a - p.x) - p.y;
+}
+
+/** a / b arredondado como no IEEE (a ≥ 0, b > 0): a divisão da GPU pode errar o último bit. */
+float divisao(float a, float b) {
+    if (a == 0.0) return 0.0;
+    float q = a / b;
+    float e = restoDaDivisao(a, b, q);
+    for (int i = 0; i < 4; i++) {
+        float q2 = uintBitsToFloat(floatBitsToUint(q) + (e > 0.0 ? 1u : 0xFFFFFFFFu));
+        float e2 = restoDaDivisao(a, b, q2);
+        if (abs(e2) < abs(e)) { q = q2; e = e2; } else break;
+    }
+    return q;
+}
+
+/** n / d em float32 com o arredondamento do IEEE, para inteiros (n ≤ d · 2^24, d < 2^26): divisão longa. */
+float divisaoInteira(uint n, uint d) {
+    if (n == 0u) return 0.0;
+    uint q = n / d;
+    uint resto = n - q * d;
+    int e = 0;
+    while (q < 0x1000000u) {
+        resto <<= 1;
+        q <<= 1;
+        if (resto >= d) { q |= 1u; resto -= d; }
+        e++;
+    }
+    uint m = q >> 1;
+    if ((q & 1u) == 1u && (resto != 0u || (m & 1u) == 1u)) m++;
+    int expo = 24 - e;
+    if (m == 0x1000000u) { m >>= 1; expo++; }
+    return uintBitsToFloat((uint(expo + 127) << 23) | (m & 0x7FFFFFu));
+}
+
+/** O valor do controle como o plugin o lê: PF_Fixed (16.16). Cabe num float. */
+float fixo(float v) { return roundEven(v * 65536.0) * (1.0 / 65536.0); }
+
+// O float32 inteiro nos 4 bytes de um texel RGBA8 (o buffer do motor é de 8 bits).
+vec4 guardar(float v) {
+    uint b = floatBitsToUint(v);
+    return vec4(float(b & 255u), float((b >> 8) & 255u), float((b >> 16) & 255u), float(b >> 24)) / 255.0;
+}
+float lerDe(sampler2D t, ivec2 p) {
+    uvec4 c = uvec4(texelFetch(t, naImagem(p), 0) * 255.0 + 0.5);
+    return uintBitsToFloat(c.x | (c.y << 8) | (c.z << 16) | (c.w << 24));
+}
+
+// ============================================================ o double do plugin, emulado
+// uvec2(alto, baixo) com os bits de um double IEEE-754. Só números normais e zero (é o que a conta usa).
+const uvec2 D_ZERO = uvec2(0u, 0u);
+const uvec2 D_UM = uvec2(0x3FF00000u, 0u);
+const uvec2 D_MEIO = uvec2(0x3FE00000u, 0u);
+const uvec2 D_DOIS = uvec2(0x40000000u, 0u);
+const uvec2 D_MENOS_UM = uvec2(0xBFF00000u, 0u);
+const uvec2 D_90 = uvec2(0x40568000u, 0u);
+const uvec2 D_65536 = uvec2(0x40F00000u, 0u);
+const uvec2 D_K_RIDGE = uvec2(0x3F60624Du, 0xD2F1A9FCu);   // 0,002
+const uvec2 D_GRAU = uvec2(0x3F91DF46u, 0xA2529D39u);      // π/180
+const uvec2 D_MEIO_PI = uvec2(0x3FF921FBu, 0x54442D18u);
+const uvec2 D_DOIS_PI = uvec2(0x401921FBu, 0x54442D18u);
+const uvec2 D_K_DIAG = uvec2(0x3FF69FBEu, 0x76C8B439u);    // 1,414
+
+bool dZero(uvec2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
+uint dSinal(uvec2 a) { return a.x >> 31; }
+int dExpo(uvec2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
+uvec2 dMant(uvec2 a) { return uvec2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
+uvec2 dNeg(uvec2 a) { return dZero(a) ? a : uvec2(a.x ^ 0x80000000u, a.y); }
+uvec2 dEscala2(uvec2 a, int k) { return dZero(a) ? a : uvec2(a.x + uint(k << 20), a.y); }
+
+uvec2 soma64(uvec2 a, uvec2 b) { uint lo = a.y + b.y; return uvec2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
+uvec2 sub64(uvec2 a, uvec2 b) { return uvec2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
+bool menor64(uvec2 a, uvec2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
+uvec2 shl64(uvec2 a, int n) {
+    if (n == 0) return a;
+    if (n >= 64) return uvec2(0u);
+    if (n >= 32) return uvec2(a.y << (n - 32), 0u);
+    return uvec2((a.x << n) | (a.y >> (32 - n)), a.y << n);
+}
+uvec2 shr64(uvec2 a, int n) {
+    if (n == 0) return a;
+    if (n >= 64) return uvec2(0u);
+    if (n >= 32) return uvec2(0u, a.x >> (n - 32));
+    return uvec2(a.x >> n, (a.y >> n) | (a.x << (32 - n)));
+}
+
+uvec2 dMontar(uint s, int e, uvec2 m) {
+    return uvec2((s << 31) | (uint(e + 1023) << 20) | (m.x & 0xFFFFFu), m.y);
+}
+
+/** m56 em [2^55, 2^56): 53 bits + guarda + 2 de resto (o último já com o que saiu); ao par. */
+uvec2 dArredondar(uint s, int e, uvec2 m56) {
+    uint extra = m56.y & 7u;
+    uvec2 m = shr64(m56, 3);
+    if (extra > 4u || (extra == 4u && (m.y & 1u) == 1u)) m = soma64(m, uvec2(0u, 1u));
+    if (m.x >= 0x200000u) { m = shr64(m, 1); e += 1; }
+    return dMontar(s, e, m);
+}
+
+/*
+ * O produto das mantissas em dígitos de 16 bits. Os laços daqui têm limite FIXO (sem o `+ z0` dos outros): o
+ * compilador os desenrola, e `A`, `B` e `P` ficam em registradores. Com o limite variável os três arrays iam para a
+ * memória (o índice muda a cada volta), e as ~20 multiplicações por pixel eram quase todo o desfoque (0.569.0, na
+ * GPU do PC: o passe do desfoque 84 → 18 ms; compilar continua em 0,4 s). É conta inteira: o resultado não muda.
+ */
+uvec2 dMul(uvec2 a, uvec2 b) {
+    if (dZero(a) || dZero(b)) return uvec2((dSinal(a) ^ dSinal(b)) << 31, 0u);
+    uvec2 ma = dMant(a), mb = dMant(b);
+    uint A[4];
+    uint B[4];
+    uint P[8];
+    A[0] = ma.y & 0xFFFFu; A[1] = ma.y >> 16; A[2] = ma.x & 0xFFFFu; A[3] = ma.x >> 16;
+    B[0] = mb.y & 0xFFFFu; B[1] = mb.y >> 16; B[2] = mb.x & 0xFFFFu; B[3] = mb.x >> 16;
+    for (int i = 0; i < 8; i++) P[i] = 0u;
+    for (int i = 0; i < 4; i++) {
+        uint c = 0u;
+        for (int j = 0; j < 4; j++) {
+            uint t = A[i] * B[j] + P[i + j] + c;
+            P[i + j] = t & 0xFFFFu;
+            c = t >> 16;
+        }
+        P[i + 4] = c;
+    }
+    uvec2 alto = uvec2((P[7] << 16) | P[6], (P[5] << 16) | P[4]);
+    uvec2 baixo = uvec2((P[3] << 16) | P[2], (P[1] << 16) | P[0]);
+    int e = dExpo(a) + dExpo(b);
+    int sh = 49;
+    if ((alto.x & 0x200u) != 0u) { sh = 50; e += 1; }
+    uvec2 m = shl64(alto, 64 - sh) | shr64(baixo, sh);
+    if (shl64(baixo, 64 - sh) != uvec2(0u)) m.y |= 1u;
+    return dArredondar(dSinal(a) ^ dSinal(b), e, m);
+}
+
+uvec2 dSoma(uvec2 a, uvec2 b) {
+    if (dZero(a)) return dZero(b) ? uvec2((dSinal(a) & dSinal(b)) << 31, 0u) : b;
+    if (dZero(b)) return a;
+    if (menor64(uvec2(a.x & 0x7FFFFFFFu, a.y), uvec2(b.x & 0x7FFFFFFFu, b.y))) { uvec2 t = a; a = b; b = t; }
+    int e = dExpo(a);
+    int d = e - dExpo(b);
+    uvec2 ma = shl64(dMant(a), 3), mb = shl64(dMant(b), 3);
+    if (d >= 60) {
+        mb = uvec2(0u, 1u);
+    } else if (d > 0) {
+        uvec2 r = shr64(mb, d);
+        if (shl64(r, d) != mb) r.y |= 1u;
+        mb = r;
+    }
+    uvec2 m;
+    if (dSinal(a) == dSinal(b)) {
+        m = soma64(ma, mb);
+        if (m.x >= 0x1000000u) {
+            uint st = m.y & 1u;
+            m = shr64(m, 1);
+            m.y |= st;
+            e += 1;
+        }
+    } else {
+        m = sub64(ma, mb);
+        if (m == uvec2(0u)) return uvec2(0u);
+        while (m.x < 0x800000u) { m = shl64(m, 1); e -= 1; }
+    }
+    return dArredondar(dSinal(a), e, m);
+}
+
+uvec2 dSub(uvec2 a, uvec2 b) { return dSoma(a, dNeg(b)); }
+
+uvec2 dDiv(uvec2 a, uvec2 b) {
+    uint s = dSinal(a) ^ dSinal(b);
+    if (dZero(a)) return uvec2(s << 31, 0u);
+    uvec2 ma = dMant(a), mb = dMant(b);
+    int e = dExpo(a) - dExpo(b);
+    if (menor64(ma, mb)) { ma = shl64(ma, 1); e -= 1; }
+    uvec2 q = uvec2(0u), resto = ma;
+    for (int i = 0; i < 55 + z0; i++) {
+        q = shl64(q, 1);
+        if (!menor64(resto, mb)) { resto = sub64(resto, mb); q.y |= 1u; }
+        resto = shl64(resto, 1);
+    }
+    q = shl64(q, 1);
+    if (resto != uvec2(0u)) q.y |= 1u;
+    return dArredondar(s, e, q);
+}
+
+uvec2 dSqrt(uvec2 a) {
+    if (dZero(a)) return uvec2(0u);
+    uvec2 m = dMant(a);
+    int k = dExpo(a) - 52;
+    if ((k & 1) != 0) { m = shl64(m, 1); k -= 1; }
+    // a raiz inteira de m · 2^58, dois bits por vez: 56 bits
+    uvec2 resto = uvec2(0u), raiz = uvec2(0u);
+    for (int i = 0; i < 56 + z0; i++) {
+        uint par = i < 27 ? (shr64(m, 52 - 2 * i).y & 3u) : 0u;
+        resto = shl64(resto, 2);
+        resto.y |= par;
+        uvec2 tentativa = shl64(raiz, 2);
+        tentativa.y |= 1u;
+        raiz = shl64(raiz, 1);
+        if (!menor64(resto, tentativa)) { resto = sub64(resto, tentativa); raiz.y |= 1u; }
+    }
+    if (resto != uvec2(0u)) raiz.y |= 1u;
+    return dArredondar(0u, k / 2 + 26, raiz);
+}
+
+/** trunc, para |a| < 2^31. */
+int dTrunc(uvec2 a) {
+    if (dZero(a)) return 0;
+    int e = dExpo(a);
+    if (e < 0) return 0;
+    if (e > 30) return dSinal(a) == 1u ? -0x7FFFFFFF : 0x7FFFFFFF;
+    int v = int(shr64(dMant(a), 52 - e).y);
+    return dSinal(a) == 1u ? -v : v;
+}
+
+uvec2 dDeFloat(float f) {
+    uint b = floatBitsToUint(f);
+    uint E = (b >> 23) & 0xFFu;
+    if (E == 0u) return uvec2(b & 0x80000000u, 0u);
+    uvec2 m = shl64(uvec2(0u, b & 0x7FFFFFu), 29);
+    return uvec2((b & 0x80000000u) | (uint(int(E) - 127 + 1023) << 20) | m.x, m.y);
+}
+
+uvec2 dDeInt(int i) {
+    if (i == 0) return uvec2(0u);
+    uint u = uint(abs(i));
+    int e = 31;
+    while ((u & 0x80000000u) == 0u) { u <<= 1; e--; }
+    return dMontar(i < 0 ? 1u : 0u, e, shl64(uvec2(0u, u), 21));
+}
+
+/** O double para float32, ao par. */
+float dParaFloat(uvec2 d) {
+    if (dZero(d)) return uintBitsToFloat(d.x & 0x80000000u);
+    uvec2 m = dMant(d);
+    int e = dExpo(d);
+    uint m24 = shr64(m, 29).y;
+    uint resto = m.y & 0x1FFFFFFFu;
+    if (resto > 0x10000000u || (resto == 0x10000000u && (m24 & 1u) == 1u)) m24++;
+    if (m24 == 0x1000000u) { m24 >>= 1; e++; }
+    return uintBitsToFloat((dSinal(d) << 31) | (uint(e + 127) << 23) | (m24 & 0x7FFFFFu));
+}
+
+/** a < b */
+bool dMenor(uvec2 a, uvec2 b) {
+    bool za = dZero(a), zb = dZero(b);
+    if (za && zb) return false;
+    if (za) return dSinal(b) == 0u;
+    if (zb) return dSinal(a) == 1u;
+    if (dSinal(a) != dSinal(b)) return dSinal(a) == 1u;
+    uvec2 ma = uvec2(a.x & 0x7FFFFFFFu, a.y), mb = uvec2(b.x & 0x7FFFFFFFu, b.y);
+    return dSinal(a) == 0u ? menor64(ma, mb) : menor64(mb, ma);
+}
+
+// ============================================================ o programa de double
+// As contas em double do plugin são uma lista de instruções (operação, destino, a, b) que um laço só executa:
+// o compilador copia o corpo de uma função em cada chamada, e com ~90 contas o passe levava 22 s para compilar
+// (driver da AMD). Operando >= 64 é a constante K[operando − 64]. Seno e cosseno: os do fdlibm (redução em 3
+// etapas, os polinômios do __kernel_sin/cos) — o runtime C do AE fica a até 1 ulp deles.
+const uvec2 K[28] = uvec2[28](
+    D_MEIO, D_UM, D_DOIS, D_65536, D_90, D_GRAU, D_MEIO_PI, D_DOIS_PI, D_K_RIDGE, D_K_DIAG,
+    uvec2(0x3FE45F30u, 0x6DC9C883u), uvec2(0x3FF921FBu, 0x54400000u), uvec2(0x3DD0B461u, 0x1A600000u),
+    uvec2(0x3BA3198Au, 0x2E037073u), uvec2(0x3BA3198Au, 0x2E000000u), uvec2(0x397B839Au, 0x252049C1u),
+    uvec2(0xBFC55555u, 0x55555549u), uvec2(0x3F811111u, 0x1110F8A6u), uvec2(0xBF2A01A0u, 0x19C161D5u),
+    uvec2(0x3EC71DE3u, 0x57B1FE7Du), uvec2(0xBE5AE5E6u, 0x8A2B9CEBu), uvec2(0x3DE5D93Au, 0x5ACFD57Cu),
+    uvec2(0x3FA55555u, 0x5555554Cu), uvec2(0xBF56C16Cu, 0x16C15177u), uvec2(0x3EFA01A0u, 0x19CB1590u),
+    uvec2(0xBE927E4Fu, 0x809C52ADu), uvec2(0x3E21EE9Eu, 0xBDB4B1C4u), uvec2(0xBDA8FAE9u, 0xBE8838D4u)
+);
+
+// >>> programa (gerado por tools/ccvectorblur/benchmark/programa.py — não edite à mão)
+const int OP_SOMA = 0, OP_SUB = 1, OP_MUL = 2, OP_DIV = 3, OP_RAIZ = 4, OP_ESC2 = 5, OP_F32 = 6, OP_TRUNC = 7, OP_ABS = 8, OP_QX = 9, OP_SENQ = 10, OP_COSQ = 11, OP_SINAL = 12;
+const int rG0 = 0, rG1 = 1, rRG = 2, rA = 3, rESC = 4, rANG = 5, rP = 6, rX = 7;
+const int rY = 8, rW = 9, rH = 10, rAX = 11, rANGRAD = 12, rREV = 13, rTH = 14, rS0 = 15;
+const int rC0 = 16, rFN = 17, rKS = 18, rKC = 19, rCOMP = 20, rL = 21, rN = 22, rVX = 23;
+const int rVY = 24, rDXV = 25, rDYV = 26, rX0 = 27, rY0 = 28, rDX = 29, rDY = 30, rPXD = 31;
+const int rTA = 32, rTB = 33, rPYD = 34, rTC = 35, rTD = 36, t0 = 37, t1 = 38, t2 = 39;
+const int t3 = 40, t4 = 41, t5 = 42, t6 = 43, t7 = 44, t8 = 45, t9 = 46, t10 = 47;
+const int t11 = 48;
+const int N_REG = 49;
+const int SEG_COMUM = 0, SEG_THETA = 5, SEG_SENCOS = 10, SEG_GRADIENTE = 72, SEG_DIRECAO = 107, SEG_FIM = 143;
+const ivec4 PROGRAMA[143] = ivec4[143](
+    // ---- COMUM: os valores de todo pixel
+    ivec4(OP_MUL, rAX, rESC, rA),  // AX = escala · Amount
+    ivec4(OP_SOMA, t0, rANG, 64 + 4),
+    ivec4(OP_MUL, rANGRAD, t0, 64 + 5),  // ângulo = (Angle Offset + 90) · π/180
+    ivec4(OP_MUL, rREV, rRG, 64 + 7),  // voltas = Ridge · 2π
+    ivec4(OP_SUB, rTH, rANGRAD, 64 + 6),  // θ do Angle Offset (0 exato com 0°)
+    // ---- THETA: Direction: θ = float32(valor · voltas + ângulo − voltas/2)
+    ivec4(OP_ESC2, t0, rREV, -1),
+    ivec4(OP_SUB, t0, rANGRAD, t0),
+    ivec4(OP_MUL, t1, rP, rREV),
+    ivec4(OP_SOMA, t1, t1, t0),
+    ivec4(OP_F32, rTH, t1, 0),
+    // ---- SENCOS: seno e cosseno de θ (fdlibm: redução em 3 etapas e os polinômios do __kernel_sin/cos)
+    ivec4(OP_ABS, t0, rTH, 0),  // t = |θ|
+    ivec4(OP_MUL, t1, t0, 64 + 10),
+    ivec4(OP_SOMA, t1, t1, 64 + 0),
+    ivec4(OP_TRUNC, rFN, t1, 0),  // n = trunc(t · 2/π + ½)
+    ivec4(OP_MUL, t2, rFN, 64 + 11),
+    ivec4(OP_SUB, t1, t0, t2),  // r = t − n · π/2 (1ª parte)
+    ivec4(OP_MUL, t2, rFN, 64 + 12),  // w
+    ivec4(OP_SUB, t3, t1, t2),  // r
+    ivec4(OP_SUB, t4, t1, t3),
+    ivec4(OP_SUB, t4, t4, t2),
+    ivec4(OP_MUL, t5, rFN, 64 + 13),
+    ivec4(OP_SUB, t2, t5, t4),  // w
+    ivec4(OP_MUL, t4, rFN, 64 + 14),
+    ivec4(OP_SUB, t1, t3, t4),  // r
+    ivec4(OP_SUB, t5, t3, t1),
+    ivec4(OP_SUB, t5, t5, t4),
+    ivec4(OP_MUL, t6, rFN, 64 + 15),
+    ivec4(OP_SUB, t2, t6, t5),  // w
+    ivec4(OP_SUB, t3, t1, t2),  // y0
+    ivec4(OP_SUB, t4, t1, t3),
+    ivec4(OP_SUB, t4, t4, t2),  // y1
+    ivec4(OP_MUL, t5, t3, t3),  // z
+    ivec4(OP_MUL, t6, t5, t3),  // v
+    ivec4(OP_MUL, t7, t5, 64 + 21),
+    ivec4(OP_SOMA, t7, 64 + 20, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 19, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 18, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 17, t7),  // r do seno
+    ivec4(OP_MUL, t8, 64 + 0, t4),
+    ivec4(OP_MUL, t9, t6, t7),
+    ivec4(OP_SUB, t8, t8, t9),
+    ivec4(OP_MUL, t8, t5, t8),
+    ivec4(OP_SUB, t8, t8, t4),
+    ivec4(OP_MUL, t9, t6, 64 + 16),
+    ivec4(OP_SUB, t8, t8, t9),
+    ivec4(OP_SUB, rKS, t3, t8),  // sen(y) = y0 − ((z·(y1/2 − v·r) − y1) − v·S1)
+    ivec4(OP_MUL, t7, t5, 64 + 27),
+    ivec4(OP_SOMA, t7, 64 + 26, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 25, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 24, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 23, t7),
+    ivec4(OP_MUL, t7, t5, t7),
+    ivec4(OP_SOMA, t7, 64 + 22, t7),
+    ivec4(OP_MUL, t7, t5, t7),  // r do cosseno
+    ivec4(OP_QX, t8, t3, 0),  // qx (0 com |y0| < 0,3)
+    ivec4(OP_MUL, t9, 64 + 0, t5),
+    ivec4(OP_SUB, t9, t9, t8),  // hz
+    ivec4(OP_SUB, t8, 64 + 1, t8),  // a
+    ivec4(OP_MUL, t10, t5, t7),
+    ivec4(OP_MUL, t11, t3, t4),
+    ivec4(OP_SUB, t10, t10, t11),
+    ivec4(OP_SUB, t10, t9, t10),
+    ivec4(OP_SUB, rKC, t8, t10),  // cos(y) = a − (hz − (z·r − y0·y1))
+    ivec4(OP_SENQ, rS0, rFN, rKS),  // o quadrante
+    ivec4(OP_COSQ, rC0, rFN, rKS),
+    ivec4(OP_SINAL, rS0, rS0, rTH),  // sen(−θ) = −sen(θ)
+    // ---- GRADIENTE: Natural / Constant Length / Perpendicular (0x180003950 e as outras duas profundidades)
+    ivec4(OP_MUL, rG0, rG0, rESC),  // gx · escala (Perpendicular: gy)
+    ivec4(OP_MUL, rG1, rG1, rESC),  // gy · escala (Perpendicular: −gx)
+    ivec4(OP_MUL, t0, rG1, rG1),
+    ivec4(OP_MUL, t1, rG0, rG0),
+    ivec4(OP_SOMA, t0, t0, t1),
+    ivec4(OP_MUL, t1, rRG, 64 + 8),  // r = Ridge · 0,002
+    ivec4(OP_MUL, t1, t1, t1),
+    ivec4(OP_SOMA, t0, t0, t1),
+    ivec4(OP_RAIZ, rCOMP, t0, 0),  // comp = √((gy² + gx²) + r²)
+    ivec4(OP_DIV, t2, 64 + 1, rCOMP),
+    ivec4(OP_MUL, t3, t2, rG0),
+    ivec4(OP_MUL, rVX, t3, rAX),  // vx = (1/comp) · gx · AX
+    ivec4(OP_MUL, t3, t2, rG1),
+    ivec4(OP_MUL, rVY, t3, rAX),
+    ivec4(OP_MUL, t4, rVY, rVY),
+    ivec4(OP_MUL, t5, rVX, rVX),
+    ivec4(OP_SOMA, t4, t4, t5),
+    ivec4(OP_RAIZ, rL, t4, 0),  // |v|
+    ivec4(OP_TRUNC, rN, rL, 0),
+    ivec4(OP_SOMA, rN, rN, 64 + 2),  // N = trunc(|v|) + 2
+    ivec4(OP_MUL, t5, rC0, rVX),
+    ivec4(OP_MUL, t6, rS0, rVY),
+    ivec4(OP_SUB, rDXV, t5, t6),  // o vetor girado pelo Angle Offset
+    ivec4(OP_MUL, t5, rS0, rVX),
+    ivec4(OP_MUL, t6, rC0, rVY),
+    ivec4(OP_SOMA, rDYV, t5, t6),
+    ivec4(OP_ESC2, t5, rDXV, -1),
+    ivec4(OP_SUB, t5, rX, t5),
+    ivec4(OP_ESC2, rX0, t5, 16),  // X0 = (x − dx/2) · 65536 (Constant Length, Perpendicular)
+    ivec4(OP_ESC2, t5, rDYV, -1),
+    ivec4(OP_SUB, t5, rY, t5),
+    ivec4(OP_ESC2, rY0, t5, 16),
+    ivec4(OP_DIV, t6, 64 + 3, rN),
+    ivec4(OP_MUL, rDX, t6, rDXV),  // DX = (65536 / N) · dx
+    ivec4(OP_MUL, rDY, t6, rDYV),
+    // ---- DIRECAO: Direction Center / Direction Fading
+    ivec4(OP_MUL, rVX, rC0, rAX),  // v = (cos θ, sen θ) · AX
+    ivec4(OP_MUL, rVY, rS0, rAX),
+    ivec4(OP_DIV, t0, 64 + 1, rESC),
+    ivec4(OP_SOMA, t0, t0, t0),
+    ivec4(OP_MUL, t0, t0, 64 + 9),
+    ivec4(OP_ESC2, t0, t0, -1),
+    ivec4(OP_DIV, t0, 64 + 1, t0),  // 1 / ((1/sy + 1/sx) · 1,414 / 2)
+    ivec4(OP_ABS, t1, rA, 0),
+    ivec4(OP_MUL, t1, t1, t0),
+    ivec4(OP_TRUNC, rN, t1, 0),
+    ivec4(OP_SOMA, rN, rN, 64 + 2),  // N = floor(|Amount| / 1,414) + 2
+    ivec4(OP_DIV, t2, 64 + 3, rN),
+    ivec4(OP_MUL, rDX, t2, rVX),
+    ivec4(OP_MUL, rDY, t2, rVY),
+    ivec4(OP_ESC2, t3, rVX, -1),
+    ivec4(OP_SUB, t3, rX, t3),
+    ivec4(OP_ESC2, rX0, t3, 16),  // X0 do Center
+    ivec4(OP_ESC2, t3, rVY, -1),
+    ivec4(OP_SUB, t3, rY, t3),
+    ivec4(OP_ESC2, rY0, t3, 16),
+    ivec4(OP_SOMA, rPXD, rX, rVX),  // Fading: onde o risco sai do quadro
+    ivec4(OP_SUB, t4, rW, rX),
+    ivec4(OP_MUL, t4, t4, rN),
+    ivec4(OP_DIV, t4, t4, rVX),
+    ivec4(OP_SOMA, rTA, t4, 64 + 1),  // (W − x)·N / vx + 1
+    ivec4(OP_MUL, t4, rN, rX),
+    ivec4(OP_DIV, t4, t4, rVX),
+    ivec4(OP_SUB, rTB, 64 + 2, t4),  // 2 − N·x / vx
+    ivec4(OP_SOMA, rPYD, rY, rVY),
+    ivec4(OP_SUB, t4, rH, rY),
+    ivec4(OP_MUL, t4, t4, rN),
+    ivec4(OP_DIV, t4, t4, rVY),
+    ivec4(OP_SOMA, rTC, t4, 64 + 1),
+    ivec4(OP_MUL, t4, rN, rY),
+    ivec4(OP_DIV, t4, t4, rVY),
+    ivec4(OP_SUB, rTD, 64 + 2, t4)
+);
+// <<< programa
+
+uvec2 R[N_REG];
+
+uvec2 operando(int i) { return i >= 64 ? K[i - 64] : R[i]; }
+
+/** O qx do __kernel_cos: 0 com |x| < 0,3; 0,28125 com |x| > 0,78125; senão |x|/4 truncado. */
+uvec2 dQx(uvec2 x) {
+    uint ix = x.x & 0x7FFFFFFFu;
+    if (ix < 0x3FD33333u) return D_ZERO;
+    return ix > 0x3FE90000u ? uvec2(0x3FD20000u, 0u) : uvec2(ix - 0x00200000u, 0u);
+}
+
+/** Roda os segmentos [ini[s], fim[s]) do PROGRAMA, em ordem. */
+void executar(ivec4 ini, ivec4 fim, int n) {
+    for (int s = 0; s < n; s++) {
+        for (int i = ini[s]; i < fim[s]; i++) {
+            ivec4 c = PROGRAMA[i];
+            int op = c.x;
+            uvec2 a = operando(c.z);
+            uvec2 r;
+            if (op == OP_ESC2) r = dEscala2(a, c.w);
+            else if (op == OP_RAIZ) r = dSqrt(a);
+            else if (op == OP_F32) r = dDeFloat(dParaFloat(a));
+            else if (op == OP_TRUNC) r = dDeInt(dTrunc(a));
+            else if (op == OP_ABS) r = uvec2(a.x & 0x7FFFFFFFu, a.y);
+            else if (op == OP_QX) r = dQx(a);
+            else if (op == OP_SENQ || op == OP_COSQ) {
+                // o quadrante n: seno (sen, cos, −sen, −cos)[n mod 4]; o cosseno é o do quadrante seguinte
+                int q = (dTrunc(a) + (op == OP_COSQ ? 1 : 0)) & 3;
+                uvec2 ks = R[c.w], kc = R[c.w + 1];
+                r = q == 0 ? ks : (q == 1 ? kc : (q == 2 ? dNeg(ks) : dNeg(kc)));
+            } else {
+                uvec2 b = operando(c.w);
+                if (op == OP_SINAL) r = dSinal(b) == 1u && !dZero(b) ? dNeg(a) : a;
+                else if (op == OP_MUL) r = dMul(a, b);
+                else if (op == OP_DIV) r = dDiv(a, b);
+                else r = dSoma(a, op == OP_SUB ? dNeg(b) : b);
+            }
+            R[c.y] = r;
+        }
+    }
+}
+
+// ============================================================ a propriedade do mapa (0x1800031b0)
+/** O Hue do plugin em graus (0x1800035b0): os ramos e o float32 como lá. */
+float matiz(int R, int G, int B) {
+    int d, num;
+    float off = 0.0;
+    if (R > G) {
+        if (R > B) {
+            if (G > B) { d = R - B; num = G - B; } else { d = R - G; num = G - B; }
+        } else {
+            d = B - G; num = R - G; off = 4.0;
+        }
+    } else if (G > B) {
+        if (B > R) { d = G - R; num = B - R; } else { d = G - B; num = B - R; }
+        off = 2.0;
+    } else {
+        d = B - R; num = R - G; off = 4.0;
+    }
+    if (d == 0) return 0.0;
+    float h = mul(float(num), divisaoInteira(1u, uint(d)));
+    if (off != 0.0) h = fixa(h + off);
+    h = mul(h, 60.0);
+    if (h < 0.0) h = fixa(h + 360.0);
+    return h;
+}
+
+float propriedadeDe(ivec4 c) {
+    float UM_255 = uintBitsToFloat(0x3B808081u);
+    if (mapProperty == 0) return float(c.r) * UM_255;
+    if (mapProperty == 1) return float(c.g) * UM_255;
+    if (mapProperty == 2) return float(c.b) * UM_255;
+    if (mapProperty == 3) return float(c.a) * UM_255;
+    // (117 R + 204 G + 64 B)·A / (385·255²) e (R + G + B)·A / (3·255²): o plugin divide em double; o float32
+    // que sai é o da divisão exata em todos os valores possíveis (conferido em Python).
+    if (mapProperty == 4) return divisaoInteira(uint((117 * c.r + 204 * c.g + 64 * c.b) * c.a), 25034625u);
+    if (mapProperty == 5) return divisaoInteira(uint((c.r + c.g + c.b) * c.a), 195075u);
+    if (mapProperty == 6) return matiz(c.r, c.g, c.b) * uintBitsToFloat(0x3B360B61u);
+    return float(max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b)) * UM_255;
+}
+
+// ============================================================ o Map Softness (0x180008170, 0x180007af0)
+float formaDoNucleo(float r1, float inv, int i) {
+    float x = mul(r1 - float(i), inv);
+    if (!(x > 0.0)) return 0.0;
+    if (x >= 1.0) return 1.0;
+    float a = 3.0 - x * 2.0;
+    return mul(a, mul(x, x));
+}
+
+/** A soma do fim do núcleo, c[e] = k[topo] + … + k[e], somada de cima para baixo como no plugin. */
+float caudaDoNucleo(float r1, float inv, float esc, int topo, int e) {
+    float acc = 0.0;
+    for (int t = topo; t >= e; t--) acc = acc + mul(formaDoNucleo(r1, inv, t), esc);
+    return acc;
+}
+
+float lerNoEixo(sampler2D t, ivec2 p, bool horizontal, int i) {
+    return lerDe(t, horizontal ? ivec2(i, p.y) : ivec2(p.x, i));
+}
+
+/** Uma passada (0x180007a10): k[0]·s[i], depois a esquerda j = 1..M e a direita j = 1..M, em float32. */
+float suavizar(sampler2D t, ivec2 p, bool horizontal, int n, float esc) {
+    float s0 = lerDe(t, p);
+    float soft = min(fixo(mapSoftness), 500.0);
+    vec2 raioExato = produtoExato(soft, esc);       // o raio é double no plugin: soft · escala
+    float raio = raioExato.x;
+    int M = int(trunc(raio));
+    if (raio == trunc(raio) && raioExato.y < 0.0) M -= 1;
+    if (raio > 1000.0) { raio = 1000.0; M = 1000; }
+    if (!(raioExato.x > 0.0)) return s0;
+    M += 1;
+    float r1 = raio + 1.0;
+    int topo = int(r1) + 1;
+    float inv = divisao(1.0, r1);
+    float soma = 0.5;
+    for (int j = 1; j <= topo; j++) soma = soma + formaDoNucleo(r1, inv, j);
+    float esc0 = divisao(0.5, soma);
+    int i = horizontal ? p.x : p.y;
+    float tot = mul(s0, esc0);
+    for (int lado = 0; lado < 2; lado++) {
+        // na borda, o resto do núcleo (c[e]) vai todo no pixel da ponta
+        int e = lado == 0 ? max(i, 1) : max(n - 1 - i, 1);
+        for (int j = 1; j <= M; j++) {
+            if (j > e) break;
+            float w = j == e ? caudaDoNucleo(r1, inv, esc0, topo, e) : mul(formaDoNucleo(r1, inv, j), esc0);
+            int q = lado == 0 ? max(i - j, 0) : min(i + j, n - 1);
+            tot = tot + mul(lerNoEixo(t, p, horizontal, q), w);
+        }
+    }
+    return tot;
+}
+
+// ============================================================ a leitura sub-pixel do AE (medida)
+ivec4 texel8(ivec2 p) {
+    if (p.x < 0 || p.y < 0 || p.x >= tam.x || p.y >= tam.y) return ivec4(0);
+    return ivec4(texelFetch(inputImg, naImagem(p), 0) * 255.0 + 0.5);
+}
+
+/** (R, G, B, A) em 8 bits na posição 16.16 (X, Y). */
+ivec4 amostra(int X, int Y) {
+    ivec2 i = ivec2(X >> 16, Y >> 16);
+    float wx = float(X & 0xFFFF) * (1.0 / 65536.0);
+    float wy = float(Y & 0xFFFF) * (1.0 / 65536.0);
+    float w11 = mul(wx, wy);
+    float w01 = fixa(wx - w11);
+    float w10 = fixa(wy - w11);
+    float w00 = fixa(fixa(fixa(1.0 - w01) - w10) - w11);
+    ivec4 p0 = texel8(i), p1 = texel8(i + ivec2(1, 0)), p2 = texel8(i + ivec2(0, 1)), p3 = texel8(i + ivec2(1, 1));
+    float a0 = mul(w00, float(p0.a)), a1 = mul(w01, float(p1.a)), a2 = mul(w10, float(p2.a)), a3 = mul(w11, float(p3.a));
+    float soma = fixa(fixa(a0 + a1) + fixa(a2 + a3));
+    int alfa = int(trunc(soma + 0.5));
+    if (!(soma > 0.0)) return ivec4(0, 0, 0, alfa);
+    vec3 cor;
+    if (p1.a == p0.a && p2.a == p0.a && p3.a == p0.a) {     // os 4 alfas iguais: a cor reta (medido)
+        cor = fixa3(fixa3(mul3(w00, vec3(p0.rgb)) + mul3(w01, vec3(p1.rgb))) + fixa3(mul3(w10, vec3(p2.rgb)) + mul3(w11, vec3(p3.rgb))));
+    } else {
+        vec3 num = fixa3(fixa3(mul3(a0, vec3(p0.rgb)) + mul3(a1, vec3(p1.rgb))) + fixa3(mul3(a2, vec3(p2.rgb)) + mul3(a3, vec3(p3.rgb))));
+        cor = mul3(divisao(1.0, soma), num);
+    }
+    return ivec4(ivec3(trunc(cor + 0.5)), alfa);
+}
+
+/**
+ * n amostras de (X0, Y0) em passos (DX, DY). Sem `desvanecer`: fora do quadro não conta, alfa e cor somados
+ * (0x180004f00). Com: sem olhar a borda, cada amostra com peso N, N − 1, … (0x180005710).
+ */
+vec4 acumular(int X0, int Y0, int DX, int DY, int n, int N, bool desvanecer) {
+    int lx = (tam.x - 1) << 16, ly = (tam.y - 1) << 16;
+    vec4 s = vec4(0.0);
+    float peso = float(N);
+    for (int k = 0; k < n; k++) {
+        int X = X0 + k * DX, Y = Y0 + k * DY;
+        if (desvanecer || (X >= 0 && Y >= 0 && X <= lx && Y <= ly)) {
+            ivec4 c = amostra(X, Y);
+            if (desvanecer) {
+                float wa = mul(float(c.a), peso);
+                if (wa != 0.0) s = s + vec4(wa, mul(float(c.r), wa), mul(float(c.g), wa), mul(float(c.b), wa));
+            } else if (c.a != 0) {
+                s = s + vec4(float(c.a), float(c.r * c.a), float(c.g * c.a), float(c.b * c.a));
+            }
+        }
+        peso = peso - 1.0;
+    }
+    return s;
+}
+
+/** Alfa = trunc(soma / divisor), cor = trunc(soma da cor / soma do alfa), em float32. */
+vec4 saida(vec4 s, float divisor) {
+    if (s.x == 0.0) return vec4(0.0);
+    vec4 q = vec4(divisor, s.x, s.x, s.x);
+    ivec4 c;
+    for (int i = 0; i < 4; i++) c[i] = int(trunc(divisao(s[i], q[i]))) & 255;
+    return vec4(vec3(c.yzw), float(c.x)) / 255.0;
+}
+
+float lerP(ivec2 p) {
+    return mapSoftness != 0.0 ? lerDe(valorSuave, p) : lerDe(valor, p);
+}
+
+void main() {
+    um = float(min(acIterationCount, 1));
+    z0 = min(acIteration, 0);
+    tam = textureSize(inputImg, 0);
+    dePe = acEntradaDePe == 1;
+    int W = tam.x, H = tam.y;
+    // px: o pixel do buffer que este fragmento escreve; pi: o mesmo pixel na orientação da imagem (a da conta)
+    ivec2 px = ivec2(min(floor(acScreenNorm * vec2(tam)), vec2(tam) - 1.0));
+    ivec2 pi = naImagem(px);
+    float esc = acEscalaDePixel > 0.0 ? acEscalaDePixel : 1.0;
+
+    if (acPass == 0) {
+        // Sem Vector Map, o motor entrega a própria entrada em `mapImg`.
+        ivec2 tm = textureSize(mapImg, 0);
+        ivec2 pm = tm == tam ? px : min(ivec2((vec2(px) + 0.5) * vec2(tm) / vec2(tam)), tm - 1);
+        fragColor = guardar(propriedadeDe(ivec4(texelFetch(mapImg, pm, 0) * 255.0 + 0.5)));
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = guardar(suavizar(valor, pi, true, W, esc));
+        return;
+    }
+    if (acPass == 2) {
+        fragColor = guardar(suavizar(valorH, pi, false, H, esc));
+        return;
+    }
+
+    int x = pi.x, y = pi.y;
+    float A = fixo(amount);
+    float ang = fixo(angleOffset);
+    bool gradiente = tipo <= 2;
+    R[rRG] = dDeFloat(fixo(ridge));
+    R[rA] = dDeFloat(A);
+    R[rESC] = dDeFloat(esc);
+    R[rANG] = dDeFloat(ang);
+    R[rX] = dDeInt(x);
+    R[rY] = dDeInt(y);
+    R[rW] = dDeInt(W);
+    R[rH] = dDeInt(H);
+    R[rS0] = D_ZERO;
+    R[rC0] = D_UM;
+    if (gradiente) {
+        // o gradiente: a diferença para o vizinho da esquerda e o de cima (na 1ª linha/coluna, o da 2ª)
+        int xp = max(x, 1), yp = max(y, 1);
+        float pc = lerP(ivec2(xp, yp));
+        float gx = lerP(ivec2(xp - 1, yp)) - pc;
+        float gy = lerP(ivec2(xp, yp - 1)) - pc;
+        R[rG0] = dDeFloat(tipo == 2 ? gy : gx);
+        R[rG1] = dDeFloat(tipo == 2 ? -gx : gy);
+    } else {
+        R[rP] = dDeFloat(lerP(pi));
+    }
+    // Os segmentos: o comum; nos Direction o θ do mapa; o seno e o cosseno (com Angle Offset 0 nos tipos de
+    // gradiente o ângulo é 0 exato — 90 · π/180 − π/2 = 0 em double —, cosseno 1 e seno 0); e o tipo.
+    ivec4 ini = ivec4(SEG_COMUM, 0, 0, 0), fim = ivec4(SEG_THETA, 0, 0, 0);
+    int ns = 1;
+    if (!gradiente) { ini[ns] = SEG_THETA; fim[ns] = SEG_SENCOS; ns++; }
+    if (!gradiente || ang != 0.0) { ini[ns] = SEG_SENCOS; fim[ns] = SEG_GRADIENTE; ns++; }
+    if (gradiente) { ini[ns] = SEG_GRADIENTE; fim[ns] = SEG_DIRECAO; }
+    else { ini[ns] = SEG_DIRECAO; fim[ns] = SEG_FIM; }
+    executar(ini, fim, ns + 1);
+
+    // gradiente zero (sem Ridge) ou vetor nulo: o pixel passa como está
+    if (gradiente && (dZero(R[rCOMP]) || !dMenor(D_ZERO, R[rL]))) {
+        fragColor = texelFetch(inputImg, px, 0);
+        return;
+    }
+    int N = dTrunc(R[rN]);
+    int X0 = tipo == 0 || tipo == 4 ? x << 16 : dTrunc(R[rX0]);
+    int Y0 = tipo == 0 || tipo == 4 ? y << 16 : dTrunc(R[rY0]);
+    int n = N;
+    float divisor = float(N);
+    if (tipo == 4) {
+        // Direction Fading: a conta acaba onde o risco sai do quadro; o alfa sobre N(N + 1)/2
+        if (dMenor(R[rW], R[rPXD])) n = dTrunc(R[rTA]);
+        else if (dMenor(R[rPXD], D_MENOS_UM)) n = dTrunc(R[rTB]);
+        if (dMenor(R[rH], R[rPYD])) { if (dMenor(R[rTC], dDeInt(n))) n = dTrunc(R[rTC]); }
+        else if (dMenor(R[rPYD], D_MENOS_UM)) { if (dMenor(R[rTD], dDeInt(n))) n = dTrunc(R[rTD]); }
+        divisor = float((N + 1) * N) * 0.5;
+    }
+    fragColor = saida(acumular(X0, Y0, dTrunc(R[rDX]), dTrunc(R[rDY]), n, N, tipo == 4), divisor);
+}
+]]></shader>
+</effect>

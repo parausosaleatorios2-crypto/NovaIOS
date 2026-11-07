@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Saber — glow neon ao redor da borda clara da camada.
+  Inspirado no "Saber" do Video Copilot e no "Saber" do Ultra Motion: lê o luma,
+  pega a borda por diferença de blur radial, soma luz aditiva.
+-->
+<effect
+    id="nova.effect.um-saber"
+    name="Sabre (Ultra)"
+    name-en="Saber (Ultra)"
+    desc="Glow neon ao longo das bordas luminosas da camada."
+    desc-en="Neon glow along the luminous edges of the layer."
+    category="stylize"
+    tags="saber,glow,neon,energia,brilho,energy,light,ultra motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="color" label="Cor" default="#FF66CCFF" />
+        <spinner id="threshold" label="Limiar" default="0.5" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+        <spinner id="width" label="Largura" default="12.0" min="1.0" max="60.0" step="0.5" />
+        <spinner id="intensity" label="Intensidade" default="2.5" min="0.0" max="8.0" step="0.05" />
+        <spinner id="softness" label="Suavidade" default="0.6" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+    </params>
+
+    <preview>
+        <set param="intensity" value="3.0" />
+        <set param="width" value="20.0" />
+    </preview>
+
+    <shader><![CDATA[
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec4 base = texture(inputImg, uv);
+    float cx = 1.0 / acResolution.x;
+    float cy = 1.0 / acResolution.y;
+    float L0 = luma(base.rgb) * base.a;
+
+    float glow = 0.0;
+    float r = width;
+    for (int i = -3; i <= 3; i++) {
+        for (int j = -3; j <= 3; j++) {
+            if (i == 0 && j == 0) continue;
+            vec2 o = vec2(float(i), float(j)) * r / 3.0;
+            vec4 s = texture(inputImg, uv + vec2(o.x * cx, o.y * cy));
+            float ls = luma(s.rgb) * s.a;
+            float edge = max(0.0, ls - threshold);
+            float dist = length(o);
+            float w = exp(-dist * dist / (r * r * (0.2 + softness)));
+            glow += edge * w;
+        }
+    }
+    glow = clamp(glow * intensity / 24.0, 0.0, 4.0);
+
+    vec3 outRgb = base.rgb + color.rgb * glow;
+    fragColor = vec4(outRgb, max(base.a, min(1.0, glow)));
+}
+    ]]></shader>
+</effect>

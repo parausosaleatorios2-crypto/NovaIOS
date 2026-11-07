@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SELEÇÃO POR FAIXA HSL
+  ============================================================================
+
+  Diferente de "Trocar uma cor" (que mede a distância até UMA cor-alvo), esta
+  seleciona por TRÊS FAIXAS independentes — matiz, saturação e luminosidade —
+  e devolve a seleção como alfa. "Tudo que for um tom quente", "só as sombras",
+  "só o que está bem saturado, não importa a cor": são perguntas de FAIXA, não
+  de distância a um ponto, e a distância a um ponto não responde nenhuma delas
+  sem escolher uma cor-alvo artificial.
+
+  ============================================================================
+   POR QUE MATIZ É CENTRO+FAIXA, E SATURAÇÃO/LUMINOSIDADE SÃO MÍNIMO/MÁXIMO
+  ============================================================================
+
+  Matiz é um CÍRCULO — 350° e 10° são vizinhos, não extremos opostos. Um
+  controle de mínimo/máximo quebraria bem no vermelho, que fica exatamente na
+  emenda do círculo. Centro+faixa não tem essa costura: qualquer matiz pode
+  ser o centro, e a faixa cresce para os dois lados dele sem descontinuidade.
+
+  Saturação e luminosidade NÃO são círculos — vão de 0 a 1 numa reta —, então
+  mínimo/máximo é o controle mais direto: "entre 60% e 100% de saturação" se
+  lê na hora, sem converter mentalmente centro+raio.
+
+  ============================================================================
+   PIXEL CINZA NÃO TEM MATIZ
+  ============================================================================
+
+  Num pixel sem saturação, o matiz é ruído numérico — tecnicamente definido,
+  perceptualmente inexistente. Sem correção, a faixa de matiz recusaria cinzas
+  por um motivo que não faz sentido para o olho. Aqui o peso da faixa de matiz
+  cai com a saturação DO PRÓPRIO PIXEL: perto de zero, a faixa de matiz para
+  de opinar, e só saturação/luminosidade decidem — é assim que "selecionar as
+  sombras" (só luminosidade) funciona em uma imagem com qualquer matiz.
+-->
+<effect
+    id="nova.effect.hslrange"
+    name="Seleção por faixa HSL"
+    name-en="HSL Range Selection"
+    desc="Seleciona por faixas de matiz, saturação e luminosidade — não por uma cor-alvo."
+    desc-en="Selects by hue/saturation/lightness ranges instead of distance to one color."
+    category="matte"
+    tags="hsl,matiz,saturação,luminosidade,seleção,máscara,faixa,cor,chave">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="hue" label="Matiz (centro)"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" snap="0.0" />
+        <slider id="hueRange" label="Faixa de matiz"
+                default="30.0" min="0.0" max="180.0" step="1.0" snap="180.0" />
+
+        <slider id="satMin" label="Saturação mínima"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="satMax" label="Saturação máxima"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+
+        <slider id="lightMin" label="Luminosidade mínima"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="lightMax" label="Luminosidade máxima"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+
+        <slider id="softness" label="Suavidade"
+                default="0.08" min="0.0" max="0.5" step="0.01" snap="0.08" />
+
+        <switch id="invert" label="Inverter a seleção" default="false" />
+        <switch id="showMask" label="Ver a seleção" default="false" />
+    </params>
+
+    <shader><![CDATA[
+
+// A mesma conversão RGB↔HSV de `replace-color.xml` — provada ali, repetida
+// aqui porque cada efeito deste catálogo é autocontido (sem import entre
+// arquivos de shader).
+vec3 paraHsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+/** Uma faixa [min,max] com rampa suave nos dois lados, largura `soft`. */
+float faixaSuave(float valor, float minimo, float maximo, float suave) {
+    float rampa = max(suave, 0.001);
+    float subindo = smoothstep(minimo - rampa, minimo + rampa, valor);
+    float descendo = 1.0 - smoothstep(maximo - rampa, maximo + rampa, valor);
+    return clamp(subindo, 0.0, 1.0) * clamp(descendo, 0.0, 1.0);
+}
+
+void main() {
+    vec4 cor = texture(inputImg, acScreenNorm);
+    vec3 hsv = paraHsv(clamp(cor.rgb, 0.0, 1.0));
+
+    // Matiz: distância circular até o centro escolhido, em voltas (0..1).
+    float alvoHue = hue / 360.0;
+    float dh = abs(hsv.x - alvoHue);
+    dh = min(dh, 1.0 - dh);
+    float faixaHueNorm = clamp(hueRange, 0.0, 180.0) / 360.0;
+    float suaveHue = max(softness, 0.001) * 0.5;
+    float mHue = 1.0 - smoothstep(faixaHueNorm - suaveHue, faixaHueNorm + suaveHue, dh);
+
+    // Pixel pouco saturado: o matiz é ruído, então a faixa de matiz para de
+    // opinar e a seleção passa a depender só de saturação/luminosidade.
+    mHue = mix(1.0, mHue, smoothstep(0.0, 0.15, hsv.y));
+
+    float mSat = faixaSuave(hsv.y, satMin, satMax, softness);
+    float mLight = faixaSuave(hsv.z, lightMin, lightMax, softness);
+
+    float selecao = clamp(mHue * mSat * mLight, 0.0, 1.0);
+    if (invert) selecao = 1.0 - selecao;
+
+    if (showMask) {
+        fragColor = vec4(vec3(selecao), 1.0);
+        return;
+    }
+
+    fragColor = vec4(cor.rgb, cor.a * selecao);
+}
+
+    ]]></shader>
+</effect>

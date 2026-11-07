@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.radial_focus" name="Radial Focus" desc="Keeps the centre sharp and blurs outward in a ring. Simulates a shallow depth of field." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/radial_focus.png"
+        tags="blur,focus,dof,radial" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Focus" />
+<spinner id="focusRadius" default="0.25" min="0.0" max="1.0" step="0.01" label="Focus Radius" />
+<spinner id="falloff" default="0.30" min="0.01" max="1.0" step="0.01" label="Falloff" />
+<spinner id="strength" default="1.0" min="0.0" max="3.0" step="0.01" label="Blur Strength" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[const int TAPS = 8;
+void main(){
+  vec2 uv = acScreenNorm;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  float d = length((uv - vec2(0.5)) * vec2(ar, 1.0));
+  float amt = smoothstep(focusRadius, focusRadius + falloff, d) * strength * mixAmt;
+  float r = amt * 0.035;
+  vec4 sum = texture2DCv(inputImg.texture, uv);
+  for (int i = 0; i < TAPS; i++){
+    float ang = float(i) * 6.2831853 / float(TAPS);
+    vec2 o = vec2(cos(ang), sin(ang)) * r;
+    sum += texture2DCv(inputImg.texture, uv + o);
+  }
+  gl_FragColor = sum / float(TAPS + 1);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vibração.
+
+  Saturação inteligente: aumenta a cor das partes APAGADAS e quase não toca no
+  que já está saturado. A saturação comum multiplica tudo por igual, e é por isso
+  que ela estoura pele e céu antes de melhorar o resto.
+
+  O peso é `1 - saturação atual`: quanto mais colorido o pixel já está, menos ele
+  muda. Uma linha de conta, e é a diferença entre uma foto viva e uma foto queimada.
+-->
+<effect
+    id="nova.effect.vibrance"
+    name="Vibração"
+    name-en="Vibrance"
+    desc="Satura o que está apagado e poupa o que já tem cor forte."
+    desc-en="Saturates what is dull and protects skin tones."
+    category="color"
+    blend="true"
+    tags="vibrance,saturacao,cor,viva,pele,foto,correcao">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="vibranceF" label="Vibração"
+                default="0.4" min="-1.0" max="2.0" step="0.01" snap="0.0" />
+        <slider id="saturationF" label="Saturação geral"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="skinProtect" label="Proteger tons de pele"
+                default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <!-- Na vitrine, a vibração padrão some numa amostra já saturada: no máximo. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="vibranceF" value="2.0" />
+        <set param="saturationF" value="0.6" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float maxC = max(color.r, max(color.g, color.b));
+    float minC = min(color.r, min(color.g, color.b));
+    float currentSaturation = maxC - minC;
+
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+
+    // Quanto mais saturado já está, menos recebe. É a definição de vibração.
+    float weight = (1.0 - currentSaturation) * vibranceF;
+
+    // Tons de pele ficam em torno do laranja. Sem esta proteção, aumentar a
+    // vibração de um retrato deixa a pessoa cor de tijolo — e é a reclamação
+    // número um de quem usa saturação sem pensar.
+    if (skinProtect > 0.0 && color.r > color.g && color.g > color.b) {
+        float skinness = clamp((color.r - color.b) * 2.0, 0.0, 1.0);
+        weight *= 1.0 - skinness * skinProtect;
+    }
+
+    vec3 result = mix(vec3(luma), color.rgb, 1.0 + weight);
+    result = mix(vec3(dot(result, vec3(0.299, 0.587, 0.114))), result, 1.0 + saturationF);
+
+    fragColor = vec4(clamp(result, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

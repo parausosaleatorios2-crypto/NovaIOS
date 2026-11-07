@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Camera_quad
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-camera-quad"
+    name="Camera Quad (NV)"
+    name-en="Camera Quad (NV)"
+    desc="NodeVideo effect 'NodeVideo/Camera_quad', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Camera_quad', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="_opacity" label="Opacity" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <slider id="_alpha_clip" label="Alpha Clip" default="0.5" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+vec4 u_xlat0;
+float u_xlat1;
+bool u_xlatb1;
+void main()
+{
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlat1 = u_xlat0.w * _opacity + (-_alpha_clip);
+    u_xlatb1 = u_xlat1<0.0;
+    if(u_xlatb1){discard;}
+    u_xlat0.w = u_xlat0.w * _opacity;
+    fragColor = u_xlat0;
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.mirror_split" name="Mirror Split" desc="Mirrors one half of the frame onto the other, horizontally, vertically or both." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/mirror_split.png"
+        tags="distort,mirror,split,symmetry" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Mirror" />
+<selector id="mode" style="dropdown" default="0" label="Mode">
+<choice value="0" label="Left to Right" />
+<choice value="1" label="Right to Left" />
+<choice value="2" label="Top to Bottom" />
+<choice value="3" label="Bottom to Top" />
+</selector>
+<spinner id="seam" default="0.50" min="0.0" max="1.0" step="0.01" label="Seam Position" />
+<spinner id="feather" default="0.02" min="0.0" max="0.3" step="0.005" label="Seam Feather" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec2 m = uv;
+  if (mode <= 0)      m.x = mix(uv.x, seam - abs(uv.x - seam), step(seam, uv.x));
+  else if (mode <= 1) m.x = mix(seam + abs(uv.x - seam), uv.x, step(seam, uv.x));
+  else if (mode <= 2) m.y = mix(uv.y, seam - abs(uv.y - seam), step(seam, uv.y));
+  else                m.y = mix(seam + abs(uv.y - seam), uv.y, step(seam, uv.y));
+  vec4 a = texture2DCv(inputImg.texture, uv);
+  vec4 b = texture2DCv(inputImg.texture, m);
+  float edge = smoothstep(0.0, feather + 1e-5, abs((mode <= 1 ? uv.x : uv.y) - seam));
+  gl_FragColor = mix(a, b, edge * mixAmt);
+}
+]]></shader>
+</effect>

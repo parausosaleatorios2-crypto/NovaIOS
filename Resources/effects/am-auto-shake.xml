@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   AGITAÇÃO AUTOMÁTICA — o Auto-Shake do Alight Motion, conta por conta (0.548.0)
+  ============================================================================
+
+  Pedido do snow (14/10/2026): "agora o auto shake 100% igual o do alight motion", da série "100% iguais ao AM".
+  Mesmos parâmetros, mesmos ids, faixas, passos, marcas e padrões do `com.alightcreative.effects.shake2` (o
+  Auto-Shake atual do AM 5.0.281; um projeto do AM importado cai direto aqui). A conta foi LIDA do script do AM
+  (`assets/effects/shake2.xml` do APK descompactado) e o ruído que ele chama, do bytecode
+  (`SimplexNoiseKt`); as duas estão escritas de novo em `model/AgitacaoAutomatica.kt` e
+  `model/RuidoSimplexDoAm.kt`. O arquivo do AM não entra no repositório. A conferência é
+  `node tools/amagitacao/referencia.js` → `AgitacaoAutomaticaAmTest`: o script do próprio AM e o Kotlin daqui,
+  número a número.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Treme a camada ao acaso: um ruído simplex 2D (o `AM.simplexNoise`) anda com o tempo e dá três deslocamentos,
+    um na direção do Ângulo (× Magnitude), um de lado (× Magnitude × Folga) e um em Z (× Agitação em Z):
+      e  = Evolução + ciclos
+      dx = ruído(e, Semente · 49235,319798) · Magnitude
+      dy = ruído(e + 7468,329, Semente · 19337,940385) · Magnitude · Folga
+      dz = ruído(e + 14192,277, Semente · 71401,168533) · Agitação em Z
+      posição += (dx·cos Ângulo − dy·sen Ângulo, dx·sen Ângulo + dy·cos Ângulo, dz)
+  - O ruído é o do AM, com o erro de tabela dele (`perm[i] = p[i % 255]`): o SimplexNoise certo do Gustavson
+    daria OUTRO tremido.
+  - Frequência do tipo "hz" do AM: o script recebe os CICLOS ACUMULADOS desde o começo da camada (a mesma soma do
+    Oscilar e do Balanço), então com quadro-chave o tremido só acelera, sem pular. Com Frequência 0 o tremido
+    para e a camada fica parada num deslocamento fixo (o do ponto da Evolução).
+  - A camada já começa fora do lugar: no instante 0 o trecho "de lado" do ruído (o de 7468,329) não é zero — com
+    os padrões, uns 8,5 px. É assim no AM.
+  - Vários na mesma camada somam.
+  - `<spinner>` como no AM: o leitor do AM não lê `snap` no spinner (o Ângulo tem `snap="45,90,135"` lá e não
+    vale), então aqui também não há `snap`.
+
+  `stage="transform"`: como no AM, o efeito não desenha pixel — ele MOVE a camada. Quem executa é
+  `model/AgitacaoAutomatica.kt`, dentro de `LayerGeometry.matrizLocal` (ao lado do Oscilar), por onde passa a
+  posição de toda camada (prévia, exportação, seleção, filhos e o desfoque de movimento). O shader abaixo só copia
+  a entrada, para o caso de algum caminho que não conhece `stage` executá-lo.
+-->
+<effect
+    id="nova.effect.am-auto-shake"
+    name="Agitação automática"
+    name-en="Auto-Shake"
+    desc="Move a camada aleatoriamente ao longo do tempo, dentro dos parâmetros especificados (o Auto-Shake do Alight Motion)."
+    desc-en="Moves the layer randomly over time within specified parameters (Alight Motion's Auto-Shake)."
+    category="distort"
+    stage="transform"
+    tags="agitação,agitacao,agitar,tremer,tremido,shake,auto shake,auto-shake,wiggle,chacoalhar,câmera tremida,movimento,aleatório,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <spinner id="mag" label="Magnitude" default="50.0" min="0.0" max="2000.0" step="1.0" />
+        <spinner id="freq" label="Frequência" default="2.0" min="0.0" max="16.0" step="0.01"
+            ticks="0.5,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0" type="hz" />
+        <spinner id="evolution" label="Evolução" default="0.0" min="0.0" max="2000.0" step="0.01" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="5.0" step="0.01" />
+        <spinner id="angle" label="Ângulo" default="45.0" min="0.0" max="3600.0" step="0.5"
+            ticks="0.0,45.0,90.0,135.0,180.0,225.0,270.0,315.0,360.0" type="angle" />
+        <spinner id="slack" label="Folga" default="0.25" min="0.0" max="1.0" step="0.01" type="relative-percent" />
+        <spinner id="zshake" label="Agitação em Z" default="0.0" min="0.0" max="2000.0" step="1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

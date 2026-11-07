@@ -1,0 +1,164 @@
+{
+    "id": "entrada-desfocada",
+    "nome": "Entrada desfocada",
+    "nomeEn": "Blur in",
+    "descricao": "Camada de ajuste: a cena entra desfocada e ganha foco, chegando nítida na batida; transição suave.",
+    "descricaoEn": "Adjustment layer: the scene comes in blurred and snaps into focus on the beat; soft transition.",
+    "categoria": "transicao",
+    "tags": [
+        "desfoque",
+        "blur",
+        "foco",
+        "transicao",
+        "entrada",
+        "suave"
+    ],
+    "estilos": [
+        "cinematico",
+        "minimalista"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 600000,
+    "duracaoMinUs": 250000,
+    "duracaoMaxUs": 3000000,
+    "impactoUs": 600000,
+    "campos": [
+        {
+            "id": "intensidade",
+            "tipo": "numero",
+            "rotulo": "Intensidade",
+            "rotuloEn": "Intensity",
+            "padrao": "1",
+            "min": 0.0,
+            "max": 2.0,
+            "alvos": [
+                {
+                    "camada": "foco",
+                    "propriedade": "efeito:desfoque:radius",
+                    "modo": "escala"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "foco",
+            "name": "Entrada desfocada",
+            "content": {
+                "kind": "adjustment"
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [
+                {
+                    "id": "desfoque",
+                    "manifestId": "nova.effect.gaussianblur",
+                    "enabled": true,
+                    "values": {
+                        "radius": {
+                            "kind": "FLOAT",
+                            "staticValue": [
+                                48.0
+                            ],
+                            "keys": [
+                                {
+                                    "timeUs": 0,
+                                    "value": [
+                                        48.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease Out"
+                                    },
+                                    "id": "f9880a48-f93d-47d9-a96b-7fd2621eea04"
+                                },
+                                {
+                                    "timeUs": 600000,
+                                    "value": [
+                                        0.0
+                                    ],
+                                    "easing": {
+                                        "kind": "bezier",
+                                        "x1": 0.42,
+                                        "x2": 0.58,
+                                        "y2": 1.0,
+                                        "label": "Ease In Out"
+                                    },
+                                    "id": "dfdff77c-4776-4238-9a40-7148c992a2fb"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ],
+            "startUs": 0,
+            "endUs": 600000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

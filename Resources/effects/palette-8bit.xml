@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   PALETA 8-BIT
+  ============================================================================
+
+  Reduz a imagem a uma paleta fixa como a de consoles de 8 bits (NES, Master
+  System). O look de retro-game, mas sobre qualquer take.
+
+  ============================================================================
+   DUAS QUEDAS DE INFORMAÇÃO
+  ============================================================================
+
+  Um jogo de NES tinha DUAS limitações que davam a assinatura visual:
+    1. CORES — 54 cores no sistema, poucas usadas por tela.
+    2. RESOLUÇÃO — 256 × 240 pixels, pixel grande aparente na TV.
+
+  Este efeito recria as duas:
+    - A UV é RASTERIZADA num grid baixo (`cellSize`), virando pixels grandes.
+    - Cada pixel é QUANTIZADO: R, G e B caem em 2–8 níveis cada. Com níveis=3
+      por canal sai uma paleta de 27 cores (clássico de 8-bit); com 4, 64; com
+      2, as 8 cores da palettte Atari 2600.
+
+  A quantização usa DITHERING ORDENADO (matriz de Bayer 4×4) pra espalhar o
+  erro — sem isso, as transições viram manchas. Com ele, vira o pontilhado
+  característico dos jogos antigos.
+-->
+<effect
+    id="nova.effect.palette-8bit"
+    name="Paleta 8-bit"
+    name-en="8-bit Palette"
+    desc="Rasteriza em pixels grandes e quantiza cores com dithering ordenado."
+    desc-en="Rasterizes to big pixels and quantizes with ordered dithering."
+    category="stylize"
+    tags="8-bit,nes,retrô,pixel,paleta,dither,bayer,game,console">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="cellSize" label="Tamanho do pixel (px)"
+                default="4.0" min="1.0" max="20.0" step="0.5" snap="0.0" />
+        <slider id="levels" label="Níveis por canal"
+                default="3" min="2" max="8" step="1" type="integer" />
+        <slider id="dither" label="Dithering"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="saturation" label="Saturação"
+                default="1.2" min="0.0" max="2.0" step="0.05" snap="0.0" />
+    </params>
+
+    <preview>
+        <set param="cellSize" value="6.0" />
+        <set param="levels" value="2" />
+    </preview>
+
+    <shader><![CDATA[
+
+/** Luminância ITU-R BT.709. */
+float luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/** Matriz de Bayer 4×4 (valores 0..15 / 16): o dithering ordenado clássico. */
+const float BAYER[16] = float[16](
+     0.0 / 16.0,  8.0 / 16.0,  2.0 / 16.0, 10.0 / 16.0,
+    12.0 / 16.0,  4.0 / 16.0, 14.0 / 16.0,  6.0 / 16.0,
+     3.0 / 16.0, 11.0 / 16.0,  1.0 / 16.0,  9.0 / 16.0,
+    15.0 / 16.0,  7.0 / 16.0, 13.0 / 16.0,  5.0 / 16.0
+);
+
+float bayerEm(ivec2 p) {
+    int x = p.x - (p.x / 4) * 4;
+    int y = p.y - (p.y / 4) * 4;
+    return BAYER[y * 4 + x];
+}
+
+void main() {
+    vec2 tam = vec2(textureSize(inputImg, 0));
+    float lado = max(cellSize, 1.0);
+
+    // 1. Rasteriza em pixels grandes.
+    vec2 pixelado = floor(acScreenNorm * tam / lado) * lado / tam + (lado * 0.5) / tam;
+    vec4 original = texture(inputImg, pixelado);
+
+    // 2. Satura antes de quantizar (pra puxar as cores ao perfil retrô).
+    vec3 cinza = vec3(luma(original.rgb));
+    vec3 saturada = mix(cinza, original.rgb, saturation);
+
+    // 3. Dithering ordenado + quantização.
+    int n = clamp(int(levels + 0.5), 2, 8);
+    float passo = 1.0 / float(n - 1);
+    ivec2 p = ivec2(acScreenNorm * tam / lado);
+    float d = (bayerEm(p) - 0.5) * passo * dither;
+
+    vec3 quantizada = clamp(saturada + vec3(d), 0.0, 1.0);
+    quantizada = floor(quantizada * float(n - 1) + 0.5) / float(n - 1);
+
+    fragColor = vec4(quantizada, original.a);
+}
+
+    ]]></shader>
+</effect>

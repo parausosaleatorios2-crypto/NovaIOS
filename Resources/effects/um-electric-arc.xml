@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.electricarc"
+    name="Arco Elétrico (Ultra Motion)"
+    name-en="Electric Arc (Ultra Motion)"
+    desc="Relâmpago entre dois pontos — zigue-zague procedural."
+    desc-en="Lightning between two points — procedural zigzag."
+    category="stylize"
+    tags="ultramotion,lightning,electric,arc,bolt">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point  id="pointA"   label="Ponto A"  defaultX="0.2" defaultY="0.5" />
+        <point  id="pointB"   label="Ponto B"  defaultX="0.8" defaultY="0.5" />
+        <slider id="width"    label="Espessura" default="0.004" min="0.001" max="0.02" step="0.0005" />
+        <slider id="jitter"   label="Zigue-zague" default="0.08" min="0.0" max="0.3" step="0.005" />
+        <slider id="speed"    label="Velocidade" default="8.0" min="0.0" max="30.0" step="0.5" />
+        <color  id="tint"     label="Cor"      default="#ffb8e8ff" />
+    </params>
+
+    <!-- Na vitrine: o arco padrão tem ~1 px de espessura e some na miniatura. -->
+    <preview>
+        <set param="width" value="0.014" />
+        <set param="jitter" value="0.14" />
+    </preview>
+
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+
+float distReta(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    vec2 A = pointA, B = pointB;
+    vec2 p = acScreenNorm;
+
+    // t ao longo da linha
+    vec2 ba = B - A;
+    float len2 = max(dot(ba, ba), 1e-6);
+    float t = clamp(dot(p - A, ba) / len2, 0.0, 1.0);
+
+    // o arco é a reta mais um deslocamento perpendicular barulhento
+    vec2 n = vec2(-ba.y, ba.x) / sqrt(len2);
+    float semente = floor(acTime * speed);
+    float ruido = 0.0;
+    float amp = 1.0;
+    for (int i = 0; i < 4; i++) {
+        float f = pow(2.0, float(i)) * 6.0;
+        ruido += (hash21(vec2(floor(t * f), semente + float(i))) - 0.5) * amp;
+        amp *= 0.5;
+    }
+    ruido *= jitter * (1.0 - abs(t - 0.5) * 2.0);
+    vec2 aoLongo = mix(A, B, t) + n * ruido;
+    float d = length(p - aoLongo);
+
+    float raio = smoothstep(width * 3.0, width, d);
+    float glow = smoothstep(width * 15.0, width * 3.0, d) * 0.5;
+    vec3 cor = orig.rgb + tint.rgb * tint.a * (raio + glow);
+    fragColor = vec4(cor, max(orig.a, (raio + glow) * tint.a));
+}
+    ]]></shader>
+</effect>

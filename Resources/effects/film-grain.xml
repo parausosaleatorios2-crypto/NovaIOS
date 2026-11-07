@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Granulação de filme.
+
+  Usa `acTime` para o ruído mudar a cada quadro. Granulação parada não parece
+  filme: parece sujeira na lente. O movimento é metade do efeito.
+-->
+<effect
+    id="nova.effect.grain"
+    name="Granulação"
+    name-en="Film Grain"
+    desc="Ruído de filme, animado. Tira o aspecto “limpo demais” de imagem digital."
+    desc-en="Film-like noise, stronger in the shadows."
+    category="stylize"
+    blend="mode"
+    tags="grão,ruído,filme,analógico,textura">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount" label="Intensidade" default="0.12" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="size" label="Tamanho do grão" default="1.0" min="0.5" max="8.0" step="0.1" />
+        <slider id="speed" label="Velocidade" default="12.0" min="0.0" max="60.0" step="1.0" />
+        <switch id="colored" label="Grão colorido" default="false" />
+        <slider id="shadowBias" label="Concentrar nas sombras" default="0.35" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <preview amostra="foto" />
+
+    <shader><![CDATA[
+
+// Hash clássico de shader: barato, sem textura, e "aleatório o bastante".
+// Não serve para criptografia; serve perfeitamente para grão de filme.
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    // Quantizar o tempo faz o grão "trocar" em degraus, como quadros de filme,
+    // em vez de deslizar continuamente — que pareceria água, não película.
+    float frame = floor(acTime * speed);
+    vec2 cell = floor(acScreenNorm * acResolution / max(size, 0.5));
+
+    vec3 noise;
+    if (colored) {
+        noise = vec3(
+            hash(cell + frame),
+            hash(cell + frame + 37.0),
+            hash(cell + frame + 91.0)
+        );
+    } else {
+        noise = vec3(hash(cell + frame));
+    }
+    noise = noise * 2.0 - 1.0;
+
+    // Filme real granula mais na sombra que na luz. Sem esse viés, o grão fica
+    // uniforme e denuncia que é digital.
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    float weight = mix(1.0, 1.0 - luma, shadowBias);
+
+    fragColor = vec4(clamp(color.rgb + noise * amount * weight, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

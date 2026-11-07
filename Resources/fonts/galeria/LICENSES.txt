@@ -1,0 +1,26 @@
+Fontes da galeria do NovaEditor — todas de licença livre, baixadas do
+repositório oficial google/fonts (https://github.com/google/fonts).
+
+SIL Open Font License 1.1 (ver OFL.txt):
+  - Montserrat            © The Montserrat Project Authors
+  - Poppins               © The Indian Type Foundry, Jonny Pinhorn
+  - Inter                 © The Inter Project Authors
+  - Oswald                © The Oswald Project Authors
+  - Lato                  © Łukasz Dziedzic
+  - Playfair Display      © The Playfair Project Authors
+  - Cinzel, Cinzel Decorative © 2012 Natanael Gama (www.ndiscovered.com), com o nome
+                          reservado 'Cinzel' / 'Cinzel Decorative' (23/10/2026, da pasta de
+                          fontes do snow; os .otf originais, só subconjuntados)
+
+Apache License 2.0 (ver APACHE-LICENSE.txt):
+  - Roboto                © Google LLC
+
+Os arquivos foram instanciados por peso (a partir da fonte variável) e
+subconjuntados para latim + latim estendido com o fonttools, preservando os
+acentos do português. Nomes e formas das fontes não foram alterados.
+
+Fora da galeria (só na interface do app, em res/font/):
+  - Share Tech Mono       © 2012 Carrois Type Design, Ralph du Carrois — SIL Open Font
+                          License 1.1 (ver OFL.txt), com o nome reservado 'Share'.
+                          Arquivo res/font/flow_share_tech_mono.ttf, sem modificação:
+                          os números e nomes do painel Flow (layout After Effects).

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — 2-Strip Process (`2stp`, linear): o Technicolor de duas tiras — o vermelho fica e o
+  verde e o azul viram uma cor só, a mistura dos dois (a tira "ciano"). Lido no `MBLooksUI_5_0.dll` (01/11/2026): o
+  render `0x180400ad0` monta uma matriz 3 × 3 para o kernel `CoreKernel_Mat3Mul` (tools/looks/benchmark/stp2.py); o
+  host é o `ContasDoLooks.twoStrip`.
+  s = Green Sensitivity · 0,01, e = 2^Exposure Compensation; R' = e·R; G' = B' = e·s·G + e·(1 − s)·B.
+
+  Os padrões NÃO estão no motor (o slot 9 devolve 0 para todos): o efeito nasce com o bloco mais repetido da pasta de
+  presets (50, 0 — 8 dos 27 Looks com ele). Os limites saíram dos presets, com folga.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.twostrip"
+    name="Looks: 2-Strip Process"
+    name-en="Looks: 2-Strip Process"
+    desc="A ferramenta 2-Strip Process do Magic Bullet Looks: o Technicolor de duas tiras — o vermelho fica e o verde e o azul viram uma cor só."
+    desc-en="Magic Bullet Looks' 2-Strip Process tool: two-strip Technicolor — red stays, while green and blue become a single color."
+    category="looks"
+    stage="mblooks"
+    looks="2stp"
+    tags="magic bullet,looks,red giant,2-strip,two strip,technicolor,duas tiras,filme,vintage,ciano">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="greenSensitivity" label="Green Sensitivity" default="50.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="exposure" label="Exposure Compensation" default="0.0" min="-5.0" max="5.0" step="0.01" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

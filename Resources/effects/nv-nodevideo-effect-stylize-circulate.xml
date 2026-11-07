@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect_Stylize_circulate
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-stylize-circulate"
+    name="Effect Stylize Circulate (NV)"
+    name-en="Effect Stylize Circulate (NV)"
+    desc="NodeVideo effect 'NodeVideo/Effect_Stylize_circulate', decompiled do bundle .unity3d."
+    desc-en="NodeVideo effect 'NodeVideo/Effect_Stylize_circulate', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_scale" label="Scale" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_brightness" label="Brightness" default="1" min="1" max="4" step="0.01" />
+        <slider id="_fill" label="Fill" default="0.45" min="0" max="2" step="0.01" />
+        <slider id="_blend" label="Blend" default="1" min="0" max="1" step="0.01" />
+    </params>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _resolution acTamanhoDaTela
+vec4 u_xlat0;
+vec2 u_xlat1;
+bvec2 u_xlatb1;
+vec4 u_xlat2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat7;
+vec2 u_xlat12;
+vec2 u_xlat13;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat0.xy = u_xlat0.xy * _resolution.xy;
+    u_xlat12.xy = _resolution.xy * vec2(_scale);
+    u_xlat12.xy = u_xlat12.xy * vec2(0.100000001, 0.100000001);
+    u_xlat0.xy = u_xlat0.xy / u_xlat12.yy;
+    u_xlat1.xy = _resolution.xy * vec2(0.5, 0.5) + u_xlat0.xy;
+    u_xlat13.xy = trunc(u_xlat1.xy);
+    u_xlat1.xy = (-u_xlat13.xy) + u_xlat1.xy;
+    u_xlat1.xy = u_xlat1.xy + vec2(-0.5, -0.5);
+    u_xlat1.x = dot(u_xlat1.xy, u_xlat1.xy);
+    u_xlat1.x = sqrt(u_xlat1.x);
+    u_xlat1.x = (-u_xlat1.x) + _fill;
+    u_xlat1.x = u_xlat12.y * u_xlat1.x;
+    u_xlat1.x = u_xlat1.x * 1.44269502;
+    u_xlat7 = exp2(u_xlat1.x);
+    u_xlat1.x = exp2((-u_xlat1.x));
+    u_xlat13.x = (-u_xlat1.x) + u_xlat7;
+    u_xlat1.x = u_xlat1.x + u_xlat7;
+    u_xlat1.x = float(1.0) / u_xlat1.x;
+    u_xlat1.x = u_xlat1.x * u_xlat13.x;
+    u_xlat0.xy = trunc(u_xlat0.xy);
+    u_xlat12.xy = u_xlat12.yy / u_xlat12.xy;
+    u_xlat0.xy = u_xlat12.xy * u_xlat0.xy;
+    u_xlat12.x = _scale * 0.100000001;
+    u_xlat2 = texture(inputImg, acScreenNorm.xy);
+    u_xlat0.xy = u_xlat0.xy * u_xlat12.xx + vec2(0.5, 0.5);
+    u_xlat0 = texture(inputImg, u_xlat0.xy);
+    u_xlat0 = u_xlat0 * vec4(vec4(_brightness, _brightness, _brightness, _brightness));
+    u_xlat0 = u_xlat0 * u_xlat1.xxxx;
+    u_xlat1.x = (-_blend) + 1.0;
+    u_xlat0 = u_xlat0 * vec4(vec4(_blend, _blend, _blend, _blend));
+    u_xlat0 = u_xlat2 * u_xlat1.xxxx + u_xlat0;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb1.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb1.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat2 = u_xlat2 * u_xlat5;
+        u_xlat2 = u_xlat3 * u_xlat4 + u_xlat2;
+        u_xlat1.x = u_xlat4.x * u_xlat2.w;
+        fragColor.w = (u_xlatb1.y) ? u_xlat1.x : u_xlat2.w;
+        fragColor.xyz = u_xlat2.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   S_GLOW — o Glow do Sapphire (Boris FX), medido no After Effects (0.447.0)
+  ============================================================================
+
+  Pedido do snow (08/10/2026): "s_glow". É o segundo efeito que mais faltava nos presets de CC.
+
+  DE ONDE VEIO (tools/sglow/benchmark):
+
+  - Da sapphire_ae.dll (a definição do efeito está lá em texto): a ordem das contas — limiar da
+    fonte -> a primitiva `glow` (desfoque por canal) -> brilho e cor -> `glow_rgba_combine` — e a
+    mistura com a fonte (Combine, Affect Alpha, Glow From Alpha, Glow Under Source, Source Opacity).
+  - Medido no After Effects (130 renders, 16 bpc):
+      * o LIMIAR é um fator só para os três canais da cor pré-multiplicada: a soma do que cada canal
+        passa do limiar, sobre a soma dos canais, dividida por (1 − limiar);
+      * o DESFOQUE são três caixas seguidas em cada eixo, com raios inteiros que somam a largura
+        (8 -> 3, 3, 2; 32 -> 11, 11, 10). Largura quebrada, com Subpixel: mistura linear entre a
+        largura inteira de baixo e a de cima; sem Subpixel, arredonda. O alcance do halo é
+        exatamente a largura, em px, e NÃO muda com o tamanho do quadro;
+      * a largura de cada canal é Glow Width · Width X ou Y · Width Red, Green ou Blue;
+      * a luz é o desfoque · Brightness · Color; o alfa dela é o maior canal · Affect Alpha;
+      * Edge Mode Reflect espelha repetindo o pixel da borda; Transparent soma zero de fora.
+
+  O modelo em numpy fica a 0,003 nível (de 255) do AE; o núcleo de um pixel sai igual.
+
+  COMO É FEITO AQUI: seis passes de caixa (três na horizontal, três na vertical), os três canais
+  juntos, cada um com o seu raio. Nos buffers (8 bits) a luz fica como mantissa e expoente.
+
+  O QUE NÃO ENTROU: Light Background, Atmosphere, o menu Opacity (fica Normal), Background e Matte
+  de outra camada, Mocha. Em 32 bpc o plugin deixa a luz passar de 1; aqui prende em 1 (8 bits).
+-->
+<effect
+    id="nova.effect.sglow"
+    name="S_Glow"
+    name-en="S_Glow"
+    desc="O Glow do Sapphire: luz das áreas acima do limiar, com largura própria para vermelho, verde e azul."
+    desc-en="Sapphire's Glow: light from the areas above the threshold, with separate red, green and blue widths."
+    category="stylize"
+    tags="s_glow,sapphire,glow,brilho,luz,halo,bloom,boris,after effects,cc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="ga" src="buffer" />
+        <texture id="gb" src="buffer" />
+
+        <slider id="brightness" label="Brightness" default="2.0" min="0.0" max="10.0" step="0.01" snap="1.0,2.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <slider id="threshold" label="Threshold" default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <color id="thresholdAddColor" label="Threshold Add Color" default="#000000" />
+        <slider id="glowWidth" group="Width" label="Glow Width" default="96.0" min="0.0" max="480.0" step="0.1" snap="96.0" />
+        <slider id="widthX" group="Width" label="Width X" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="widthY" group="Width" label="Width Y" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="widthRed" group="Width" label="Width Red" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="widthGreen" group="Width" label="Width Green" default="1.2" min="0.0" max="4.0" step="0.01" snap="1.0,1.2" />
+        <slider id="widthBlue" group="Width" label="Width Blue" default="1.4" min="0.0" max="4.0" step="0.01" snap="1.0,1.4" />
+        <switch id="subpixel" group="Width" label="Subpixel" default="true" />
+        <selector id="show" label="Show" default="0" options="Result|Threshold" />
+        <selector id="combine" label="Combine" default="2" options="Mult|Add|Screen|Difference|Overlay" />
+        <selector id="edgeMode" label="Edge Mode" default="1" options="Transparent|Reflect" />
+        <slider id="affectAlpha" group="Alpha" label="Affect Alpha" default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="glowFromAlpha" group="Alpha" label="Glow From Alpha" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="glowUnderSource" group="Alpha" label="Glow Under Source" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+        <slider id="sourceOpacity" group="Alpha" label="Source Opacity" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+    </params>
+
+    <passes>
+        <pass target="gb" /> <!-- 0: o fator do limiar de cada pixel (o float nos 4 bytes; gb ainda está livre) -->
+        <pass target="ga" /> <!-- 1..3: as três caixas na horizontal (a primeira já com o limiar) -->
+        <pass target="gb" />
+        <pass target="ga" />
+        <pass target="gb" /> <!-- 4..6: as três caixas na vertical -->
+        <pass target="ga" />
+        <pass target="gb" />
+        <pass />             <!-- 7: brilho, cor e a mistura com a fonte -->
+    </passes>
+
+    <shader><![CDATA[
+const float RAIO_MAX = 240.0;         // o maior raio de uma caixa (largura de um canal até ~720 px)
+
+/**
+ * A luz num buffer de 8 bits, como mantissa e expoente: a cauda do halo vale milésimos, e são seis passes em
+ * fila — com 8 bits diretos o erro de cada um se somava. O maior canal fica entre 0,5 e 1 (guardado com raiz)
+ * e o alfa leva a potência de dois.
+ */
+vec4 codificar(vec3 l) {
+    l = max(l, vec3(0.0));
+    float m = max(l.r, max(l.g, l.b));
+    if (m < 1e-9) return vec4(0.0);
+    float e = clamp(ceil(log2(m)), -30.0, 2.0);
+    return vec4(sqrt(min(l / exp2(e), vec3(1.0))), (e + 32.0) / 255.0);
+}
+
+vec3 decodificar(vec4 t) {
+    if (t.a <= 0.0) return vec3(0.0);
+    return t.rgb * t.rgb * exp2(floor(t.a * 255.0 + 0.5) - 32.0);
+}
+
+/**
+ * O limiar (medido): a cor pré-multiplicada vezes UM fator — a soma do que cada canal passa do limiar dele,
+ * sobre a soma dos canais, com o (1 − limiar) que leva o branco de volta a 1. A cor somada ao limiar entra em
+ * 8 bits, como no plugin.
+ */
+vec3 corDoLimiar(ivec2 p) {
+    vec4 t = texelFetch(inputImg, p, 0);
+    vec3 c = max(t.rgb * t.a, vec3(0.0));
+    return mix(c, vec3(t.a), clamp(glowFromAlpha, 0.0, 1.0));
+}
+float fatorDoLimiar(vec3 c) {
+    float soma = c.r + c.g + c.b;
+    if (soma < 1e-6) return 0.0;
+    vec3 passa = max(c - (threshold + floor(thresholdAddColor.rgb * 255.0 + 0.5) / 255.0), vec3(0.0));
+    return (passa.r + passa.g + passa.b) / soma / max(1.0 - threshold, 1e-6);
+}
+vec3 limiar(ivec2 p) {
+    vec3 c = corDoLimiar(p);
+    return c * fatorDoLimiar(c);
+}
+
+/**
+ * (desempenho, 0.805.0) O fator do limiar é uma conta por pixel, mas a 1ª caixa o refazia em cada amostra (~90 por
+ * pixel com a largura de fábrica: 28 dos 37 ms do passe na GPU do PC). O passe 0 o guarda inteiro — os 32 bits do
+ * float nos 4 bytes do texel — e a caixa só multiplica a cor da fonte por ele: o mesmo número de antes.
+ */
+vec4 guardarFator(float f) {
+    uint b = floatBitsToUint(f);
+    return vec4(float(b & 255u), float((b >> 8u) & 255u), float((b >> 16u) & 255u), float(b >> 24u)) / 255.0;
+}
+vec3 limiarGuardado(ivec2 p) {
+    uvec4 b = uvec4(texelFetch(gb, p, 0) * 255.0 + 0.5);
+    return corDoLimiar(p) * uintBitsToFloat(b.r | (b.g << 8u) | (b.b << 16u) | (b.a << 24u));
+}
+
+/** Espelha o índice repetindo o pixel da borda (medido: o Reflect do plugin). */
+int espelhar(int i, int n) {
+    int p = 2 * n;
+    i = i - (i / p) * p; if (i < 0) i += p;
+    return i < n ? i : p - 1 - i;
+}
+
+/**
+ * O que o passe `passo` lê: a fonte com o limiar, ou o buffer do passe anterior. O espelho (com divisão inteira)
+ * só para o tap que cai FORA da imagem: dentro, ele devolve o próprio índice (0.569.0: 72 → 44 ms na GPU do PC).
+ */
+vec3 ler(int passo, ivec2 p, ivec2 T) {
+    bool fora = p.x < 0 || p.y < 0 || p.x >= T.x || p.y >= T.y;
+    if (edgeMode == 1 && fora) p = ivec2(espelhar(p.x, T.x), espelhar(p.y, T.y));
+    else if (p.x < 0 || p.y < 0 || p.x >= T.x || p.y >= T.y) return vec3(0.0);
+    if (passo == 0) return limiarGuardado(p);
+    if ((passo & 1) == 1) return decodificar(texelFetch(ga, p, 0));
+    return decodificar(texelFetch(gb, p, 0));
+}
+
+/**
+ * Uma das três caixas (`qual` = 0, 1, 2) de um eixo. Medido: largura inteira W -> raios que somam W, o mais
+ * parelhos possível; de W para W + 1 só a caixa (W mod 3) cresce, e a largura quebrada mistura as duas —
+ * o que dá a caixa de raio r com mais uma ponta de peso menor.
+ */
+vec3 caixa(int passo, ivec2 p, ivec2 T, bool vertical, int qual) {
+    vec3 w = glowWidth * acEscalaDePixel * vec3(widthRed, widthGreen, widthBlue) * (vertical ? widthY : widthX);
+    w = clamp(w, vec3(0.0), vec3(3.0 * RAIO_MAX));
+    vec3 a = subpixel ? floor(w) : floor(w + 0.5);
+    vec3 f = subpixel ? w - a : vec3(0.0);
+    vec3 r = floor((a + float(2 - qual)) / 3.0 + 1e-4);
+    vec3 cresce = vec3(equal(a - 3.0 * floor(a / 3.0 + 1e-4), vec3(float(qual))));
+    f *= cresce;
+    vec3 dentro = (1.0 - f) / (2.0 * r + 1.0) + f / (2.0 * r + 3.0);
+    vec3 ponta = f / (2.0 * r + 3.0);
+    int alcance = int(max(r.r, max(r.g, r.b))) + 1;
+    // Até o menor raio, todo canal está dentro da caixa: o peso é `dentro` (a conta de baixo daria o mesmo,
+    // `dentro · 1 + ponta · 0`). A soma continua na MESMA ordem, de −alcance a +alcance: somar o miolo à parte
+    // mudaria o arredondamento (0.569.0: 44 → 37 ms).
+    int miolo = int(min(r.r, min(r.g, r.b)));
+    vec3 soma = vec3(0.0);
+    for (int i = -alcance; i <= alcance; i++) {
+        vec3 peso = dentro;
+        if (i < -miolo || i > miolo) {
+            float d = abs(float(i));
+            vec3 naCaixa = step(vec3(d), r + 0.5);
+            peso = dentro * naCaixa + ponta * (step(vec3(d), r + 1.5) - naCaixa);
+            if (peso.r + peso.g + peso.b <= 0.0) continue;
+        }
+        soma += peso * ler(passo, p + (vertical ? ivec2(0, i) : ivec2(i, 0)), T);
+    }
+    return soma;
+}
+
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    ivec2 p = ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0));
+
+    if (acPass == 0) { fragColor = guardarFator(fatorDoLimiar(corDoLimiar(p))); return; }
+
+    // ---- 1..6: as caixas ----
+    int passo = acPass - 1;
+    if (passo < 6) {
+        bool vertical = passo >= 3;
+        fragColor = codificar(caixa(passo, p, T, vertical, vertical ? passo - 3 : passo));
+        return;
+    }
+
+    if (show == 1) { fragColor = vec4(min(limiar(p), vec3(1.0)), 1.0); return; }
+
+    // ---- 6: a luz e a mistura (da definição do efeito; conferido no AE) ----
+    vec3 luz = min(decodificar(texelFetch(gb, p, 0)) * brightness * color.rgb, vec3(1.0));
+    float aLuz = min(max(luz.r, max(luz.g, luz.b)) * affectAlpha, 1.0);
+    vec4 fonte = texelFetch(inputImg, p, 0);
+    float q = clamp(sourceOpacity, 0.0, 1.0);
+    float aF = fonte.a * q;
+    vec3 s = fonte.rgb * aF;
+
+    vec3 cor;
+    float alfa = 1.0 - (1.0 - aLuz) * (1.0 - aF);
+    if (combine == 0) { cor = luz * s; alfa = aLuz * aF; }
+    else if (combine == 1) { cor = luz + s; alfa = min(aLuz + aF, 1.0); }
+    else if (combine == 2) cor = 1.0 - (1.0 - luz) * (1.0 - s);
+    else if (combine == 3) cor = abs(luz - s);
+    else cor = mix(2.0 * luz * s, 1.0 - 2.0 * (1.0 - luz) * (1.0 - s), vec3(greaterThanEqual(s, vec3(0.5))));
+
+    // Glow Under Source: a fonte por cima da luz
+    float sob = clamp(glowUnderSource, 0.0, 1.0);
+    cor = mix(cor, s + luz * (1.0 - aF), sob);
+    alfa = mix(alfa, aF + aLuz * (1.0 - aF), sob);
+
+    cor = clamp(cor, 0.0, 1.0);
+    fragColor = alfa > 0.0 ? vec4(min(cor / alfa, vec3(1.0)), alfa) : vec4(0.0);
+}
+]]></shader>
+</effect>

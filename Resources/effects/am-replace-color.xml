@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SUBSTITUIR COR — o Replace Color do Alight Motion, conta por conta (0.637.0)
+  ============================================================================
+
+  Pedido do snow (19/10/2026): "proximo efeito agora 100% igual o do alight motion", da série "100% iguais ao AM".
+  O mais usado nas cenas do AM ainda sem par com a conta no APK (15 vezes, 14 no "Kompa Makima" do snow; o Deep Glow,
+  com 18, não está nos efeitos do AM 5.0.281). Mesmos parâmetros, ids, faixas, passos e padrões do
+  `com.alightcreative.replacecolor` (um projeto do AM importado cai direto aqui). A conta foi LIDA do efeito do AM
+  5.0.281 (`assets/effects/replacecolor.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não entra
+  no repositório. A conferência é `python tools/amsubstituircor/comparar.py`: o efeito do AM rodado na GPU do PC ao
+  lado deste.
+
+  O "Trocar uma cor" que já existia (`replace-color.xml`) é outro efeito, com outra conta; ESTE é o do AM.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Substituir Cor (a cor procurada, vermelho puro), Nova cor (azul puro), Limite (0 a 400%, 25%), Pena (0 a 200%,
+    25%), Alfa (0 a 100%, 100%) e Luminância de Bloqueio (desligada) — os rótulos do AM em português. No AM as
+    duas cores não têm alfa no seletor; aqui têm, e a conta usa o alfa delas como a do AM (que é sempre 1 lá).
+  - A distância de cada pixel à cor procurada é medida no YUV (o BT.601 do AM, vetor × matriz): |ΔY| × 0,5 e |ΔU|,
+    |ΔV| × 4, e o tamanho desse vetor. O croma pesa 8 vezes o brilho: a mesma cor mais clara ou mais escura ainda
+    é "a cor".
+  - O quanto o pixel troca é um `smoothstep` AO CONTRÁRIO, de Limite + Pena (nada) até Limite − Pena (tudo), com a
+    Pena de no mínimo 0,0005 e os dois lados presos em 0 e 4 — a ordem invertida das bordas é do AM e fica igual
+    aqui (a conta do `smoothstep` não pede borda crescente).
+  - A troca: sem a Luminância de Bloqueio, a cor do pixel MAIS a diferença entre a Nova cor e a procurada (a textura
+    e o sombreado da cor procurada continuam, deslocados para a nova); com ela, a Nova cor com o brilho (Y) do pixel.
+  - O alfa mistura a camada original e a trocada (com o alfa da Nova cor junto, que no AM é sempre 1); o alfa da
+    camada nunca muda.
+  - Tudo como o AM: a camada chega pré-multiplicada EM 8 BITS (arredondada aqui como o Android faz e montada bit a
+    bit como a textura de 8 bits devolve, `oitoBits`), a cor reta é a pré-multiplicada ÷ alfa, a conta em `highp`
+    (o AM pede `precision="high"`) com as mesmas expressões na mesma ordem, e a saída pré-multiplicada cortada em 0
+    e 1 (o buffer de 8 bits) antes de voltar à cor reta do Nova.
+  - A cor trocada pode sair de 0..1 num canal (um laranja trocado de vermelho para azul fica com azul acima de 1 e
+    vermelho abaixo de 0): o AM e o Nova cortam do mesmo jeito na camada opaca. No alfa parcial, o AM guarda o canal acima do alfa e a cor reta do Nova não guarda (só
+    bate por cima de branco), a mesma diferença do Deslocar matiz e do Colorizar.
+  - A PIPETA: no AM, enquanto o conta-gotas é arrastado com a camada escolhida, o efeito mostra a camada sem a troca
+    (o `shaderGroups = [1]` do script dele), para a pipeta pegar a cor ORIGINAL. Aqui é o `pipeta="original"`:
+    com a pipeta aberta, a camada escolhida sai sem este efeito (`EffectPipeline.camadaNaPipeta`).
+  - Tem degrau (o `smoothstep` com Pena 0 vai de nada a tudo em 0,001 da distância) e precisa da camada em 8 bits
+    exatos: fica no começo de uma junta de efeitos de cor (`FusaoDeCor.SO_NO_COMECO`).
+-->
+<effect
+    id="nova.effect.am-replace-color"
+    name="Substituir Cor"
+    name-en="Replace Color"
+    desc="Troca uma cor da camada por outra (o Replace Color do Alight Motion)."
+    desc-en="Replaces one color in the layer with another (Alight Motion's Replace Color)."
+    category="color"
+    pipeta="original"
+    tags="substituir cor,trocar cor,cor,replace color,change color,color,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <color id="oldcolor" label="Substituir Cor" default="#FFFF0000" />
+        <color id="newcolor" label="Nova cor" default="#FF0000FF" />
+        <spinner id="threshold" label="Limite" default="0.25" min="0.0" max="4.0" step="0.01" type="percent" />
+        <spinner id="feather" label="Pena" default="0.25" min="0.0" max="2.0" step="0.01" type="percent" />
+        <spinner id="alpha" label="Alfa" default="1.0" min="0.0" max="1.0" step="0.01" type="percent" />
+        <switch id="lockLuminance" label="Luminância de Bloqueio" default="false" />
+    </params>
+
+    <!-- Na vitrine, o vermelho padrão não está na amostra: o laranja do horizonte vira verde. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="oldcolor" color="#FFF97540" />
+        <set param="newcolor" color="#FF20E0A0" />
+        <set param="threshold" value="0.6" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+// k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve (o AM lê a camada assim). A
+// divisão do shader vai pelo recíproco e erra o último bit em metade dos k — e a distância à cor procurada decide
+// "troca ou não" num degrau de 0,001. n·2^e ÷ 255 pelo mais perto, em 24 bits, montado direto nos bits do float (o
+// mesmo do Equilíbrio de cor e do Deslocar matiz).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+void main() {
+    // As matrizes do AM (BT.601), escritas como ele escreve: vetor × matriz.
+    highp mat3 rgb2yuv = mat3(
+         0.299,     0.587,    0.114,
+        -0.14713,  -0.28886,  0.436,
+         0.615,    -0.51499, -0.10001
+    );
+    highp mat3 yuv2rgb = mat3(
+        1.0,  0.0,      1.13983,
+        1.0, -0.39465, -0.58060,
+        1.0,  2.03211,  0.0
+    );
+
+    vec4 camada = texture(inputImg, acScreenNorm);
+    float a = camada.a;
+    // Transparente: no AM, 0 ÷ 0 e a saída vazia.
+    if (a <= 0.0) { fragColor = vec4(0.0); return; }
+    // A camada do AM chega pré-multiplicada EM 8 BITS: arredondada aqui do mesmo jeito (o premul do Android, pelo
+    // mais perto). No opaco a cor já é o float da textura, bit a bit.
+    vec3 pre = camada.rgb;
+    if (a < 1.0) {
+        vec3 k = floor(camada.rgb * a * 255.0 + 0.5);
+        pre = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+    vec4 texColor = vec4(pre, a);
+
+    // Daqui até a mistura, a conta do AM na mesma ordem.
+    vec3 srcColor = texColor.rgb / texColor.a;
+    vec3 oldColorYUV = oldcolor.rgb * rgb2yuv;
+    vec3 srcColorYUV = srcColor * rgb2yuv;
+    vec3 diffYUV = abs(oldColorYUV - srcColorYUV);
+    diffYUV.yz *= 4.0;
+    diffYUV.x *= 0.5;
+    float diff = length(diffYUV);
+    float b = max(threshold - max(feather, 0.0005), 0.);
+    float a2 = min(threshold + max(feather, 0.0005), 4.);
+    float p = smoothstep(a2, min(b, a2 - 0.0005), diff);
+    vec3 newColorAdjRGB = newcolor.rgb / newcolor.a;
+    if (lockLuminance) {
+        vec3 newColorAdjYUV = newColorAdjRGB * rgb2yuv;
+        newColorAdjYUV.x = srcColorYUV.x;
+        newColorAdjRGB = newColorAdjYUV * yuv2rgb;
+    } else {
+        newColorAdjRGB = srcColor - (oldcolor.rgb / oldcolor.a) + newColorAdjRGB;
+    }
+    vec4 res = mix(texColor, vec4(mix(srcColor, newColorAdjRGB, p), 1.0) * texColor.a, newcolor.a * alpha);
+
+    vec3 saida = clamp(res.rgb, 0.0, 1.0);                       // o buffer de 8 bits do AM corta em 0 e 1
+    fragColor = vec4(min(saida / a, vec3(1.0)), a);
+}
+    ]]></shader>
+</effect>

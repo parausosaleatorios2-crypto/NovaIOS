@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.splitmirror"
+    name="Espelho Dividido (Blurrr)"
+    name-en="Split Mirror (Blurrr)"
+    desc="Imagem partida ao meio e espelhada, com corte suave."
+    desc-en="Image cut in half and mirrored, with a soft seam."
+    category="blur"
+    tags="blurrr,espelho,split,mirror,metade,simetria,blur">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="axis"     label="Eixo (0=H 1=V)" default="0" min="0" max="1" step="1" type="integer" />
+        <slider id="split"    label="Linha do corte" default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+        <slider id="softness" label="Suavidade do corte" default="0.004" min="0.0" max="0.05" step="0.0005" />
+        <slider id="flip"     label="Virar a outra metade" default="1" min="0" max="1" step="1" type="integer" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    vec2 uv = acScreenNorm;
+    float c = (int(axis) == 0) ? uv.x : uv.y;
+    float lado = step(split, c);
+    vec2 other = uv;
+    if (int(axis) == 0) other.x = (int(flip) == 1) ? (2.0 * split - uv.x) : uv.x;
+    else                other.y = (int(flip) == 1) ? (2.0 * split - uv.y) : uv.y;
+
+    float k = smoothstep(split - softness, split + softness, c);
+    vec4 esq = texture(inputImg, other);
+    vec4 dir = texture(inputImg, uv);
+    fragColor = mix(esq, dir, k);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   REPETIR EM GRADE
+  ============================================================================
+
+  Duplica a camada numa grade N×M, com espaçamento, escala e opacidade
+  decrescente opcional — o arranjo que o "Repetir radial" faz em volta de um
+  centro, este faz numa cartela ortogonal.
+
+  ============================================================================
+   UMA GRADE DE CÓPIAS SEM COPIAR
+  ============================================================================
+
+  A tentação é desenhar a camada N × M vezes num loop por célula. Isso custa
+  N × M `texture()` por pixel, e vai ficando caro. O truque padrão é inverter:
+  o pixel da tela pergunta qual célula ele cai, calcula qual UV ler DENTRO
+  daquela célula, e lê UMA vez a camada nesse UV.
+
+  O `floor(uv * grade)` dá o número da célula; `fract(uv * grade)` dá o UV
+  dentro dela. Uma cópia por célula, um `texture()` por pixel. É assim que se
+  faz um mosaico sem pagar pelo número de ladrilhos.
+
+  ============================================================================
+   DEFASAGEM NO TEMPO DÁ UM "RELÓGIO" DE GRADE
+  ============================================================================
+
+  Cada célula pode receber a camada em um instante um pouco diferente, varrendo
+  pelo índice na grade — é o que dá o efeito de "onda" passando pela cartela,
+  bastante usado em motion. Aqui é opcional (slider `phase`).
+-->
+<effect
+    id="nova.effect.repeat-grid"
+    name="Repetir em grade"
+    name-en="Repeat Grid"
+    desc="Duplica a camada numa grade N×M, com espaçamento e defasagem."
+    desc-en="Duplicates the layer across an N×M grid with spacing and phase."
+    category="stylize"
+    tags="repetir,grade,mosaico,ladrilho,cartela,N por M">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="columns" label="Colunas"
+                default="3" min="1" max="12" step="1" type="integer" />
+        <slider id="rows" label="Linhas"
+                default="3" min="1" max="12" step="1" type="integer" />
+        <slider id="cellScale" label="Tamanho dentro da célula"
+                default="0.9" min="0.1" max="1.2" step="0.01" snap="0.0" />
+        <slider id="gap" label="Espaço entre"
+                default="0.0" min="-0.5" max="0.5" step="0.01" snap="0.0" />
+        <slider id="fade" label="Esmaecer pelo canto"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="phase" label="Defasagem no tempo (s)"
+                default="0.0" min="0.0" max="2.0" step="0.05" snap="0.0" />
+    </params>
+
+    <!-- Na vitrine, mais células e uma pitada de esmaecer pra desenhar a grade. -->
+    <preview>
+        <set param="columns" value="4" />
+        <set param="rows" value="4" />
+        <set param="fade" value="0.4" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    float colsF = max(float(int(columns + 0.5)), 1.0);
+    float rowsF = max(float(int(rows + 0.5)), 1.0);
+    vec2 grade = vec2(colsF, rowsF);
+
+    // O pixel vira "coordenada de célula + fração dentro dela".
+    vec2 escalado = acScreenNorm * grade;
+    vec2 celula = floor(escalado);
+    vec2 dentro = fract(escalado);
+
+    // O `gap` encolhe o UV útil da célula; o resto vira transparente (margem).
+    float margem = clamp(gap * 0.5, -0.4, 0.4);
+    vec2 util = (dentro - margem) / max(1.0 - 2.0 * margem, 1e-4);
+    if (any(lessThan(util, vec2(0.0))) || any(greaterThan(util, vec2(1.0)))) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    // Reescala em volta do meio da célula para `cellScale`.
+    vec2 uvNaCamada = (util - 0.5) / max(cellScale, 1e-4) + 0.5;
+    if (any(lessThan(uvNaCamada, vec2(0.0))) || any(greaterThan(uvNaCamada, vec2(1.0)))) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    // Defasagem: cada célula puxa um instante diferente do conteúdo (preview estático
+    // ignora `acTime`, mas na timeline isso dá a onda clássica de grade animada).
+    // Aqui só altera a opacidade pelo tempo, já que o conteúdo é UMA textura.
+    float d = (celula.x + celula.y * colsF) / max(colsF * rowsF, 1.0);
+    float fasador = 0.5 + 0.5 * cos(6.2831853 * (acTime / max(phase, 1e-3) - d));
+    float opacidadeDaFase = phase > 1e-3 ? mix(0.4, 1.0, fasador) : 1.0;
+
+    // Esmaecer do centro para o canto: índice normalizado da célula.
+    vec2 centroCelula = (celula + 0.5) / grade - 0.5;
+    float distanciaAoCentro = length(centroCelula) / 0.7071;
+    float opacidadeDoFade = mix(1.0, 1.0 - clamp(distanciaAoCentro, 0.0, 1.0), fade);
+
+    vec4 c = texture(inputImg, uvNaCamada);
+    c *= opacidadeDaFase * opacidadeDoFade;
+
+    fragColor = c;
+}
+
+    ]]></shader>
+</effect>

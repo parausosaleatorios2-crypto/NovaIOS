@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   TWIXTOR — câmera lenta com quadros criados, como efeito
+  ============================================================================
+
+  Pedido do snow (01/10/2026): o Twixtor como EFEITO, com as opções do Twixtor
+  num lugar só — e o motion blur dele (o "RSMB") desligável, para celular
+  fraco. Os nomes seguem o Twixtor (RE:Vision): Speed %, Frame Interp, Vector
+  Quality, Image Prep, Warping, Smart Blend, Motion Sensitivity, Motion Blur
+  Compensation, Display.
+
+  `stage="twixtor"`: a cadeia de efeitos PULA este efeito e o shader daqui só
+  copia a entrada. Quem o executa é o modelo — `model/TwixtorDoEfeito`
+  escreve estes valores no clipe a cada edição (velocidade, entre quadros,
+  ajustes do Movimento de pixels), e o motor lê a Compensação de motion blur
+  (`SceneRenderer.lerAjusteDeVetores`). Só vale em camada de VÍDEO.
+-->
+<effect
+    id="nova.effect.twixtor"
+    name="Twixtor"
+    name-en="Twixtor"
+    desc="Câmera lenta lisa: cria os quadros do meio pelo movimento (Pixels) ou por IA. Velocidade %, qualidade dos vetores, warping e motion blur opcional, como o Twixtor."
+    desc-en="Smooth slow motion: builds in-between frames from motion (Pixels) or AI. Speed %, vector quality, warping and optional motion blur, like Twixtor."
+    category="time"
+    stage="twixtor"
+    tags="twixtor,slow motion,camera lenta,câmera lenta,velocidade,speed,interpolação,quadros,frame,rife,ia,optical flow,fluxo,rsmb,motion blur,remap">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Speed %: 100 = normal, 25 = 4× mais lento. Anime para fazer rampas. -->
+        <slider id="speed" label="Velocidade %" default="100.0" min="5.0" max="2000.0" step="1.0" snap="100.0" />
+
+        <!-- Frame Interp: o que aparece ENTRE dois quadros do arquivo. -->
+        <selector id="frameInterp" label="Entre quadros"
+                  options="Inteiros|Mistura|Pixels|IA" default="2" />
+
+        <!-- Vector Quality: o tamanho da análise do movimento. -->
+        <selector id="vectorQuality" group="Vetores" label="Qualidade dos vetores"
+                  options="Rascunho|Média|Alta|Máxima" default="1" />
+        <slider id="sensitivity" group="Vetores" label="Sensibilidade do movimento"
+                default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="errorLimit" group="Vetores" label="Limite de erro"
+                default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <!-- Image Prep: realçar contraste e bordas antes de analisar. -->
+        <selector id="imagePrep" group="Vetores" label="Preparo da imagem"
+                  options="Nenhum|Realçar contraste e bordas" default="0" />
+
+        <!-- Warping: Inverso (1 passe) ou Direto (malha empurrada, menos fantasma). -->
+        <selector id="warping" group="Montagem do quadro" label="Warping"
+                  options="Inverso|Direto" default="0" />
+        <!-- Smart Blend: o que sai do quadro vem só do outro quadro. -->
+        <switch id="smartBlend" group="Montagem do quadro" label="Borda inteligente" default="true" />
+        <switch id="weightedBlend" group="Montagem do quadro" label="Mistura ponderada" default="true" />
+
+        <!-- Twixtor Pro: profundidade e máscara de rotoscopia como guias. -->
+        <switch id="useDepth" group="Pro" label="Usar profundidade (mais lento)" default="false" />
+        <switch id="separateByMatte" group="Pro" label="Separar pela máscara" default="false" />
+
+        <!--
+          Motion Blur Compensation (o "RSMB" do Twixtor): acelerando, borra ao
+          longo do movimento do próprio vídeo. 0 = DESLIGADO (o padrão) — pesado
+          em celular fraco.
+        -->
+        <slider id="motionBlurComp" group="Motion blur" label="Compensação de motion blur"
+                default="0.0" min="0.0" max="2.0" step="0.05" snap="0.0,1.0" />
+
+        <!-- Display: só na prévia; a exportação sai sempre com o resultado. -->
+        <selector id="display" label="Ver" options="Resultado|Vetores|Confiança" default="0" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+
+    ]]></shader>
+</effect>

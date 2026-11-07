@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Print Bleach Bypass (`blby`, linear): o "bleach bypass" da cópia — a prata que fica
+  multiplica a luma pela cor, que perde saturação e ganha contraste. Lido no `MBLooksUI_5_0.dll` (01/11/2026): o render
+  `0x1803ebbe0` é o MESMO do Neg Bleach Bypass (`0x1803f9090`) com a chave do negativo em 0, e o kernel é o
+  `ColorKernel_BleachBypass` (tools/looks/benchmark/nbby.py, `fx_nbby(negativo=False)`); o host é o
+  `ContasDoLooks.printBleachBypass`.
+  L = luma (0,2126, 0,7152, 0,0722); m = c·L; saída = ((c − m)·(1 − Silver Retention) + m)·2^Exposure Compensation.
+
+  Os padrões NÃO estão no motor (o slot 9 devolve 0 para todos) e nenhum bloco da pasta de presets se repete inteiro:
+  cada controle leva o valor que mais aparece nos 12 blocos da pasta (50 e 1). Os limites saíram dos presets, com folga.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.printbleachbypass"
+    name="Looks: Print Bleach Bypass"
+    name-en="Looks: Print Bleach Bypass"
+    desc="A ferramenta Print Bleach Bypass do Magic Bullet Looks: o bleach bypass da cópia — a prata que fica multiplica a luma pela cor, com menos saturação e mais contraste."
+    desc-en="Magic Bullet Looks' Print Bleach Bypass tool: the print's bleach bypass — the retained silver multiplies luma into the color, for less saturation and more contrast."
+    category="looks"
+    stage="mblooks"
+    looks="blby"
+    tags="magic bullet,looks,red giant,bleach bypass,print bleach,silver retention,prata,filme,dessaturar,contraste">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="silverRetention" label="Silver Retention" default="50.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="exposure" label="Exposure Compensation" default="1.0" min="-5.0" max="5.0" step="0.01" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

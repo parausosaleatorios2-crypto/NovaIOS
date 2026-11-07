@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Balanço de cor no esquema lift / gamma / gain.
+
+  Os três controles não são redundantes: cada um mexe numa faixa diferente do
+  brilho. `lift` levanta as sombras sem tocar nas luzes, `gamma` empurra só os
+  tons médios, `gain` multiplica as luzes. É o mesmo trio de qualquer sala de
+  correção de cor, e é o motivo de dar para clarear uma sombra sem estourar o
+  céu.
+-->
+<effect
+    id="nova.effect.color-balance"
+    name="Balanço de cor"
+    name-en="Color Balance"
+    desc="Temperatura, matiz e correção por faixa de brilho."
+    desc-en="Temperature, tint, lift, gamma and gain."
+    category="color"
+    blend="true"
+    tags="cor,temperatura,correcao,quente,frio,cinema">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="temperature" label="Temperatura"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="tint" label="Matiz"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+
+        <slider id="lift" label="Sombras"
+                default="0.0" min="-0.5" max="0.5" step="0.01" snap="0.0" />
+
+        <slider id="gammaValue" label="Médios"
+                default="1.0" min="0.2" max="3.0" step="0.01" snap="1.0" />
+
+        <slider id="gain" label="Luzes"
+                default="1.0" min="0.0" max="3.0" step="0.01" snap="1.0" />
+    </params>
+
+    <!--
+      Só para a MINIATURA do catálogo.
+
+      O padrão deste efeito é neutro de propósito: aplicá-lo não pode mudar a
+      imagem antes de a pessoa mexer em alguma coisa. Mas uma miniatura neutra
+      sai idêntica à imagem de amostra e diz "este efeito não faz nada".
+    -->
+    <preview>
+        <set param="temperature" value="0.65" />
+        <set param="tint" value="-0.25" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+    vec3 col = color.rgb;
+
+    // Temperatura empurra vermelho e azul em sentidos opostos: é assim que a
+    // imagem "esquenta" sem virar simplesmente mais clara.
+    //
+    // Era 0,12/0,10 — no máximo do controle (±100%) isso somava só ±0,12 num
+    // canal de 0 a 1, quase imperceptível. Relato do snow (25/09/2026): "isso
+    // acontece com basicamente todos os efeitos" — este e o "Temperatura de
+    // cor" tinham o mesmo problema, cada um com seu próprio multiplicador
+    // fraco. Com 0,5/0,4 o máximo empurra de verdade (e o `clamp` final
+    // continua garantindo que não estoura nem inverte).
+    col.r += temperature * 0.5;
+    col.b -= temperature * 0.5;
+    col.g += tint * 0.4;
+
+    col = col + lift * 0.2 * (1.0 - col);
+    col = pow(max(col, 0.0), vec3(1.0 / max(gammaValue, 0.05)));
+    col = col * gain;
+
+    fragColor = vec4(clamp(col, 0.0, 1.0), color.a);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sombra longa.
+
+  A sombra chapada que sai do objeto e atravessa a tela. Não é a sombra
+  projetada com desfoque (essa já existe no catálogo): é uma faixa dura, de cor
+  única, que virou linguagem visual de capa, ícone e título.
+
+  A conta é diferente também. Sombra projetada desloca a camada uma vez e
+  desfoca. Esta caminha para trás ao longo de uma direção e pergunta, em cada
+  passo, "tinha alguma coisa aqui?". Se tinha, o pixel está na sombra.
+-->
+<effect
+    id="nova.effect.longshadow"
+    name="Sombra longa"
+    name-en="Long Shadow"
+    desc="Faixa de sombra chapada saindo do objeto, estilo capa e ícone."
+    desc-en="The long flat shadow of flat design."
+    category="stylize"
+    tags="sombra,longa,long shadow,chapada,flat,capa,titulo,icone">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="angle" label="Direção"
+                default="45.0" min="-180.0" max="180.0" step="1.0" type="angle"
+                snap="0.0,45.0,90.0,135.0,180.0" />
+
+        <slider id="reach" label="Comprimento"
+                default="200.0" min="0.0" max="1200.0" step="1.0" snap="0.0" />
+
+        <!-- Escondida (pedido do snow, 25/09/2026): sempre no máximo agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <slider id="quality" label="Amostras" hidden="true"
+                default="96.0" min="4.0" max="96.0" step="1.0" type="integer" />
+
+        <slider id="fade" label="Desvanecer"
+                default="0.6" min="0.0" max="1.0" step="0.01" snap="0.0,1.0" />
+
+        <slider id="opacityF" label="Opacidade"
+                default="0.35" min="0.0" max="1.0" step="0.01" />
+
+        <color id="shadowColor" label="Cor" default="#000000" />
+    </params>
+
+    <!-- Na vitrine, a sombra padrão é clara e curta: comprida e escura. (vitrine, 0.664.0) -->
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura">
+        <set param="reach" value="600.0" />
+        <set param="opacityF" value="1.0" />
+        <set param="fade" value="0.2" />
+    </preview>
+
+
+
+    <shader><![CDATA[
+
+const int MAX_STEPS = 96;
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float rad = radians(angle);
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 axis = vec2(cos(rad), sin(rad)) * acTexelSize * (reach * acEscalaDePixel);
+    int steps = clamp(int(quality + 0.5), 1, MAX_STEPS);
+
+    float shadow = 0.0;
+    for (int i = 1; i <= MAX_STEPS; i++) {
+        if (i > steps) break;
+        float t = float(i) / float(steps);
+        vec2 uv = acScreenNorm - axis * t;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+
+        float hit = texture(inputImg, uv).a;
+        // O desvanecer é aplicado no PASSO, não no fim: assim a sombra perde
+        // força conforme se afasta do objeto, em vez de clarear por igual.
+        shadow = max(shadow, hit * mix(1.0, 1.0 - t, fade));
+    }
+
+    vec4 thrown = vec4(shadowColor.rgb, shadow * shadowColor.a * opacityF);
+
+    // A camada por cima da sombra, com a fórmula de alpha reto. A sombra tem que
+    // ficar ATRÁS: composta por cima, ela escureceria o próprio objeto.
+    float outAlpha = color.a + thrown.a * (1.0 - color.a);
+    vec3 outColor = outAlpha > 0.0
+        ? (color.rgb * color.a + thrown.rgb * thrown.a * (1.0 - color.a)) / outAlpha
+        : vec3(0.0);
+
+    fragColor = vec4(outColor, outAlpha);
+}
+
+    ]]></shader>
+</effect>

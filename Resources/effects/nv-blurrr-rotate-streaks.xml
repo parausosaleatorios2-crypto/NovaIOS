@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.blurrr.rotatestreaks"
+    name="Rastro Giratório (Blurrr)"
+    name-en="Rotate Streaks (Blurrr)"
+    desc="Amostras ao longo de um pequeno giro — rastro em arco."
+    desc-en="Samples along a small rotation — streak along an arc."
+    category="blur"
+    tags="blurrr,rotate,streak,rastro,giratorio,blur,movimento">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="angle"   label="Ângulo" default="20.0" min="-180.0" max="180.0" passo="0.5" />
+        <slider id="samples" label="Amostras" default="20" min="4" max="48" step="1" type="integer" />
+        <point  id="center"  label="Centro"  default-x="0.5" default-y="0.5" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    if (abs(angle) < 0.01) { fragColor = texture(inputImg, acScreenNorm); return; }
+    int n = clamp(int(samples), 4, 48);
+    float rad = radians(angle);
+
+    vec2 p = acScreenNorm - center;
+    p.x *= acAspect;
+
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i <= 48; i++) {
+        if (i > n) break;
+        float t = (float(i) / float(n) - 0.5) * rad;
+        float c = cos(t), s = sin(t);
+        vec2 q = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+        q.x /= acAspect;
+        soma += texture(inputImg, q + center);
+    }
+    fragColor = soma / float(n + 1);
+}
+    ]]></shader>
+</effect>

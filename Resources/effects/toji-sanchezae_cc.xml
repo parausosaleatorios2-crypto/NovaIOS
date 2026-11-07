@@ -1,0 +1,68 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect thumb="thumb/sanchezae.webp" thumb-laco="thumb/laco/sanchezae.webp" thumb-laco-ms="67" id="com.alightcreative.effects.sanchezae_cc"
+        name="sanchezae_cc"
+        desc="Cinematic color correction: warm highlights, cool shadows, bloom, vignette, and clarity. Inspired by football highlight edits."
+        category="color"
+         experimental="true">
+
+    <params>
+        <texture id="inputImg" srcType="content" />
+        <spinner id="contrast" default="1.2" min="0.5" max="2.0" label="Contrast" step="0.01" />
+        <spinner id="bloom" default="0.3" min="0.0" max="1.0" label="Bloom" step="0.01" />
+        <spinner id="clarity" default="0.2" min="0.0" max="1.0" label="Clarity" step="0.01" />
+        <spinner id="vignette" default="0.3" min="0.0" max="1.0" label="Vignette" step="0.01" />
+        <color id="highlightTint" default="#FFD7A0" label="Highlight Tint" alpha="false" />
+        <color id="shadowTint" default="#1B2F36" label="Shadow Tint" alpha="false" />
+        <spinner id="tintStrength" default="0.5" min="0.0" max="1.0" label="Tint Strength" step="0.01" />
+    </params>
+
+    <shader type="fragment" precision="high"><![CDATA[
+        // sanchezae_cc: Cinematic color correction
+        vec3 applyTint(vec3 color, vec3 shadows, vec3 highlights, float strength) {
+            float lum = dot(color, vec3(0.299, 0.587, 0.114));
+            vec3 tint = mix(shadows, highlights, smoothstep(0.2, 0.8, lum));
+            return mix(color, tint, strength);
+        }
+        float vignetteMask(vec2 uv, float strength) {
+            float d = distance(uv, vec2(0.5));
+            return 1.0 - smoothstep(0.5-strength*0.5, 0.75-strength*0.5, d);
+        }
+        vec3 bloomPass(sampler2D tex, vec2 uv, float strength) {
+            vec3 sum = vec3(0.0);
+            float w = 0.0;
+            for (int x = -2; x <= 2; ++x)
+            for (int y = -2; y <= 2; ++y) {
+                float k = exp(-float(x*x + y*y)/4.0);
+                sum += texture2DCv(tex, uv + vec2(x, y)*0.003).rgb * k;
+                w += k;
+            }
+            return mix(vec3(0.0), sum/w, strength);
+        }
+        vec3 clarityPass(sampler2D tex, vec2 uv, float strength) {
+            vec3 orig = texture2DCv(tex, uv).rgb;
+            vec3 sharp = orig * 2.0 - 0.25 * (
+                texture2DCv(tex, uv + vec2(0.002,0)).rgb +
+                texture2DCv(tex, uv - vec2(0.002,0)).rgb +
+                texture2DCv(tex, uv + vec2(0,0.002)).rgb +
+                texture2DCv(tex, uv - vec2(0,0.002)).rgb
+            );
+            return mix(orig, sharp, strength);
+        }
+        void main() {
+            vec2 uv = acScreenNorm;
+            vec4 src = texture2DCv(inputImg.texture, uv);
+            // Clarity
+            vec3 color = clarityPass(inputImg.texture, uv, clarity);
+            // Contrast
+            color = (color - 0.5) * contrast + 0.5;
+            // Tint
+            color = applyTint(color, shadowTint.rgb, highlightTint.rgb, tintStrength);
+            // Bloom
+            color += bloomPass(inputImg.texture, uv, bloom);
+            // Vignette
+            float vign = vignetteMask(uv, vignette);
+            color *= vign;
+            gl_FragColor = vec4(color, src.a);
+        }
+    ]]></shader>
+</effect>

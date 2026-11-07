@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brilho (glow / bloom).
+
+  Quatro passes, e cada um tem uma razão de existir:
+
+    0. isola só o que passa do limiar  → buffer `bright`
+    1. borra na horizontal             → buffer `blurH`
+    2. borra na vertical               → buffer `blurV`
+    3. soma o borrado de volta na imagem original
+
+  É a receita padrão de bloom. O passe de limiar é o que separa "brilho" de
+  "imagem borrada por cima da imagem": sem ele, tudo brilha e o resultado vira
+  uma névoa leitosa em vez de luz.
+-->
+<effect
+    id="nova.effect.glow"
+    name="Brilho"
+    name-en="Glow"
+    desc="Faz as áreas claras vazarem luz. Bloom para néon, fogo e destaque."
+    desc-en="Bloom from the bright parts."
+    category="stylize"
+    blend="true"
+    tags="glow,bloom,néon,luz,brilho">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="bright" src="buffer" />
+        <texture id="blurH" src="buffer" />
+        <texture id="blurV" src="buffer" />
+
+        <slider id="threshold" label="Threshold" default="0.65" min="0.0" max="1.0" step="0.01" />
+        <slider id="radius" label="Raio" default="16.0" min="1.0" max="80.0" step="1.0" />
+        <slider id="intensity" label="Intensidade" default="1.0" min="0.0" max="4.0" step="0.05" snap="1.0" />
+        <color id="tint" label="Cor do brilho" default="#FFFFFF" />
+    </params>
+
+    <!-- Na vitrine, só o sol passa do limite padrão: limite baixo, brilho largo. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="threshold" value="0.3" />
+        <set param="radius" value="40.0" />
+        <set param="intensity" value="3.0" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="bright" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+const int TAPS = 9;
+const float WEIGHTS[9] = float[9](
+    0.0162162162, 0.0540540541, 0.1216216216, 0.1945945946,
+    0.2270270270,
+    0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162
+);
+
+vec4 blurPass(sampler2D tex, vec2 direction) {
+    // Em pixels da COMPOSIÇÃO: `acEscalaDePixel` converte para o buffer, e a prévia
+    // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
+    vec2 stepUv = direction * acTexelSize * (radius * acEscalaDePixel / 4.0);
+    vec4 sum = vec4(0.0);
+    for (int i = 0; i < TAPS; i++) {
+        float offset = float(i - TAPS / 2);
+        sum += texture(tex, acScreenNorm + stepUv * offset) * WEIGHTS[i];
+    }
+    return sum;
+}
+
+void main() {
+    if (acPass == 0) {
+        vec4 color = texture(inputImg, acScreenNorm);
+        float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        // Reescala o que sobrou acima do limiar para 0..1, senão um limiar alto
+        // deixaria o brilho quase invisível.
+        // Pesado pelo alfa: a cor do motor é reta, e o pixel transparente de um PNG recortado ainda guarda a cor
+        // do fundo apagado — sem isto ela acendia o brilho (o mesmo do Deep Glow, 23/10/2026).
+        float excess = max(luma - threshold, 0.0) / max(1.0 - threshold, 0.001) * color.a;
+        fragColor = vec4(color.rgb * excess, excess);
+        return;
+    }
+
+    if (acPass == 1) {
+        fragColor = blurPass(bright, vec2(1.0, 0.0));
+        return;
+    }
+
+    if (acPass == 2) {
+        fragColor = blurPass(blurH, vec2(0.0, 1.0));
+        return;
+    }
+
+    vec4 base = texture(inputImg, acScreenNorm);
+    vec4 light = texture(blurV, acScreenNorm);
+
+    // Soma (linear dodge) e não mistura: luz se ACUMULA. Misturar deixaria a
+    // imagem de baixo mais fraca, que é o oposto do que brilho faz.
+    vec3 luz = clamp(light.rgb * tint.rgb * intensity, 0.0, 1.0);
+    vec3 rgb = clamp(base.rgb + light.rgb * tint.rgb * intensity, 0.0, 1.0);
+
+    // O alpha também cresce, senão o brilho não vaza para fora da silhueta da
+    // camada — e vazar para fora é justamente a graça. Fora dela é SÓ a luz (não a cor escondida do pixel
+    // transparente), e o alfa é screen(alfa da camada, maior canal da luz), como o Unmult do Deep Glow do AE.
+    // Sobre a camada opaca, nada muda.
+    float alpha = 1.0 - (1.0 - base.a) * (1.0 - max(luz.r, max(luz.g, luz.b)));
+    vec3 pre = rgb * base.a + luz * (1.0 - base.a);
+
+    fragColor = alpha > 0.0 ? vec4(min(pre / alpha, vec3(1.0)), alpha) : vec4(0.0);
+}
+
+    ]]></shader>
+</effect>

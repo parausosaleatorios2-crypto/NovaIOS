@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TRITONE — o efeito nativo do After Effects (ADBE Tritone), medido (0.452.0)
+
+  Pedido do snow (08/10/2026): "lote simples de cor".
+
+  MEDIDO (tools/lotecor/benchmark, 10 casos): Y = 0,299 R + 0,587 G + 0,114 B da cor reta;
+  abaixo de 0,5 a cor vai de Shadows a Midtones (peso 2Y); acima, de Midtones a Highlights
+  (peso 2Y − 1). Blend With Original mistura o resultado com a fonte. O alfa das três cores não
+  entra, e o alfa da camada não muda. As cores valem como estão (não são arredondadas a 8 bits).
+  O Midtones padrão do AE é (127, 100, 70). Modelo × AE: 0,002 nível de 255.
+-->
+<effect
+    id="nova.effect.aetritone"
+    name="Tritone (AE)"
+    name-en="Tritone (AE)"
+    desc="O Tritone do After Effects: três cores para sombras, meios-tons e luzes, pela luminância."
+    desc-en="After Effects' Tritone: three colours for shadows, midtones and highlights, by luminance."
+    category="color"
+    tags="tritone,tritom,duotone,sepia,sépia,tint,cor,after effects,cc">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="highlights" label="Highlights" default="#FFFFFF" />
+        <color id="midtones" label="Midtones" default="#7F6446" />
+        <color id="shadows" label="Shadows" default="#000000" />
+        <slider id="blendWithOriginal" label="Blend With Original" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    vec4 c = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+    float y = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 cor = y < 0.5 ? mix(shadows.rgb, midtones.rgb, clamp(y * 2.0, 0.0, 1.0))
+                       : mix(midtones.rgb, highlights.rgb, clamp(y * 2.0 - 1.0, 0.0, 1.0));
+    fragColor = vec4(mix(cor, c.rgb, clamp(blendWithOriginal / 100.0, 0.0, 1.0)), c.a);
+}
+]]></shader>
+</effect>

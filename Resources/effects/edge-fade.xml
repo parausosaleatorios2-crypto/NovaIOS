@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Desvanecer bordas.
+
+  Some com as quatro bordas da camada, cada lado com sua medida. Mexe só no
+  ALFA — então serve para emendar uma camada na outra sem linha aparente, que é
+  para o que se usa isso 90% das vezes.
+
+  Diferente de "Vinheta", que escurece a COR num formato elíptico. Aqui é por
+  lado e é transparência de verdade.
+-->
+<effect
+    id="nova.effect.edgefade"
+    name="Desvanecer bordas"
+    name-en="Edge Fade"
+    desc="Suaviza as quatro bordas da camada até a transparência, lado por lado."
+    desc-en="Fades the image out towards the borders."
+    category="matte"
+    tags="borda,desvanecer,fade,emendar,alfa,suave,juntar">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="fadeLeft" label="Esquerda"
+                default="0.15" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="fadeRight" label="Direita"
+                default="0.15" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="fadeTop" label="Topo"
+                default="0.0" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="fadeBottom" label="Base"
+                default="0.0" min="0.0" max="0.5" step="0.005" snap="0.0" />
+        <slider id="curveF" label="Curva"
+                default="1.0" min="0.2" max="4.0" step="0.01" snap="1.0" />
+    </params>
+
+    <shader><![CDATA[
+
+/** 0 na borda, 1 depois de `width`. Largura 0 devolve 1: o lado fica intacto. */
+float sideMask(float distanceToEdge, float width) {
+    if (width <= 0.0) return 1.0;
+    return smoothstep(0.0, width, distanceToEdge);
+}
+
+void main() {
+    vec4 color = texture(inputImg, acScreenNorm);
+
+    float mask =
+        sideMask(acScreenNorm.x, fadeLeft) *
+        sideMask(1.0 - acScreenNorm.x, fadeRight) *
+        sideMask(acScreenNorm.y, fadeTop) *
+        sideMask(1.0 - acScreenNorm.y, fadeBottom);
+
+    fragColor = vec4(color.rgb, color.a * pow(mask, max(curveF, 0.01)));
+}
+
+    ]]></shader>
+</effect>

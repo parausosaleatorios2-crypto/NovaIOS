@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Halftone Plus — pontos de meio-tom com tamanho variando pelo luma, com ângulo configurável.
+  Equivale ao "Halftone Plus"/"Halftone Grid" do Ultra.
+-->
+<effect
+    id="nova.effect.um-halftone-plus"
+    name="Meio-Tom+"
+    name-en="Halftone+"
+    desc="Trama de pontos de meio-tom com tamanho modulado pelo luma."
+    desc-en="Halftone dot pattern modulated by luminance."
+    category="stylize"
+    tags="halftone,dots,print,ultra motion,blurrr">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <spinner id="cellSize" label="Tamanho" default="12.0" min="2.0" max="80.0" step="0.5" />
+        <spinner id="angleDeg" label="Ângulo" default="15.0" min="-180.0" max="180.0" step="1.0" />
+        <spinner id="contrast" label="Contraste" default="1.2" min="0.1" max="3.0" step="0.05" />
+        <color id="dotColor" label="Cor do ponto" default="#FF000000" />
+        <color id="bgColor" label="Fundo" default="#FFFFFFFF" />
+    </params>
+
+    <preview>
+        <set param="cellSize" value="14.0" />
+    </preview>
+
+    <shader><![CDATA[
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 px = uv * acResolution;
+    float a = radians(angleDeg);
+    mat2 R = mat2(cos(a), -sin(a), sin(a), cos(a));
+    vec2 cell = R * px / cellSize;
+    vec2 cellId = floor(cell);
+    vec2 center = (cellId + 0.5) * cellSize;
+    vec2 centerUV = (transpose(R) * center) / acResolution;
+
+    vec4 sampled = texture(inputImg, centerUV);
+    float L = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float t = clamp((1.0 - L) * contrast, 0.0, 1.0);
+    float radius = sqrt(t) * (cellSize * 0.5);
+
+    vec2 local = R * px - center;
+    float d = length(local);
+    float aa = fwidth(d) * 0.5 + 0.5;
+    float dotMask = 1.0 - smoothstep(radius - aa, radius + aa, d);
+
+    vec3 col = mix(bgColor.rgb, dotColor.rgb, dotMask);
+    fragColor = vec4(col, sampled.a);
+}
+    ]]></shader>
+</effect>

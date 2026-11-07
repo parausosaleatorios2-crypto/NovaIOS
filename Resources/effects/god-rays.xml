@@ -1,0 +1,826 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RENOMEADO em 22/09 (0.176.0): era "God Rays cinematográfico". O snow achou,
+  com razão, que ele tem mais a cara de um Optical Flares (luz marchando até a
+  fonte, poeira, brilho em escalas) do que do Crate's Godrays — e o nome "God
+  Rays" fica para a réplica desse, planejada em docs/PLANO-GOD-RAYS.md. O id
+  continua o mesmo: projetos salvos não mudam.
+
+  ============================================================================
+   GOD RAYS CINEMATOGRÁFICO
+  ============================================================================
+
+  Luz volumétrica: a primeira impressão tem que ser "existe uma fonte de luz
+  iluminando uma atmosfera", e não "esta imagem recebeu um desfoque radial".
+
+  O "Raios de luz" que já existe no catálogo (`light-rays.xml`) é o segundo caso,
+  de propósito: pega o que passa de um limiar e estica em direção a um ponto. Serve
+  para muita coisa, e continua lá. Este é outro efeito, com outra conta.
+
+  ============================================================================
+   A DIFERENÇA, EM UMA FRASE
+  ============================================================================
+
+  O desfoque radial MISTURA pixels. Aqui, para cada pixel, se ANDA em direção à
+  luz e se pergunta quanta luz chega até ele: o que há no caminho acende, o que
+  bloqueia apaga, a poeira do ar modula, e o ângulo de visão pesa. É por isso que
+  um objeto na frente do sol deixa feixes que saem das bordas dele — coisa que
+  desfoque nenhum faz.
+
+  ============================================================================
+   O PIPELINE (nove passes)
+  ============================================================================
+
+    0. Ruído        mapa de poeira, em 1/4, animado pelo tempo
+    1. Extração     brilho (com o limiar) e oclusão, em 1/2
+    2. Raios        a marcha em direção à luz, em 1/2   (Balanced, Quality, Ultra)
+    3. Raios        a mesma, em 1/4                     (Performance)
+    4-7. Brilho     quatro escalas, 1/4, 1/8, 1/16, 1/32
+    8. Composição   raios + brilho + halo, comprimidos para caber no branco
+
+  O caminho dos raios e o do brilho são SEPARADOS, como a spec pede: cada um tem
+  o próprio limiar e o próprio controle de intensidade. Os raios não dependem do
+  brilho, nem o brilho dos raios.
+
+  ============================================================================
+   A MARCHA
+  ============================================================================
+
+  Cada pixel dá `N` passos em direção à fonte (16 a 128, pelo preset de
+  qualidade). Em cada passo:
+
+    - lê a EMISSÃO ali: os pixels claros da imagem (pelo limiar) e a própria
+      fonte, calculada por fórmula — não é lida de textura, e por isso ela pode
+      estar FORA DA TELA e os raios ainda entram no quadro;
+    - multiplica pela ATENUAÇÃO do caminho (quanto mais longe do pixel, menos);
+    - multiplica pela POEIRA (o mapa de ruído): é o que tira a cara de desfoque
+      radial e dá a de ar com partículas;
+    - multiplica pela TRANSMITÂNCIA acumulada: o que está entre o pixel e a luz
+      e bloqueia derruba a luz que vem de trás. É a oclusão, e é a diferença
+      entre feixe e borrão.
+
+  Depois da marcha, o resultado é multiplicado pela DENSIDADE e pela FASE DE
+  ESPALHAMENTO (Henyey-Greenstein): com anisotropia positiva a luz é mais forte
+  perto da direção da fonte, como o brilho de um farol na neblina.
+
+  A ORDEM dos passos tem um jitter por pixel (ruído de gradiente entrelaçado).
+  Sem ele, 32 passos em fila viram degraus visíveis nos feixes. O jitter é FIXO
+  no espaço e não muda de um quadro para o outro: não pisca.
+
+  ============================================================================
+   LUZ EM VALOR ACIMA DE 1
+  ============================================================================
+
+  Uma luz de intensidade 5 tem que iluminar cinco vezes mais que uma de 1, e o
+  buffer de 8 bits não guarda nada acima de 1. Então a luz é guardada COMPRIMIDA,
+  `x/(1+x)`, com uma curva de gama por cima para a cauda escura não virar
+  degrau; e a leitura descomprime ANTES de tirar média. Vai de ~1e-4 a ~40. Não é
+  HDR de verdade (o motor não tem buffer de ponto flutuante), mas o halo de uma
+  luz forte continua sendo o de uma luz forte, e não um branco chapado.
+
+  Dois cuidados que uma simulação em numpy mostrou serem obrigatórios, e que a
+  primeira versão deste efeito não tinha:
+
+  - **Média em valor codificado perde luz.** O filtro bilinear do hardware tira
+    média do número guardado, e a média de `{e, 0}` num buffer comprimido
+    decodifica para ~21% da energia, não 50%. Por isso a EMISSÃO (que nunca passa
+    de 1, porque vem da imagem) é guardada em luz linear, sem codificar; e a
+    descida das escalas do brilho lê cada texel com `texelFetch`, decodifica, e só
+    então tira a média. Com isso a energia passa inteira de uma escala a outra
+    (razão 0,98 · 0,99 · 1,00 em todos os tamanhos testados); sem isso, um ponto
+    pequeno perdia até 83% a cada nível e cintilava ao andar.
+  - **O limiar vem antes da média.** Uma faísca de 2x2 pixels lida por bilinear
+    chega com metade do brilho, cai abaixo do limiar e some. O limiar é aplicado
+    em cada pixel cheio e só depois entra a média do bloco (2x2 na extração dos
+    raios, 4x4 no primeiro nível do brilho). Os blocos começam pelo ÍNDICE do
+    pixel, e não pelo UV: os buffers têm o tamanho arredondado para baixo.
+
+  No fim, a luz é somada à imagem por `1 - (1 - imagem) * exp(-luz)`: gasta só o
+  espaço que FALTA até o branco. Onde a imagem já é branca, nada muda; onde é
+  escura, a luz tem a faixa inteira para crescer sem chapar. É a mesma compressão
+  do Luz profunda, e faz o papel do tonemapping da spec.
+
+  ============================================================================
+   O QUE A SPEC PEDIU E NÃO ESTÁ AQUI
+  ============================================================================
+
+  - **Acumulação temporal e reprojeção.** Elas exigiriam guardar o resultado do
+    quadro anterior, e o motor não guarda buffers de efeito entre quadros — só
+    quadros de ENTRADA, no anel de histórico. A estabilidade vem de outro lugar:
+    o jitter é fixo no espaço e o ruído anda de forma contínua com o tempo, então
+    nada é sorteado a cada quadro e nada pisca. O preço é um leve padrão fixo de
+    grão nos feixes em qualidade baixa.
+  - **A curva de atenuação "Custom".** As quatro fixas (Linear, Smooth,
+    Exponential, Inverse) cobrem o que se usa.
+  - **Cor da luz "fisicamente plausível" de verdade.** A cor multiplica a luz,
+    com Temperature e Saturation ao lado; não há espectro.
+  - **A profundidade.** Não há mapa de profundidade neste motor. A oclusão sai da
+    escuridão da imagem ou do alfa de uma camada escolhida (`Occluder Layer`).
+
+  ## Limites que ele assume
+
+  - O halo do brilho acaba onde a maior escala acaba: no padrão, uns 9% da largura
+    do quadro para cada lado da fonte. Dentro desse alcance ele cai com inclinação
+    de ~-2,6 em log-log (entre 1/r² e mais íngreme). O `Glow Radius` não abre o
+    halo além disso; ele desloca o PESO das escalas pequenas para as grandes.
+  - A marcha é feita em 1/2 (ou 1/4) da resolução. Um feixe mais fino que uns 2
+    pixels da resolução da marcha não aparece como feixe.
+  - Um objeto ESCURO mais fino que o espaçamento entre passos pode ser pulado em
+    qualidade baixa. O jitter espalha o erro, e a oclusão é uma profundidade óptica
+    (`exp(-espessura * k)`), então o mesmo pilar bloqueia o mesmo tanto com 16 ou
+    128 passos; mas com 16 passos ele deixa passar ~8%, e com 32 ou mais ~1 a 2%.
+  - Numa camada com alfa, a luz aparece também FORA do conteúdo (num texto, num
+    recorte); o alfa que sai é o do conteúdo mais o da luz.
+
+  ## Como usar
+
+  Ponha numa camada de AJUSTE por cima da cena, ou numa camada só. O "Sol
+  cinematográfico" nos presets é um bom ponto de partida. A luz pode ficar fora da
+  tela: arraste o `Position` para além da borda e os feixes continuam entrando.
+  Para ver só a luz, troque o `View`.
+
+  ============================================================================
+   ENXUGADO (0.189.0, pedido do snow de 22/09/2026)
+  ============================================================================
+
+  Eram 37 controles no painel. Agora são 14: Position, Intensity, Color e
+  Radius da luz soltos; Ray Intensity, Length e Threshold em Rays; Glow e Glow
+  Radius em Glow; Dust e Dust Speed em Atmosphere; a oclusão e a camada dela
+  em Occlusion; e a Quality. O resto continua aqui, com `hidden="true"`: os 9
+  presets mexem neles (a temperatura da Hora dourada, o espalhamento da Luz
+  na neblina), e um projeto salvo que os usava continua igual.
+
+   - "Ray Intensity" e "Density" multiplicavam os raios na mesma conta
+     (`rayIntensity * density`). Ficou um só, o `density` (que os presets
+     usam), com o nome do outro.
+   - "Source" (Imagem + Luz / Só a imagem / Só a luz) repetia dois controles:
+     só a imagem é Intensity em zero; só a luz é Threshold em 1.
+   - Decay e Attenuation fazem o feixe acabar antes, como o Length.
+   - Temperature e Saturation mexem na cor, que o Color já escolhe.
+   - A segunda luz (5 controles) saiu do painel: nenhum preset a usava, e duas
+     luzes são o efeito aplicado duas vezes.
+   - View (ver só os raios ou só o brilho) era ferramenta de regulagem.
+
+-->
+<effect
+    id="nova.effect.godrays"
+    name="Flare Volumétrico"
+    name-en="Volumetric Flare"
+    desc="Luz volumétrica de verdade: marcha em direção à fonte, oclusão, poeira, espalhamento e brilho em várias escalas."
+    desc-en="Volumetric light: ray marching toward the source, occlusion, dust, scattering and multi-scale glow."
+    category="stylize"
+    tags="flare,optical flares,lens flare,raios,luz,volumetrico,cinematografico,sol,poeira,neblina,glow,brilho,atmosfera,anime,volumetric,light shafts"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <!-- Os buffers, na ordem dos passes. -->
+        <texture id="noiseT" src="buffer" scale="0.25" />
+        <texture id="emis" src="buffer" scale="0.5" />
+        <texture id="rayH" src="buffer" scale="0.5" />
+        <texture id="rayQ" src="buffer" scale="0.25" />
+        <texture id="g1" src="buffer" scale="0.25" />
+        <texture id="g2" src="buffer" scale="0.125" />
+        <texture id="g3" src="buffer" scale="0.0625" />
+        <texture id="g4" src="buffer" scale="0.03125" />
+
+        <!-- =============================== O PAINEL ============================== -->
+        <!-- De onde a luz vem. Pode passar da borda: os raios entram no quadro. -->
+        <point id="lightPos" label="Position"
+               defaultX="0.78" defaultY="0.12" min="-1.0" max="2.0" unit="px" />
+        <slider id="lightIntensity" label="Intensity"
+                default="3.0" min="0.0" max="10.0" step="0.05" snap="3.0" />
+        <color id="lightColor" label="Color" default="#FFE6BF" />
+        <slider id="lightRadius" label="Radius"
+                default="0.06" min="0.005" max="0.6" step="0.005" type="relative-percent" />
+        <slider id="density" group="Rays" label="Ray Intensity"
+                default="1.0" min="0.0" max="8.0" step="0.01" snap="1.0" />
+        <!-- Quanto do caminho até a luz é percorrido: 1 vai até ela, mais que 1 passa direto. -->
+        <slider id="rayLength" group="Rays" label="Length"
+                default="1.0" min="0.0" max="1.5" step="0.01" snap="1.0" />
+        <slider id="threshold" group="Rays" label="Threshold"
+                default="0.75" min="0.0" max="1.0" step="0.01" snap="0.75" />
+        <slider id="glowAmount" group="Glow" label="Glow"
+                default="0.8" min="0.0" max="4.0" step="0.05" snap="0.8" />
+        <slider id="glowRadius" group="Glow" label="Glow Radius"
+                default="1.5" min="0.5" max="4.0" step="0.05" snap="1.5" />
+        <slider id="noiseAmount" group="Atmosphere" label="Dust"
+                default="0.25" min="0.0" max="1.0" step="0.01" snap="0.25" />
+        <slider id="noiseSpeed" group="Atmosphere" label="Dust Speed"
+                default="0.15" min="0.0" max="2.0" step="0.01" snap="0.15" />
+        <!-- Dark Areas: o escuro da imagem bloqueia. Alpha of Layer: o alfa da camada escolhida. -->
+        <selector id="occluder" group="Occlusion" label="Occlusion" default="1"
+                  options="Off|Dark Areas|Alpha of Layer" />
+        <texture id="occLayerImg" group="Occlusion" src="layer" label="Occluder Layer" />
+        <!-- Performance 16 passos em 1/4; Balanced 32; Quality 64; Ultra 128 (os três em 1/2).
+             Escondida (pedido do snow, 25/09/2026): sempre em Ultra agora; a
+             prévia mais leve é o ajuste global de Desempenho, não um dial por
+             efeito. Ver o comentário completo em bokeh.xml. -->
+        <selector id="quality" group="Quality" label="Quality Preset" default="3" hidden="true"
+                  options="Performance|Balanced|Quality|Ultra" />
+
+        <!-- ===== ESCONDIDOS (hidden): os presets mexem, o painel não ===== -->
+
+        <!-- Para regular a olho: só os raios, ou só o brilho, sobre preto. -->
+        <selector id="view" hidden="true" label="View" default="0"
+                  options="Final|Rays Only|Glow Only" />
+
+        <!-- ============================== Light ============================== -->
+        <slider id="lightFalloff" hidden="true" group="Light" label="Falloff"
+                default="2.0" min="0.3" max="8.0" step="0.05" snap="2.0" />
+        <slider id="temperature" hidden="true" group="Light" label="Temperature"
+                default="0.0" min="-1.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="saturation" hidden="true" group="Light" label="Saturation"
+                default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+        <!-- A luz pode vir só da imagem (o brilho dela), só da fonte, ou dos dois. -->
+        <selector id="sourceMode" hidden="true" group="Light" label="Source" default="0"
+                  options="Image + Light|Image Only|Light Only" />
+
+        <!-- ============================== Rays =============================== -->
+        <slider id="rayIntensity" hidden="true" group="Rays" label="Ray Intensity"
+                default="1.0" min="0.0" max="8.0" step="0.05" snap="1.0" />
+        <slider id="decay" hidden="true" group="Rays" label="Decay"
+                default="1.5" min="0.25" max="6.0" step="0.05" snap="1.5" />
+        <selector id="attenuation" hidden="true" group="Rays" label="Attenuation" default="2"
+                  options="Linear|Smooth|Exponential|Inverse" />
+        <slider id="softness" hidden="true" group="Rays" label="Softness"
+                default="0.25" min="0.0" max="1.0" step="0.01" snap="0.25" />
+
+        <!-- ============================ Atmosphere =========================== -->
+        <slider id="scattering" hidden="true" group="Atmosphere" label="Scattering"
+                default="0.6" min="0.0" max="1.0" step="0.01" snap="0.6" />
+        <!-- Henyey-Greenstein: positivo = mais forte perto da direção da fonte. -->
+        <slider id="anisotropy" hidden="true" group="Atmosphere" label="Anisotropy"
+                default="0.55" min="-0.9" max="0.95" step="0.01" snap="0.0" />
+        <slider id="noiseScale" hidden="true" group="Atmosphere" label="Noise Scale"
+                default="6.0" min="0.5" max="20.0" step="0.1" snap="6.0" />
+        <slider id="noiseContrast" hidden="true" group="Atmosphere" label="Noise Contrast"
+                default="1.5" min="0.5" max="4.0" step="0.05" snap="1.5" />
+        <slider id="noiseSeed" hidden="true" group="Atmosphere" label="Noise Seed"
+                default="0" min="0" max="100" step="1" type="integer" />
+
+        <!-- =============================== Glow ============================== -->
+        <slider id="glowThreshold" hidden="true" group="Glow" label="Glow Threshold"
+                default="0.8" min="0.0" max="1.0" step="0.01" snap="0.8" />
+        <!-- 0 = as escalas pesam igual (halo largo); 1 = só a menor pesa (halo apertado). -->
+        <slider id="glowFalloff" hidden="true" group="Glow" label="Glow Falloff"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+
+        <!-- ============================= Occlusion =========================== -->
+        <slider id="occlusionStrength" hidden="true" group="Occlusion" label="Occlusion Strength"
+                default="0.85" min="0.0" max="1.0" step="0.01" snap="0.85" />
+        <slider id="occlusionSoftness" hidden="true" group="Occlusion" label="Occlusion Softness"
+                default="0.5" min="0.0" max="1.0" step="0.01" snap="0.5" />
+
+
+        <!-- ============================== Light 2 ============================ -->
+        <switch id="light2On" hidden="true" group="Light 2" label="Second Light" default="false" />
+        <point id="light2Pos" hidden="true" group="Light 2" label="Position"
+               defaultX="0.15" defaultY="0.85" min="-1.0" max="2.0" unit="px" />
+        <slider id="light2Intensity" hidden="true" group="Light 2" label="Intensity"
+                default="2.0" min="0.0" max="10.0" step="0.05" snap="2.0" />
+        <color id="light2Color" hidden="true" group="Light 2" label="Color" default="#9CC4FF" />
+        <slider id="light2Radius" hidden="true" group="Light 2" label="Radius"
+                default="0.05" min="0.005" max="0.6" step="0.005" type="relative-percent" />
+    </params>
+
+    <!-- A poeira anda com o tempo, mas a 104 dp não se vê nem a 1,5×: a miniatura fica parada, sem o ▶ (0.669.0). -->
+    <preview anda="false" />
+
+    <passes>
+        <pass target="noiseT" />
+        <pass target="emis" />
+        <pass target="rayH" />
+        <pass target="rayQ" />
+        <pass target="g1" />
+        <pass target="g2" />
+        <pass target="g3" />
+        <pass target="g4" />
+        <pass />
+    </passes>
+
+    <presets>
+        <preset id="cinematicSun" name="☀️ Sol cinematográfico" name-en="☀️ Cinematic Sun">
+            <value param="lightPos" value="0.80,0.08" />
+            <value param="lightColor" value="#FFE2B0" />
+            <value param="temperature" value="0.25" />
+            <value param="lightIntensity" value="4.0" />
+            <value param="rayLength" value="1.0" />
+            <value param="density" value="1.1" />
+            <value param="decay" value="1.4" />
+            <value param="scattering" value="0.7" />
+            <value param="anisotropy" value="0.6" />
+            <value param="noiseAmount" value="0.25" />
+            <value param="glowAmount" value="1.0" />
+            <value param="quality" value="1" />
+        </preset>
+        <preset id="goldenHour" name="🌅 Hora dourada" name-en="🌅 Golden Hour">
+            <value param="lightPos" value="0.88,0.42" />
+            <value param="lightColor" value="#FFB35C" />
+            <value param="temperature" value="0.55" />
+            <value param="saturation" value="1.15" />
+            <value param="lightIntensity" value="4.5" />
+            <value param="lightRadius" value="0.09" />
+            <value param="density" value="1.3" />
+            <value param="scattering" value="0.75" />
+            <value param="anisotropy" value="0.7" />
+            <value param="noiseAmount" value="0.3" />
+            <value param="glowAmount" value="1.3" />
+            <value param="glowRadius" value="2.0" />
+        </preset>
+        <preset id="moonlight" name="🌌 Luar" name-en="🌌 Moonlight">
+            <value param="lightPos" value="0.25,0.06" />
+            <value param="lightColor" value="#A9C8FF" />
+            <value param="temperature" value="-0.6" />
+            <value param="saturation" value="0.75" />
+            <value param="lightIntensity" value="2.5" />
+            <value param="lightRadius" value="0.05" />
+            <value param="density" value="0.8" />
+            <value param="scattering" value="0.6" />
+            <value param="anisotropy" value="0.4" />
+            <value param="noiseAmount" value="0.2" />
+            <value param="glowAmount" value="0.9" />
+        </preset>
+        <preset id="animeGlow" name="✨ Brilho de anime" name-en="✨ Anime Glow">
+            <value param="lightColor" value="#FFFFFF" />
+            <value param="saturation" value="1.3" />
+            <value param="lightIntensity" value="2.0" />
+            <value param="threshold" value="0.55" />
+            <value param="softness" value="0.4" />
+            <value param="density" value="0.9" />
+            <value param="scattering" value="0.3" />
+            <value param="noiseAmount" value="0.08" />
+            <value param="glowAmount" value="2.2" />
+            <value param="glowRadius" value="2.6" />
+            <value param="glowThreshold" value="0.55" />
+            <value param="glowFalloff" value="0.35" />
+        </preset>
+        <preset id="explosion" name="🔥 Explosão" name-en="🔥 Explosion">
+            <value param="lightPos" value="0.5,0.5" />
+            <value param="lightColor" value="#FF7A2A" />
+            <value param="temperature" value="0.7" />
+            <value param="saturation" value="1.2" />
+            <value param="lightIntensity" value="7.0" />
+            <value param="lightRadius" value="0.12" />
+            <value param="rayLength" value="1.3" />
+            <value param="density" value="1.6" />
+            <value param="noiseAmount" value="0.45" />
+            <value param="noiseSpeed" value="0.6" />
+            <value param="noiseContrast" value="2.0" />
+            <value param="glowAmount" value="2.2" />
+            <value param="glowRadius" value="2.4" />
+        </preset>
+        <preset id="softWindow" name="💡 Janela suave" name-en="💡 Soft Window">
+            <value param="lightPos" value="1.05,0.30" />
+            <value param="lightColor" value="#FFF4E0" />
+            <value param="temperature" value="0.1" />
+            <value param="lightIntensity" value="2.2" />
+            <value param="lightRadius" value="0.25" />
+            <value param="decay" value="2.5" />
+            <value param="density" value="0.9" />
+            <value param="scattering" value="0.5" />
+            <value param="anisotropy" value="0.3" />
+            <value param="noiseAmount" value="0.35" />
+            <value param="noiseScale" value="3.0" />
+            <value param="glowAmount" value="0.8" />
+        </preset>
+        <preset id="fogLight" name="🌫️ Luz na neblina" name-en="🌫️ Fog Light">
+            <value param="density" value="1.8" />
+            <value param="decay" value="1.0" />
+            <value param="scattering" value="0.9" />
+            <value param="anisotropy" value="0.7" />
+            <value param="noiseAmount" value="0.5" />
+            <value param="noiseScale" value="3.0" />
+            <value param="noiseSpeed" value="0.1" />
+            <value param="glowAmount" value="1.4" />
+            <value param="glowRadius" value="2.5" />
+        </preset>
+        <preset id="energy" name="⚡ Energia" name-en="⚡ Energy">
+            <value param="lightPos" value="0.5,0.5" />
+            <value param="lightColor" value="#7A5CFF" />
+            <value param="temperature" value="-0.3" />
+            <value param="saturation" value="1.4" />
+            <value param="lightIntensity" value="6.0" />
+            <value param="lightRadius" value="0.08" />
+            <value param="threshold" value="0.5" />
+            <value param="density" value="1.4" />
+            <value param="noiseAmount" value="0.4" />
+            <value param="noiseSpeed" value="1.2" />
+            <value param="noiseContrast" value="2.5" />
+            <value param="glowAmount" value="2.0" />
+            <value param="glowThreshold" value="0.5" />
+        </preset>
+        <preset id="hollywood" name="🎬 Hollywood" name-en="🎬 Hollywood">
+            <value param="lightPos" value="0.82,0.06" />
+            <value param="lightColor" value="#FFF0DD" />
+            <value param="temperature" value="0.1" />
+            <value param="lightIntensity" value="5.0" />
+            <value param="rayLength" value="1.15" />
+            <value param="density" value="1.2" />
+            <value param="scattering" value="0.8" />
+            <value param="anisotropy" value="0.75" />
+            <value param="noiseAmount" value="0.18" />
+            <value param="glowAmount" value="1.2" />
+            <value param="quality" value="2" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+
+const int MAX_AMOSTRAS = 128;
+const float HDR_MAX = 40.0;
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// ---------------------------------------------------------------- cor e luz
+
+vec3 aLinear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 deLinear(vec3 c) {
+    c = max(c, vec3(0.0));
+    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+/**
+ * Luz linear em qualquer valor (até ~40) para o que cabe num buffer de 8 bits.
+ * `x/(1+x)` comprime a faixa inteira em 0..1; o gama por cima dá mais degraus
+ * para os valores baixos, onde a cauda escura de um halo mora.
+ */
+vec3 empacotar(vec3 x) {
+    x = clamp(x, vec3(0.0), vec3(HDR_MAX));
+    return pow(x / (1.0 + x), vec3(1.0 / 2.2));
+}
+
+vec3 desempacotar(vec3 e) {
+    vec3 y = pow(e, vec3(2.2));
+    return y / max(vec3(1.0) - y, vec3(0.002));
+}
+
+/** A cor da luz: a cor escolhida, esquentada ou esfriada, e com a saturação. */
+vec3 corDaLuz(vec4 c) {
+    vec3 rgb = aLinear(c.rgb);
+    rgb *= vec3(1.0 + 0.30 * temperature, 1.0 + 0.04 * temperature, 1.0 - 0.38 * temperature);
+    float claridade = dot(rgb, LUMA);
+    return max(mix(vec3(claridade), rgb, saturation), vec3(0.0));
+}
+
+// ---------------------------------------------------------------- ruído
+
+float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+float ruidoDeValor(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/** Três oitavas: nuvem grande com detalhe miúdo. Volta em 0..1. */
+float fbm(vec2 p) {
+    float soma = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 3; i++) {
+        soma += amp * ruidoDeValor(p);
+        p = p * 2.03 + 17.7;
+        amp *= 0.5;
+    }
+    return soma / 0.875;
+}
+
+/** Ruído de gradiente entrelaçado: o jitter dos passos. Fixo no espaço, não pisca. */
+float jitterDoPixel(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
+// ---------------------------------------------------------------- a marcha
+
+int amostras() {
+    int n = quality == 0 ? 16 : (quality == 1 ? 32 : (quality == 2 ? 64 : 128));
+    // na prévia em movimento (`acRascunho`, play/arraste), no máximo a qualidade Média
+    return acRascunho == 1 ? min(n, 32) : n;
+}
+
+/** O peso do caminho: t = 0 no pixel, t = 1 no fim do raio. Vale 1 no pixel. */
+float atenuar(float t) {
+    if (attenuation == 0) return max(1.0 - t * decay * 0.5, 0.0);                        // Linear
+    if (attenuation == 1) return 1.0 - smoothstep(0.0, 1.0, min(t * decay * 0.5, 1.0));  // Smooth
+    if (attenuation == 2) return exp(-t * decay);                                        // Exponential
+    return 1.0 / (1.0 + t * decay * 2.0);                                                // Inverse
+}
+
+/** O disco da fonte: cheio no centro, zero na borda do raio. Não depende da imagem. */
+float disco(vec2 p, vec2 luz, float raio) {
+    float d = length((p - luz) * vec2(acAspect, 1.0)) / max(raio, 0.002);
+    return pow(clamp(1.0 - d, 0.0, 1.0), max(lightFalloff, 0.1));
+}
+
+/** De 0 (passa tudo) a 1 (bloqueia). A maciez abre a rampa entre os dois. */
+float oclusao(float o) {
+    float s = clamp(occlusionSoftness, 0.0, 1.0);
+    return smoothstep(0.5 - 0.5 * s, 0.5 + 0.5 * s + 0.001, o);
+}
+
+/**
+ * A fase de espalhamento de Henyey-Greenstein, normalizada para valer 1 na
+ * direção da fonte. O ângulo é o entre a direção de visão do pixel e a da fonte,
+ * numa câmera de 45° de meio campo — assim a fonte pode estar fora da tela.
+ */
+float fase(vec2 uv, vec2 luz) {
+    vec2 esc = vec2(acAspect, 1.0);
+    vec3 vp = normalize(vec3((uv - 0.5) * esc, 1.0));
+    vec3 vl = normalize(vec3((luz - 0.5) * esc, 1.0));
+    float cosT = dot(vp, vl);
+    float g = clamp(anisotropy, -0.95, 0.95);
+    float hg = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5);
+    float hg1 = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g, 1.5);
+    return mix(1.0, clamp(hg / hg1, 0.0, 4.0), clamp(scattering, 0.0, 1.0));
+}
+
+/**
+ * A luz que chega a `uv` vinda de `luz`, em luz linear, SEM a cor.
+ *
+ * `textureLod` e não `texture`: dentro de laço com saída antecipada as derivadas
+ * que escolhem o mipmap não são definidas. Os buffers não têm mipmap.
+ */
+vec3 marchar(vec2 uv, vec2 luz, float intLuz, float raioLuz, float jitter, int n) {
+    vec2 raio = (luz - uv) * rayLength;
+    // A oclusão é uma profundidade óptica: a luz que passa por uma espessura de
+    // objeto cai como exp(-espessura * k). Cada passo cobre 1/n do caminho, então
+    // o k por passo é dividido por n — o mesmo pilar bloqueia o mesmo tanto com 16
+    // passos e com 128. (A forma antiga, `1 - força * 32/n` por passo, deixava
+    // passar 15% com 16 passos e 0,3% com 32: dependia de quantos passos caíam no
+    // objeto, e não da espessura dele.) Força 1 = 48: um objeto que cobre 10% do
+    // caminho deixa passar ~1%.
+    float bloqueioPorPasso = occlusionStrength * 48.0 / float(n);
+
+    vec3 soma = vec3(0.0);
+    float transmitancia = 1.0;
+
+    for (int i = 0; i < MAX_AMOSTRAS; i++) {
+        if (i >= n) break;
+
+        float t = (float(i) + jitter) / float(n);
+        vec2 p = uv + raio * t;
+
+        vec3 emissao = vec3(0.0);
+        float bloqueio = 0.0;
+
+        // Fora da tela não há imagem: só a fonte, que é fórmula. É isso que deixa a
+        // luz ficar além da borda e os raios entrarem no quadro.
+        if (p.x >= 0.0 && p.x <= 1.0 && p.y >= 0.0 && p.y <= 1.0) {
+            vec4 e = textureLod(emis, p, 0.0);
+            if (sourceMode != 2) emissao = e.rgb;
+            bloqueio = e.a;
+        }
+        if (sourceMode != 1) emissao += vec3(disco(p, luz, raioLuz) * intLuz);
+
+        // A poeira: sutil por padrão, e ancorada no espaço (não na direção do raio),
+        // que é o que desenha as tiras de partículas ao longo dos feixes.
+        float poeira = mix(1.0 - noiseAmount, 1.0,
+                           textureLod(noiseT, clamp(p, 0.0, 1.0), 0.0).r);
+
+        soma += emissao * (atenuar(t) * transmitancia * poeira);
+
+        // O que está aqui bloqueia a luz de tudo que vem DEPOIS (mais perto da fonte).
+        if (occluder != 0) {
+            transmitancia *= exp(-oclusao(bloqueio) * bloqueioPorPasso);
+        }
+    }
+
+    return soma / float(n) * fase(uv, luz);
+}
+
+/** Os raios em `uv`: as duas luzes, cada uma com a sua cor. */
+vec3 raiosEm(vec2 uv) {
+    int n = amostras();
+    float jitter = jitterDoPixel(gl_FragCoord.xy);
+
+    vec3 total = marchar(uv, lightPos, lightIntensity, lightRadius, jitter, n) * corDaLuz(lightColor);
+    if (light2On) {
+        total += marchar(uv, light2Pos, light2Intensity, light2Radius, jitter, n) * corDaLuz(light2Color);
+    }
+    return total * (rayIntensity * density);
+}
+
+// ---------------------------------------------------------------- o brilho em várias escalas
+
+/**
+ * O primeiro nível do brilho: para cada pixel do buffer de 1/4, a média de um
+ * bloco de 4x4 pixels da imagem cheia, com o LIMIAR aplicado em cada um deles.
+ *
+ * O limiar vem ANTES da média, e é o que importa: uma faísca de 2x2 pixels lida
+ * por filtro bilinear já chega com metade do brilho, cai abaixo do limiar e some.
+ * Aplicando por pixel e tirando a média depois, ela vira uma mancha fraca — a luz
+ * que tinha continua tendo. `texelFetch` para o filtro do hardware não misturar
+ * os vizinhos antes.
+ *
+ * O bloco começa em `4 * índice do pixel`, e não em "onde o UV cai": os buffers
+ * têm o tamanho arredondado para baixo, e o UV daria um bloco deslocado — pixels
+ * contados duas vezes e outros nunca. Pelo índice, cada pixel da imagem cheia
+ * pertence a exatamente um bloco.
+ */
+vec3 primeiroNivel() {
+    ivec2 tam = textureSize(inputImg, 0);
+    ivec2 base = ivec2(gl_FragCoord.xy) * 4;
+    vec3 soma = vec3(0.0);
+    for (int y = 0; y < 4; y++) {
+        for (int x = 0; x < 4; x++) {
+            vec4 c = texelFetch(inputImg, clamp(base + ivec2(x, y), ivec2(0), tam - ivec2(1)), 0);
+            float l = dot(c.rgb, LUMA);
+            float m = smoothstep(glowThreshold, glowThreshold + 0.25, l);
+            soma += aLinear(c.rgb) * (m * c.a);
+        }
+    }
+    return soma / 16.0;
+}
+
+/** Um texel de um nível do brilho, já em luz linear. `nivel` diz de qual buffer ler. */
+vec3 texelDoNivel(int nivel, ivec2 i, ivec2 tam) {
+    i = clamp(i, ivec2(0), tam - ivec2(1));
+    vec3 e;
+    if (nivel == 2) e = texelFetch(g1, i, 0).rgb;
+    else if (nivel == 3) e = texelFetch(g2, i, 0).rgb;
+    else e = texelFetch(g3, i, 0).rgb;
+    return desempacotar(e);
+}
+
+/**
+ * Tenda 3x3 sobre o nível anterior (o dobro da resolução): cada nível dobra o
+ * alcance do anterior.
+ *
+ * ## Por que texelFetch, e por que o índice
+ *
+ * Duas coisas fazem uma fonte pequena perder energia ao descer a pirâmide, e uma
+ * simulação em numpy mediu as duas (um ponto perdia 83% de uma vez):
+ *
+ * 1. **O filtro bilinear do hardware médio de valores CODIFICADOS.** O buffer guarda
+ *    a luz comprimida (`x^0,45`), e a média de `{e, 0}` nesse espaço decodifica para
+ *    ~21% da energia, não 50%. Aqui cada texel é lido sozinho, decodificado, e só
+ *    então entra na média — em luz linear, que é onde média conserva energia.
+ * 2. **O UV põe a leitura fora do canto.** Os buffers têm o tamanho arredondado para
+ *    baixo (67 linhas viram 33), e a posição por UV deixa de cair entre quatro
+ *    texels. Pelo ÍNDICE do pixel (`2j`, o começo do bloco 2x2 dele), cada texel de
+ *    origem pertence a exatamente um bloco, qualquer que seja o arredondamento.
+ *
+ * As nove médias de 2x2 ficam a dois texels uma da outra, e emendam sem buraco e
+ * sem sobra: a energia passa inteira de um nível ao seguinte. O raio do brilho, por
+ * isso, não mora aqui: ele desloca o PESO entre as escalas, na composição.
+ */
+vec3 proximoNivel(int nivel) {
+    ivec2 tam = nivel == 2 ? textureSize(g1, 0) : (nivel == 3 ? textureSize(g2, 0) : textureSize(g3, 0));
+    ivec2 centro = ivec2(gl_FragCoord.xy) * 2;
+
+    vec3 soma = vec3(0.0);
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
+            ivec2 o = centro + ivec2(x, y) * 2;
+            vec3 bloco = texelDoNivel(nivel, o, tam)
+                       + texelDoNivel(nivel, o + ivec2(1, 0), tam)
+                       + texelDoNivel(nivel, o + ivec2(0, 1), tam)
+                       + texelDoNivel(nivel, o + ivec2(1, 1), tam);
+            soma += bloco * (0.25 * w);
+        }
+    }
+    return soma / 16.0;
+}
+
+/** O halo da própria fonte, por fórmula: entra na tela mesmo com a fonte fora dela. */
+vec3 haloDe(vec2 uv, vec2 luz, float inten, float raio, vec3 cor) {
+    float d = length((uv - luz) * vec2(acAspect, 1.0));
+    float r = max(raio, 0.01);
+    float h = 0.9 * exp(-pow(d / (r * 1.5), 2.0))
+            + 0.35 * exp(-pow(d / (r * 5.0), 2.0))
+            + 0.12 * exp(-pow(d / (r * 16.0), 2.0));
+    return cor * (h * inten * 0.5);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+
+    // ---- 0: o mapa de poeira ----
+    if (acPass == 0) {
+        vec2 p = vec2(uv.x * acAspect, uv.y) * noiseScale
+               + vec2(noiseSeed * 7.31, noiseSeed * 3.17)
+               + vec2(0.9, 0.35) * (acTime * noiseSpeed);
+        float n = fbm(p);
+        n = clamp((n - 0.5) * noiseContrast + 0.5, 0.0, 1.0);
+        fragColor = vec4(vec3(n), 1.0);
+        return;
+    }
+
+    // ---- 1: a extração — o brilho que vira raio, e a oclusão ----
+    // Bloco de 2x2 pixels da imagem cheia, com o limiar aplicado em CADA um antes da
+    // média (ver `primeiroNivel`: um ponto brilhante pequeno não pode sumir no filtro).
+    if (acPass == 1) {
+        ivec2 tam = textureSize(inputImg, 0);
+        ivec2 base = ivec2(gl_FragCoord.xy) * 2;      // o bloco pelo ÍNDICE do pixel: ver `primeiroNivel`
+        vec3 emissao = vec3(0.0);
+        float escuro = 0.0;
+        for (int y = 0; y < 2; y++) {
+            for (int x = 0; x < 2; x++) {
+                vec4 c = texelFetch(inputImg, clamp(base + ivec2(x, y), ivec2(0), tam - ivec2(1)), 0);
+                float lumaE = dot(c.rgb, LUMA);
+                float mascara = smoothstep(threshold, threshold + max(softness, 0.001), lumaE);
+                emissao += aLinear(c.rgb) * (mascara * c.a);
+                escuro += c.a * (1.0 - smoothstep(0.0, max(threshold, 0.05), lumaE));
+            }
+        }
+        emissao *= 0.25;
+
+        float bloqueio = 0.0;
+        if (occluder == 1) {
+            bloqueio = escuro * 0.25;
+        } else if (occluder == 2) {
+            bloqueio = texture(occLayerImg, uv).a;
+        }
+        // Linear, SEM `empacotar`: a emissão da imagem nunca passa de 1, e guardada em
+        // luz linear o filtro bilinear da marcha faz a média certa entre dois texels.
+        // Codificada, a média de {e, 0} decodifica para ~21% da energia, não 50%: um
+        // ponto brilhante pequeno perderia quase toda a luz conforme os raios andam.
+        fragColor = vec4(emissao, bloqueio);
+        return;
+    }
+
+    // ---- 2 e 3: os raios, em 1/2 (Balanced, Quality, Ultra) ou em 1/4 (Performance) ----
+    if (acPass == 2) {
+        if (quality == 0) { fragColor = vec4(0.0); return; }
+        fragColor = vec4(empacotar(raiosEm(uv)), 1.0);
+        return;
+    }
+    if (acPass == 3) {
+        if (quality != 0) { fragColor = vec4(0.0); return; }
+        fragColor = vec4(empacotar(raiosEm(uv)), 1.0);
+        return;
+    }
+
+    // ---- 4 a 7: o brilho, quatro escalas ----
+    if (acPass == 4) { fragColor = vec4(empacotar(primeiroNivel()), 1.0); return; }
+    if (acPass == 5) { fragColor = vec4(empacotar(proximoNivel(2)), 1.0); return; }
+    if (acPass == 6) { fragColor = vec4(empacotar(proximoNivel(3)), 1.0); return; }
+    if (acPass == 7) { fragColor = vec4(empacotar(proximoNivel(4)), 1.0); return; }
+
+    // ---- 8: a composição, em resolução cheia ----
+    vec4 base = texture(inputImg, uv);
+
+    vec3 raios;
+    if (quality == 0) raios = desempacotar(texture(rayQ, uv).rgb);
+    else raios = desempacotar(texture(rayH, uv).rgb);
+
+    // As quatro escalas: pequeno e intenso até grande e atmosférico. O falloff
+    // decide o quanto cada uma pesa; 0,5 dá 1, 0,55, 0,30, 0,17 — a proporção da spec.
+    // O RAIO multiplica o peso da escala k por raio^k, e depois os pesos são
+    // renormalizados para somar o mesmo que antes: raio maior tira energia das
+    // escalas pequenas e a põe nas grandes, sem mudar o brilho total do halo.
+    float k = glowFalloff * 1.2;
+    float r = glowRadius;
+    float w1 = 1.0;
+    float w2 = exp(-k) * r;
+    float w3 = exp(-2.0 * k) * r * r;
+    float w4 = exp(-3.0 * k) * r * r * r;
+    float somaOriginal = 1.0 + exp(-k) + exp(-2.0 * k) + exp(-3.0 * k);
+    float normal = somaOriginal / (w1 + w2 + w3 + w4);
+    vec3 brilho = desempacotar(texture(g1, uv).rgb) * (w1 * normal)
+                + desempacotar(texture(g2, uv).rgb) * (w2 * normal)
+                + desempacotar(texture(g3, uv).rgb) * (w3 * normal)
+                + desempacotar(texture(g4, uv).rgb) * (w4 * normal);
+    brilho *= glowAmount;
+
+    // O halo das fontes, por fórmula (a fonte pode estar fora da tela).
+    if (sourceMode != 1) {
+        brilho += haloDe(uv, lightPos, lightIntensity, lightRadius, corDaLuz(lightColor)) * glowAmount;
+        if (light2On) {
+            brilho += haloDe(uv, light2Pos, light2Intensity, light2Radius, corDaLuz(light2Color)) * glowAmount;
+        }
+    }
+
+    if (view == 1) { fragColor = vec4(deLinear(1.0 - exp(-raios)), 1.0); return; }
+    if (view == 2) { fragColor = vec4(deLinear(1.0 - exp(-brilho)), 1.0); return; }
+
+    // A luz é somada à imagem gastando só o espaço que falta até o branco:
+    // 1 - (1 - imagem) * exp(-luz). Em pré-multiplicado, para a luz aparecer
+    // também fora do conteúdo (num texto, num recorte, num fundo transparente).
+    vec3 luz = raios + brilho;
+    vec3 pm = aLinear(base.rgb) * base.a;
+    vec3 acende = 1.0 - exp(-luz);
+    vec3 pmSaida = pm + acende - pm * acende;
+    float acendeAlfa = max(max(acende.r, acende.g), acende.b);
+    float alfa = base.a + acendeAlfa * (1.0 - base.a);
+    vec3 reto = alfa > 0.0 ? pmSaida / alfa : vec3(0.0);
+
+    fragColor = vec4(deLinear(reto), alfa);
+}
+
+    ]]></shader>
+</effect>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.snowfalling"
+    name="Neve Caindo (Ultra Motion)"
+    name-en="Falling Snow (Ultra Motion)"
+    desc="Flocos em três camadas, soprados pelo vento — nevasca leve."
+    desc-en="Flakes across three layers, blown by wind — light flurry."
+    category="stylize"
+    tags="ultramotion,snow,flakes,weather,overlay">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="density"   label="Densidade" default="80.0" min="10.0" max="300.0" step="2.0" />
+        <slider id="speed"     label="Velocidade" default="0.3" min="0.05" max="2.0" step="0.01" />
+        <slider id="wind"      label="Vento"     default="0.15" min="-0.6" max="0.6" step="0.01" />
+        <slider id="size"      label="Tamanho"   default="0.5" min="0.1" max="2.0" step="0.05" />
+        <slider id="opacity"   label="Opacidade" default="0.9" min="0.0" max="1.0" step="0.01" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+
+float camadaDeNeve(vec2 uv, float d, float s) {
+    vec2 g = uv * d;
+    g.x += acTime * wind * d * 0.5;
+    g.y += acTime * speed * d * 0.3;
+    vec2 cell = floor(g);
+    vec2 f = fract(g) - 0.5;
+    float r = hash21(cell);
+    float r2 = hash21(cell + 17.3);
+    vec2 pos = (vec2(r, r2) - 0.5) * 0.7;
+    float dist = length(f - pos);
+    return smoothstep(0.35 * s, 0.0, dist) * (0.4 + r * 0.6);
+}
+
+void main() {
+    vec4 orig = texture(inputImg, acScreenNorm);
+    float n = 0.0;
+    n += camadaDeNeve(acScreenNorm, density * 0.5, size * 1.4) * 0.5;
+    n += camadaDeNeve(acScreenNorm, density,        size)        * 0.8;
+    n += camadaDeNeve(acScreenNorm, density * 1.6,  size * 0.7)  * 1.0;
+    n = clamp(n, 0.0, 1.0);
+    fragColor = vec4(mix(orig.rgb, vec3(1.0), n * opacity), max(orig.a, n * opacity));
+}
+    ]]></shader>
+</effect>

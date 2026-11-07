@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/Effect/bling — o Bling do Node Video (classe NodeVideo.AE.AEBling), portado com o que o C# faz na CPU
+  (0.916, tools/nodeluzes; antes só o passe 0, que saía vazio).
+
+  O C# (AEBling.Render/InitBuffer/GenerateQuad/FixPos, il2cpp): um RT de detecção com 512 px no lado maior;
+  Blit(camada → ele, passe 0: acende onde a luz (0,3 R + 0,59 G + 0,11 B) passa da média 7 x 7 em mais de
+  0,5 - Quantidade x 0,499 e cai dentro da faixa do Limiar; a cor fica, o alfa = a luz); ReadPixels + GetPixels32 na
+  CPU; cada pixel com alfa/255 > 0,05, linhas de baixo para cima, vira um ponto (até passar de 5000); cada ponto, um
+  quadrado de lado Tamanho x raiz(alfa) (fração da largura e da altura) com a cor do pixel; DrawMesh com o
+  NodeVideo/Model/blingmesh (o sprite do Tipo girado pelo Ângulo, x Intensidade x Cor, SrcAlpha One) num TempRT limpo;
+  e Blit(camada → saída, NodeVideo/RenderCommand/_blend_mode_masking: Sobrepor = só o brilho, Multiplicar, Adicionar,
+  Tela), escrito com SrcAlpha Zero.
+
+  AQUI: a detecção num buffer fixo de 512 x 512 (a grade no canto); a lista que a CPU monta vira três passes (acesos
+  por linha, a soma, e o ponto k achado por busca binária na soma e contagem na linha — a mesma ordem e o mesmo corte
+  do Node; os laços têm tamanho fixo e nenhum `break` que muda de pixel para pixel: na AMD do PC o `break` dentro do
+  laço que lê textura somava errado); o passe instanciado (5001 quadrados, aditivo) lê a lista e o mapa no vértice; os sprites F0..F9 do bundle
+  num atlas (app/src/main/assets/nodebling/sprites.webp). O motor passou a ligar texturas no passe instanciado e a
+  aceitar 5001 instâncias (0.916, EffectPipeline). Na tela (`stage="screen"`), como no Node.
+
+  O que fica diferente: depois do corte o Node ainda leva o ponto da coluna 0 de cada linha que sobra (aqui não);
+  a cor do vértice supõe o RT de detecção sRGB (os bytes codificados, como o GetPixels32 os lê); o atlas é 512 por
+  sprite (os de 256 do Node ampliados) e sem mipmap; o Node compõe em luz linear e o Nova em gama; a máscara interna
+  do Node fica desligada.
+-->
+<effect
+    id="nv.effect.nodevideo-effect-bling"
+    name="Effect Bling (NV)"
+    name-en="Effect Bling (NV)"
+    desc="Brilhos (estrelas, corações) nos pontos de luz da imagem (o Bling do Node Video)."
+    desc-en="Brilhos (estrelas, corações) nos pontos de luz da imagem (o Bling do Node Video)."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store,brilho,estrela,bling,sparkle"
+    stage="screen"
+>
+
+    <params>
+        <!-- `highp`: os 8 bits da camada chegam exatos à conversão para luz linear. -->
+        <texture id="inputImg" src="content" precision="highp" />
+        <!-- O RT da camada no Node: pré-multiplicada em luz linear, sRGB de 8 bits (o passe 0). -->
+        <texture id="pre" src="buffer" format="srgb" precision="highp" />
+        <!-- O RT de detecção do C# (512 no lado maior; aqui fixo em 512 x 512, a grade no canto) e a lista dos pontos. -->
+        <texture id="det" src="buffer" width="512" height="512" format="srgb" />
+        <texture id="filas" src="buffer" width="1" height="512" />
+        <texture id="acum" src="buffer" width="1" height="512" />
+        <texture id="lista" src="buffer" width="64" height="80" />
+        <!-- O TempRT em que a malha desenha (do tamanho da composição, sRGB de 8 bits). -->
+        <texture id="spr" src="buffer" format="srgb" />
+        <!-- Texture/F0..F9 do bundle do Node (tools/nodeluzes/sprites_bling.py). -->
+        <texture id="sprites" src="image" files="nodebling/sprites.webp" />
+        <selector id="_type" label="Type" default="1" options="Heart|Glow|Sparkle|Star|Cross|Flare|Burst|Soft Star|Blue Star|Color Star" />
+        <slider id="_amount" label="Amount" default="0.7" min="0" max="1" step="0.01" />
+        <slider id="_threshold_x" label="Threshold" default="0" min="0" max="1" step="0.01" />
+        <slider id="_threshold_y" label="Threshold Max" default="0.8" min="0" max="1" step="0.01" />
+        <slider id="_size" label="Size" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_intensity" label="Intensity" default="0.5" min="0" max="1" step="0.01" />
+        <slider id="_angle" label="Angle" default="0" min="0" max="360" step="1" />
+        <color id="_color" label="Color" default="#FFFFFFFF" />
+        <selector id="_blend_mode" label="Blend Mode" default="3" options="Overlay|Multiply|Add|Screen" />
+    </params>
+
+    <passes>
+        <pass target="pre" />
+        <pass target="det" />
+        <pass target="filas" />
+        <pass target="acum" />
+        <pass target="lista" />
+        <pass kind="instanced" target="spr" count="5001" blend="additive">
+            <vertex><![CDATA[
+// A grade do AEBling.InitBuffer: 512 px no lado maior da composição, o outro trunc(proporção x 512).
+ivec2 nvGrade() {
+    vec2 t = acTamanhoDaTela;
+    return t.x <= t.y ? ivec2(max(int(t.x / t.y * 512.0), 2), 512) : ivec2(512, max(int(t.y / t.x * 512.0), 2));
+}
+vec3 nvGama(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+
+void main() {
+    vUv = aTexCoord;
+    int k = gl_InstanceID;
+    ivec4 b = ivec4(floor(texelFetch(lista, ivec2(k % 64, k / 64), 0) * 255.0 + 0.5));
+    if ((b.b & 16) == 0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vCorDaParticula = vec4(0.0); return; }
+    ivec2 c = ivec2(b.r + 256 * (b.b & 3), b.g + 256 * ((b.b >> 2) & 3));
+    vec4 d = texelFetch(det, c, 0);
+    // HPoint: (x / (W - 1), y / (H - 1)); GenerateQuad: o lado = _size x raiz(a), em fração da largura e da altura
+    // (FixPos leva y a (y - 0,5) x H/W, a câmera ortográfica cobre isso).
+    vec2 centro = vec2(c) / vec2(max(nvGrade() - 1, ivec2(1)));
+    float lado = _size * sqrt(d.a);
+    gl_Position = vec4((centro + aPosition * 0.5 * lado) * 2.0 - 1.0, 0.0, 1.0);
+    // A cor do vértice = os bytes que o GetPixels32 leu (o RT de detecção é sRGB: a cor codificada) e o alfa = a luz.
+    vCorDaParticula = vec4(nvGama(d.rgb), d.a);
+}
+            ]]></vertex>
+            <fragment><![CDATA[
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+
+void main() {
+    // O blingmesh do Node: (uv - 0,5) x _viewport_ratio, girado por _angle, + 0,5, preso a 0..1, no sprite do _type.
+    vec2 u = (vUv - 0.5) * acProporcaoDoNode;
+    float a = _angle * 0.0174532924;
+    vec2 r = clamp(vec2(cos(a) * u.x - sin(a) * u.y, sin(a) * u.x + cos(a) * u.y) + 0.5, 0.0, 1.0);
+    // O atlas (5 x 2 células de 512; o arquivo sobe com a 1ª linha em t = 0, o Unity lê com y para cima).
+    int f = clamp(_type, 0, 9);
+    vec2 meio = vec2(0.5 / 512.0);
+    vec2 dentro = clamp(vec2(r.x, 1.0 - r.y), meio, 1.0 - meio);
+    vec4 t = texture(sprites, (vec2(float(f % 5), float(f / 5)) + dentro) / vec2(5.0, 2.0));
+    t.rgb = nvLinear(t.rgb);
+    // A cor do material: SetColor num projeto linear chega em luz linear.
+    vec4 cor = vec4(nvLinear(_color.rgb), _color.a);
+    vec4 s = t * vCorDaParticula * _intensity * cor;
+    // Blend SrcAlpha One (cor e alfa): o motor soma ONE, ONE.
+    fragColor = vec4(s.rgb * s.a, s.a * s.a);
+}
+            ]]></fragment>
+        </pass>
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+
+
+// ---- a ponte Nova <-> Node (tools/nodeluzes/gerar.py)
+vec2 nvUV;   // o vs_TEXCOORD0 dos programas do Node: o acScreenNorm, ou outro ponto que o passe escolhe
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 nvGama(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+// O passe 0: a camada como o Node a guarda (pre-multiplicada, luz linear; o buffer `pre` e sRGB de 8 bits).
+vec4 nvCor(vec4 c) { return vec4(nvLinear(c.rgb), c.a); }
+vec4 nvEntrada() { vec4 c = texture(inputImg, acScreenNorm); return vec4(nvLinear(c.rgb) * c.a, c.a); }
+// A saída do Node (pre-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz que
+// o Node soma acima do alfa (o brilho fora do recorte) vira alfa: a = max(alfa, r, g, b). NaN (0 x infinito na
+// conta do Node) vira 0, como no RT de 8 bits dele; a escolha pelo bvec não faz conta com o NaN.
+vec4 nvSaida(vec4 p) {
+    p = mix(vec4(0.0), min(p, vec4(1.0)), greaterThanEqual(p, vec4(0.0)));
+    float a = max(p.a, max(p.r, max(p.g, p.b)));
+    return a > 0.0 ? vec4(nvGama(p.rgb / a), a) : vec4(0.0);
+}
+// A máscara interna do Node (o editor de máscara dele) fica desligada, como no padrão.
+#define _use_inner_mask 0
+#define _b_clip_mask 0
+#define _show_inner_mask 0
+// A grade do AEBling.InitBuffer: 512 px no lado maior da composição, o outro trunc(proporção x 512).
+ivec2 nvGrade() {
+    vec2 t = acTamanhoDaTela;
+    return t.x <= t.y ? ivec2(max(int(t.x / t.y * 512.0), 2), 512) : ivec2(512, max(int(t.y / t.x * 512.0), 2));
+}
+// O ponto que a CPU do Node leva: o alfa (a luz do pixel aceso) lido em bytes, a / 255 > 0,05.
+bool nvAceso(ivec2 c) { return floor(texelFetch(det, c, 0).a * 255.0 + 0.5) > 12.75; }
+// Contagens (até 65535) em dois bytes de um RGBA8.
+vec4 nvGuarda(int n) { n = min(n, 65535); return vec4(float(n & 255), float(n >> 8), 0.0, 255.0) / 255.0; }
+int nvConta(sampler2D t, int y) { vec4 e = texelFetch(t, ivec2(0, y), 0); return int(floor(e.r * 255.0 + 0.5)) + 256 * int(floor(e.g * 255.0 + 0.5)); }
+// O _threshold do Node é um Vector2 de faixa (a luz entre o mínimo e o máximo).
+#define _threshold vec2(_threshold_x, _threshold_y)
+
+// ---- programa 0 do Node: NodeVideo_Effect_bling_0.glsl
+vec3 p0_x0;
+vec2 p0_x1;
+bool p0_xb1;
+vec2 p0_x2;
+vec3 p0_x3;
+float p0_x5;
+bool p0_xb5;
+vec2 p0_x9;
+bool p0_xb9;
+vec2 p0_x10;
+bool p0_xb10;
+float p0_x12;
+void p0_main()
+{
+    p0_x0.xyz = texture(pre, nvUV.xy).xyz;
+    p0_x12 = dot(p0_x0.xyz, vec3(0.300000012, 0.589999974, 0.109999999));
+    p0_x1.x = float(0.0);
+    p0_x1.y = float(0.0);
+    p0_x2.x = -3.0;
+    while(true){
+        p0_xb9 = 3.0<p0_x2.x;
+        if(p0_xb9){break;}
+        p0_x9.xy = p0_x1.xy;
+        p0_x2.y = -3.0;
+        while(true){
+            p0_xb10 = 3.0<p0_x2.y;
+            if(p0_xb10){break;}
+            p0_x10.xy = p0_x2.xy / acTamanhoDaTela.xy;
+            p0_x10.xy = p0_x10.xy + nvUV.xy;
+            p0_x3.xyz = texture(pre, p0_x10.xy).xyz;
+            p0_x10.x = dot(p0_x3.xyz, vec3(0.300000012, 0.589999974, 0.109999999));
+            p0_x9.x = p0_x9.x + p0_x10.x;
+            p0_x9.y = intBitsToFloat(floatBitsToInt(p0_x9.y) + 1);
+            p0_x2.y = p0_x2.y + 1.0;
+        }
+        p0_x1.xy = p0_x9.xy;
+        p0_x2.x = p0_x2.x + 1.0;
+    }
+    p0_x5 = float(floatBitsToInt(p0_x1.y));
+    p0_x1.x = p0_x1.x / p0_x5;
+    p0_x5 = (-_amount) * 0.499000013 + 0.5;
+    p0_x1.x = p0_x12 + (-p0_x1.x);
+    p0_xb1 = p0_x5<p0_x1.x;
+    p0_xb5 = _threshold.xxyx.y<p0_x12;
+    p0_xb1 = p0_xb5 && p0_xb1;
+    p0_xb5 = p0_x12<_threshold.xxyx.z;
+    p0_xb1 = p0_xb5 && p0_xb1;
+    fragColor.w = p0_xb1 ? p0_x12 : float(0.0);
+    fragColor.xyz = p0_x0.xyz;
+    return;
+}
+
+// ---- programa 1 do Node: NodeVideo_RenderCommand__blend_mode_masking_0.glsl
+vec4 p1_x0;
+vec4 p1_x1;
+vec4 p1_x2;
+bvec2 p1_xb2;
+vec4 p1_x3;
+bvec2 p1_xb3;
+vec4 p1_x4;
+vec3 p1_x5;
+vec3 p1_x6;
+void p1_main()
+{
+    p1_x0 = texture(pre, nvUV.xy);
+    p1_x1 = texture(spr, nvUV.xy);
+    p1_x2 = p1_x0 * p1_x1;
+    p1_xb3.xy = equal(ivec4(int(_blend_mode)), ivec4(1, 2, 0, 0)).xy;
+    p1_x4.xyz = p1_x0.xyz + p1_x1.xyz;
+    p1_x5.xyz = (-p1_x1.xyz) + vec3(1.0, 1.0, 1.0);
+    p1_x6.xyz = (-p1_x0.xyz) + vec3(1.0, 1.0, 1.0);
+    p1_x5.xyz = (-p1_x5.xyz) * p1_x6.xyz + vec3(1.0, 1.0, 1.0);
+    p1_x4.xyz = (p1_xb3.y) ? p1_x4.xyz : p1_x5.xyz;
+    p1_x4.w = p1_x0.w;
+    p1_x3 = (p1_xb3.x) ? p1_x2 : p1_x4;
+    p1_x2.xyz = p1_x1.xyz;
+    p1_x1 = (int(_blend_mode) != 0) ? p1_x3 : p1_x2;
+    if(int(_use_inner_mask) == 0) {
+        fragColor = p1_x1;
+        return;
+    }
+    p1_xb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+    p1_x1 = (p1_xb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : p1_x1;
+    p1_x3 = texture(pre, nvUV.xy);
+    p1_x4 = (-p1_x3) + vec4(1.0, 1.0, 1.0, 1.0);
+    p1_x0 = p1_x0 * p1_x4;
+    p1_x0 = p1_x1 * p1_x3 + p1_x0;
+    p1_x1.x = p1_x3.x * p1_x0.w;
+    fragColor.w = (p1_xb2.y) ? p1_x1.x : p1_x0.w;
+    fragColor.xyz = p1_x0.xyz;
+    return;
+}
+
+void main()
+{
+    nvUV = acScreenNorm;
+    if (acPass == 0) { fragColor = nvEntrada(); return; }
+    if (acPass == 1) { ivec2 c = ivec2(gl_FragCoord.xy), gr = nvGrade(); if (c.x >= gr.x || c.y >= gr.y) { fragColor = vec4(0.0); return; } nvUV = (vec2(c) + 0.5) / vec2(gr); p0_main(); return; }
+    if (acPass == 2) { int y = int(gl_FragCoord.y), n = 0; ivec2 gr = nvGrade(); if (y < gr.y) for (int x = 0; x < 512; x++) { if (x < gr.x && nvAceso(ivec2(x, y))) n++; } fragColor = nvGuarda(n); return; }
+    if (acPass == 3) { int y = int(gl_FragCoord.y), n = 0; for (int r = 0; r < 512; r++) { if (r <= y) n += nvConta(filas, r); } fragColor = nvGuarda(n); return; }
+    if (acPass == 4) { ivec2 p = ivec2(gl_FragCoord.xy); int k = p.x + 64 * p.y; ivec2 gr = nvGrade(); int total = nvConta(acum, gr.y - 1); if (k >= 5001 || k >= total) { fragColor = vec4(0.0); return; } int lo = 0, hi = gr.y - 1; for (int i = 0; i < 10; i++) { int m = (lo + hi) / 2; bool d = nvConta(acum, m) > k; if (lo < hi) { if (d) hi = m; else lo = m + 1; } } int j = k - (lo > 0 ? nvConta(acum, lo - 1) : 0), x = 0, n = 0; for (int i = 0; i < 512; i++) { bool a = i < gr.x && nvAceso(ivec2(i, lo)); if (a && n == j) x = i; if (a) n++; } fragColor = vec4(float(x & 255), float(lo & 255), float((x >> 8) + 4 * (lo >> 8) + 16), 255.0) / 255.0; return; }
+    if (acPass == 5) { fragColor = vec4(0.0); return; }
+    if (acPass == 6) { p1_main(); fragColor = nvSaida(vec4(fragColor.rgb * fragColor.a, fragColor.a * fragColor.a)); return; }
+    fragColor = vec4(0.0);
+}
+    ]]></shader>
+</effect>

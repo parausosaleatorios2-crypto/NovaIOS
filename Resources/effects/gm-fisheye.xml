@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.fisheye" name="Fisheye" desc="Barrel / pincushion lens distortion with a scale control to keep the frame filled." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/fisheye.png"
+        tags="distort,fisheye,lens,barrel" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Lens" />
+<spinner id="strength" default="0.35" min="-1.0" max="1.0" step="0.01" label="Strength" />
+<spinner id="scale" default="1.05" min="0.5" max="2.0" step="0.01" label="Scale" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  float ar = acScreenSize.x / max(acScreenSize.y, 1.0);
+  vec2 p = (uv - 0.5) * vec2(ar, 1.0) * scale;
+  float r2 = dot(p, p);
+  p *= (1.0 + strength * r2 * mixAmt);
+  uv = p / vec2(ar, 1.0) + 0.5;
+  gl_FragColor = texture2DCv(inputImg.texture, uv);
+}
+]]></shader>
+</effect>

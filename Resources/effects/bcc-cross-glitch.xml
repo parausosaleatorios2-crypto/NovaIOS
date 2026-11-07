@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   BCC CROSS GLITCH (Boris Continuum, `BCC Cross Glitch`) — PRIMEIRO PASSE APROXIMADO (0.783.0)
+  ============================================================================
+
+  Pedido do snow (23/10/2026): "bcc cross glitch 100% igual after effects".
+
+  ** ESTE EFEITO NÃO ESTÁ 100% IGUAL AO AE AINDA. ** É um primeiro passe para destravar o preset
+  `furys cross glitch.ffx` e deixar a bancada pronta (`tools/bcccrossglitch`). A entrada em
+  `docs/PENDENCIAS-DOS-EFEITOS-AE.md` cobre o que falta e o plano da próxima rodada.
+
+  Por que só o primeiro passe:
+    - O `BCCCrossGlitch.aex` é CASCO de 54 KB — a conta de pixel está em `Continuum_AE_8Bit.dll`
+      (motor compartilhado dos ~500 BCC). Chegar nela exige o padrão de `tools/cclens` (desmontar com
+      capstone + modelo em Python + rodar no AE + GPU do PC + iterar até 0 pixels diferentes). Esse
+      ciclo não cabe numa rodada: nenhum controle aqui foi medido contra o plugin.
+    - O Cross Glitch do AE é um TRANSIÇÃO (categoria "BCC Transitions"): a conta recebe DUAS imagens
+      (From → To) e devolve a transição entre elas. No Nova a transição mora na pilha de camadas (uma
+      camada em cima da outra, como com o Linear Wipe) — então este efeito mexe só numa camada, com
+      o Progress animando o glitch.
+
+  O que o shader faz:
+    1. **Fatias horizontais** com salto por hash + tempo quantizado (como `glitch.xml`). Cada fatia
+       pode saltar, dependendo da semente, com amplitude proporcional ao Horizontal Shift.
+    2. **Separação de canais** (RGB): o canal R puxa para a direita, o B para a esquerda, pela
+       quantidade do Color Shift, dando a aura cromática clássica do glitch.
+    3. **Linhas de varredura** horizontais: um padrão escuro periódico de densidade variável,
+       proporcional a Scan Lines.
+    4. **Blocos quadrados** (Blocky Noise): `floor` da coordenada em blocos de tamanho variável, com
+       salto por hash do bloco.
+    5. **Pixelate**: reduz a resolução visível.
+    6. **Ruído aditivo** em escala de cinza (Noise Amount), com a mesma semente.
+    7. **Progress** é um multiplicador global: 0 devolve a camada como está, 1 aplica a intensidade
+       cheia dos outros controles.
+
+  O que ESTE SHADER NÃO FAZ (ainda):
+    - Nada foi medido: as curvas e faixas vieram do nome dos controles e de capturas do BCC, não da
+      conta do plugin.
+    - Os presets do BCC (menu "Preset") não vêm (precisa ler os valores de cada preset do próprio
+      plugin ou do `.ffx` que use cada um).
+    - A conta de From → To (duas camadas) — este efeito mexe só na camada em que roda.
+    - Progress acima de 1 (o AE vai de 0 a 100) — a mistura final e a transparência saem lineares.
+-->
+<effect
+    id="nova.effect.bcccrossglitch"
+    name="BCC Cross Glitch"
+    name-en="BCC Cross Glitch"
+    desc="O Cross Glitch do Boris Continuum, primeiro passe aproximado — para o 100% igual ainda falta a rodada de medição."
+    desc-en="Boris Continuum's Cross Glitch, approximate first pass — the pixel-perfect pass is still pending."
+    category="stylize"
+    tags="bcc,boris,continuum,cross glitch,glitch,falha,transicao,aproximado,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="progress" label="Progress (%)"
+                default="100.0" min="0.0" max="100.0" step="0.1" snap="0.0,50.0,100.0" />
+
+        <slider id="colorShift" label="Color Shift"
+                default="40.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="horizontalShift" label="Horizontal Shift"
+                default="40.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="scanLines" label="Scan Lines"
+                default="20.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="blocky" label="Blocky Noise"
+                default="30.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="pixelate" label="Pixelate"
+                default="0.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="noiseAmount" label="Noise"
+                default="10.0" min="0.0" max="100.0" step="0.5" snap="0.0" />
+
+        <slider id="speed" label="Speed"
+                default="12.0" min="0.5" max="60.0" step="0.5" />
+
+        <slider id="seed" label="Random Seed"
+                default="1.0" min="0.0" max="100.0" step="1.0" />
+    </params>
+
+    <!-- Na vitrine, o Cross Glitch aparece em cheio: Progress 50 (meio da faixa) para a miniatura
+         divergir do padrão (100) sem precisar de um valor fora do range. -->
+    <preview>
+        <set param="progress" value="50.0" />
+        <set param="colorShift" value="60.0" />
+        <set param="horizontalShift" value="55.0" />
+        <set param="blocky" value="40.0" />
+        <set param="scanLines" value="30.0" />
+    </preview>
+
+    <shader><![CDATA[
+
+float hash1(float n) {
+    return fract(sin(n * 12.9898 + seed * 7.1) * 43758.5453);
+}
+
+float hash2(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233)) + seed * 7.1) * 43758.5453);
+}
+
+/** O tempo quantizado dá o "degrau" do glitch: cada tick, uma nova composição de saltos. */
+float tickDoGlitch() {
+    return floor(acTime * max(speed, 0.01));
+}
+
+void main() {
+    // Progress 0 devolve a camada como está, igual ao AE.
+    float p = clamp(progress * 0.01, 0.0, 1.0);
+    if (p <= 0.0) {
+        fragColor = texture(inputImg, acScreenNorm);
+        return;
+    }
+
+    float tick = tickDoGlitch();
+    vec2 uv = acScreenNorm;
+
+    // -------------------------------------------------- 1. fatias horizontais
+    // Quantas fatias: proporcional ao Horizontal Shift (um glitch com shift zero é só a aberração cromática).
+    float rows = mix(12.0, 80.0, horizontalShift * 0.01);
+    float row = floor(uv.y * rows);
+    float semenduraDaLinha = hash1(row * 1.7 + tick * 17.3);
+    float densidade = 0.25 + 0.5 * (horizontalShift * 0.01);
+    float ativaLinha = step(1.0 - densidade, semenduraDaLinha);
+    float saltoLinha = (hash1(semenduraDaLinha * 7.13) - 0.5) * (horizontalShift * 0.01) * 0.2 * ativaLinha * p;
+    uv.x += saltoLinha;
+
+    // -------------------------------------------------- 2. blocos quadrados
+    float ladoBloco = mix(0.0, 0.08, blocky * 0.01);
+    if (ladoBloco > 0.001) {
+        vec2 bloco = floor(uv / ladoBloco);
+        float ativaBloco = step(0.75 - 0.25 * (blocky * 0.01), hash2(bloco + tick));
+        vec2 saltoBloco = (vec2(hash2(bloco + 1.3), hash2(bloco + 2.7)) - 0.5) * ladoBloco * 2.0 * ativaBloco * p;
+        uv += saltoBloco;
+    }
+
+    // -------------------------------------------------- 3. pixelate
+    float px = mix(0.0, 60.0, pixelate * 0.01) * p;
+    if (px > 0.5) {
+        vec2 grade = max(vec2(1.0), acTamanhoDaTela / px);
+        uv = (floor(uv * grade) + 0.5) / grade;
+    }
+
+    uv = clamp(uv, 0.0, 1.0);
+
+    // -------------------------------------------------- 4. separação de canais
+    float split = (colorShift * 0.01) * 0.012 * p;
+    vec4 r = texture(inputImg, clamp(uv + vec2(split, 0.0), 0.0, 1.0));
+    vec4 g = texture(inputImg, uv);
+    vec4 b = texture(inputImg, clamp(uv - vec2(split, 0.0), 0.0, 1.0));
+    vec4 cor = vec4(r.r, g.g, b.b, g.a);
+
+    // -------------------------------------------------- 5. scan lines (listras horizontais escuras)
+    if (scanLines > 0.0) {
+        float faixas = max(acTamanhoDaTela.y * 0.5, 60.0);
+        float onda = 0.5 + 0.5 * cos(uv.y * faixas * 6.28318530718);
+        float forca = (scanLines * 0.01) * 0.7 * p;
+        cor.rgb *= mix(1.0, onda, forca);
+    }
+
+    // -------------------------------------------------- 6. ruído aditivo
+    if (noiseAmount > 0.0) {
+        float ruido = hash2(gl_FragCoord.xy + tick * 101.0) - 0.5;
+        cor.rgb = clamp(cor.rgb + ruido * (noiseAmount * 0.01) * 0.5 * p, 0.0, 1.0);
+    }
+
+    fragColor = cor;
+}
+
+    ]]></shader>
+</effect>

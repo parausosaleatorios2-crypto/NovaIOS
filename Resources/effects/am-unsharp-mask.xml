@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MÁSCARA NITIDEZ (AM) — o Unsharp Mask do Alight Motion, conta por conta (0.583.0)
+  ============================================================================
+
+  Pedido do snow (16/10/2026): a "Máscara Nitidez (Unsharp Mask) do AM, 100% igual", da série "100% iguais ao AM",
+  logo depois do Sharpen (`am-sharpen.xml`). Mesmos parâmetros, ids, faixas, passos, tipos e padrões do
+  `com.alightcreative.effects.unsharpmask` do AM 5.0.281 (`assets/effects/unsharpmask.xml` do APK descompactado, e o
+  `gaussianblur.xml` que ele chama por dentro; os arquivos do AM não entram no repositório). Conferido rodando o efeito
+  do próprio AM na GPU do PC ao lado deste (`tools/amunsharp`). A "Máscara de nitidez" do Nova (`unsharp-mask.xml`, o
+  par do Unsharp Mask do After Effects) continua: é outro efeito.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  1. A camada, pré-multiplicada em 8 bits, passa pelo Desfoque gaussiano do PRÓPRIO AM, que roda dentro deste efeito
+     com a MESMA Intensidade (o mapa de parâmetros passa inteiro para o efeito de dentro): reduzida à metade,
+     gaussiana na horizontal e na vertical com meio-lado = Intensidade · 1,14 / 24 da diagonal da imagem, e de volta
+     ao tamanho cheio — a mesma conta do `am-gaussian-blur.xml`. Lido do bytecode (`GGL/Lt.U`): o efeito de dentro
+     roda pela mesma referência do de fora, então o script do Gaussian (que o tira da lista até 0,0001) NÃO roda aqui:
+     com Intensidade 0 o desfoque é só a descida à metade e a volta.
+  2. Ajustada = camada × (1 + Montante) − desfoque × Montante, nos quatro canais (o alfa também).
+  3. O quanto entra: t = smoothstep(Limite × 0,75; (Limite + 1,01) ÷ 2; 4 × |Y do desfoque − Y da camada|), com o Y
+     BT.709 (0,2126; 0,7152; 0,0722) da cor pré-multiplicada. Saída = mistura da camada com a ajustada por t, sem
+     limite além do corte de 0 a 1 do alvo de 8 bits. "Mostrar Máscara": (t, 0, 0, 1) × alfa da camada.
+
+  NA TELA (`stage="screen"`), como no AM: ele roda os efeitos depois de mover, girar e escalar a camada, na imagem do
+  tamanho da tela; o desfoque é fração da diagonal dessa imagem. A prévia parada fica na resolução cheia
+  (`screen-scale="full"`, como o Desfoque gaussiano (AM)): a descida à metade é um desfoque de 2 px da resolução em
+  que o efeito roda, e com a Intensidade padrão (0,02) ela é quase todo o desfoque. Dentro de grupo (o filho) ainda
+  roda no buffer da camada, como os outros efeitos na tela.
+
+  O que é do Nova e não do AM:
+  - O AM trabalha em cor PRÉ-multiplicada e o Nova em alfa reto. O passe 0 guarda a camada pré-multiplicada,
+    arredondada pelo mais perto como o premul do Android (`oitoBits`, o do Sharpen: o Montante multiplica a diferença
+    de um nível); o desfoque grava cada passo em 8 bits como o AM (o `hblur` é o alvo de 8 bits que o efeito de dentro
+    do AM escreve); a conta do AM vai para o `nitido`, em 8 bits como o alvo dele; só a saída volta para o alfa reto.
+  - A LUZ ACIMA DO ALFA: como o alfa também é afiado, numa borda semitransparente com cores diferentes a cor
+    pré-multiplicada passa do alfa, e a composição do AM soma essa luz ao fundo. Só nesses pixels a saída leva junto o
+    fundo atrás dela (`src="backdrop"`), com o menor alfa que reproduz a mesma soma na composição Normal com qualquer
+    opacidade — o `paraReta` do Anel e do Sharpen. Não alcança: soma acima de 1 com opacidade menor que 100 %, outro
+    modo de mesclagem, fundo transparente, outro efeito depois deste na lista.
+  - O buffer do Nova nunca tem menos de 8 px de lado e o do AM nunca tem menos de 16 (só pesa numa imagem minúscula).
+  - Os passes (AM → aqui): o downImg, o hblur e o vblur do Gaussian de dentro são os passes 1, 2 e 3 (`downImg`,
+    `blurH`, `blurV`); a volta dele ao tamanho cheio no `hblur` do Unsharp, 4; a conta do Unsharp, 5 (`nitido`); a
+    saída, 6.
+-->
+<effect
+    id="nova.effect.am-unsharp-mask"
+    name="Máscara Nitidez (AM)"
+    name-en="Unsharp Mask (AM)"
+    desc="Aprimora a nitidez perceptiva de uma foto ou vídeo, aumentando o contraste local próximo às bordas e evitando alterações nas áreas que eram originalmente suaves (o Unsharp Mask do Alight Motion)."
+    desc-en="Enhances the perceptual sharpness of a photo or video by increasing local contrast near edges, while avoiding changes to areas that were originally smooth (Alight Motion's Unsharp Mask)."
+    category="blur"
+    tags="máscara,nitidez,unsharp,mask,sharpen,afiar,nítido,detalhes,contraste,bordas,alight motion"
+    stage="screen"
+    screen-scale="full">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- A cena atrás da camada: só lida onde a cor passa do alfa (`paraReta`). -->
+        <texture id="comp" src="backdrop" />
+        <!-- A camada pré-multiplicada: o que o AM recebe. -->
+        <texture id="pre" src="buffer" />
+        <!-- Os buffers do Gaussian de dentro: a metade, o horizontal e o vertical. -->
+        <texture id="downImg" src="buffer" scale="0.5" />
+        <texture id="blurH" src="buffer" scale="0.5" />
+        <texture id="blurV" src="buffer" scale="0.5" />
+        <!-- O desfoque de volta ao tamanho cheio: o `hblur` do AM. -->
+        <texture id="hblur" src="buffer" />
+        <!-- A saída do AM, em 8 bits como o alvo dele (pré-multiplicada, cor podendo passar do alfa). -->
+        <texture id="nitido" src="buffer" />
+
+        <spinner id="strength" label="Intensidade" default="0.02" min="0.0" max="2.0" step="0.01" />
+        <spinner id="amount" label="Montante" default="0.5" min="0.0" max="2.0" step="0.01" type="percent" />
+        <spinner id="threshold" label="Limite" default="0.5" min="-0.5" max="1.0" step="0.001" type="percent" />
+        <switch id="showMask" label="Mostrar Máscara" default="false" />
+    </params>
+
+    <!-- Na vitrine, a nitidez padrão não aparece a 64 dp: forte. (vitrine, 0.664.0) -->
+    <preview>
+        <set param="strength" value="0.8" />
+        <set param="amount" value="2.0" />
+        <set param="threshold" value="-0.2" />
+    </preview>
+
+
+
+    <passes>
+        <pass target="pre" />
+        <pass target="downImg" />
+        <pass target="blurH" />
+        <pass target="blurV" />
+        <pass target="hblur" />
+        <pass target="nitido" />
+        <pass />
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+const vec3 luminanceWeighting = vec3(0.2126, 0.7152, 0.0722);
+
+// O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
+// num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;                                                    // o bit mais alto de n
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;                      // entre 2^23 e 2^24
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+// A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
+// do `am-gaussian-blur.xml`): os pesos tirados um do outro por multiplicação e duas amostras juntas numa leitura.
+vec4 desfocar(sampler2D img, vec2 passo, vec2 st, float lado) {
+    if (strength <= 0.0) return vec4(0.0);
+    float sigma = lado / 2.14596602;
+    highp vec3 g;
+    g.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    g.y = exp(-0.5 / (sigma * sigma));
+    g.z = g.y * g.y;
+    vec4 soma = vec4(0.0);
+    highp float total = 0.0;
+    soma += texture(img, st) * g.x;
+    total += g.x;
+    for (float i = 1.0; i <= lado; i += 2.0) {
+        float d0 = i;
+        float d1 = i + 1.0;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p0 = g.x;
+        g.xy *= g.yz;
+        total += 2.0 * g.x;
+        float p1 = g.x;
+        float par = p0 + p1;
+        float d = (d0 * p0 + d1 * p1) / par;
+        vec2 stL = st - d * passo;
+        vec2 stR = st + d * passo;
+        soma += texture(img, stL) * par;
+        soma += texture(img, stR) * par;
+    }
+    return soma / total;
+}
+
+// O meio-lado: Intensidade ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `acPreviewSize` do AM).
+float ladoDoDesfoque() {
+    return strength / 2.0 * 1.14 / 4.0 / 3.0 * length(vec2(textureSize(pre, 0)));
+}
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta; onde a cor passa do alfa, com o fundo (o `paraReta`
+// do Anel e do Sharpen: o menor alfa que dá a mesma soma na composição Normal com qualquer opacidade).
+vec4 paraReta(vec4 q) {
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return q.a > 0.0 ? vec4(q.rgb / q.a, q.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+void main() {
+    if (acPass == 0) {
+        // A camada do AM chega pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android); no opaco a cor já é o
+        // float da textura, bit a bit.
+        vec4 c = texture(inputImg, acScreenNorm);
+        vec3 p = c.rgb;
+        if (c.a < 1.0) {
+            vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+            p = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+        }
+        fragColor = vec4(p, c.a);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = texture(pre, acScreenNorm);
+        return;
+    }
+    if (acPass == 2) {
+        vec2 passo = vec2(1.0 / vec2(textureSize(downImg, 0)).x, 0.0);
+        fragColor = desfocar(downImg, passo, acScreenNorm, ladoDoDesfoque());
+        return;
+    }
+    if (acPass == 3) {
+        // Na tela a entrada chega de pé (t = 0 embaixo, como no AM): o passo aponta para CIMA e a soma do par fica na
+        // mesma ordem da dele (o de baixo primeiro). Deitada, o passo vira para baixo.
+        float cima = acEntradaDePe == 1 ? 1.0 : -1.0;
+        vec2 passo = vec2(0.0, cima / vec2(textureSize(blurH, 0)).y);
+        vec4 r = desfocar(blurH, passo, acScreenNorm, ladoDoDesfoque());
+        // Intensidade 0: o Gaussian do AM lê a própria camada aqui (na meia resolução: a média de 2 × 2).
+        fragColor = strength <= 0.0 ? texture(pre, acScreenNorm) : r;
+        return;
+    }
+    if (acPass == 4) {
+        fragColor = texture(blurV, acScreenNorm);
+        return;
+    }
+    if (acPass == 5) {
+        // A conta do Unsharp do AM, na mesma ordem. O corte em 0..1 é o do alvo de 8 bits; escrito para o projeto de
+        // 32 bits sair igual.
+        vec4 blur = texture(hblur, acScreenNorm);
+        vec4 base = texture(pre, acScreenNorm);
+        float blurY = dot(blur.rgb, luminanceWeighting);
+        float baseY = dot(base.rgb, luminanceWeighting);
+        vec4 adjColor = base * (1.+amount) - (blur*amount);
+        float t = smoothstep(threshold*0.75, (threshold+1.01)/2., abs(blurY-baseY)*4.);
+        fragColor = clamp(showMask ? vec4(t,0.,0.,1.)*base.a : mix(base,adjColor,t), 0.0, 1.0);
+        return;
+    }
+
+    fragColor = paraReta(texture(nitido, acScreenNorm));
+}
+    ]]></shader>
+</effect>

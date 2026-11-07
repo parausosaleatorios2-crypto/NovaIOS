@@ -1,0 +1,500 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   SIGNAL — o Signal (Zaebects) do After Effects, com os mesmos controles
+  ============================================================================
+
+  Pedido do snow (03/10/2026): "faz o signal ... e faz os benchmark pra ficar 100%
+  parecido". MEDIDO no próprio plugin do AE dele (~200 renders por script, um
+  controle por vez, sobre barras, rampas, cartela de cores, faixas de cinza e foto;
+  ver tools/signal/benchmark/). O Signal é uma emulação de vídeo composto da família
+  do ntscQT / composite-video-simulator: os atrasos de croma medidos (9, 12 e 14 px
+  em SP/LP/EP) e as bandas de croma (~320/300/280 kHz) são exatamente os de lá.
+
+  O QUE FOI MEDIDO, E É O QUE ESTE ARQUIVO FAZ (passes em ordem):
+
+  0. FONTE: a TV distortion desloca cada linha na horizontal, dando a volta na borda —
+     Thick: ondas de 135–270 linhas, desvio de 5,3 px por unidade; Fine: ondas de
+     10–50 linhas, 1,4 px por unidade (as duas com o espectro de um ruído de
+     gradiente). A Distortion speed não muda o desenho: rola as ondas para baixo,
+     1 linha por quadro por unidade. O Roll rola o quadro para cima, 13,2 linhas/s por
+     unidade, dando a volta sem faixa preta (conferido em 0,5, 1 e 2 s). RGB → YIQ.
+  1–13. A FASE DA PORTADORA da Luma modulation (FM): soma de prefixos ao longo da
+     linha em 13 passes (só a fração do ciclo, 16 bits). A frequência sobe com a
+     luma: ν = 0,158·Frequency + 0,1395·Phase·(Y − 0,3825) ciclos/px.
+  14. COMPOSTO: a luma demodulada da FM — |sen(πν)| como o demodulador do AE
+     (dobra quando ν sai de [0; 0,5]: é o que faz as zebras nas sombras), com o
+     centro que sobe a partir de Frequency 0,8 (a luma escurece, mais com Phase
+     baixa), mais a ondulação no 2º harmônico (2ν). Os Tape errors (só com a FM
+     ligada, como no AE): faixas de chuvisco de 22 linhas a cada 30, a partir de 8
+     linhas abaixo do TE start, sempre no mesmo lugar. A cor modulada na
+     subportadora (¼ da taxa de amostragem).
+  15. PRÉ-ÊNFASE (Signal amplification × passa-altas de 1 polo, α = 1/(1+0,0073·
+     Cutoff filter)): é ela que satura e gira a cor (ganho 1,48 e −8° no padrão).
+     O Luma noise entra depois dela (passa-baixas de 1 polo; desvio = valor/255).
+  16. DEMODULAÇÃO: luma = média de 4 amostras, croma = o resto, de volta a I e Q;
+     Chroma noise, Hue noise (uma fase por linha, ~0,5°·valor, suavizada entre 3–4
+     linhas).
+  17. VHS: nitidez (Sharpen) e o passa-baixas de croma do VHS SP/LP/EP (4 polos,
+     atraso 9/12/14 px).
+  18. SAÍDA: Chroma vertical blend (média com a linha de cima), Chroma loss (cada
+     linha perde a cor com probabilidade = valor), Scanlines blur (gaussiana vertical
+     de σ = valor/2), YIQ → RGB. O Destruction troca o corte em [0, 1] pela volta
+     (estouro de 8 bits): branco vira escuro, sombra vira mancha de cor.
+
+  CONTRA O RENDER DO AE (tools/signal/benchmark, na GPU do PC):
+  - parte determinística (ruídos desligados): 0,3–2,6% de erro médio por pixel em
+    25 casos (foto, barras, cartela, rampas; Amplification 0–20, Cutoff 10–1000,
+    VHS SP/LP/EP, Sharpen 0–10, Scanlines blur 0–5, Roll em 0,5/1/2 s);
+  - FM: a curva média a 0,3–5% para Frequency 0,3–2, Phase 1–10, Lightness 0–1;
+  - ruídos: desvio e correlações horizontais e verticais a ~10% dos do AE (luma,
+    croma, matiz, perda de croma, chuvisco dos erros de fita). O sorteio não é o
+    mesmo — o gerador aleatório do plugin não é público —, só o tamanho e a textura;
+  - Destruction: 4% de erro médio na foto (sem ele, 6%).
+
+  Aproximado (o AE satura de um jeito que não deu para modelar): Frequency acima de
+  ~2,5, Phase abaixo de ~0,5 e a Lightness com Frequency alta. Só os padrões medidos:
+  TE probability, TE fade e TE gamma. Efeito pequeno (0,2–0,6% da imagem), simulado
+  pelo que se mediu: Low-Pass filter in/out, Device-to-device connections e S-video
+  out (banda e atraso da croma), Phase shift/offset (fase da subportadora por linha).
+  Fora: o Signal strength — muda 0,1–0,3% da imagem, um grão sem padrão (nem cresce
+  com o valor) que não deu para reproduzir; o controle não está aqui.
+-->
+<effect
+    id="nova.effect.signal"
+    name="Signal"
+    name-en="Signal"
+    desc="Transmissão analógica de TV e fita VHS de verdade: o vídeo é codificado em sinal composto e decodificado de volta, com ruídos, perda de cor, FM da luma, erros de fita e distorção de TV. O Signal do After Effects."
+    desc-en="A real analog TV transmission and VHS tape: the picture is encoded as a composite signal and decoded back, with noise, colour loss, luma FM, tape errors and TV distortion. After Effects' Signal."
+    category="stylize"
+    tags="signal,zaebects,vhs,ntsc,analog,analogico,analógico,tv,televisao,composite,composto,fita,tape,ruido,noise,chroma,croma,retro,glitch,crt">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="fonte" src="buffer" scale="1.0" />
+        <texture id="fa" src="buffer" scale="1.0" />
+        <texture id="fb" src="buffer" scale="1.0" />
+        <texture id="comp" src="buffer" scale="1.0" />
+        <texture id="comp2" src="buffer" scale="1.0" />
+        <texture id="dem" src="buffer" scale="1.0" />
+        <texture id="vhs" src="buffer" scale="1.0" />
+
+        <slider id="seed" label="Random seed" type="integer" default="1.0" min="1.0" max="1000000.0" step="1.0" />
+        <slider id="amplification" label="Signal amplification" default="1.0" min="0.0" max="100.0" step="0.01" snap="1.0" />
+        <slider id="cutoff" label="Cutoff filter" default="88.0" min="1.0" max="100000.0" step="1.0" snap="88.0" />
+        <slider id="lumaNoise" label="Luma noise" default="1.0" min="0.0" max="400.0" step="0.1" snap="1.0" />
+        <slider id="chromaNoise" label="Chroma noise" default="1.0" min="0.0" max="400.0" step="0.1" snap="1.0" />
+        <slider id="hueNoise" label="Hue Noise" default="15.0" min="0.0" max="200.0" step="0.1" snap="15.0" />
+        <slider id="chromaLoss" label="Chroma loss" default="0.24" min="0.0" max="1.0" step="0.01" snap="0.24" />
+        <slider id="sharpen" label="Sharpen" default="2.0" min="0.0" max="100.0" step="0.1" snap="2.0" />
+        <slider id="connections" label="Device-to-device connections" type="integer" default="0.0" min="0.0" max="100.0" step="1.0" />
+        <selector id="vhsSpeed" label="Emulating VHS" default="0" options="VHS_SP|VHS_LP|VHS_EP" />
+        <switch id="destruction" label="Destruction button" default="false" />
+
+        <switch id="lumaModulation" group="Luma modulation" label="Turn On/Off" default="true" />
+        <slider id="frequency" group="Luma modulation" label="Frequency" default="0.62" min="0.001" max="40.0" step="0.01" snap="0.62" />
+        <slider id="phase" group="Luma modulation" label="Phase" default="2.0" min="0.001" max="40.0" step="0.01" snap="2.0" />
+        <slider id="lightness" group="Luma modulation" label="Lightness" default="0.62" min="0.0" max="1.0" step="0.01" snap="0.62" />
+        <slider id="quantize" group="Luma modulation" label="Quantize" default="0.0" min="0.0" max="100.0" step="1.0" />
+
+        <switch id="tapeErrors" group="Tape Errors" label="Turn On/Off" default="true" />
+        <slider id="teStart" group="Tape Errors" label="TE start" default="0.92" min="0.0" max="1.0" step="0.01" snap="0.92" />
+        <slider id="teEnd" group="Tape Errors" label="TE end" default="1.0" min="0.0" max="1.0" step="0.01" snap="1.0" />
+        <slider id="teProbability" group="Tape Errors" label="TE probability" default="0.1" min="0.0" max="1.0" step="0.01" snap="0.1" />
+        <slider id="teFade" group="Tape Errors" label="TE fade" default="5.0" min="0.01" max="5.0" step="0.01" snap="5.0" />
+        <slider id="teGamma" group="Tape Errors" label="TE gamma" default="3.0" min="0.01" max="14.0" step="0.01" snap="3.0" />
+
+        <slider id="thick" group="TV distortion" label="Thick distortion" default="0.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="fine" group="TV distortion" label="Fine distortion" default="0.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="distortionSpeed" group="TV distortion" label="Distortion speed" default="0.0" min="0.0" max="200.0" step="0.1" />
+        <slider id="rollSpeed" group="TV distortion" label="Roll speed" default="0.0" min="0.0" max="200.0" step="0.1" />
+
+        <switch id="lpfIn" group="Experimental parameters" label="Low-Pass filter in" default="true" />
+        <selector id="lpfOut" group="Experimental parameters" label="Low-Pass filter out" default="2" options="Off|Lite|Strong" />
+        <slider id="phaseShift" group="Experimental parameters" label="Phase shift" type="angle" default="0.0" min="0.0" max="360.0" step="1.0" />
+        <slider id="phaseShiftOffset" group="Experimental parameters" label="Phase shift offset" type="angle" default="0.0" min="0.0" max="360.0" step="1.0" />
+        <switch id="sVideoOut" group="Experimental parameters" label="S-video out" default="true" />
+        <switch id="chromaVerticalBlend" group="Experimental parameters" label="Chroma vertical blend" default="true" />
+        <switch id="sharpenOn" group="Experimental parameters" label="Sharpen On/Off" default="true" />
+        <slider id="scanlinesBlur" group="Experimental parameters" label="Scanlines blur" default="1.5" min="0.0" max="100.0" step="0.1" snap="1.5" />
+    </params>
+
+    <passes>
+        <pass target="fonte" />   <!-- 0 -->
+        <pass target="fa" />      <!-- 1: fase, início -->
+        <pass target="fb" />      <!-- 2..13: soma de prefixos -->
+        <pass target="fa" />
+        <pass target="fb" />
+        <pass target="fa" />
+        <pass target="fb" />
+        <pass target="fa" />
+        <pass target="fb" />
+        <pass target="fa" />
+        <pass target="fb" />
+        <pass target="fa" />
+        <pass target="fb" />
+        <pass target="fa" />      <!-- 13: a fase pronta está em fa -->
+        <pass target="comp" />    <!-- 14 -->
+        <pass target="comp2" />   <!-- 15 -->
+        <pass target="dem" />     <!-- 16 -->
+        <pass target="vhs" />     <!-- 17 -->
+        <pass />                  <!-- 18 -->
+    </passes>
+
+    <shader><![CDATA[
+const float PI = 3.14159265;
+// Tamanho dos ruídos, medido contra o AE (desvio na saída por unidade do controle).
+const float LUMA_NOISE = 9.0;
+const float CHROMA_NOISE = 0.117;
+const float HUE_NOISE = 1.3;
+const float TE_A = 0.55;
+const float DIST_GROSSA = 47.0;
+const float DIST_FINA = 10.5;
+const float DIST_ROLA = 30.0;
+const float TE_B = 0.049;
+
+// ------------------------------------------------------------- codificação
+// Buffers de 8 bits: valores com sinal guardados com deslocamento; os que precisam de
+// precisão (luma, composto, fase) em 16 bits, dois canais.
+vec2 enc16(float v, float lo, float hi) {
+    float q = floor(clamp((v - lo) / (hi - lo), 0.0, 1.0) * 65535.0 + 0.5);
+    float a = floor(q / 256.0);
+    return vec2(a, q - a * 256.0) / 255.0;
+}
+float dec16(vec2 c, float lo, float hi) {
+    vec2 b = floor(c * 255.0 + 0.5);
+    return lo + (b.x * 256.0 + b.y) / 65535.0 * (hi - lo);
+}
+float enc8(float v, float r) { return clamp(v / (2.0 * r) + 0.5, 0.0, 1.0); }
+float dec8(float c, float r) { return (c - 0.5) * 2.0 * r; }
+
+const float CL = 0.75;   // faixa de I e Q
+vec3 rgb2yiq(vec3 c) {
+    return vec3(dot(c, vec3(0.299, 0.587, 0.114)), dot(c, vec3(0.596, -0.274, -0.322)), dot(c, vec3(0.211, -0.523, 0.312)));
+}
+vec3 yiq2rgb(vec3 y) {
+    return vec3(y.x + 0.956 * y.y + 0.621 * y.z, y.x - 0.272 * y.y - 0.647 * y.z, y.x - 1.106 * y.y + 1.703 * y.z);
+}
+
+// ------------------------------------------------------------- aleatório
+float hash31(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+float quadro() { return acFrameDuration > 0.0 ? floor(acTime / acFrameDuration + 0.5) : floor(acTime * 30.0 + 0.5); }
+/** Ruído de gradiente 1D (Perlin): espectro em banda, com o lóbulo negativo que a distorção do AE tem. */
+float perlin1(float x, float s) {
+    float i = floor(x);
+    float f = fract(x);
+    float g0 = hash31(vec3(i, s, 7.0)) * 2.0 - 1.0;
+    float g1 = hash31(vec3(i + 1.0, s, 7.0)) * 2.0 - 1.0;
+    float u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    return mix(g0 * f, g1 * (f - 1.0), u);
+}
+ivec2 px() { return ivec2(gl_FragCoord.xy); }
+/** A fase da subportadora em cada linha (em quartos de ciclo): Phase shift por par de linhas,
+ *  a partir do Phase shift offset — o padrão do ntscQT (0/90/180/270). Só muda o desenho do
+ *  "dot crawl" nas bordas de cor (efeito medido de 0,2–0,3% da imagem). */
+int faseDaLinha(int y) {
+    float par = floor(float(y) / (2.0 * max(acEscalaDePixel, 1e-3)));
+    return int(floor((phaseShiftOffset + par * phaseShift) / 90.0 + 0.5)) & 3;
+}
+// As contas foram medidas num quadro de 540 linhas; a prévia reduzida mantém o mesmo desenho.
+float escala() { return max(acEscalaDePixel, 1e-3); }
+
+// ------------------------------------------------------------- 0: a fonte
+vec4 passeFonte() {
+    vec2 res = acResolution;
+    float t = acTime;
+    float linha = gl_FragCoord.y;
+    // Roll: o quadro rola para cima, 13,2 linhas por segundo por unidade num quadro de 540
+    // (medido em 0,5, 1 e 2 s), dando a volta sem faixa de apagamento.
+    float rolado = mod(linha + rollSpeed * t * 13.2 / 540.0 * res.y, res.y);
+    // TV distortion: deslocamento horizontal da linha (com volta na borda).
+    float yn = rolado / escala();
+    float semente = seed * 0.6180339;
+    // Medido: a grossa tem ondas de 135–270 linhas (desvio 5,3 px por unidade), a fina de
+    // 10–50 linhas (1,4 px por unidade). A Distortion speed não muda o desenho: rola as duas
+    // para baixo, 30 linhas por segundo por unidade (1 linha por quadro a 30 qps).
+    float yd = yn - t * distortionSpeed * DIST_ROLA;
+    float d = thick * DIST_GROSSA * perlin1(yd / 110.0, semente)
+            + fine * DIST_FINA * perlin1(yd / 11.0, semente + 3.0);
+    d *= escala();
+    float x = mod(gl_FragCoord.x - d, res.x);
+    vec4 c = texture(inputImg, vec2(x, rolado + 0.5) / res);
+    vec3 y = rgb2yiq(c.rgb);
+    return vec4(y.x, enc8(y.y, CL), enc8(y.z, CL), c.a);
+}
+
+// ------------------------------------------------------------- 1–13: a fase da FM
+float nuEm(ivec2 p) {
+    float Y = texelFetch(fonte, clamp(p, ivec2(0), ivec2(acResolution) - 1), 0).r;
+    return 0.1579 * frequency + 0.1395 * phase * (Y - 0.3825);
+}
+vec4 passeFase(int k) {
+    ivec2 p = px();
+    if (k == 0) return vec4(enc16(fract(nuEm(p)), 0.0, 1.0), 0.0, 1.0);
+    int off = 1 << (k - 1);
+    float soma = dec16((k % 2 == 1 ? texelFetch(fa, p, 0) : texelFetch(fb, p, 0)).rg, 0.0, 1.0);
+    if (p.x - off >= 0) {
+        ivec2 q = ivec2(p.x - off, p.y);
+        soma += dec16((k % 2 == 1 ? texelFetch(fa, q, 0) : texelFetch(fb, q, 0)).rg, 0.0, 1.0);
+    }
+    return vec4(enc16(fract(soma), 0.0, 1.0), 0.0, 1.0);
+}
+
+// ------------------------------------------------------------- 14: o composto
+const float CLO = -1.5;
+const float CHI = 2.5;
+vec4 passeComposto() {
+    ivec2 p = px();
+    vec4 f = texelFetch(fonte, p, 0);
+    float Y = f.r;
+    float I = dec8(f.g, CL);
+    float Q = dec8(f.b, CL);
+    float fr = quadro();
+    if (lumaModulation) {
+        float nu = nuEm(p);
+        float nc = 0.1579 * frequency;
+        float ph = max(phase, 1e-3);
+        // O centro do demodulador do AE fica acima de |sen(π·ν0)| quando a portadora passa de
+        // 0,13 ciclo/px (Frequency > 0,8): a luma escurece, mais com Phase baixa (medido de 1 a 4).
+        float x = max(nc - 0.13, 0.0);
+        float centro = abs(sin(PI * nc)) + 0.62 * x + 1.4 * x * x;
+        float fm = (abs(sin(PI * nu)) - centro) / (PI * 0.1395 * ph) * 1.274 + 0.3825 + 0.4421 - 0.7148 * lightness;
+        // A ondulação no 2º harmônico da portadora (maior perto de ν = 0 e ν = 0,25).
+        float fase = dec16(texelFetch(fa, p, 0).rg, 0.0, 1.0);
+        float amp = 0.018 + 0.05 * exp(-pow((nu - 0.04) / 0.018, 2.0)) + 0.07 * exp(-pow((nu - 0.25) / 0.02, 2.0));
+        fm += amp * cos(4.0 * PI * fase);
+        if (quantize > 0.0) {
+            float n = max(256.0 - quantize * 2.5, 2.0);
+            fm = floor(fm * n + 0.5) / n;
+        }
+        Y = clamp(fm, 0.0, 1.0);
+    }
+    // Tape errors (só com a FM ligada, como no AE): faixas de chuvisco de 22 linhas, a cada 30,
+    // a partir de 8 linhas abaixo do TE start — no mesmo lugar em todo quadro, semente e imagem;
+    // dentro delas, manchas de ~6 px sorteadas por quadro, claras (assimetria pelo TE gamma).
+    if (lumaModulation && tapeErrors && teEnd > teStart) {
+        float H = acResolution.y;
+        float lin = gl_FragCoord.y;
+        float pos = (lin - teStart * H) / escala() - 8.0;
+        if (lin >= teStart * H && lin <= teEnd * H && pos >= 0.0) {
+            float dentro = mod(pos, 30.0);
+            if (dentro < 22.0) {
+                float borda = clamp(min(dentro + 0.5, 22.0 - dentro) / max(teFade * 0.4, 0.01), 0.0, 1.0);
+                float xc = gl_FragCoord.x / (6.0 * escala());
+                float a = hash31(vec3(floor(xc), floor(lin), fr + 91.0 + seed));
+                float b = hash31(vec3(floor(xc) + 1.0, floor(lin), fr + 91.0 + seed));
+                float u = mix(a, b, smoothstep(0.0, 1.0, fract(xc)));
+                float dens = clamp(teProbability * 10.0, 0.0, 1.0);
+                float mancha = pow(u, teGamma) * TE_A - TE_B;
+                Y += mancha * borda * dens;
+            }
+        }
+    }
+    // A cor na subportadora (¼ da taxa: 1, 0, −1, 0 e 0, 1, 0, −1).
+    int fase4 = (p.x + faseDaLinha(p.y)) & 3;
+    float u = fase4 == 0 ? 1.0 : (fase4 == 2 ? -1.0 : 0.0);
+    float w = fase4 == 1 ? 1.0 : (fase4 == 3 ? -1.0 : 0.0);
+    float c = Y + I * u + Q * w;
+    return vec4(enc16(c, CLO, CHI), f.a, 1.0);
+}
+float compEm(int x, int y) {
+    return dec16(texelFetch(comp, ivec2(clamp(x, 0, int(acResolution.x) - 1), y), 0).rg, CLO, CHI);
+}
+
+// ------------------------------------------------------------- 15: a pré-ênfase
+/** A faixa do sinal depois da pré-ênfase: cresce com a Signal amplification (o AE não corta). */
+float faixaEnfase() { return 1.5 + 0.45 * amplification; }
+// Depois da demodulação: luma em 16 bits numa faixa que cresce com a amplificação (e com a
+// nitidez, no VHS); croma em 8 bits comprimida (asinh), fina perto de zero.
+float faixaY() { return 1.5 + 0.17 * amplification; }
+float faixaYVhs() { return faixaY() * (1.0 + 0.3 * (sharpenOn ? sharpen : 0.0)); }
+float faixaC() { return 1.0 + 0.3 * amplification + 0.04 * chromaNoise; }
+float encC(float v) { return clamp(0.5 + 0.5 * asinh(v * 4.0) / asinh(faixaC() * 4.0), 0.0, 1.0); }
+float decC(float c) { return sinh((c - 0.5) * 2.0 * asinh(faixaC() * 4.0)) * 0.25; }
+vec4 passePreEnfase() {
+    ivec2 p = px();
+    float c = compEm(p.x, p.y);
+    if (amplification > 0.0) {
+        // Passa-baixas causal de 1 polo como FIR: Σ α(1−α)^k c[x−k].
+        float a = 1.0 / (1.0 + 0.0073 * cutoff);
+        float lp = 0.0;
+        float peso = a;
+        float soma = 0.0;
+        for (int k = 0; k < 48; k++) {
+            lp += peso * compEm(p.x - k, p.y);
+            soma += peso;
+            peso *= (1.0 - a);
+            if (peso < 1e-4) break;
+        }
+        lp /= max(soma, 1e-6);
+        c += amplification * (c - lp);
+    }
+    // Luma noise (depois da pré-ênfase, senão o ruído ganha agudos): ruído branco num
+    // passa-baixas de 1 polo (α = 0,5) — a correlação horizontal do AE, 0,9/0,67/0,07 depois
+    // da cadeia; desvio = valor/255 na saída.
+    if (lumaNoise > 0.0) {
+        float fr = quadro();
+        float h = 0.0;
+        float w = 0.5;
+        for (int k = 0; k < 8; k++) {
+            h += w * (hash31(vec3(float(p.x - k), float(p.y), fr + seed * 13.0)) - 0.5);
+            w *= 0.5;
+        }
+        // O AE satura o ruído forte (desvio 44 e 57 em 50 e 100, não 50 e 100): o ruído não
+        // leva o sinal para fora de [0, 1] (aqui 47 e 62). O sinal em si não é cortado.
+        c = clamp(c + h * lumaNoise / 255.0 * LUMA_NOISE, min(c, 0.0), max(c, 1.0));
+    }
+
+    return vec4(enc16(c, -faixaEnfase(), faixaEnfase()), texelFetch(comp, p, 0).b, 1.0);
+}
+float comp2Em(int x, int y) {
+    return dec16(texelFetch(comp2, ivec2(clamp(x, 0, int(acResolution.x) - 1), y), 0).rg, -faixaEnfase(), faixaEnfase());
+}
+
+// ------------------------------------------------------------- 16: a demodulação
+float lumaDemod(int x, int y) {
+    return 0.25 * (comp2Em(x - 1, y) + comp2Em(x, y) + comp2Em(x + 1, y) + comp2Em(x + 2, y));
+}
+vec4 passeDemod() {
+    ivec2 p = px();
+    float Y = lumaDemod(p.x, p.y);
+    float I = 0.0;
+    float Q = 0.0;
+    for (int j = -1; j <= 2; j++) {
+        int x = p.x + j;
+        float ch = comp2Em(x, p.y) - lumaDemod(x, p.y);
+        int f4 = (x + faseDaLinha(p.y)) & 3;
+        float u = f4 == 0 ? 1.0 : (f4 == 2 ? -1.0 : 0.0);
+        float w = f4 == 1 ? 1.0 : (f4 == 3 ? -1.0 : 0.0);
+        I += ch * u;
+        Q += ch * w;
+    }
+    I *= 0.5;
+    Q *= 0.5;
+    float fr = quadro();
+    float linha = floor(gl_FragCoord.y / escala());
+    // Chroma noise.
+    I += (hash31(vec3(vec2(p), fr + seed * 5.0 + 1.0)) - 0.5) * chromaNoise * CHROMA_NOISE;
+    Q += (hash31(vec3(vec2(p), fr + seed * 5.0 + 2.0)) - 0.5) * chromaNoise * CHROMA_NOISE;
+    // Hue noise: uma fase por linha, suavizada entre linhas (gaussiana de σ 1,2 linha: a
+    // correlação do AE é 0,88/0,66/0,29 a 1/2/4 linhas).
+    if (hueNoise > 0.0) {
+        float r = 0.0;
+        for (int k = -3; k <= 3; k++) {
+            r += exp(-float(k * k) / (2.0 * 1.44)) * (hash31(vec3(linha + float(k), fr, seed + 17.0)) - 0.5);
+        }
+        float ang = radians(r * hueNoise * HUE_NOISE);
+        float c = cos(ang);
+        float s = sin(ang);
+        vec2 iq = vec2(I * c - Q * s, I * s + Q * c);
+        I = iq.x;
+        Q = iq.y;
+    }
+    return vec4(enc16(Y, -faixaY(), faixaY()), encC(I), encC(Q));
+}
+vec3 demEm(int x, int y) {
+    vec4 c = texelFetch(dem, ivec2(clamp(x, 0, int(acResolution.x) - 1), y), 0);
+    return vec3(dec16(c.rg, -faixaY(), faixaY()), decC(c.b), decC(c.a));
+}
+
+// ------------------------------------------------------------- 17: o VHS
+vec4 passeVhs() {
+    ivec2 p = px();
+    vec3 c = demEm(p.x, p.y);
+    float Y = c.x;
+    if (sharpenOn && sharpen > 0.0) {
+        // 3 polos em cascata (α = 0,298) como FIR: o núcleo binomial negativo.
+        float a = 0.298;
+        float lp = 0.0;
+        float b = 1.0;   // (1−a)^k · C(k+2, 2)
+        for (int k = 0; k < 40; k++) {
+            float w = a * a * a * b;
+            lp += w * demEm(p.x - k, p.y).x;
+            b = b * (1.0 - a) * float(k + 3) / float(k + 1);
+        }
+        Y += (Y - lp) * sharpen * 0.2883;
+    }
+    // Croma do VHS: 4 polos (α por velocidade), adiantada 9/12/14 px.
+    float a = vhsSpeed == 0 ? 0.1157 : (vhsSpeed == 1 ? 0.1112 : 0.1066);
+    float atrasoF = vhsSpeed == 0 ? 9.0 : (vhsSpeed == 1 ? 12.0 : 14.0);
+    // Os filtros de croma de entrada e de saída já estão dentro desta banda (medida com eles
+    // ligados): desligar um deixa a croma ~8% mais larga e 2 px mais adiantada. Cada conexão
+    // entre aparelhos (e o S-video desligado, que vale uma) adianta mais 1–2 px e alarga um
+    // pouco (medido com 1 e 3 conexões).
+    if (!lpfIn) { a *= 1.08; atrasoF += 2.0; }
+    if (lpfOut == 0) { a *= 1.08; atrasoF += 2.0; } else if (lpfOut == 1) { a *= 1.1; }
+    float conexoes = connections + (sVideoOut ? 0.0 : 1.0);
+    if (conexoes > 0.0) { a *= 1.0 + 0.013 * conexoes; atrasoF += 1.0 + 0.5 * conexoes; }
+    int atraso = int(floor(atrasoF + 0.5));
+    vec2 iq = vec2(0.0);
+    float soma = 0.0;
+    float b = 1.0;   // (1−a)^k · C(k+3, 3)
+    for (int k = 0; k < 96; k++) {
+        float w = b;
+        iq += w * demEm(p.x + atraso - k, p.y).yz;
+        soma += w;
+        b = b * (1.0 - a) * float(k + 4) / float(k + 1);
+        if (k > 24 && b < 1e-3 * soma) break;
+    }
+    iq /= max(soma, 1e-6);
+    return vec4(enc16(Y, -faixaYVhs(), faixaYVhs()), encC(iq.x), encC(iq.y));
+}
+vec3 vhsEm(int x, int y) {
+    y = clamp(y, 0, int(acResolution.y) - 1);
+    vec4 c = texelFetch(vhs, ivec2(x, y), 0);
+    return vec3(dec16(c.rg, -faixaYVhs(), faixaYVhs()), decC(c.b), decC(c.a));
+}
+
+/** Chroma loss: a linha perde a cor com probabilidade = valor (depois do Chroma vertical blend,
+ *  como no AE: a linha sem cor só se espalha pelo Scanlines blur). */
+float corDaLinha(int y) {
+    float linha = floor(float(clamp(y, 0, int(acResolution.y) - 1)) / escala());
+    return hash31(vec3(linha, quadro(), seed + 29.0)) < chromaLoss ? 0.0 : 1.0;
+}
+vec3 linhaFinal(int x, int y) {
+    vec3 v = vhsEm(x, y);
+    if (chromaVerticalBlend) v.yz = 0.5 * (v.yz + vhsEm(x, y - 1).yz);
+    v.yz *= corDaLinha(y);
+    return v;
+}
+
+// ------------------------------------------------------------- 18: a saída
+void main() {
+    if (acPass == 0) { fragColor = passeFonte(); return; }
+    if (acPass >= 1 && acPass <= 13) { fragColor = passeFase(acPass - 1); return; }
+    if (acPass == 14) { fragColor = passeComposto(); return; }
+    if (acPass == 15) { fragColor = passePreEnfase(); return; }
+    if (acPass == 16) { fragColor = passeDemod(); return; }
+    if (acPass == 17) { fragColor = passeVhs(); return; }
+
+    ivec2 p = px();
+    // Scanlines blur: gaussiana vertical de σ = valor/2 linhas — no padrão 1,5 a linha vizinha
+    // pesa 0,42, que é a correlação vertical do ruído no AE.
+    vec3 c = linhaFinal(p.x, p.y);
+    float sigma = scanlinesBlur * 0.5 * escala();
+    if (sigma > 0.05) {
+        vec3 s = vec3(0.0);
+        float pesos = 0.0;
+        int passo = max(1, int(ceil(3.0 * sigma / 24.0)));
+        for (int k = -24; k <= 24; k++) {
+            float d = float(k * passo);
+            if (abs(d) > 3.0 * sigma + 0.5) continue;
+            float w = exp(-d * d / (2.0 * sigma * sigma));
+            s += w * linhaFinal(p.x, p.y + k * passo);
+            pesos += w;
+        }
+        c = s / max(pesos, 1e-6);
+    }
+    float alfa = texelFetch(fonte, p, 0).a;
+    vec3 rgb = yiq2rgb(c);
+    // Destruction: a saída não é cortada em [0, 1], dá a volta (estouro de 8 bits, como no AE):
+    // o branco que passa de 1 vira escuro e a sombra abaixo de 0 vira manchas de cor forte.
+    if (destruction) rgb = fract(rgb);
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), alfa);
+}
+    ]]></shader>
+</effect>

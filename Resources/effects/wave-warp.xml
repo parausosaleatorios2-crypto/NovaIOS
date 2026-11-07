@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Distorção em onda.
+
+  Este é o efeito que mostra por que `acTime` existe: ele se move sozinho, sem
+  nenhum keyframe. Você põe na camada e a onda já está andando.
+
+  Isso levanta uma escolha de design que vale entender: um efeito animado por
+  tempo é cômodo, mas você perde controle — não dá para casar a onda com uma
+  batida da música, por exemplo. Por isso a velocidade é um parâmetro animável:
+  quem quiser controle fino põe keyframe em `phase` e zera a velocidade.
+-->
+<effect
+    id="nova.effect.wavewarp"
+    name="Onda"
+    name-en="Wave Warp"
+    desc="Deforma a camada em ondas. Anima sozinho pelo tempo, ou por keyframe na fase."
+    desc-en="Waves the layer like a flag."
+    category="distort"
+    tags="onda,distorção,líquido,animado">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="amplitude" label="Amplitude"
+                default="12.0" min="0.0" max="200.0" step="0.5" snap="0.0" />
+
+        <slider id="frequency" label="Frequência"
+                default="4.0" min="0.1" max="40.0" step="0.1" />
+
+        <slider id="speed" label="Velocidade"
+                default="1.0" min="-8.0" max="8.0" step="0.1" snap="0.0" />
+
+        <slider id="phase" label="Fase"
+                default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+
+        <selector id="direction" label="Direção" default="0"
+                  options="Horizontal|Vertical|Ambas" />
+    </params>
+
+    <shader><![CDATA[
+
+void main() {
+    // A fase total soma a parte que anda sozinha (acTime * speed) com a parte
+    // que o usuário controla por keyframe. Zerar `speed` deixa a fase 100% nas
+    // mãos de quem edita.
+    float t = acTime * speed + radians(phase);
+
+    // Amplitude vem em pixels e precisa virar coordenada de textura, senão o
+    // efeito ficaria mais forte em projeto pequeno e fraco em 4K.
+    vec2 amp = amplitude * acEscalaDePixel * acTexelSize;
+
+    vec2 offset = vec2(0.0);
+
+    if (direction == 0 || direction == 2) {
+        offset.x = sin(acScreenNorm.y * frequency * 6.28318 + t) * amp.x;
+    }
+    if (direction == 1 || direction == 2) {
+        // O deslocamento em 1.7 tira as duas ondas de sincronia. Se as duas
+        // usassem a mesma fase, o resultado seria um movimento diagonal
+        // engessado em vez de algo que parece líquido.
+        offset.y = sin(acScreenNorm.x * frequency * 6.28318 + t * 1.7) * amp.y;
+    }
+
+    vec2 uv = acScreenNorm + offset;
+
+    // Fora dos limites da camada não existe conteúdo. Devolver transparente é
+    // mais honesto que deixar o CLAMP_TO_EDGE esticar a borda em faixas.
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        fragColor = vec4(0.0);
+        return;
+    }
+
+    fragColor = texture(inputImg, uv);
+}
+
+    ]]></shader>
+</effect>

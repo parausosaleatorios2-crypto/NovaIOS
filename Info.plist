@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key><string>Nova Editor</string>
+  <key>CFBundleShortVersionString</key><string>0.918.0</string>
+  <key>CFBundleVersion</key><string>937</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Para trazer fotos e vídeos da sua galeria para os projetos.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>Para salvar na galeria o vídeo que você exportar.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Para gravar narração e som direto na timeline.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Para gravar vídeo direto para o projeto.</string>
+  <key>UIFileSharingEnabled</key><true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+  <key>ITSAppUsesNonExemptEncryption</key><false/>
+</dict>
+</plist>

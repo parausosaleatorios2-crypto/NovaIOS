@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   DESLOCAMENTO TURBULENTO (AM) — o Turbulent Displace do Alight Motion, conta por conta (0.574.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "deslocamento turbulento", da série "100% iguais ao AM". Mesmos parâmetros, ids,
+  faixas, passos, marcas e padrões do `com.alightcreative.effects.turbulentdisplace3` (um projeto do AM importado cai
+  direto aqui; os antigos `turbulentdisplace2` e `turbulentdisplace`, "deprecated" lá, são o
+  `am-turbulent-displace2-legacy.xml` e o `am-turbulent-displace-legacy.xml`). A conta foi LIDA do efeito do AM
+  5.0.281 (`assets/effects/turbulentdisplace3.xml` do APK descompactado) e escrita de novo aqui; o arquivo do AM não
+  entra no repositório. A conferência é `python tools/amturbulento/comparar.py`: o efeito do AM rodado na GPU do PC
+  ao lado deste. O "Deslocamento turbulento" que já existia no Nova (`turbulent-displace.xml`) é o do After Effects
+  e fica como está.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Um ruído fractal (o simplex 3D do webgl-noise, somado em Oitavas, cada uma com o dobro da frequência, metade da
+    força e a Paralaxe ÷ 100 somada à coordenada) é medido na coordenada da CAMADA (`acLayerNorm`: 0..1 sobre a caixa
+    do conteúdo, X corrigido pela proporção) ou, com Espaço na tela, na da TELA. A Evolução anda no terceiro eixo do
+    ruído; a Semente pula para longe nele (× 7391,935). Escala e Esticar dividem a coordenada; o Deslocamento ÷ 500
+    a move.
+  - O número sai somado à Inclinação − 0,25 e vezes 2 × Intensidade, e empurra a busca na camada: em X, em Y, nos
+    dois (XY, um segundo ruído com outra semente), para fora do meio (r), girando em volta do canto (φ) ou os dois
+    (φr). Com Restringir o eixo da amostra (aceso só em φ, r, X e Y, o controle apagado do AM), o ruído é medido
+    numa linha só: X empurra pela altura, Y pela largura, φ pela distância ao meio e r pelo ângulo.
+  - A busca volta à tela (`acLayerToScreen`) e lê a camada JÁ na tela (filtro linear sobre a cor PRÉ-multiplicada, a
+    textura dele, CLAMP_TO_EDGE); fora da tela (0..1), nada.
+  - A Direção do AM guarda o VALOR da escolha, não a posição: φ = 5, r = 3, φr = 4, X = 0, Y = 1, XY = 2 (o
+    `values` do `<selector>`, 0.574.0), numa fileira de botões (`style="radio"`). O AM não escreve rótulo nessa
+    linha; aqui ela se chama Direção (o nome que a versão 1 dele dava).
+
+  Como no Túnel (AM): `stage="screen"`, a ida à camada pela volta da `acCamadaParaTela`, a volta pela própria matriz
+  sem a divisão da perspectiva quando ela é afim, e o filtro linear feito à mão nos 4 pixels sobre a cor
+  pré-multiplicada. O Y da coordenada da camada do AM cresce para CIMA e o do buffer do Nova para baixo: a conta
+  inverte o Y na ida e na volta (o efeito não é simétrico em Y: Y, r, φ e o ruído). A tela do AM (`acScreenNorm`) e a
+  do Nova (`acTela`) têm o t = 0 embaixo: o Espaço na tela não inverte nada.
+
+  Bem no meio (r e φr), `normalize(0)` dá NaN: a GPU decide, como no AM. Dentro de grupo (o filho), o corte na tela
+  não existe: o efeito roda no buffer do filho, na coordenada dele (não conferido).
+-->
+<effect
+    id="nova.effect.am-turbulent-displace"
+    name="Deslocamento turbulento (AM)"
+    name-en="Turbulent Displace (AM)"
+    desc="Distorce a camada ao longo dos eixos escolhidos com um ruído fractal suave, em coordenadas cartesianas ou polares. Útil para fogo, água, calor e formas irregulares (o Turbulent Displace do Alight Motion)."
+    desc-en="Distorts the layer along selected coordinate axes using smooth fractal noise, in cartesian or polar coordinates. Useful for fire, water, heat and irregular shapes (Alight Motion's Turbulent Displace)."
+    category="distort"
+    tags="deslocamento turbulento,turbulento,turbulência,ruído,fractal,distorcer,glitch,calor,fogo,água,turbulent displace,noise,alight motion"
+    stage="screen"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <!-- `<point>` do AM sem atributos: (0, 0), ±9999 e passo 1 (`readPointParam`), número cru. -->
+        <point id="parr" label="Paralaxe" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0" max="9999.0"
+            step="1.0" />
+        <point id="position" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <spinner id="intensity" label="Intensidade" default="0.25" min="0.0" max="2.5" step="0.001" ticks="0.5" />
+        <spinner id="evolution" label="Evolução" default="0.0" min="-50.0" max="50.0" step="0.01" ticks="1.0" />
+        <selector id="direction" label="Direção" style="radio" options="φ|r|φr|X|Y|XY" values="5|3|4|0|1|2"
+            default="4" />
+        <spinner id="scale" label="Escala" default="1.0" min="0.01" max="50.0" step="0.01" ticks="1.0" />
+        <!-- `<point>` do AM com faixa e passo (`min="0.01,0.01" max="10, 10"`). -->
+        <point id="stretch" label="Esticar" spinner="true" defaultX="1.0" defaultY="1.0" min="0.01" max="10.0"
+            step="0.01" />
+        <spinner id="seed" label="Semente" default="0.0" min="0.0" max="5.0" step="0.01" />
+        <switch id="singleAxis" label="Restringir o eixo da amostra" default="true" enabledIf="direction=5|3|0|1" />
+        <switch id="screenSpace" label="Espaço na tela" default="false" />
+        <slider id="octaves" label="Oitavas" default="6" min="1" max="9" step="1" type="integer"
+            ticks="1,2,3,4,5,6,7,8,9" />
+        <spinner id="offs" label="Inclinação" default="0.0" min="-1.0" max="1.0" step="0.001" ticks="1.0" />
+    </params>
+
+    <shader><![CDATA[
+// O simplex 3D do webgl-noise (Ashima Arts / Ian McEwan, licença MIT), como o AM o escreve: as mesmas constantes e
+// a mesma ordem de operações (o ruído é contínuo, mas a mesma ordem dá o mesmo float no mesmo celular).
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v) {
+    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+                 i.z + vec4(0.0, i1.z, i2.z, 1.0))
+               + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+               + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0) * 2.0 + 1.0;
+    vec4 s1 = floor(b1) * 2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+
+// A turbulência do AM: |ruído| somado em oitavas, a coordenada dobrada e somada à paralaxe a cada uma.
+float turbulence(vec2 st, int OCTAVES, vec2 parallax, float evolution) {
+    float value = 0.0;
+    float amplitude = .5;
+    for (int i = 0; i < OCTAVES; i++) {
+        value += amplitude * abs(snoise(vec3(st, evolution)));
+        st *= 2.;
+        st += parallax;
+        amplitude *= .5;
+    }
+    return value;
+}
+
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE.
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    // Os uniforms do AM com os nomes do Nova. A tela do AM (`acScreenNorm`) é a UV da tela com o t = 0 embaixo, a
+    // mesma do `acTela`. A coordenada da camada do AM (`acLayerNorm`): o retângulo do conteúdo de 0 a 1, com o meio
+    // no meio do buffer (o buffer cobre a composição, `acTamanhoDaTela`) e o Y para CIMA (o do buffer cresce para
+    // baixo, a linha 0 é o topo).
+    vec2 acScreenSize = acTamanhoDaTela;
+    vec2 acLayerSize = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 tela = acTela(acScreenNorm);
+    vec2 camada = 0.5 + (naCamada(tela) - 0.5) * acScreenSize / acLayerSize;
+    camada.y = 1.0 - camada.y;
+
+    // Daqui até a volta à tela, a conta do AM na mesma ordem.
+    vec2 st;
+    if (screenSpace) {
+        st = tela;
+        st.x *= acScreenSize.x / acScreenSize.y;
+    } else {
+        st = camada;
+        st.x *= acLayerSize.x / acLayerSize.y;
+    }
+    st += position * vec2(-1., 1.) / 500.;
+    vec2 parallax = parr * vec2(-1., 1.) / 100.;
+
+    vec2 scaleVec;
+    scaleVec = vec2(scale * stretch.y, scale * stretch.x);
+    if (screenSpace) {
+        float t = scaleVec.x;
+        scaleVec.x = scaleVec.y;
+        scaleVec.y = t;
+    }
+    vec2 sampleCoord;
+    if (singleAxis) {
+        if (direction == 0) {
+            sampleCoord = vec2(0., st.y - 0.5);              // X
+        } else if (direction == 1) {
+            sampleCoord = vec2(st.x - 0.5, 0.);              // Y
+        } else if (direction == 2) {
+            sampleCoord = st - 0.5;                          // XY
+        } else if (direction == 4) {
+            sampleCoord = st - 0.5;                          // φr
+        } else if (direction == 5) {
+            sampleCoord = vec2(0., length(st - 0.5));        // φ
+        } else {
+            float tt = abs(atan(st.x - 0.5, st.y - 0.5) / 6.28318) * 2.;
+            sampleCoord = vec2(tt, 0.);                      // r
+        }
+    } else {
+        sampleCoord = st - 0.5;
+    }
+
+    float p = turbulence((sampleCoord - 0.5) / scaleVec + 0.5, int(octaves), parallax, evolution + 7391.935 * seed);
+    p += (offs - 0.25);
+    p *= intensity * 2.0;
+
+    vec2 uv = screenSpace ? tela : camada;
+    if (direction == 0) {
+        uv.x += p;                                           // X
+    } else if (direction == 1) {
+        uv.y += p;                                           // Y
+    } else if (direction == 2) {
+        float q = turbulence((sampleCoord) / scaleVec + 0.5, int(octaves), parallax, evolution + 3937.7249 * (seed + 6.3379));
+        q += (offs - 0.25);
+        q *= intensity * 2.0;
+        uv.x += p;                                           // XY
+        uv.y += q;
+    } else if (direction == 4) {
+        float q = turbulence((sampleCoord) / scaleVec + 0.5, int(octaves), parallax, evolution + 3937.7249 * (seed + 6.3379));
+        q += (offs - 0.25);
+        q *= intensity * 2.0;
+        float cq = cos(q);
+        float sq = sin(q);
+        uv += normalize(uv - 0.5) * p;                       // φr
+        uv *= mat2(cq, sq, -sq, cq);
+    } else if (direction == 5) {
+        float cq = cos(p);
+        float sq = sin(p);
+        uv *= mat2(cq, sq, -sq, cq);                         // φ
+    } else {
+        uv += normalize(uv - 0.5) * p;                       // r
+    }
+
+    // De volta à imagem de entrada. Na tela (a entrada é a camada já na tela, de pé): a coordenada da camada vai ao
+    // buffer (o Y volta para baixo) e à tela pela `acCamadaParaTela`, sem a divisão da perspectiva quando ela é afim
+    // (como o `acLayerToScreen` do AM); a da tela fica como está. No filho de grupo, a UV do buffer dele.
+    bool naTela = acParaTela == mat3(1.0);
+    vec2 b = uv;
+    if (!screenSpace) {
+        b = 0.5 + (vec2(uv.x, 1.0 - uv.y) - 0.5) * acLayerSize / acScreenSize;
+        if (naTela) {
+            vec3 c = acCamadaParaTela * vec3(b, 1.0);
+            bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+            b = afim ? c.xy : c.xy / c.z;
+        }
+    } else if (!naTela) {
+        b = naCamada(uv);
+    }
+
+    // Ponto infinito ou NaN (bem no meio, em r e φr): a GPU decide, como no AM.
+    bool foraDaConta = any(isinf(b)) || any(isnan(b));
+    vec4 c = foraDaConta ? preMultiplicada(texture(inputImg, b)) : camadaNoPonto(b);
+    c *= step(0.0, b.x) * step(b.x, 1.0) * step(0.0, b.y) * step(b.y, 1.0);
+    fragColor = c.a > 0.0 ? vec4(min(c.rgb / c.a, vec3(1.0)), c.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

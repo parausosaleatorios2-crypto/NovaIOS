@@ -1,0 +1,219 @@
+{
+    "id": "titulo-quique",
+    "nome": "Título com quique",
+    "nomeEn": "Bouncy title",
+    "descricao": "Letras que pulam uma a uma com quique; divertido, para memes, reações e vlogs.",
+    "descricaoEn": "Letters that bounce in one by one; playful, for memes, reactions and vlogs.",
+    "categoria": "titulo",
+    "tags": [
+        "titulo",
+        "quique",
+        "pulo",
+        "divertido",
+        "meme",
+        "reacao",
+        "bounce"
+    ],
+    "estilos": [
+        "vlog",
+        "meme"
+    ],
+    "largura": 1080,
+    "altura": 1920,
+    "duracaoUs": 2500000,
+    "duracaoMinUs": 1200000,
+    "duracaoMaxUs": 6000000,
+    "entradaUs": 900000,
+    "saidaUs": 300000,
+    "impactoUs": 300000,
+    "campos": [
+        {
+            "id": "titulo",
+            "tipo": "texto",
+            "rotulo": "Título",
+            "rotuloEn": "Title",
+            "padrao": "UAU!",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto"
+                }
+            ]
+        },
+        {
+            "id": "cor",
+            "tipo": "cor",
+            "rotulo": "Cor do texto",
+            "rotuloEn": "Text color",
+            "padrao": "#FFFFFFFF",
+            "alvos": [
+                {
+                    "camada": "titulo",
+                    "propriedade": "texto:cor"
+                }
+            ]
+        }
+    ],
+    "camadas": [
+        {
+            "id": "titulo",
+            "name": "UAU!",
+            "content": {
+                "kind": "text",
+                "color": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "strokeColor": {
+                    "kind": "COLOR",
+                    "staticValue": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                },
+                "strokeWidth": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        8.0
+                    ]
+                },
+                "text": "UAU!",
+                "fontSize": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        160.0
+                    ]
+                },
+                "fontFamily": "galeria:Poppins-Bold.ttf",
+                "alignment": "CENTER",
+                "letterSpacing": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "lineHeight": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.15
+                    ]
+                },
+                "textAnimation": {
+                    "animator": "BOUNCE_UP",
+                    "unit": "CHARACTER",
+                    "durationUs": 600000,
+                    "staggerUs": 50000,
+                    "delayUs": 0,
+                    "easing": {
+                        "kind": "bezier",
+                        "x2": 0.58,
+                        "y2": 1.0,
+                        "label": "Ease Out"
+                    },
+                    "reversed": false
+                }
+            },
+            "transform": {
+                "position": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "scale": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        1.0,
+                        1.0
+                    ]
+                },
+                "rotation": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "anchor": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "opacity": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        1.0
+                    ],
+                    "keys": [
+                        {
+                            "timeUs": 2200000,
+                            "value": [
+                                1.0
+                            ],
+                            "easing": {
+                                "kind": "linear"
+                            },
+                            "id": "b54292cd-9b39-402e-af97-61d788efd87b"
+                        },
+                        {
+                            "timeUs": 2500000,
+                            "value": [
+                                0.0
+                            ],
+                            "easing": {
+                                "kind": "bezier",
+                                "x1": 0.42,
+                                "x2": 0.58,
+                                "y2": 1.0,
+                                "label": "Ease In Out"
+                            },
+                            "id": "cca940d9-855a-4da0-aea3-828750340376"
+                        }
+                    ]
+                },
+                "skew": {
+                    "kind": "VEC2",
+                    "staticValue": [
+                        0.0,
+                        0.0
+                    ]
+                },
+                "positionZ": {
+                    "kind": "FLOAT",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationX": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                },
+                "rotationY": {
+                    "kind": "ANGLE",
+                    "staticValue": [
+                        0.0
+                    ]
+                }
+            },
+            "blendMode": 0,
+            "effects": [],
+            "startUs": 0,
+            "endUs": 2500000,
+            "visible": true,
+            "locked": false,
+            "solo": false,
+            "masks": []
+        }
+    ]
+}

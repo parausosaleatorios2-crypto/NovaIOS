@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_dissolve2
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-dissolve2"
+    name="Dissolve2 (NV)"
+    name-en="Dissolve2 (NV)"
+    desc="NodeVideo Asset Store effect 'dissolve2', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'dissolve2', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="pattern_tex" src="content" empty="transparent" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <point id="_trans_center" label="Trans Center" defaultX="0.5" defaultY="0.5" />
+        <point id="_trans_scale" label="Trans Scale" defaultX="0.5" defaultY="0.5" />
+        <slider id="_trans_rotation" label="Trans Rotation" default="0.0" min="-180.0" max="180.0" step="1.0" />
+        <slider id="_edge_behaviour" type="integer" label="Edge Behaviour" default="0" min="0" max="10" step="1" />
+        <slider id="_interpolation" label="Interpolation" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_edge_width" label="Edge Width" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_edge_intensity" label="Edge Intensity" default="0.5" min="0.0" max="1.0" step="0.01" />
+        <color id="_edge_color" label="Edge Color" default="#FFFFFFFF" />
+        <slider id="_direction" type="integer" label="Direction" default="0" min="-180" max="180" step="1" />
+        <slider id="_inverse" type="integer" label="Inverse" default="0" min="0" max="10" step="1" />
+    </params>
+
+    <!-- A miniatura do catálogo: o padrão do Node é neutro (o efeito não faz nada até mexer). -->
+    <preview>
+        <set param="_interpolation" value="0.5" />
+        <set param="_edge_width" value="0.08" />
+    </preview>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+vec4 u_xlat0;
+vec4 u_xlat1;
+bvec4 u_xlatb1;
+vec4 u_xlat2;
+bvec2 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+vec3 u_xlat6;
+vec2 u_xlat12;
+bool u_xlatb12;
+vec2 u_xlat13;
+ivec2 u_xlati13;
+bvec2 u_xlatb13;
+vec2 u_xlat14;
+bvec2 u_xlatb14;
+float u_xlat18;
+bool u_xlatb18;
+float u_xlat20;
+void main()
+{
+    u_xlat0.xy = acScreenNorm.xy + vec2(-0.5, -0.5);
+    u_xlat12.xy = vec2(1.0, 1.0) / vec2(_trans_scale.x, _trans_scale.y);
+    u_xlat0.xy = u_xlat12.xy * u_xlat0.xy;
+    u_xlat12.x = _trans_rotation * 0.0174532942;
+    u_xlat1.x = sin(u_xlat12.x);
+    u_xlat2.x = cos(u_xlat12.x);
+    u_xlat3.x = sin((-u_xlat12.x));
+    u_xlat3.y = u_xlat2.x;
+    u_xlat3.z = u_xlat1.x;
+    u_xlat1.x = dot(u_xlat0.xy, u_xlat3.yz);
+    u_xlat1.y = dot(u_xlat0.xy, u_xlat3.xy);
+    u_xlat0.xy = u_xlat1.xy + _trans_center.xy;
+    if(int(_edge_behaviour) != 0) {
+        u_xlatb12 = int(_edge_behaviour)==1;
+        u_xlatb1.xy = greaterThanEqual(u_xlat0.xyxx, (-u_xlat0.xyxx)).xy;
+        u_xlat13.xy = fract(abs(u_xlat0.xy));
+        u_xlat1.x = (u_xlatb1.x) ? u_xlat13.x : (-u_xlat13.x);
+        u_xlat1.y = (u_xlatb1.y) ? u_xlat13.y : (-u_xlat13.y);
+        u_xlatb13.xy = lessThan(u_xlat0.xyxy, vec4(0.0, 0.0, 0.0, 0.0)).xy;
+        u_xlat2.xy = fract(u_xlat0.xy);
+        u_xlat2.xy = (-u_xlat2.xy) + vec2(1.0, 1.0);
+        u_xlatb14.xy = lessThan(vec4(1.0, 1.0, 1.0, 1.0), u_xlat0.xyxy).xy;
+        u_xlati13.xy = ivec2(uvec2((uint(u_xlatb13.x) * 0xffffffffu) | (uint(u_xlatb14.x) * 0xffffffffu), (uint(u_xlatb13.y) * 0xffffffffu) | (uint(u_xlatb14.y) * 0xffffffffu)));
+        u_xlat13.x = (u_xlati13.x != 0) ? u_xlat2.x : u_xlat0.x;
+        u_xlat13.y = (u_xlati13.y != 0) ? u_xlat2.y : u_xlat0.y;
+        u_xlat0.xy = (bool(u_xlatb12)) ? abs(u_xlat1.xy) : u_xlat13.xy;
+    }
+    u_xlat0.x = texture(pattern_tex, u_xlat0.xy).x;
+    u_xlat6.xy = acScreenNorm.xy + (-_trans_center.xy);
+    u_xlatb1 = equal(ivec4(int(_direction)), ivec4(1, 2, 3, 4));
+    u_xlat6.xy = abs(u_xlat6.xy) + abs(u_xlat6.xy);
+    u_xlatb2.xy = equal(ivec4(int(_direction), int(_inverse), int(_direction), int(_direction)), ivec4(5, 1, 0, 0)).xy;
+    u_xlat14.xy = vec2(_viewport_ratio.x, _viewport_ratio.y) * _trans_center.xy;
+    u_xlat14.xy = acScreenNorm.xy * vec2(_viewport_ratio.x, _viewport_ratio.y) + (-u_xlat14.xy);
+    u_xlat18 = dot(u_xlat14.xy, u_xlat14.xy);
+    u_xlat18 = sqrt(u_xlat18);
+    u_xlat18 = u_xlat18 + u_xlat18;
+    u_xlat12.x = (u_xlatb1.w) ? u_xlat6.y : u_xlat18;
+    u_xlatb18 = u_xlatb1.w || u_xlatb2.x;
+    u_xlat6.x = (u_xlatb1.z) ? u_xlat6.x : u_xlat12.x;
+    u_xlatb12 = u_xlatb18 || u_xlatb1.z;
+    u_xlat6.x = (u_xlatb1.y) ? acScreenNorm.y : u_xlat6.x;
+    u_xlatb12 = u_xlatb12 || u_xlatb1.y;
+    u_xlat6.x = (u_xlatb1.x) ? acScreenNorm.x : u_xlat6.x;
+    u_xlatb12 = u_xlatb12 || u_xlatb1.x;
+    u_xlat6.x = u_xlatb12 ? u_xlat6.x : float(0.0);
+    u_xlat12.x = (-u_xlat6.x) + 1.0;
+    u_xlat6.x = (u_xlatb2.y) ? u_xlat12.x : u_xlat6.x;
+    u_xlat6.x = u_xlat6.x + u_xlat0.x;
+    u_xlat6.x = u_xlat6.x * 0.5;
+    u_xlat0.x = (int(_direction) != 0) ? u_xlat6.x : u_xlat0.x;
+    u_xlat1 = texture(inputImg, acScreenNorm.xy);
+    u_xlat6.xyz = _edge_color.xyz * vec3(0.305306017, 0.305306017, 0.305306017) + vec3(0.682171106, 0.682171106, 0.682171106);
+    u_xlat6.xyz = _edge_color.xyz * u_xlat6.xyz + vec3(0.0125228781, 0.0125228781, 0.0125228781);
+    u_xlat2.xyz = u_xlat6.xyz * _edge_color.xyz;
+    u_xlat20 = (-_edge_color.w) + 1.0;
+    u_xlat6.xyz = (-_edge_color.xyz) * u_xlat6.xyz + u_xlat1.xyz;
+    u_xlat2.xyz = vec3(u_xlat20) * u_xlat6.xyz + u_xlat2.xyz;
+    u_xlat6.x = u_xlat0.x + (-_interpolation);
+    u_xlat12.x = float(1.0) / _edge_width;
+    u_xlat6.x = u_xlat12.x * u_xlat6.x;
+    u_xlat6.x = clamp(u_xlat6.x, 0.0, 1.0);
+    u_xlat12.x = u_xlat6.x * -2.0 + 3.0;
+    u_xlat6.x = u_xlat6.x * u_xlat6.x;
+    u_xlat6.x = u_xlat6.x * u_xlat12.x;
+    u_xlat12.x = (-_edge_width) + _interpolation;
+    u_xlat18 = (-u_xlat12.x) + _interpolation;
+    u_xlat0.x = (-u_xlat12.x) + u_xlat0.x;
+    u_xlat12.x = float(1.0) / u_xlat18;
+    u_xlat0.x = u_xlat12.x * u_xlat0.x;
+    u_xlat0.x = clamp(u_xlat0.x, 0.0, 1.0);
+    u_xlat12.x = u_xlat0.x * -2.0 + 3.0;
+    u_xlat0.x = u_xlat0.x * u_xlat0.x;
+    u_xlat18 = _edge_intensity * 4.0;
+    u_xlat6.x = log2(u_xlat6.x);
+    u_xlat6.x = u_xlat6.x * u_xlat18;
+    u_xlat6.x = exp2(u_xlat6.x);
+    u_xlat0.x = (-u_xlat12.x) * u_xlat0.x + 1.0;
+    u_xlat0.x = log2(u_xlat0.x);
+    u_xlat0.x = u_xlat0.x * u_xlat18;
+    u_xlat0.x = exp2(u_xlat0.x);
+    u_xlat2.w = u_xlat1.w;
+    u_xlat3 = u_xlat1 + (-u_xlat2);
+    u_xlat3 = u_xlat6.xxxx * u_xlat3 + u_xlat2;
+    u_xlat0 = u_xlat0.xxxx * (-u_xlat3) + u_xlat3;
+    u_xlat0.w = u_xlat2.w * u_xlat0.w;
+    u_xlat0 = u_xlat0.wwww * u_xlat0;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat0;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat1 = u_xlat1 * u_xlat5;
+        u_xlat1 = u_xlat3 * u_xlat4 + u_xlat1;
+        u_xlat2.x = u_xlat4.x * u_xlat1.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat1.w;
+        fragColor.xyz = u_xlat1.xyz;
+    } else {
+        fragColor = u_xlat0;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   ANEL — o Ring do Alight Motion, conta por conta (0.566.0)
+  ============================================================================
+
+  Pedido do snow (15/10/2026): "faz agora anel 100% igual o alight motion", da série "100% iguais ao AM". Mesmos
+  parâmetros, ids, faixas, passos, marcas, tipos e padrões do `com.alightcreative.effects.ring` (`s3d-ring.xml` do AM
+  5.0.281; um projeto do AM importado cai direto aqui), e o shader dele linha por linha. O arquivo do AM não entra
+  no repositório. A conferência é `python tools/amanel/comparar.py`: o shader do PRÓPRIO AM e este, na GPU do PC.
+
+  O QUE O EFEITO DO AM FAZ (e este repete):
+
+  - Desenha um anel 3D por raymarching (um cilindro oco: o de fora menos o de dentro, com a Suavização arredondando
+    a borda), visto de uma câmera fixa em (0, 1, −1) olhando para +Z, na coordenada da CAMADA do AM (o retângulo do
+    conteúdo, com o X na proporção dele e ÷ Escala). A Posição é em centésimos (0, 100, 600 = o meio do anel em
+    (0, 1, 6)); a Orientação (um quatérnio, `<orient>`) e a Rotação (X, Y, Z em graus) giram o anel:
+    orientAndRotate = Orientação · Rz · Rx · Ry.
+  - A camada vira a textura da superfície: em volta pelo ângulo (repetida pelo Raio, ou esticada), nas tampas pelo
+    X/Z, misturadas pela normal; Repetir, Ângulo, Deslocamento (÷ 1000), Espelhar, Recortar e Giro mexem nessa
+    coordenada, e a cor é buscada na camada JÁ na tela (o filtro linear sobre a cor pré-multiplicada, feito à mão).
+  - Sombreamento: Plano, Ponto de Luz, Luz direcional (difusa + especular `pow(l, Especularidade)` misturada ao
+    branco pelo Brilho), Mapa de profundidade, Mapa normal e os dois juntos. Longe (d de 9 a 30) e nas faces
+    viradas para a câmera de lado (n.z de 0,2 a 0,3) o anel some suave.
+  - Raio, Largura e Comprimento aparecem × 100 (o `multiplier` do AM: guardados em 1,0, 0,1 e 0,5; escritos 100,
+    10 e 50). A Precisão (`MAX_ITER`) é o número de passos do raymarching.
+
+  `stage="screen"`: como o AM (que roda os efeitos na tela), o anel pode sair da caixa da camada para qualquer canto
+  da tela (o mesmo corte do Ampliar o fundo, do Apertar e do Túnel). O `overdraw`/`maxOverdraw` do XML do AM não
+  muda o desenho da camada (só o buffer da cena inteira, `renderWithGpu`). O vértice do AM calcula a orientAndRotate
+  (constante na tela toda); aqui ela é feita uma vez no começo do `main`.
+
+  A luz ACIMA do alfa: o especular do AM cai também onde a camada é transparente (cor > 0 com alfa 0), e a composição
+  dele soma essa luz ao fundo. A cor reta não guarda isso; então, só nesses pixels, a saída leva junto o fundo atrás
+  dela (`src="backdrop"`), com o menor alfa que reproduz a mesma soma na composição Normal com qualquer opacidade
+  (`paraReta`). Sem isso, um "anel prateado fantasma" do AM sumia aqui (até 163 níveis no comparador).
+
+  Na prévia parada pode montar na resolução da tela (`screen-scale="safe"`): toda medida é fração da tela ou da
+  camada, e o `acScreenSize` do AM é o tamanho da cena. A metade contra a cheia reduzida, na GPU do PC: 0,16 nível de
+  média em 96 casos, o pior 0,85 (o Glow dá 0,93) — e o raymarching custa 4× menos.
+
+  O Y da coordenada da camada do AM cresce para CIMA e o do buffer de camada do Nova para baixo: inverter na ida e na
+  volta (a lição do Túnel). A Suavização do AM se chama `smooth`, palavra reservada no GLSL ES 3.00: aqui o id é
+  `smoothing` (como o `sample` → `sampling`; o importador de projeto do AM, quando existir, troca).
+-->
+<effect
+    id="nova.effect.am-ring"
+    name="Anel"
+    name-en="Ring"
+    desc="Renderiza um anel faux-3D com faces planas, usando a camada como uma textura de superfície (o Ring do Alight Motion)."
+    desc-en="Renders a faux-3D ring with flat faces, using the layer as a surface texture (Alight Motion's Ring)."
+    category="3d"
+    stage="screen"
+    screen-scale="safe"
+    tags="anel,ring,3d,argola,aro,cilindro,tubo,raymarching,iluminação,luz,forma,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+
+        <orient id="orient" label="Orientação" invert="true" />
+        <xyz id="rotate" label="Rotação" type="rotate" />
+        <spinner id="radius" label="Raio" default="1.0" min="0.01" max="10.0" step="0.001" ticks="1.0" multiplier="100" />
+        <spinner id="thickness" label="Largura" default="0.1" min="0.01" max="10.0" step="0.001" ticks="1.0" multiplier="100" />
+        <spinner id="height" label="Comprimento" default="0.5" min="0.01" max="10.0" step="0.001" ticks="1.0" multiplier="100" />
+        <spinner id="smoothing" label="Suavização" default="0.0" min="0.0" max="5.0" step="0.001" />
+        <xyz id="position" label="Posição" default="0.,100.,600." />
+        <spinner id="scale" label="Escala" default="1.0" min="0.0" max="10.0" step="0.01" ticks="1.0" />
+
+        <selector id="shadingType" label="Sombreamento" group="Fonte de luz"
+            options="Plano|Ponto de Luz|Luz direcional|Mapa de profundidade|Mapa normal|Mapa Normal e de Profundidade" default="1" />
+        <spinner id="lightIntensity" label="Intensidade" group="Fonte de luz" default="1.0" min="0.0" max="2.0" step="0.001" type="percent" />
+        <spinner id="shine" label="Brilho" group="Fonte de luz" default="0.8" min="0.0" max="1.0" step="0.01" ticks="0.5" />
+        <spinner id="spec" label="Especularidade" group="Fonte de luz" default="30.0" min="1.0" max="150.0" step="0.5" ticks="30.0" />
+        <spinner id="ambient" label="Ambiente" group="Fonte de luz" default="0.1" min="0.0" max="1.0" step="0.01" />
+        <color id="lightColor" label="Cor" group="Fonte de luz" default="#FFFFFFFF" alpha="false" />
+        <point id="lightDir" label="Direção" group="Fonte de luz" spinner="true" defaultX="75" defaultY="-75" min="-9999" max="9999" />
+        <spinner id="lightDepth" label="Elevação" group="Fonte de luz" default="100.0" min="-100.0" max="800.0" step="0.5" ticks="1.0,100.0" />
+
+        <switch id="mirror" label="Espelhar" group="Mapeamento de Textura" default="false" />
+        <switch id="texStretch" label="Esticar" group="Mapeamento de Textura" default="false" />
+        <spinner id="texRepeatX" label="Repetir X" group="Mapeamento de Textura" default="1.0" min="0.01" max="20.0" step="0.01" />
+        <spinner id="texRepeatY" label="Repetir Y" group="Mapeamento de Textura" default="1.0" min="0.01" max="20.0" step="0.01" />
+        <spinner id="texAngle" label="Ângulo" group="Mapeamento de Textura" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0" type="angle" />
+        <spinner id="texCrop" label="Recortar" group="Mapeamento de Textura" default="1.0" min="0.01" max="2.0" step="0.001" ticks="1.0" />
+        <spinner id="texTwirl" label="Giro" group="Mapeamento de Textura" default="0.0" min="-3600.0" max="3600.0" step="0.1" ticks="0.0" type="angle" />
+        <point id="texOffset" label="Deslocamento" group="Mapeamento de Textura" spinner="true" defaultX="0" defaultY="0"
+            min="-9999" max="9999" />
+
+        <tip group="Raio de movimento"
+            text="Use mais iterações para obter uma melhor qualidade de borda. Use menos iterações para obter um desempenho mais rápido da pré-visualização. Para melhores resultados, recomenda-se uma contagem entre 30 e 60 iterações."
+            text-en="Use more iterations for better edge quality; use less iterations for faster preview performance. For best results, an iteration count between 30 and 60 is recommended." />
+        <slider id="MAX_ITER" label="Precisão" group="Raio de movimento" default="60" min="10" max="200" step="1" type="integer"
+            ticks="30,60,100" snap="30,60,100" />
+    </params>
+
+    <preview>
+        <set param="rotate" x="25.0" y="0.0" z="0.0" ate-y="360.0" volta="true" />
+        <set param="scale" value="2.2" />
+    </preview>
+
+    <shader><![CDATA[
+// O varying do vértice do AM (`orient * rz * rx * ry`, constante na tela toda): aqui, feito uma vez no `main`.
+mat4 orientAndRotate;
+
+#define OBJECT_CENTER (position/100.)
+
+mat4 rotationAxisAngle( vec3 v, float angle )
+{
+    float s = sin( angle );
+    float c = cos( angle );
+    float ic = 1.0 - c;
+
+    return mat4( v.x*v.x*ic + c,     v.y*v.x*ic - s*v.z, v.z*v.x*ic + s*v.y, 0.0,
+                 v.x*v.y*ic + s*v.z, v.y*v.y*ic + c,     v.z*v.y*ic - s*v.x, 0.0,
+                 v.x*v.z*ic - s*v.y, v.y*v.z*ic + s*v.x, v.z*v.z*ic + c,     0.0,
+                 0.0,                0.0,                0.0,                1.0 );
+}
+
+float sdCappedCylinder( vec3 p, float h, float r )
+{
+  vec2 d = abs(vec2(length(p.xz),p.y)) - vec2(h,r);
+  return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+}
+
+float opSmoothSubtraction( float d1, float d2, float k ) {
+    float h = clamp( 0.5 - 0.5*(d2+d1)/k, 0.0, 1.0 );
+    return mix( d2, -d1, h ) + k*h*(1.0-h); }
+
+float dist(vec3 p) {
+    float d = 100000000.0;
+
+    p = p-OBJECT_CENTER;
+    p = (vec4(p,1.) * orientAndRotate).xyz;
+
+    float outer = sdCappedCylinder(p,radius-smoothing,height-smoothing)-smoothing;
+    float inner = sdCappedCylinder(p,radius-thickness,height+0.1);
+    return opSmoothSubtraction(inner,outer,smoothing);
+}
+
+float march(vec3 ro, vec3 rd) {
+    float d = 0.0;
+    for( int i=0; i<int(MAX_ITER); i++ ) {
+        vec3 p = ro + rd*d;
+        float dd = dist(p);
+        d += dd;
+        if( dd < 0.00001 || d > 1000.0 ) break;
+    }
+    return d;
+}
+
+vec3 calcNormal(vec3 p) {
+    float d = dist(p);
+    vec2 e = vec2(.01,0.);
+    return normalize(d - vec3(
+        dist(p-e.xyy),
+        dist(p-e.yxy),
+        dist(p-e.yyx)));
+}
+
+float lighting(vec3 p, vec3 n) {
+    vec3 lightPos = vec3(lightDir.x/2.0, -lightDir.y/2.0, -lightDepth*2.0);
+    vec3 l = normalize(lightPos-p);
+    return dot(n,l);
+}
+
+float directionalLighting(vec3 p, vec3 n) {
+    vec3 lightPos = vec3(lightDir.x/2.0, -lightDir.y/2.0, -lightDepth*2.0);
+    vec3 l = normalize(lightPos);
+    return dot(n,l);
+}
+
+vec4 applyShading(vec4 texColor, vec3 p, vec3 n, float d ) {
+    vec4 result = vec4(0.);
+    float a = smoothstep(30.0,9.,d);
+    a *= smoothstep(0.3,0.2,n.z);
+    if( shadingType == 0 ) {                // Flat
+        result = texColor * a;
+    } else if( shadingType == 1 ) {         // Point Light
+        float l = lighting(p,n);
+        vec3 tc = texColor.rgb;
+        vec3 surface = tc * ambient + tc * lightColor.rgb * l * (1.-ambient);
+        surface *= lightIntensity;
+        float s = pow(l,spec);
+        surface = mix(surface*(1.-shine*0.1),vec3(1.),shine*s);
+        result = vec4(surface, texColor.a) * a;
+    } else if( shadingType == 2 ) {         // Directonal Light
+        float l = directionalLighting(p,n);
+        vec3 tc = texColor.rgb;
+        vec3 surface = tc * ambient + tc * lightColor.rgb * l * (1.-ambient);
+        surface *= lightIntensity;
+        float s = pow(l,spec);
+        surface = mix(surface*(1.-shine*0.1),vec3(1.),shine*s);
+        result = vec4(surface, texColor.a) * a;
+    } else if( shadingType == 3 ) {         // Depth Map
+        float ds = max(radius,height)*2.5;
+        float dd = 1. - ((d - OBJECT_CENTER.z + ds/2.)/ds);
+        result = vec4( dd,dd,dd, 1. ) * a;
+    } else if( shadingType == 4 ) {         // Normal Map
+        result = vec4( (n/2.)+0.5, 1. ) * a;
+    } else if( shadingType == 5 ) {         // Normal * Depth
+        float ds = max(radius,height)*2.5;
+        float dd = 1. - ((d - OBJECT_CENTER.z + ds/2.)/ds);
+        result = vec4( ((n/2.)+0.5)*dd, 1. ) * a;
+    }
+
+    return result;
+}
+
+vec2 mapTexture( vec2 texCoord ) {
+    float texRad = texAngle * 0.0174533;
+    float texCos = cos(texRad);
+    float texSin = sin(texRad);
+    mat2 texRot = mat2( texCos, -texSin, texSin, texCos );
+
+    float texTwirlRad = texTwirl * 0.0174533;
+    float texTwirlCos = cos(texTwirlRad);
+    float texTwirlSin = sin(texTwirlRad);
+    mat2 texTwirlRot = mat2( texTwirlCos, -texTwirlSin, texTwirlSin, texTwirlCos );
+
+    vec2 texScaleVec = vec2(1./texRepeatX,1./texRepeatY);
+
+    texCoord *= texRot;
+
+    texCoord += texOffset / 1000.0;
+    texCoord /= texScaleVec;
+    if(mirror) {
+        texCoord = abs(mod(texCoord-vec2(1.0,1.0),vec2(2.0,2.0))-vec2(1.0,1.0));
+    } else {
+        texCoord = mod(texCoord,vec2(1.0,1.0));
+    }
+
+    texCoord -= 0.5;
+    // O `acScreenSize` do AM é o tamanho da cena (`acTamanhoDaTela`).
+    texCoord = texCoord * (1.-5./acTamanhoDaTela);
+    texCoord *= texCrop;
+    texCoord *= texTwirlRot;
+    texCoord += 0.5;
+    return texCoord;
+}
+
+vec4 preMultiplicada(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
+// presos à borda como o CLAMP_TO_EDGE (o mesmo do Túnel).
+vec4 camadaNoPonto(vec2 uv) {
+    ivec2 T = textureSize(inputImg, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = preMultiplicada(texelFetch(inputImg, clamp(a, ivec2(0), m), 0));
+    vec4 c10 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 0), ivec2(0), m), 0));
+    vec4 c01 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(0, 1), ivec2(0), m), 0));
+    vec4 c11 = preMultiplicada(texelFetch(inputImg, clamp(a + ivec2(1, 1), ivec2(0), m), 0));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
+vec3 fundoNoPixel() {
+    ivec2 T = textureSize(comp, 0);
+    ivec2 px = clamp(ivec2(floor(acTela(acScreenNorm) * vec2(T))), ivec2(0), T - 1);
+    vec4 f = texelFetch(comp, px, 0);
+    return f.rgb * f.a;
+}
+
+// A saída pré-multiplicada do AM em cor reta. O comum (cor ≤ alfa) é só dividir. Mas o brilho especular do AM cai
+// também onde a camada é transparente: sai cor ACIMA do alfa (até cor > 0 com alfa 0), luz que a composição dele
+// SOMA ao que está atrás (`p + fundo·(1 − op·alfa)`), e a cor reta não guarda isso. Aí este pixel leva junto o
+// fundo dele: com o menor alfa `a` em que a cor reta `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1, a
+// composição Normal do Nova, `s·a·op + fundo·(1 − a·op)`, dá o mesmo `op·p + fundo·(1 − op·alfa)` do AM com
+// QUALQUER opacidade da camada. Não cabe só quando a soma passa de 1 (`fundo + p − fundo·alfa`): com a opacidade
+// cheia ela vira 1 lá e aqui; com menos, aqui sai um pouco mais escuro.
+vec4 paraReta(vec4 p) {
+    // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
+    vec4 q = floor(p * 255.0 + 0.5) / 255.0;
+    if (all(lessThanEqual(q.rgb, vec3(q.a)))) return p.a > 0.0 ? vec4(min(p.rgb / p.a, vec3(1.0)), p.a) : vec4(0.0);
+    vec3 d = fundoNoPixel();
+    vec3 sobra = q.rgb - d * q.a;
+    vec3 folga = 1.0 - d;
+    float a = q.a;
+    for (int i = 0; i < 3; i++) {
+        // Canal com o fundo cheio (1): lá e aqui a soma fica em 1 com qualquer alfa, então ele não pede nada.
+        if (sobra[i] > 0.0 && folga[i] > 0.0) a = max(a, sobra[i] / folga[i]);
+    }
+    a = min(a, 1.0);
+    return a > 0.0 ? vec4(clamp(d + sobra / a, 0.0, 1.0), a) : vec4(0.0);
+}
+
+// A volta da `acCamadaParaTela`: UV da tela → UV do buffer da camada.
+vec2 naCamada(vec2 t) {
+    vec3 c = inverse(acCamadaParaTela) * vec3(t, 1.0);
+    return c.xy / c.z;
+}
+
+void main() {
+    // O vértice do AM.
+    vec3 r = rotate * 0.0174533;
+    mat4 rx = rotationAxisAngle(vec3(1.,0.,0.),r.x);
+    mat4 ry = rotationAxisAngle(vec3(0.,1.,0.),r.y);
+    mat4 rz = rotationAxisAngle(vec3(0.,0.,1.),r.z);
+    orientAndRotate = orient * rz * rx * ry;
+
+    // O pixel na tela e, de lá, a coordenada da camada do AM (o `acLayerNorm`): o retângulo do conteúdo de 0 a 1, com
+    // o Y para CIMA (a matriz do AM inverte o Y da tela; o buffer de camada do Nova cresce para baixo).
+    vec2 conteudo = max(acTamanhoDaCamada, vec2(1e-6));
+    vec2 st = 0.5 + (naCamada(acTela(acScreenNorm)) - 0.5) * acTamanhoDaTela / conteudo;
+    st.y = 1.0 - st.y;
+
+    // O fragmento do AM, linha por linha.
+    st -= 0.5;
+    st.x *= acTamanhoDaCamada.x/acTamanhoDaCamada.y;
+
+    st /= scale;
+
+    vec3 ro = vec3(0., 1., -1.);
+    vec3 rd = normalize(vec3(st, 1.));
+
+    float d = march(ro,rd);
+    vec3 p = ro + rd * d;
+
+    vec3 n = calcNormal(p);
+    vec3 nn = n;
+
+    vec4 localCoord = vec4(p-OBJECT_CENTER, 1.);
+    n = (vec4(n,1.) * orientAndRotate).xyz;
+    localCoord *= orientAndRotate;
+    vec4 pp = localCoord;
+
+    if( texStretch ) {
+        pp.y /= height;
+    }
+
+    float aa = atan(pp.x,pp.z)/6.2831+0.5;
+    if( !texStretch ) {
+        aa *= radius * 3.14159;
+    }
+    vec2 texCoordOutside = vec2(aa,pp.y/2. + 0.5);
+    texCoordOutside.x = 1.-mod(texCoordOutside.x + 0.5, 1.);
+    vec2 texCoordEnds = localCoord.xz / (radius/1.5);
+    texCoordEnds = (texCoordEnds + 1.) / 2.;
+    texCoordEnds.y = n.y < 0.0 ? 1. - texCoordEnds.y : texCoordEnds.y;
+    vec2 texCoord = mix(texCoordOutside,texCoordEnds,abs(n.y));
+
+    texCoord = mapTexture(texCoord);
+
+    // `texture2DCv(inputImg.texture, (vec4(texCoord,0,1) * acLayerToScreen).xy)`: de volta ao buffer da camada (o Y
+    // volta para baixo) e, na tela, pela `acCamadaParaTela` sem a divisão da perspectiva quando ela é afim.
+    vec2 b = 0.5 + (vec2(texCoord.x, 1.0 - texCoord.y) - 0.5) * conteudo / acTamanhoDaTela;
+    vec2 q = b;
+    if (acParaTela == mat3(1.0)) {
+        vec3 c = acCamadaParaTela * vec3(b, 1.0);
+        bool afim = acCamadaParaTela[0].z == 0.0 && acCamadaParaTela[1].z == 0.0 && acCamadaParaTela[2].z == 1.0;
+        q = afim ? c.xy : c.xy / c.z;
+    }
+    bool foraDaConta = any(isinf(q)) || any(isnan(q));
+    vec4 texColor = foraDaConta ? preMultiplicada(texture(inputImg, q)) : camadaNoPonto(q);
+
+    // A saída do AM é pré-multiplicada, num alvo de 8 bits (que corta abaixo de 0 e acima de 1); aqui ela volta reta.
+    fragColor = paraReta(clamp(applyShading(texColor, p, nn, d), 0.0, 1.0));
+}
+    ]]></shader>
+</effect>

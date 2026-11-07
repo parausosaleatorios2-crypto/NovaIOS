@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MAPA DE DESLOCAMENTO (VERSÃO 1) — o `displacemap` do Alight Motion (0.604.0), FORA DO CATÁLOGO
+  ============================================================================
+
+  A primeira versão, "deprecated" no AM 5.0.281: ele ainda abre os projetos que a usam, e o importador cai aqui.
+  Lida de `assets/effects/displacemap.xml` do APK descompactado. Igual à atual (`am-displacement-map.xml`, que
+  também abre a versão 2), menos:
+  - um Canal só (`type`, padrão Lum) para os dois eixos, no lugar do X e do Y;
+  - a Lum escrita em três produtos somados (`r·0,2126 + g·0,7152 + b·0,0722`), não no `dot` da atual;
+  - o Inverter multiplica por (1 − c) em vez de trocar o canal — a mesma conta.
+  Conferido junto com a atual em `tools/amdeslocamento`.
+-->
+<effect
+    id="nova.effect.am-displacement-map-legacy"
+    name="Mapa de deslocamento (versão 1)"
+    name-en="Displacement Map (AM, version 1)"
+    desc="O Mapa de deslocamento antigo do Alight Motion, dos projetos feitos antes da versão atual dele."
+    desc-en="Alight Motion's old Displacement Map, from projects made before its current version."
+    category="distort"
+    stage="screen"
+    screen-scale="safe"
+    catalog="false"
+    tags="mapa de deslocamento,displacement map,alight motion">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="comp" src="backdrop" />
+
+        <point id="offs" label="Deslocamento" spinner="true" defaultX="0.0" defaultY="0.0" min="-9999.0"
+            max="9999.0" step="1.0" />
+        <selector id="type" label="Canal" style="radio" options="Lum|R|G|B" default="0" />
+        <selector id="edges" label="Arestas" style="radio" options="Repetir|Espelhar|Claro|Ladrilho" default="1" />
+        <switch id="fromctr" label="A partir do centro" default="false" />
+        <switch id="invert" label="Inverter" default="false" />
+    </params>
+
+    <shader><![CDATA[
+// O mesmo `oitoBits`, `fundoPre` e `fundoNoPonto` da atual (ver `am-displacement-map.xml`).
+float oitoBits(float k) {
+    uint n = uint(k);
+    if (n == 0u) return 0.0;
+    if (n == 255u) return 1.0;
+    int j = 0;
+    for (int i = 1; i < 8; i++) if (n >= (1u << uint(i))) j = i;
+    int e = 31 - j;
+    uint q = ((n << uint(e)) + 127u) / 255u;
+    return uintBitsToFloat((uint(150 - e) << 23) + (q - 0x800000u));
+}
+
+vec4 fundoPre(ivec2 px) {
+    vec4 c = texelFetch(comp, px, 0);
+    if (c.a >= 1.0) return c;
+    vec3 k = floor(c.rgb * c.a * 255.0 + 0.5);
+    return vec4(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b), c.a);
+}
+
+vec4 fundoNoPonto(vec2 uv) {
+    vec4 g = texture(comp, uv);
+    if (g.a >= 1.0) return g;
+    ivec2 T = textureSize(comp, 0);
+    vec2 p = uv * vec2(T) - 0.5;
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    ivec2 a = ivec2(i);
+    ivec2 m = T - 1;
+    vec4 c00 = fundoPre(clamp(a, ivec2(0), m));
+    vec4 c10 = fundoPre(clamp(a + ivec2(1, 0), ivec2(0), m));
+    vec4 c01 = fundoPre(clamp(a + ivec2(0, 1), ivec2(0), m));
+    vec4 c11 = fundoPre(clamp(a + ivec2(1, 1), ivec2(0), m));
+    return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+void main() {
+    vec2 tela = acTela(acScreenNorm);
+
+    vec2 adjOffs = offs / 1000.0;
+    adjOffs.x *= acTamanhoDaCamada.x/acTamanhoDaCamada.y * -1.0;
+
+    vec4 texColor = texture(inputImg, acScreenNorm);
+    if (texColor.a < 1.0) {
+        vec3 k = floor(texColor.rgb * texColor.a * 255.0 + 0.5);
+        texColor.rgb = vec3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
+    }
+    float p = 0.0;
+    if( type==0 ) {
+        p = texColor.r*0.2126 + texColor.g*0.7152 + texColor.b*0.0722;
+    } else if( type == 1 ) {
+        p = texColor.r;
+    } else if( type == 2 ) {
+        p = texColor.g;
+    } else if( type == 3 ) {
+        p = texColor.b;
+    } else {
+        adjOffs *= 0.0;
+    }
+    if( fromctr ) {
+        p = (p-0.5)*2.0;
+    }
+    if( invert ) {
+        adjOffs *= (1.0-p) * texColor.a;
+    } else {
+        adjOffs *= p * texColor.a;
+    }
+
+    vec2 amostra = tela + adjOffs;
+    vec4 saida;
+    if(edges==0) {
+        saida = fundoNoPonto(amostra);
+    } else if(edges==1) {
+        amostra = vec2(1.0,1.0) - abs(mod(amostra,vec2(2.0,2.0))-vec2(1.0,1.0));
+        saida = fundoNoPonto(amostra) * texColor.a;
+    } else if(edges==2) {
+        if( amostra.x < 0.0 || amostra.x > 1.0 || amostra.y < 0.0 || amostra.y > 1.0 ) {
+            saida = vec4(0.0,0.0,0.0,0.0);
+        } else {
+            saida = fundoNoPonto(amostra) * texColor.a;
+        }
+    } else if(edges==3) {
+        amostra = mod(amostra,vec2(1.0,1.0));
+        saida = fundoNoPonto(amostra) * texColor.a;
+    } else {
+        saida = fundoNoPonto(amostra) * texColor.a;
+    }
+
+    fragColor = saida.a > 0.0 ? vec4(saida.rgb / saida.a, saida.a) : vec4(0.0);
+}
+    ]]></shader>
+</effect>

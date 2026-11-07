@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<effect id="gm.custom.fade_matte" name="Faded Matte" desc="Raises the blacks and rolls off the whites for that soft, low-contrast matte finish. The modern film emulation base." category="custom"
+        thumb="content://com.goldmotion.pnkj_com.alightcreative.app.motion.fileprovider/share/gmcustom/fade_matte.png"
+        tags="color,fade,matte,film,lowcontrast" experimental="false">
+<params>
+<texture id="inputImg" srcType="content" />
+<section text="Fade" />
+<spinner id="fade" default="0.22" min="0.0" max="0.5" step="0.01" label="Black Fade" />
+<spinner id="desat" default="0.25" min="0.0" max="1.0" step="0.01" label="Desaturation" />
+<spinner id="rolloff" default="0.15" min="0.0" max="0.5" step="0.01" label="Highlight Rolloff" />
+<color id="tint" default="#FFDCE3EA" label="Fade Tint" />
+<section text="Output" />
+<spinner id="mixAmt" default="1.0" min="0.0" max="1.0" step="0.01" label="Effect Strength" />
+<section text="GOLD MOTION - CUSTOM FX" />
+</params>
+<shader type="fragment" precision="high"><![CDATA[void main(){
+  vec2 uv = acScreenNorm;
+  vec4 src = texture2DCv(inputImg.texture, uv);
+  float a = max(src.a, 1e-4);
+  vec3 c = src.rgb / a;
+  vec3 g = mix(c, vec3(gmLum(c)), desat);
+  g = mix(g, tint.rgb, fade);
+  g = g * (1.0 - rolloff * smoothstep(0.6, 1.0, gmLum(g)));
+  vec3 col = mix(c, g, mixAmt);
+  gl_FragColor = vec4(col * a, a);
+}
+]]></shader>
+</effect>

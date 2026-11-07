@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Magic Bullet Looks (Red Giant) — Mojo II (`mjo2`, vídeo): o host (`0x1803f6620`) monta 4 curvas de 1024 pontos e as constantes do
+  `MojoKernel_MojoPlug`. Até 1 nível em 0,002% dos valores.
+
+  O Looks é um motor de GPU (`MBLooksUI_5_0.dll`): o host transforma os valores de cada ferramenta nas
+  constantes de um kernel. Os kernels foram lidos (DXIL) e reescritos em `assets/mblooks`; o host, em
+  `model/ContasDoLooks.kt`. Conferido contra o After Effects (`tools/looks/benchmark`, LEIAME.md): no máximo
+  1 nível de 8 bits de diferença em até 0,1% dos valores.
+
+  `stage="mblooks"`: este `<shader>` é só a cópia da entrada. Na cadeia, a cabeça "Magic Bullet Looks" e as
+  ferramentas logo depois dela são UMA passada do motor (`render/PasseDoLooks`), como uma instância do efeito
+  no AE: a camada em 8 bits, linear, cada ferramenta no espaço dela, Strength, 8 bits. Uma ferramenta sem
+  cabeça antes roda sozinha, com força 100.
+-->
+<effect
+    id="nova.effect.mblooks.mojo2"
+    name="Looks: Mojo II"
+    name-en="Looks: Mojo II"
+    desc="A ferramenta Mojo II do Magic Bullet Looks: o visual de cinema — pele quente, sombras frias, com punch, bleach e fade."
+    desc-en="Magic Bullet Looks' Mojo II tool: the blockbuster look — warm skin, cool shadows, with punch, bleach and fade."
+    category="looks"
+    stage="mblooks"
+    looks="mjo2"
+    tags="magic bullet,looks,red giant,mojo,mojo ii,cinema,teal orange">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="mojo" label="Mojo" default="25.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="tint" label="Tint" default="50.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="punch" label="Punch" default="25.0" min="-100.0" max="150.0" step="0.1" />
+        <slider id="bleach" label="Bleach" default="0.0" min="-100.0" max="120.0" step="0.1" />
+        <slider id="fade" label="Fade" default="0.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="blueSqueeze" label="Blue Squeeze" default="0.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="skinSqueeze" label="Skin Squeeze" default="0.0" min="0.0" max="100.0" step="0.1" />
+        <slider id="exposure" label="Exposure" default="0.0" min="-5.0" max="5.0" step="0.01" />
+        <slider id="coolWarm" label="Cool/Warm" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="greenMagenta" label="Green/Magenta" default="0.0" min="-100.0" max="200.0" step="0.1" />
+        <slider id="skinYellowPink" label="Skin Yellow/Pink" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <slider id="strength" label="Strength" default="100.0" min="0.0" max="100.0" step="0.1" />
+    </params>
+
+    <!-- A cópia da entrada: quem desenha é o `PasseDoLooks` (o motor do Looks inteiro, ver o comentário do topo). -->
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

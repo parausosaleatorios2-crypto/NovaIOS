@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/RenderCommand/_time_slice — o Time Slice do Node Video (classe NodeVideo.Data.DataTimeSlice), portado do
+  il2cpp (05/11/2026).
+
+  O que o Node faz (DataTimeSlice::.ctor, ::GetShiftTimes e ::RenderDown, em tools/nodedeslocamento/il2cpp/desmontar.py):
+  - _slice_count 6 (2..30, inteiro), _slice_angle 90 (0..360), _frame_interval 2 (1..5, inteiro), _frame_offset 0
+    (-5..5, inteiro), _feather 0 (0..1);
+  - a fatia k (0 .. c-1) é a camada RE-RENDERIZADA no instante t + (_frame_offset + _frame_interval x (k + 1 - c)) / FPS:
+    a última é a de agora (mais o offset), cada uma antes dela um intervalo mais velha;
+  - as fatias vão uma a uma ao mesmo RT com o programa único do shader (Blend SrcAlpha OneMinusSrcAlpha):
+    _cur_slice = k, _slice_source = a fatia, _slice_output = o RT. A faixa da fatia é floor(c x (dot(ângulo,
+    (uv - 0,5) x _viewport_ratio) + 0,5)); a suavização entra no fim da fatia anterior.
+
+  No Nova: as fatias vêm do anel de quadros (src="history", até 23 quadros atrás). Cada pixel só depende de duas
+  fatias (a dele e a seguinte, que entra pela suavização), e as outras passadas do Node deixam o pixel como está:
+  então a conta é a do Node, só sem as passadas que não mudam nada. O offset positivo (o futuro) atrasa a saída
+  inteira (como no Time Warp RGB). Fatia mais velha que o anel (ou que ele ainda não tem, logo depois de pular o
+  cursor) usa o quadro mais velho que houver. Os quadros 1..12 e 13..23 são lidos em passes separados (16
+  amostradores por shader no GLES).
+
+  O QUE NÃO ENTROU: o anel tem teto de 48 MB por camada (FrameHistory.ORCAMENTO_BYTES). Em 1080p ele guarda só 5 quadros
+  atrás: no padrão (até 10 atrás), exportando em 1080p as 3 fatias mais velhas caem todas no mesmo quadro. Na prévia
+  reduzida e com o anel cheio: média 0,001 nível do Node, pior 0,6 (tools/nodetempo/bancada.py).
+-->
+<effect
+    id="nv.effect.nodevideo-rendercommand-time-slice"
+    name="Time Slice (NV)"
+    name-en="Time Slice (NV)"
+    desc="A camada em faixas, cada uma num instante diferente: o corte no tempo do Node Video."
+    desc-en="The layer cut in bands, each one from a different moment in time (Node Video)."
+    category="nodevideo"
+    stage="screen"
+    tags="nodevideo,nv,unity,tempo,time,slice,fatias,faixas">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="h1" src="history" offset="1" />
+        <texture id="h2" src="history" offset="2" />
+        <texture id="h3" src="history" offset="3" />
+        <texture id="h4" src="history" offset="4" />
+        <texture id="h5" src="history" offset="5" />
+        <texture id="h6" src="history" offset="6" />
+        <texture id="h7" src="history" offset="7" />
+        <texture id="h8" src="history" offset="8" />
+        <texture id="h9" src="history" offset="9" />
+        <texture id="h10" src="history" offset="10" />
+        <texture id="h11" src="history" offset="11" />
+        <texture id="h12" src="history" offset="12" />
+        <texture id="h13" src="history" offset="13" />
+        <texture id="h14" src="history" offset="14" />
+        <texture id="h15" src="history" offset="15" />
+        <texture id="h16" src="history" offset="16" />
+        <texture id="h17" src="history" offset="17" />
+        <texture id="h18" src="history" offset="18" />
+        <texture id="h19" src="history" offset="19" />
+        <texture id="h20" src="history" offset="20" />
+        <texture id="h21" src="history" offset="21" />
+        <texture id="h22" src="history" offset="22" />
+        <texture id="h23" src="history" offset="23" />
+        <!-- os quadros das duas fatias do pixel, lidos dos 12 mais novos (passes 0 e 1) -->
+        <texture id="perto0" src="buffer" scale="1.0" />
+        <texture id="perto1" src="buffer" scale="1.0" />
+        <slider id="_slice_count" type="integer" label="Slice Count" default="6" min="2" max="30" step="1" />
+        <slider id="_frame_offset" type="integer" label="Frame Offset" default="0" min="-5" max="5" step="1" />
+        <slider id="_frame_interval" type="integer" label="Frame Interval" default="2" min="1" max="5" step="1" />
+        <slider id="_feather" label="Feather" default="0.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="_slice_angle" label="Slice Angle" default="90" min="0" max="360" step="1" />
+    </params>
+
+    <!-- As faixas só se separam no que se mexe: a figura solta anda na miniatura. -->
+    <preview amostra="figura" />
+
+    <passes>
+        <pass target="perto0" />   <!-- 0: o quadro da fatia do pixel, se estiver entre os 12 mais novos -->
+        <pass target="perto1" />   <!-- 1: o da fatia seguinte -->
+        <pass />                   <!-- 2: os mais velhos (13..23) e as contas do Node -->
+    </passes>
+
+    <shader><![CDATA[
+// globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
+#define _viewport_ratio acProporcaoDoNode
+
+// Os RTs do Node: luz linear, cor pré-multiplicada.
+vec3 nvLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 nvGama(vec3 l) { return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), l)); }
+vec4 nvNode(vec4 c) { return vec4(nvLinear(c.rgb) * c.a, c.a); }
+vec4 nvNova(vec4 p) {
+    if (p.a <= 0.0) return vec4(0.0);
+    return vec4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
+}
+
+// O quadro que o anel não tem chega 1x1 (a textura transparente do FrameHistory).
+bool nvTem(ivec2 tamanho) { return tamanho.x > 1 || tamanho.y > 1; }
+
+int nvContagem() { return clamp(int(_slice_count), 1, 30); }
+
+// A faixa do pixel (o u_xlati0 do Node) e a fração dentro dela.
+int nvFaixa(vec2 uv, out float fracao) {
+    vec2 p = (uv - 0.5) * _viewport_ratio.xy;
+    float a = _slice_angle * 0.0174532924;
+    float x = float(nvContagem()) * (dot(vec2(sin(a), cos(a)), p) + 0.5);
+    fracao = fract(x);
+    return int(floor(x));
+}
+
+// Quantos quadros atrás está a fatia k: t + (offset + intervalo x (k + 1 - c)) / FPS; o offset positivo (o futuro)
+// vira atraso da saída inteira.
+int nvAtras(int k) {
+    int c = nvContagem();
+    int off = int(_frame_offset);
+    return int(_frame_interval) * (c - 1 - k) - off + max(off, 0);
+}
+
+// Dos 12 mais novos: o quadro `atras` (até 12), ou o mais velho que houver até ele.
+vec4 nvPerto(int atras, vec2 uv) {
+    if (atras >= 12 && nvTem(textureSize(h12, 0))) return texture(h12, uv);
+    if (atras >= 11 && nvTem(textureSize(h11, 0))) return texture(h11, uv);
+    if (atras >= 10 && nvTem(textureSize(h10, 0))) return texture(h10, uv);
+    if (atras >= 9 && nvTem(textureSize(h9, 0))) return texture(h9, uv);
+    if (atras >= 8 && nvTem(textureSize(h8, 0))) return texture(h8, uv);
+    if (atras >= 7 && nvTem(textureSize(h7, 0))) return texture(h7, uv);
+    if (atras >= 6 && nvTem(textureSize(h6, 0))) return texture(h6, uv);
+    if (atras >= 5 && nvTem(textureSize(h5, 0))) return texture(h5, uv);
+    if (atras >= 4 && nvTem(textureSize(h4, 0))) return texture(h4, uv);
+    if (atras >= 3 && nvTem(textureSize(h3, 0))) return texture(h3, uv);
+    if (atras >= 2 && nvTem(textureSize(h2, 0))) return texture(h2, uv);
+    if (atras >= 1 && nvTem(textureSize(h1, 0))) return texture(h1, uv);
+    return texture(inputImg, uv);
+}
+
+// Dos 13..23: o quadro `atras` (preso em 23) ou o mais velho que houver até o 13; sem nenhum, `perto`.
+vec4 nvLonge(int atras, vec2 uv, vec4 perto) {
+    if (atras >= 23 && nvTem(textureSize(h23, 0))) return texture(h23, uv);
+    if (atras >= 22 && nvTem(textureSize(h22, 0))) return texture(h22, uv);
+    if (atras >= 21 && nvTem(textureSize(h21, 0))) return texture(h21, uv);
+    if (atras >= 20 && nvTem(textureSize(h20, 0))) return texture(h20, uv);
+    if (atras >= 19 && nvTem(textureSize(h19, 0))) return texture(h19, uv);
+    if (atras >= 18 && nvTem(textureSize(h18, 0))) return texture(h18, uv);
+    if (atras >= 17 && nvTem(textureSize(h17, 0))) return texture(h17, uv);
+    if (atras >= 16 && nvTem(textureSize(h16, 0))) return texture(h16, uv);
+    if (atras >= 15 && nvTem(textureSize(h15, 0))) return texture(h15, uv);
+    if (atras >= 14 && nvTem(textureSize(h14, 0))) return texture(h14, uv);
+    if (atras >= 13 && nvTem(textureSize(h13, 0))) return texture(h13, uv);
+    return perto;
+}
+
+// O programa do Node para _cur_slice = cur, conta por conta (o peso da fonte no pixel).
+float nvPeso(int u_xlati0, float fracao, int cur) {
+    float u_xlat3 = fracao + -1.0;
+    float u_xlat6 = float(1.0) / (-_feather);
+    u_xlat3 = u_xlat6 * u_xlat3;
+    u_xlat3 = clamp(u_xlat3, 0.0, 1.0);
+    u_xlat6 = u_xlat3 * -2.0 + 3.0;
+    u_xlat3 = u_xlat3 * u_xlat3;
+    float u_xlat9 = u_xlati0 == cur ? 1.0 : 0.0;
+    u_xlat3 = (-u_xlat6) * u_xlat3 + u_xlat9;
+    u_xlat3 = u_xlat3 + 1.0;
+    return (cur - 1 == u_xlati0) ? u_xlat3 : u_xlat9;
+}
+
+// Uma passada do Node: o shader (fonte x peso + RT x (1 - peso)) e a mistura SrcAlpha OneMinusSrcAlpha num RT de 8 bits.
+vec4 nvPassada(vec4 fonte, vec4 rt, float peso) {
+    vec4 o = clamp(fonte * peso + rt * (1.0 - peso), 0.0, 1.0);
+    return clamp(o * o.a + rt * (1.0 - o.a), 0.0, 1.0);
+}
+
+void main()
+{
+    vec2 uv = acScreenNorm;
+    float fracao;
+    int s = nvFaixa(uv, fracao);
+    int c = nvContagem();
+
+    if (acPass == 0) {
+        fragColor = nvPerto(nvAtras(s), uv);
+        return;
+    }
+    if (acPass == 1) {
+        fragColor = nvPerto(nvAtras(min(s + 1, c - 1)), uv);
+        return;
+    }
+
+    vec4 saida = vec4(0.0);
+    if (s >= 0 && s < c) {
+        // _cur_slice = s: a fatia do pixel
+        vec4 f0 = nvNode(nvLonge(nvAtras(s), uv, texture(perto0, uv)));
+        saida = nvPassada(f0, saida, nvPeso(s, fracao, s));
+        // _cur_slice = s + 1: a suavização da seguinte
+        if (s + 1 < c) {
+            vec4 f1 = nvNode(nvLonge(nvAtras(s + 1), uv, texture(perto1, uv)));
+            saida = nvPassada(f1, saida, nvPeso(s, fracao, s + 1));
+        }
+    }
+    fragColor = nvNova(saida);
+}
+    ]]></shader>
+</effect>

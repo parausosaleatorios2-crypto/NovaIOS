@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   MARKr — os traços do MARKr (BLACKROOM, aescripts) num efeito de texto
+  ============================================================================
+
+  No After Effects o MARKr é um painel: com um texto selecionado, cada um dos
+  cinco botões cria uma camada de forma presa ao texto, com expressões sobre o
+  `sourceRectAtTime` e os controles Color, Thickness, X Padding, Y Offset e
+  Progress. Aqui é UM efeito da camada de texto, que desenha a mesma forma. As
+  contas são as do próprio script (`tools/markr/`, lido do MARKr.jsxbin):
+
+    b    = a caixa das letras (acCaixaDoTexto; o sourceRectAtTime do AE)
+    fs   = o tamanho da fonte (acTamanhoDoTexto)
+    pad  = X Padding = 0,05·fs        th = Thickness = 0,1·fs
+    capH = 0,7·fs (Line e Scribble)
+
+    Line:      traço reto em y = b.top + capH + yOff, de b.left − pad a b.right + pad
+               (yOff = 0,06·fs). Ponta reta, revelado pelo Trim Paths.
+    Strike:    o mesmo, em y = b.top + 0,4·b.height + yOff (yOff = 0).
+    Scribble:  a curva do MARKr (4 pontos) em x0 = b.left − pad, y0 = b.top + capH +
+               yOff, largura b.width + 2·pad, altura 0,55·b.height; o fim do traço
+               afina até zero nos últimos 30% (Taper).
+    Highlight: retângulo cheio de b.top − yPad a b.bottom + yPad (yPad = 0,12·fs),
+               que cresce da esquerda para a direita com o Progress. Fica ATRÁS do texto.
+    HalfBox:   o mesmo, de b.top + 0,65·b.height − yPad até b.bottom (yPad = 0).
+
+  Thickness, X Padding e Y Offset são em % do tamanho da fonte (numa fonte de
+  100 px, os mesmos números do AE), e o Y Offset é o que se SOMA ao do estilo:
+  0 é o lugar que o MARKr escolhe. Assim o traço acompanha o texto quando a
+  fonte muda, como a camada presa ao texto no AE.
+
+  Animate: o Progress vai de 0 a 100 em 0,4 s a partir do início da camada, com
+  o ease do MARKr (influência 80% na saída do primeiro quadro-chave e 33% na
+  entrada do segundo). Desligado é o Alt + clique do MARKr (estático).
+-->
+<effect
+    id="nova.effect.markr"
+    name="MARKr"
+    name-en="MARKr"
+    desc="Traços animados no texto, como o MARKr do After Effects: rabisco, risco, marca-texto, meia caixa e sublinhado."
+    desc-en="Animated text marks like MARKr for After Effects: scribble, strike, highlight, half box and underline."
+    category="text"
+    layer="text"
+    tags="markr,marca texto,marca-texto,highlight,highlighter,sublinhado,underline,risco,strike,strikethrough,rabisco,scribble,caixa,box,traço,texto,text"
+    screen-scale="safe">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="style" label="Style" default="4"
+                  options="Scribble|Strike|Highlight|HalfBox|Line" />
+        <color id="color" label="Color" default="#FFE62121" />
+        <slider id="thickness" label="Thickness"
+                default="10.0" min="0.0" max="50.0" step="0.1" snap="10.0" />
+        <slider id="xPadding" label="X Padding"
+                default="5.0" min="-20.0" max="50.0" step="0.1" snap="5.0" />
+        <slider id="yOffset" label="Y Offset"
+                default="0.0" min="-50.0" max="50.0" step="0.1" snap="0.0" />
+        <slider id="progress" label="Progress"
+                default="100.0" min="0.0" max="100.0" step="0.1" snap="0.0,100.0" />
+        <switch id="animate" label="Animate" default="true" />
+        <slider id="duration" label="Duration" showIf="animate=true"
+                default="0.4" min="0.05" max="5.0" step="0.05" snap="0.4" />
+    </params>
+
+    <!-- O Animate é uma ENTRADA (o traço se desenha uma vez e fica): num laço, ele piscaria — por isso a miniatura era o
+         traço pronto, parado (0.669.0). "Os efeitos de texto não estão animados" (comunidade, 21/10): agora o laço anda
+         pelo Progress, com o Animate desligado — o traço cresce até o fim e recolhe, sem sumir (a imagem parada é o 50:
+         no 30, o sublinhado de 10 mudava 0,6% da amostra e a vitrine reprovava; por isso a espessura 20). -->
+    <preview>
+        <set param="animate" value="false" />
+        <set param="thickness" value="20" />
+        <set param="progress" value="50" ate="100" />
+    </preview>
+
+    <shader><![CDATA[
+
+// O ease dos dois quadros-chave do MARKr: velocidade 0, influência 80% na saída
+// do primeiro e 33% na entrada do segundo = bezier (0,8; 0) (0,67; 1).
+float easeDoMarkr(float u) {
+    if (u <= 0.0) return 0.0;
+    if (u >= 1.0) return 1.0;
+    float lo = 0.0, hi = 1.0, s = u;
+    for (int i = 0; i < 24; i++) {
+        s = 0.5 * (lo + hi);
+        float r = 1.0 - s;
+        float x = 3.0 * r * r * s * 0.8 + 3.0 * r * s * s * 0.67 + s * s * s;
+        if (x < u) lo = s; else hi = s;
+    }
+    float r = 1.0 - s;
+    return 3.0 * r * s * s + s * s * s;
+}
+
+float caixa(vec2 p, vec2 a, vec2 b) {
+    // Distância com sinal a um retângulo [a, b] (negativa dentro).
+    vec2 d = max(a - p, p - b);
+    return max(d.x, d.y);
+}
+
+float cobertura(float d) { return clamp(0.5 - d, 0.0, 1.0); }
+
+/** Distância com sinal a um triângulo (Inigo Quilez, sdTriangle). */
+float triangulo(vec2 p, vec2 p0, vec2 p1, vec2 p2) {
+    vec2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
+    vec2 v0 = p - p0, v1 = p - p1, v2 = p - p2;
+    vec2 pq0 = v0 - e0 * clamp(dot(v0, e0) / max(dot(e0, e0), 1e-9), 0.0, 1.0);
+    vec2 pq1 = v1 - e1 * clamp(dot(v1, e1) / max(dot(e1, e1), 1e-9), 0.0, 1.0);
+    vec2 pq2 = v2 - e2 * clamp(dot(v2, e2) / max(dot(e2, e2), 1e-9), 0.0, 1.0);
+    float s = sign(e0.x * e2.y - e0.y * e2.x);
+    vec2 d = min(min(vec2(dot(pq0, pq0), s * (v0.x * e0.y - v0.y * e0.x)),
+                     vec2(dot(pq1, pq1), s * (v1.x * e1.y - v1.y * e1.x))),
+                     vec2(dot(pq2, pq2), s * (v2.x * e2.y - v2.y * e2.x)));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+// A curva do Scribble, em unidades da caixa dele (u·W, v·H).
+vec2 bez(vec2 a, vec2 c1, vec2 c2, vec2 b, float t) {
+    float r = 1.0 - t;
+    return r * r * r * a + 3.0 * r * r * t * c1 + 3.0 * r * t * t * c2 + t * t * t * b;
+}
+
+const int N_CURVA = 24;
+
+vec2 pontoDoRabisco(int i, vec2 o, vec2 sz) {
+    // 0: P0, 1: P1, 2..(N_CURVA+1): o trecho curvo P1→P2, depois P3.
+    vec2 q;
+    if (i == 0) q = vec2(0.0, 0.0);
+    else if (i == 1) q = vec2(1.0, 0.0217);
+    else if (i <= N_CURVA + 1) {
+        float t = float(i - 1) / float(N_CURVA);
+        q = bez(vec2(1.0, 0.0217), vec2(0.3786, 0.4752), vec2(0.4408, 0.5218), vec2(0.4408, 0.5218), t);
+    } else q = vec2(0.9652, 1.0);
+    return o + q * sz;
+}
+
+/** Distância com sinal ao traço do Scribble (com o Trim e o Taper do MARKr). */
+float rabisco(vec2 p, vec2 o, vec2 sz, float th, float prog) {
+    const int N = N_CURVA + 3;
+    float total = 0.0;
+    vec2 a = pontoDoRabisco(0, o, sz);
+    for (int i = 1; i < N; i++) {
+        vec2 b = pontoDoRabisco(i, o, sz);
+        total += length(b - a);
+        a = b;
+    }
+    float visivel = total * prog;
+    if (visivel <= 0.0) return 1e6;
+    float d = 1e6;
+    float acc = 0.0;
+    vec2 dirAnterior = vec2(0.0);
+    a = pontoDoRabisco(0, o, sz);
+    for (int i = 1; i < N; i++) {
+        vec2 b = pontoDoRabisco(i, o, sz);
+        float len = length(b - a);
+        if (acc >= visivel) break;
+        // O pedaço visível deste segmento.
+        float fim = min(len, visivel - acc);
+        if (len > 1e-5) {
+            vec2 dir = (b - a) / len;
+            vec2 nrm = vec2(-dir.y, dir.x);
+            float t = dot(p - a, dir);
+            float s = acc + clamp(t, 0.0, fim);
+            // Taper: largura cheia até 70% do comprimento visível, depois afina até 0.
+            float w = th * clamp((visivel - s) / (0.3 * visivel), 0.0, 1.0);
+            // Ponta reta (Line Cap = Butt) no começo do traço e dos dois lados da
+            // quina P1; nas juntas suaves da curva, o segmento redondo emenda sem fresta.
+            bool retoAntes = i == 1 || i == 2;
+            bool retoDepois = i == 1;
+            float tc = clamp(t, 0.0, fim);
+            float dd = length(p - (a + dir * tc)) - 0.5 * w;
+            if ((retoAntes && t < 0.0) || (retoDepois && t > fim))
+                dd = max(abs(dot(p - a, nrm)) - 0.5 * w, max(-t, t - fim));
+            d = min(d, dd);
+            // A quina P1: chanfro (passa do limite de miter 4 do AE).
+            if (i == 2) {
+                float wj = th * clamp((visivel - acc) / (0.3 * visivel), 0.0, 1.0);
+                vec2 na = vec2(-dirAnterior.y, dirAnterior.x) * 0.5 * wj;
+                vec2 nb = nrm * 0.5 * wj;
+                d = min(d, triangulo(p, a, a + na, a + nb));
+                d = min(d, triangulo(p, a, a - na, a - nb));
+            }
+            dirAnterior = dir;
+        }
+        acc += len;
+        a = b;
+    }
+    return d;
+}
+
+void main() {
+    vec4 fonte = texture(inputImg, acScreenNorm);
+    float fs = acTamanhoDoTexto;
+    if (fs <= 0.0 || acCaixaDoTexto.z <= 0.0) {
+        fragColor = fonte;
+        return;
+    }
+    vec2 res = acResolution;
+    vec2 p = acScreenNorm * res;
+    float L = acCaixaDoTexto.x * res.x;
+    float T = acCaixaDoTexto.y * res.y;
+    float W = acCaixaDoTexto.z * res.x;
+    float H = acCaixaDoTexto.w * res.y;
+
+    float prog = clamp(progress / 100.0, 0.0, 1.0);
+    if (animate) prog *= easeDoMarkr(acTime / max(duration, 1e-3));
+
+    float pad = xPadding / 100.0 * fs;
+    float th = thickness / 100.0 * fs;
+    float capH = 0.7 * fs;
+    float extra = yOffset / 100.0 * fs;
+
+    float d = 1e6;
+    bool atras = style == 2 || style == 3;
+    if (prog > 0.0) {
+        if (style == 4 || style == 1) {
+            // Line / Strike
+            float yL = style == 4 ? T + capH + 0.06 * fs + extra : T + 0.4 * H + extra;
+            float xa = L - pad;
+            float xb = xa + (W + 2.0 * pad) * prog;
+            d = caixa(p, vec2(xa, yL - 0.5 * th), vec2(xb, yL + 0.5 * th));
+        } else if (style == 0) {
+            // Scribble
+            vec2 o = vec2(L - pad, T + capH + 0.06 * fs + extra);
+            vec2 sz = vec2(W + 2.0 * pad, 0.55 * H);
+            d = rabisco(p, o, sz, th, prog);
+        } else {
+            // Highlight / HalfBox
+            float yPad = (style == 2 ? 0.12 * fs : 0.0) + extra;
+            float x1 = L - pad;
+            float x2 = x1 + (W + 2.0 * pad) * prog;
+            float y1 = style == 2 ? T - yPad : T + 0.65 * H - yPad;
+            float y2 = style == 2 ? T + H + yPad : T + H;
+            d = caixa(p, vec2(x1, y1), vec2(x2, y2));
+        }
+    }
+
+    float m = cobertura(d) * color.a;
+    vec3 c = color.rgb;
+    vec4 o;
+    if (atras) {
+        // A forma ATRÁS do texto (o MARKr põe a camada abaixo dele).
+        float a = fonte.a + m * (1.0 - fonte.a);
+        vec3 rgb = (fonte.rgb * fonte.a + c * m * (1.0 - fonte.a)) / max(a, 1e-5);
+        o = vec4(rgb, a);
+    } else {
+        float a = m + fonte.a * (1.0 - m);
+        vec3 rgb = (c * m + fonte.rgb * fonte.a * (1.0 - m)) / max(a, 1e-5);
+        o = vec4(rgb, a);
+    }
+    fragColor = o;
+}
+
+    ]]></shader>
+</effect>

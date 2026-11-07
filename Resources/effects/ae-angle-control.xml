@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ANGLE CONTROL — o `ADBE Angle Control` do After Effects (0.768.0)
+  Pedido do snow (23/10/2026) — ver ae-slider-control.xml. Mesma coisa, só que o número é um ÂNGULO (em graus),
+  lido pela expressão em `effect("Rotation")("Angle")`. Em Nova, ângulo é um slider como qualquer outro — o UI dele
+  é um disco (`SliderParam` com `labelEn="Angle"` casa o `effect(x)("Angle")` no [EfeitoComoAe.pertenceAo]).
+-->
+<effect
+    id="nova.effect.aeanglecontrol"
+    name="Angle Control"
+    name-en="Angle Control"
+    desc="O Angle Control do After Effects: um ângulo que uma expressão da camada pode ler. Não pinta nada."
+    desc-en="After Effects' Angle Control: an angle an expression on the layer can read. Draws nothing."
+    category="expressao"
+    tags="expression,expressao,controle,angulo,angle,after effects">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="angle" label="Angle" default="0.0" min="-100000.0" max="100000.0" step="1.0" snap="0.0" angle="true" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    ivec2 T = textureSize(inputImg, 0);
+    fragColor = texelFetch(inputImg, ivec2(min(floor(acScreenNorm * vec2(T)), vec2(T) - 1.0)), 0);
+}
+]]></shader>
+</effect>

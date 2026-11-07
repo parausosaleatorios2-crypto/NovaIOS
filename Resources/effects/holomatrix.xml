@@ -1,0 +1,623 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   HOLOMATRIX — o Holomatrix II (Red Giant Universe) do After Effects (0.399.0)
+  ============================================================================
+
+  Pedido do snow (04/10/2026): "agr o uni.Holomatrix II q está aberto na comp 1". MEDIDO no
+  plugin do AE dele (matchName "Universe_Distort_Holomatrix"), numa instância separada do AE:
+  ~24 mil quadros em 16 bits, um sub-efeito por vez e depois aos pares (tools/holomatrix/benchmark/).
+  A comp dele usa os valores PADRÃO do plugin — são os padrões daqui.
+
+  As medidas do plugin são em pixels de um quadro de 486 linhas (NTSC): 1 unidade = altura/486
+  pixels (× Effect Scale). O efeito só anda `Frame Rate` (10) vezes por segundo.
+
+  A ORDEM (medida aos pares) e o que cada estágio faz:
+
+  0. GEOMETRIA (desligados no padrão; aproximados pelo que se mediu num mapa de coordenadas):
+     Low-Res (blocos de 100/% unidades), TV Roll (0,154 da altura por segundo por unidade de
+     velocidade) + TV Distortion, Glitch e Glitch Holes (blocos deslocados em até 1/4 do quadro
+     por unidade), Screen / Traveling / Block Distortion (riscos que tremem na horizontal).
+  1. COLORIZATION: tritone linear (sombras → meios em 50% → altas) pela luma Rec. 709;
+     Brightness soma valor/255; Contrast gira em volta do BRANCO. Erro: 0,05–0,07%.
+  2. LINES: faixas de Line Height × altura/715,5 px, cada uma com um cinza sorteado, em OVERLAY;
+     sobem/descem a Speed pixels da composição por segundo (em qualquer resolução); a opacidade
+     alterna entre Max e Min a cada X quadros (ou vai e volta, com Fade).
+  3. STATIC: grão cinza por célula (N = 0,854·u^2,7; a célula cresce com Static Size e com a
+     resolução), em overlay, novo a cada quadro do efeito. COLOR NOISE: manchas suaves por canal.
+  4. GLOW SECUNDÁRIO: c·(1 + 2·borrão(c)), canal por canal (σ = 0,41·raio em 360 linhas).
+  5. INTERFERENCE GHOST: a imagem SOMADA a uma cópia dela (75%), sorteado a cada quadro do
+     efeito (25%); em 15% deles a cópia sai deslocada em Y (sorteio triangular). Erro: 0,1%.
+  6. SCAN LINES: a linha i ocupa [i·d, i·d + espessura] unidades; o feather vai da borda para
+     DENTRO (valor + ~1 px) e, com espessura > distância, a mais próxima manda. A cor e o alfa
+     caem por curvas diferentes (o alfa é ~1 − (1 − m)³) — as duas tiradas dos renders. Com o
+     glow secundário ligado as linhas não chegam ao preto (ver `comScan`). Erro: 0,1–0,9%.
+  7. COLOR SEPARATION: o vermelho lê valor × unidade à direita, o azul à esquerda; o alfa é a
+     união dos três. Em eventos de 0,3 s ± 25%, 25% deles. Erro: 0,1%.
+  8. GLOW: o que passa do limiar (canal por canal), borrado (σ = 1,1 + 0,28·raio em 360 linhas,
+     nunca menos de 2,06) e somado × Intensity; o alfa vira a união dele com o próprio borrão.
+  9. Flicker, Blend With Original, Unmult.
+
+  CONTRA O AE (na GPU do PC, casos sem sorteio): 109 casos de um estágio ou de pares, mediana
+  0,12% de erro médio por pixel, 107 abaixo de 1%; 18 combinações de glow + glow secundário +
+  scan lines + cor, mediana 1,0%, pior 1,9%. O padrão completo, média de 45 quadros: AE
+  (0,087; 0,172; 0,281) × aqui (0,095; 0,180; 0,281). Os sorteios não são os do plugin (o
+  gerador dele não é público): batem a frequência, a duração e o tamanho (fantasma 26% × 25–29%
+  no AE; separação 26% × 20–22%; deslocamento do fantasma 13% × 13–15%).
+
+  Fora: Random Frame Rate, Freeze Frame, Alpha Edge Fix, Disable Time FX, as seeds de cada
+  sub-efeito, Glitch Fragments e as opções de posição da Traveling Distortion. More Damage
+  multiplica separação, fantasma e deslocamentos por 1/2/3; More Often aumenta as chances.
+-->
+<effect
+    id="nova.effect.holomatrix"
+    name="Holomatrix"
+    name-en="Holomatrix"
+    desc="O Holomatrix II do After Effects (Red Giant Universe): holograma azulado com scan lines, glow, faixas que piscam, estática, fantasma de interferência e separação de cor — mais glitch, TV roll e distorções."
+    desc-en="After Effects' Holomatrix II (Red Giant Universe): a bluish hologram with scan lines, glow, strobing bands, static, interference ghost and colour separation — plus glitch, TV roll and distortions."
+    category="stylize"
+    tags="holomatrix,hologram,holograma,universe,red giant,sci-fi,scanlines,scan lines,glitch,interferencia,interferência,static,estatica,estática,tv,crt,hud,star wars">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="base" src="buffer" scale="1.0" />
+        <texture id="mixado" src="buffer" scale="1.0" />
+        <!-- Os dois glows são gaussianos separáveis em meia resolução. -->
+        <texture id="lim" src="buffer" scale="0.5" />
+        <texture id="gh" src="buffer" scale="0.5" />
+        <texture id="gv" src="buffer" scale="0.5" />
+        <texture id="sh" src="buffer" scale="0.5" />
+        <texture id="sv" src="buffer" scale="0.5" />
+
+        <!-- Geral -->
+        <selector id="moreDamage" label="More Damage" default="0" options="Off|More|Most" />
+        <selector id="moreOften" label="More Often" default="0" options="Off|More|Most" />
+        <switch id="punchIt" label="Punch It" default="false" />
+        <slider id="effectScale" label="Effect Scale" default="100.0" min="1.0" max="250.0" step="1.0" snap="100.0" />
+        <switch id="unmult" label="Unmult" default="false" />
+        <slider id="frameRate" label="Frame Rate" default="10.0" min="1.0" max="120.0" step="1.0" snap="10.0" />
+        <slider id="randomSeed" label="Random Seed" type="integer" default="3301.0" min="0.0" max="10000.0" step="1.0" snap="3301.0" />
+        <slider id="blendOriginal" label="Blend With Original" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+
+        <!-- Colorization -->
+        <switch id="colorization" group="Colorization" label="Colorization" default="true" />
+        <slider id="sourceBrightness" group="Colorization" label="Source Brightness" default="0.0" min="-100.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="sourceContrast" group="Colorization" label="Source Contrast" default="0.0" min="-100.0" max="100.0" step="1.0" snap="0.0" />
+        <color id="colorHighlights" group="Colorization" label="Color - Highlights" default="#FF91C8FF" />
+        <color id="colorMidtones" group="Colorization" label="Color - Midtones" default="#FF468BD2" />
+        <color id="colorShadows" group="Colorization" label="Color - Shadows" default="#FF000000" />
+        <slider id="colorizePct" group="Colorization" label="Colorize %" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+
+        <!-- Glow -->
+        <switch id="glow" group="Glow" label="Glow" default="true" />
+        <switch id="secondaryGlow" group="Glow" label="Secondary Glow" default="true" />
+        <slider id="glowThreshold" group="Glow" label="Glow Threshold" default="92.0" min="0.0" max="100.0" step="1.0" snap="92.0" />
+        <slider id="glowRadius" group="Glow" label="Glow Radius" default="10.0" min="0.0" max="100.0" step="0.5" snap="10.0" />
+        <slider id="glowIntensity" group="Glow" label="Glow Intensity" default="1.0" min="0.0" max="100.0" step="0.1" snap="1.0" />
+        <slider id="secondaryGlowRadius" group="Glow" label="Secondary Glow Radius" default="16.0" min="0.0" max="127.0" step="1.0" snap="16.0" />
+
+        <!-- Scan Lines -->
+        <switch id="scanLines" group="Scan Lines" label="Scan Lines" default="true" />
+        <slider id="scanDistance" group="Scan Lines" label="Scan Line Distance" default="2.5" min="0.0" max="200.0" step="0.5" snap="2.5" />
+        <slider id="scanThickness" group="Scan Lines" label="Scan Line Thickness" default="5.0" min="0.0" max="200.0" step="0.5" snap="5.0" />
+        <slider id="scanFeather" group="Scan Lines" label="Scan Line Feather" default="3.0" min="0.0" max="200.0" step="0.5" snap="3.0" />
+        <selector id="scanDirection" group="Scan Lines" label="Scan Line Direction" default="0" options="Horizontal|Vertical|Both" />
+
+        <!-- Lines -->
+        <switch id="lines" group="Lines" label="Lines" default="true" />
+        <selector id="lineDirection" group="Lines" label="Line Direction" default="2" options="Up|Down|Both" />
+        <slider id="luSpeed" group="Lines" label="LU - Speed" default="80.0" min="-500.0" max="500.0" step="1.0" snap="80.0" />
+        <slider id="luHeight" group="Lines" label="LU - Line Height" default="100.0" min="1.0" max="2000.0" step="1.0" snap="100.0" />
+        <slider id="ldSpeed" group="Lines" label="LD - Speed" default="80.0" min="-500.0" max="500.0" step="1.0" snap="80.0" />
+        <slider id="ldHeight" group="Lines" label="LD - Line Height" default="100.0" min="1.0" max="2000.0" step="1.0" snap="100.0" />
+        <slider id="luSeed" group="Lines" label="LU - Random Seed" type="integer" default="0.0" min="0.0" max="30000.0" step="1.0" snap="0.0" />
+        <slider id="luOpacityMin" group="Lines" label="LU - Opacity Min" default="15.0" min="0.0" max="100.0" step="1.0" snap="15.0" />
+        <slider id="luOpacityMax" group="Lines" label="LU - Opacity Max" default="30.0" min="0.0" max="100.0" step="1.0" snap="30.0" />
+        <slider id="luStrobe" group="Lines" label="LU - Strobe Every X Frames" type="integer" default="3.0" min="1.0" max="300.0" step="1.0" snap="3.0" />
+        <switch id="luFade" group="Lines" label="LU - Fade Instead of Strobe" default="false" />
+        <slider id="ldSeed" group="Lines" label="LD - Random Seed" type="integer" default="1.0" min="0.0" max="30000.0" step="1.0" snap="1.0" />
+        <slider id="ldOpacityMin" group="Lines" label="LD - Opacity Min" default="15.0" min="0.0" max="100.0" step="1.0" snap="15.0" />
+        <slider id="ldOpacityMax" group="Lines" label="LD - Opacity Max" default="30.0" min="0.0" max="100.0" step="1.0" snap="30.0" />
+        <slider id="ldStrobe" group="Lines" label="LD - Strobe Every X Frames" type="integer" default="3.0" min="1.0" max="300.0" step="1.0" snap="3.0" />
+        <switch id="ldFade" group="Lines" label="LD - Fade Instead of Strobe" default="false" />
+
+        <!-- Static -->
+        <switch id="staticOn" group="Static" label="Static" default="true" />
+        <slider id="staticSize" group="Static" label="Static Size" default="48.0" min="0.0" max="100.0" step="1.0" snap="48.0" />
+        <slider id="staticOpacity" group="Static" label="Static Opacity" default="20.0" min="0.0" max="100.0" step="1.0" snap="20.0" />
+
+        <!-- Color Noise -->
+        <switch id="colorNoise" group="Color Noise" label="Color Noise" default="false" />
+        <slider id="noiseOpacity" group="Color Noise" label="Noise Opacity" default="75.0" min="0.0" max="100.0" step="1.0" snap="75.0" />
+        <slider id="noiseScale" group="Color Noise" label="Noise Scale" default="100.0" min="100.0" max="1000.0" step="10.0" snap="100.0" />
+
+        <!-- Interference Ghost -->
+        <switch id="ghost" group="Interference Ghost" label="Interference Ghost" default="true" />
+        <switch id="ghostDistortion" group="Interference Ghost" label="Distortion" default="false" />
+        <slider id="ghostChance" group="Interference Ghost" label="% Chance of Interference" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="ghostOpacity" group="Interference Ghost" label="Interference Opacity" default="75.0" min="0.0" max="100.0" step="1.0" snap="75.0" />
+        <slider id="ghostXChance" group="Interference Ghost" label="Chance of Random X Position" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="ghostXMin" group="Interference Ghost" label="Random X Position Min" default="-200.0" min="-2000.0" max="2000.0" step="1.0" snap="-200.0" />
+        <slider id="ghostXMax" group="Interference Ghost" label="Random X Position Max" default="200.0" min="-2000.0" max="2000.0" step="1.0" snap="200.0" />
+        <slider id="ghostYChance" group="Interference Ghost" label="Chance of Random Y Position" default="15.0" min="0.0" max="100.0" step="1.0" snap="15.0" />
+        <slider id="ghostYMin" group="Interference Ghost" label="Random Y Position Min" default="-200.0" min="-2000.0" max="2000.0" step="1.0" snap="-200.0" />
+        <slider id="ghostYMax" group="Interference Ghost" label="Random Y Position Max" default="200.0" min="-2000.0" max="2000.0" step="1.0" snap="200.0" />
+        <slider id="ghostDistChance" group="Interference Ghost" label="% Chance of Distortion" default="10.0" min="0.0" max="100.0" step="1.0" snap="10.0" />
+        <slider id="ghostDistMin" group="Interference Ghost" label="Distortion Min" default="-6.0" min="-100.0" max="100.0" step="1.0" snap="-6.0" />
+        <slider id="ghostDistMax" group="Interference Ghost" label="Distortion Max" default="-3.0" min="-100.0" max="100.0" step="1.0" snap="-3.0" />
+
+        <!-- Color Separation -->
+        <switch id="colorSeparation" group="Color Separation" label="Color Separation" default="true" />
+        <slider id="sepChance" group="Color Separation" label="% Chance of Color Separation" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="sepAmount" group="Color Separation" label="Amount of Separation" default="7.0" min="-100.0" max="100.0" step="0.5" snap="7.0" />
+        <slider id="sepDuration" group="Color Separation" label="Color Separation Duration" default="0.3" min="0.01" max="5.0" step="0.01" snap="0.3" />
+        <slider id="sepVariation" group="Color Separation" label="CS-Duration Variation" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+
+        <!-- Low-Resolution -->
+        <switch id="lowRes" group="Low-Resolution" label="Low-Resolution" default="false" />
+        <slider id="lowResPct" group="Low-Resolution" label="Low-Res %" default="25.0" min="1.0" max="100.0" step="1.0" snap="25.0" />
+        <switch id="randomLowRes" group="Low-Resolution" label="Random Low-Res" default="false" />
+        <slider id="rlrMin" group="Low-Resolution" label="Random Low-Res Min" default="12.5" min="1.0" max="100.0" step="0.5" snap="12.5" />
+        <slider id="rlrMax" group="Low-Resolution" label="Random Low-Res Max" default="25.0" min="1.0" max="100.0" step="0.5" snap="25.0" />
+        <slider id="rlrChance" group="Low-Resolution" label="% Chance of Low-Res" default="10.0" min="0.0" max="100.0" step="1.0" snap="10.0" />
+        <slider id="rlrDuration" group="Low-Resolution" label="Low-Res Duration" default="0.3" min="0.01" max="100.0" step="0.01" snap="0.3" />
+        <slider id="rlrVariation" group="Low-Resolution" label="Low-Res Duration Variation" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+
+        <!-- TV Roll -->
+        <switch id="tvRoll" group="TV Roll" label="TV Roll" default="false" />
+        <switch id="tvDistortion" group="TV Roll" label="TV Distortion" default="false" />
+        <slider id="rollSpeed" group="TV Roll" label="TV Roll Speed" default="10.0" min="-100.0" max="100.0" step="1.0" snap="10.0" />
+        <slider id="rollChance" group="TV Roll" label="% Chance of TV Roll" default="10.0" min="0.0" max="100.0" step="1.0" snap="10.0" />
+        <slider id="rollDuration" group="TV Roll" label="TV Roll Duration" default="0.3" min="0.01" max="100.0" step="0.01" snap="0.3" />
+        <slider id="rollVariation" group="TV Roll" label="TV Roll Duration Variation" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="tvdChance" group="TV Roll" label="% Chance of TV Distortion" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="tvdAmount" group="TV Roll" label="TV Roll Distort Amount" default="2.0" min="-3.0" max="3.0" step="0.1" snap="2.0" />
+        <slider id="tvdScale" group="TV Roll" label="TV Distortion Scale" default="84.0" min="1.0" max="100.0" step="1.0" snap="84.0" />
+
+        <!-- Flicker -->
+        <switch id="flicker" group="Flicker" label="Flicker" default="false" />
+        <slider id="flickerMin" group="Flicker" label="Flicker Opacity Min" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="flickerMax" group="Flicker" label="Flicker Opacity Max" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <slider id="flickerChance" group="Flicker" label="% Chance of Flicker" default="10.0" min="0.0" max="100.0" step="1.0" snap="10.0" />
+        <slider id="flickerDuration" group="Flicker" label="Flicker Duration" default="0.5" min="0.01" max="100.0" step="0.01" snap="0.5" />
+        <slider id="flickerVariation" group="Flicker" label="Flicker Duration Variation" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+
+        <!-- Glitch -->
+        <switch id="glitch" group="Glitch" label="Glitch" default="false" />
+        <switch id="glitchHoles" group="Glitch" label="Glitch Holes" default="false" />
+        <slider id="glitchChance" group="Glitch" label="% Chance of Glitch" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="glitchAmount" group="Glitch" label="Glitch Amount" default="42.0" min="0.0" max="100.0" step="1.0" snap="42.0" />
+        <slider id="glitchSize" group="Glitch" label="Glitch Size" default="160.0" min="1.0" max="200.0" step="1.0" snap="160.0" />
+        <slider id="glitchAspect" group="Glitch" label="Glitch Aspect" default="4.0" min="0.1" max="40.0" step="0.1" snap="4.0" />
+        <slider id="glitchComplexity" group="Glitch" label="Glitch Complexity" type="integer" default="2.0" min="1.0" max="5.0" step="1.0" snap="2.0" />
+        <slider id="glitchDispH" group="Glitch" label="Glitch Displacement H" default="0.5" min="-2.0" max="2.0" step="0.05" snap="0.5" />
+        <slider id="glitchDispV" group="Glitch" label="Glitch Displacement V" default="0.5" min="-2.0" max="2.0" step="0.05" snap="0.5" />
+        <slider id="glitchSpeed" group="Glitch" label="Glitch Speed" default="6.0" min="0.1" max="120.0" step="0.1" snap="6.0" />
+        <slider id="glitchDuration" group="Glitch" label="Glitch Duration" default="0.3" min="0.01" max="100.0" step="0.01" snap="0.3" />
+        <slider id="glitchVariation" group="Glitch" label="Glitch Duration Variation" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="holesChance" group="Glitch" label="% Chance of Glitch Holes" default="50.0" min="0.0" max="100.0" step="1.0" snap="50.0" />
+        <slider id="holesAmount" group="Glitch" label="Glitch Hole Amount" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="holesSize" group="Glitch" label="Glitch Hole Size" default="160.0" min="1.0" max="200.0" step="1.0" snap="160.0" />
+        <slider id="holesAspect" group="Glitch" label="Glitch Hole Aspect" default="4.0" min="0.1" max="40.0" step="0.1" snap="4.0" />
+
+        <!-- Traveling Distortion -->
+        <switch id="traveling" group="Traveling Distortion" label="Traveling Distortion" default="false" />
+        <slider id="tdChance" group="Traveling Distortion" label="TD - % Chance" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="tdDuration" group="Traveling Distortion" label="TD - Duration" default="4.0" min="0.1" max="100.0" step="0.1" snap="4.0" />
+        <slider id="tdVariation" group="Traveling Distortion" label="TD - Duration Variation" default="20.0" min="0.0" max="100.0" step="1.0" snap="20.0" />
+        <slider id="tdLineSpeed" group="Traveling Distortion" label="TD - Line Speed" default="340.0" min="-1000.0" max="1000.0" step="5.0" snap="340.0" />
+        <slider id="tdLineHeight" group="Traveling Distortion" label="TD - Line Height" default="10.0" min="1.0" max="100.0" step="1.0" snap="10.0" />
+        <slider id="tdSpeed" group="Traveling Distortion" label="TD - Distortion Speed" default="400.0" min="0.0" max="500.0" step="5.0" snap="400.0" />
+        <slider id="tdStrengthX" group="Traveling Distortion" label="TD - Distortion Strength X" default="4.0" min="-300.0" max="300.0" step="1.0" snap="4.0" />
+        <slider id="tdStrengthY" group="Traveling Distortion" label="TD - Distortion Strength Y" default="0.0" min="-300.0" max="300.0" step="1.0" snap="0.0" />
+        <slider id="tdScale" group="Traveling Distortion" label="TD - Distortion Scale" default="300.0" min="1.0" max="500.0" step="1.0" snap="300.0" />
+        <slider id="tdFalloff" group="Traveling Distortion" label="TD - Distortion Falloff" default="2.0" min="0.0" max="10.0" step="0.1" snap="2.0" />
+
+        <!-- Block Distortion -->
+        <switch id="blockDistortion" group="Block Distortion" label="Block Distortion" default="false" />
+        <slider id="bdChance" group="Block Distortion" label="BD - % Chance" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="bdDuration" group="Block Distortion" label="BD - Duration" default="1.0" min="0.1" max="100.0" step="0.1" snap="1.0" />
+        <slider id="bdVariation" group="Block Distortion" label="BD - Duration Variation" default="20.0" min="0.0" max="100.0" step="1.0" snap="20.0" />
+        <slider id="bdBlockSpeed" group="Block Distortion" label="BD - Block Speed" default="30.0" min="0.1" max="120.0" step="0.1" snap="30.0" />
+        <slider id="bdAmount" group="Block Distortion" label="BD - Block Amount" default="5.0" min="0.0" max="100.0" step="1.0" snap="5.0" />
+        <slider id="bdSize" group="Block Distortion" label="BD - Block Size" default="52.0" min="1.0" max="100.0" step="1.0" snap="52.0" />
+        <slider id="bdAspect" group="Block Distortion" label="BD - Block Aspect" default="8.0" min="0.1" max="20.0" step="0.1" snap="8.0" />
+        <slider id="bdSpeed" group="Block Distortion" label="BD - Distortion Speed" default="700.0" min="0.0" max="1000.0" step="5.0" snap="700.0" />
+        <slider id="bdStrengthX" group="Block Distortion" label="BD - Distortion Strength X" default="5.0" min="-300.0" max="300.0" step="1.0" snap="5.0" />
+        <slider id="bdStrengthY" group="Block Distortion" label="BD - Distortion Strength Y" default="0.0" min="-300.0" max="300.0" step="1.0" snap="0.0" />
+        <slider id="bdScale" group="Block Distortion" label="BD - Distortion Scale" default="20.0" min="1.0" max="500.0" step="1.0" snap="20.0" />
+
+        <!-- Screen Distortion -->
+        <switch id="screenDistortion" group="Screen Distortion" label="Screen Distortion" default="false" />
+        <slider id="sdChance" group="Screen Distortion" label="SD - % Chance" default="25.0" min="0.0" max="100.0" step="1.0" snap="25.0" />
+        <slider id="sdDuration" group="Screen Distortion" label="SD - Duration" default="1.0" min="0.1" max="100.0" step="0.1" snap="1.0" />
+        <slider id="sdVariation" group="Screen Distortion" label="SD - Duration Variation" default="20.0" min="0.0" max="100.0" step="1.0" snap="20.0" />
+        <slider id="sdSpeed" group="Screen Distortion" label="SD - Distortion Speed" default="700.0" min="0.0" max="1000.0" step="5.0" snap="700.0" />
+        <slider id="sdStrengthX" group="Screen Distortion" label="SD - Distortion Strength X" default="5.0" min="-300.0" max="300.0" step="1.0" snap="5.0" />
+        <slider id="sdStrengthY" group="Screen Distortion" label="SD - Distortion Strength Y" default="0.0" min="-300.0" max="300.0" step="1.0" snap="0.0" />
+        <slider id="sdScale" group="Screen Distortion" label="SD - Distortion Scale" default="20.0" min="1.0" max="500.0" step="1.0" snap="20.0" />
+    </params>
+
+    <passes>
+        <pass target="base" />    <!-- 0: geometria, cor, faixas, estática, ruído de cor -->
+        <pass target="sh" />      <!-- 1: glow secundário, gaussiano em X -->
+        <pass target="sv" />      <!-- 2: glow secundário, Y -->
+        <pass target="mixado" />  <!-- 3: fantasma, scan lines, separação de cor -->
+        <pass target="lim" />     <!-- 4: glow: o que passa do limiar, em meia resolução -->
+        <pass target="gh" />      <!-- 5: glow, gaussiano em X -->
+        <pass target="gv" />      <!-- 6: glow, Y -->
+        <pass />                  <!-- 7: a saída -->
+    </passes>
+
+    <shader><![CDATA[
+// ------------------------------------------------------------------ sorteio
+float h2(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+/** Ruído de valor entre −1 e 1 (bilinear suavizado). */
+float ruido(vec2 p, float semente) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = h2(i + semente), b = h2(i + vec2(1.0, 0.0) + semente);
+    float c = h2(i + vec2(0.0, 1.0) + semente), d = h2(i + vec2(1.0, 1.0) + semente);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0;
+}
+
+// ------------------------------------------------------------------ medidas
+/** O tamanho do quadro CHEIO (os passes de glow rodam em meia resolução). */
+vec2 quadro() { return vec2(textureSize(inputImg, 0)); }
+/** Pixels do buffer por unidade do plugin: as medidas dele são em pixels de um quadro de 486 linhas. */
+float unidade() { return effectScale / 100.0 * quadro().y / 486.0; }
+/** O tempo do efeito: ele só anda `Frame Rate` vezes por segundo. */
+float tempoDoEfeito() { return floor(acTime * frameRate + 1e-3) / frameRate; }
+float quadroDoEfeito() { return floor(acTime * frameRate + 1e-3); }
+float dano() { return 1.0 + float(moreDamage); }
+
+/*
+ * OS EVENTOS — medido em 1800 quadros: o tempo é uma fila de trechos de `dur` segundos (cada um
+ * esticado ou encolhido em até ±variação), e cada trecho sorteia se o defeito acontece nele
+ * (trechos seguidos emendam). Aqui: grade de `dur` com as divisas tremidas — a mesma estatística,
+ * sem memória entre quadros. `inicio` = quando o trecho começou; `k` = o número dele.
+ */
+bool evento(float dur, float variacao, float chance, float semente, out float inicio, out float k) {
+    inicio = 0.0; k = 0.0;
+    float s = semente + randomSeed * 0.731;
+    if (punchIt) return true;
+    float t = acTime;
+    dur = max(dur, 0.01);
+    float v = clamp(variacao / 100.0, 0.0, 1.0);
+    float k0 = floor(t / dur);
+    float c = chance / 100.0 * (1.0 + 0.25 * float(moreOften));
+    for (int i = -1; i <= 1; i++) {
+        float kk = k0 + float(i);
+        float b0 = (kk + v * (h2(vec2(kk, s)) - 0.5)) * dur;
+        float b1 = (kk + 1.0 + v * (h2(vec2(kk + 1.0, s)) - 0.5)) * dur;
+        if (t >= b0 && t < b1) { inicio = b0; k = kk; return h2(vec2(kk, s + 7.7)) < c; }
+    }
+    return false;
+}
+
+vec4 pre(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+
+// ------------------------------------------------------------------ passe 0: geometria + cor + linhas + estática
+vec3 overlay(vec3 a, float b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
+vec3 overlay3(vec3 a, vec3 b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
+
+/** Tritone linear pela luma Rec. 709 (medido: 0,2127 / 0,7152 / 0,0720). */
+vec3 colorir(vec3 c) {
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    l = l + sourceBrightness / 255.0;
+    l = clamp(1.0 - (1.0 - l) * (1.0 + sourceContrast / 100.0), 0.0, 1.0);   // o contraste gira em volta do BRANCO
+    vec3 t = l < 0.5 ? mix(colorShadows.rgb, colorMidtones.rgb, l * 2.0) : mix(colorMidtones.rgb, colorHighlights.rgb, l * 2.0 - 1.0);
+    return mix(c, t, colorizePct / 100.0);
+}
+
+/** Uma camada de faixas: o cinza sorteado da faixa e a opacidade (pisca a cada X quadros). */
+vec3 faixas(vec3 c, float y, float sentido, float vel, float altura, float semente, float opMin, float opMax, float strobe, bool fade) {
+    float h = max(altura * effectScale / 100.0 * quadro().y / 715.5, 1.0);
+    // A velocidade é em pixels da COMPOSIÇÃO por segundo, em qualquer resolução (medido em 90p, 360p e 720p).
+    float andou = vel * acEscalaDePixel * tempoDoEfeito() * sentido;
+    float i = floor((y + andou) / h);
+    float b = h2(vec2(i + semente, 17.0 + sentido * 3.0));
+    float q = floor(tempoDoEfeito() / (acFrameDuration > 0.0 ? acFrameDuration : 1.0 / 30.0) + 0.5);
+    float fase = q / max(strobe, 1.0);
+    float m = fade ? abs(mod(fase, 2.0) - 1.0) : 1.0 - mod(floor(fase), 2.0);    // 1 = opacidade máxima
+    float op = mix(opMin, opMax, m) / 100.0;
+    return mix(c, overlay(c, b), op);
+}
+
+/** A estática: um grão cinza por célula (N = 0,854·u^2,7), em overlay. */
+float graoDaEstatica(vec2 px) {
+    float hc = quadro().y / acEscalaDePixel;                               // altura em pixels da composição
+    float a = min((0.13 + 0.008 * staticSize) * pow(hc / 1080.0, 0.8) * effectScale / 100.0, 0.95);
+    float cel = max(hc / 244.0 / (1.0 - a) * acEscalaDePixel, 1.0);
+    vec2 p = px / vec2(cel, cel / 1.18);
+    vec2 i = floor(p), f = clamp((fract(p) - 0.3) / 0.4, 0.0, 1.0);
+    float s = quadroDoEfeito() * 1.37 + randomSeed;
+    float u = mix(mix(h2(i + s), h2(i + vec2(1.0, 0.0) + s), f.x), mix(h2(i + vec2(0.0, 1.0) + s), h2(i + vec2(1.0, 1.0) + s), f.x), f.y);
+    return 0.008 + 0.854 * pow(u, 2.7);
+}
+
+/** O deslocamento "de TV" das distorções: riscos largos e baixos que tremem. */
+vec2 tremor(vec2 px, float escala, float vel, vec2 forca, float semente) {
+    float u = unidade();
+    vec2 p = px / (max(escala, 1.0) * u * vec2(1.2, 0.2));
+    float t = floor(acTime * max(vel, 1.0) / 23.0);
+    return forca * u * 2.0 * vec2(ruido(p, semente + t * 3.7), ruido(p + 31.0, semente + t * 3.7 + 9.0));
+}
+
+/** De onde o pixel lê, depois dos defeitos de geometria. `furo` = o Glitch Holes apagou. */
+vec2 geometria(vec2 px, out bool furo) {
+    furo = false;
+    vec2 res = quadro();
+    float u = unidade();
+    float ini, k;
+    // Low-Res: blocos de 100/% unidades.
+    float pct = 0.0;
+    if (lowRes) pct = lowResPct;
+    if (randomLowRes && evento(rlrDuration, rlrVariation, rlrChance, 31.0, ini, k)) pct = mix(rlrMin, rlrMax, h2(vec2(k, 32.0)));
+    if (pct > 0.0 && pct < 100.0) { float b = max(u * 100.0 / pct, 1.0); px = floor(px / b) * b + 0.5; }
+    // TV Roll: o quadro rola 0,154 da altura por segundo por unidade de velocidade, de um ponto sorteado.
+    if (tvRoll && evento(rollDuration, rollVariation, rollChance, 41.0, ini, k)) {
+        float volta = fract(h2(vec2(k, 42.0)) + rollSpeed * 0.154 * (tempoDoEfeito() - ini));
+        px.y = mod(px.y + volta * res.y, res.y);
+        if (tvDistortion && h2(vec2(k, 43.0)) < tvdChance / 100.0) {
+            float comprimento = max(res.y * 0.12 * pow(tvdScale / 100.0, 8.0), 1.5);
+            px.x += tvdAmount * res.x * 0.17 * ruido(vec2(px.y / comprimento, quadroDoEfeito() * 0.37), 44.0);
+        }
+    }
+    // Glitch: blocos deslocados (até 1/4 do quadro por unidade de Displacement).
+    if (glitch && evento(glitchDuration, glitchVariation, glitchChance, 51.0, ini, k)) {
+        float g = floor(acTime * glitchSpeed);
+        float hb = max(res.y * pow(10.0, (glitchSize - 215.0) / 40.0), 2.0);
+        for (int n = 0; n < 5; n++) {
+            if (float(n) >= glitchComplexity) break;
+            vec2 cel = vec2(hb * glitchAspect, hb) / exp2(float(n));
+            vec2 id = floor(px / cel) + vec2(g * 13.0 + float(n) * 71.0, randomSeed);
+            if (h2(id) < glitchAmount / 100.0 / glitchComplexity * 1.6) {
+                px += (vec2(h2(id + 3.3), h2(id + 8.8)) * 2.0 - 1.0) * vec2(glitchDispH, glitchDispV) * res * 0.25 * dano();
+                break;
+            }
+        }
+        if (glitchHoles && h2(vec2(k, 55.0)) < holesChance / 100.0) {
+            float hh = max(res.y * pow(10.0, (holesSize - 215.0) / 40.0), 2.0);
+            vec2 id = floor(px / (0.5 * vec2(hh * holesAspect, hh))) + vec2(g * 7.0, randomSeed + 5.0);
+            furo = h2(id) < 0.25 * holesAmount / 100.0;
+        }
+    }
+    // As três distorções: a tela toda, uma faixa que viaja e blocos.
+    if (screenDistortion && evento(sdDuration, sdVariation, sdChance, 61.0, ini, k))
+        px += tremor(px, sdScale, sdSpeed, vec2(sdStrengthX, sdStrengthY) * dano(), 62.0);
+    if (traveling && evento(tdDuration, tdVariation, tdChance, 71.0, ini, k)) {
+        float meia = tdLineHeight / 100.0 * res.y;
+        float yc = mod(tdLineSpeed * res.y / 336.0 * (acTime - ini), res.y + 2.0 * meia) - meia;
+        float w = clamp(1.0 - abs(px.y - yc) / meia, 0.0, 1.0);
+        w = tdFalloff > 0.0 ? pow(w, tdFalloff * 0.5) : step(0.001, w);
+        px += w * tremor(px, tdScale / 15.0, tdSpeed, vec2(tdStrengthX, tdStrengthY) * dano(), 72.0);
+    }
+    if (blockDistortion && evento(bdDuration, bdVariation, bdChance, 81.0, ini, k)) {
+        float hb = max(bdSize * u * 0.31, 2.0);
+        vec2 p = px / vec2(hb * bdAspect, hb);
+        vec2 id = floor(p) + vec2(floor(acTime * bdBlockSpeed) * 5.0, randomSeed + 9.0);
+        if (h2(id) < bdAmount / 100.0) {
+            vec2 d = abs(fract(p) - 0.5) * 2.0;
+            px += (1.0 - d.y * d.y) * tremor(px, bdScale, bdSpeed, vec2(bdStrengthX, bdStrengthY) * dano(), 82.0);
+        }
+    }
+    return px;
+}
+
+vec4 passeBase(vec2 uv) {
+    vec2 res = quadro();
+    bool furo;
+    vec2 px = geometria(uv * res, furo);
+    vec2 q = px / res;
+    if (furo) return vec4(0.0);
+    vec4 s = texture(inputImg, fract(q));                           // o que sai de um lado entra pelo outro
+    vec3 c = s.rgb;
+    if (colorization) c = colorir(c);
+    if (lines) {
+        float y = uv.y * res.y;
+        if (lineDirection != 1) c = faixas(c, y, 1.0, luSpeed, luHeight, luSeed, luOpacityMin, luOpacityMax, luStrobe, luFade);
+        if (lineDirection != 0) c = faixas(c, y, -1.0, ldSpeed, ldHeight, ldSeed, ldOpacityMin, ldOpacityMax, ldStrobe, ldFade);
+    }
+    if (staticOn) c = mix(c, overlay(c, graoDaEstatica(uv * res)), staticOpacity / 100.0);
+    if (colorNoise) {
+        // Manchas de cor suaves (~5 px em 360 linhas com Scale 100; desvio 0,02 com opacidade 100), um sorteio por canal, em overlay.
+        vec2 p = uv * res / (5.5 * res.y / 360.0 * noiseScale / 100.0);
+        float sm = quadroDoEfeito() * 2.3 + randomSeed;
+        vec3 n = vec3(ruido(p, sm), ruido(p + 19.0, sm + 5.0), ruido(p + 47.0, sm + 11.0));
+        c = overlay3(c, 0.5 + 0.05 * noiseOpacity / 100.0 * n);
+    }
+    return pre(vec4(clamp(c, 0.0, 1.0), s.a));
+}
+
+// ------------------------------------------------------------------ passe 1: fantasma + separação + scan lines
+vec4 lerBase(vec2 px) {
+    vec2 q = px / quadro();
+    if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return vec4(0.0);
+    return texture(base, q);
+}
+
+/** O fantasma num ponto: uma cópia da base deslocada (às vezes com a lente torta), já na opacidade dele. */
+vec4 fantasma(vec2 px) {
+    if (!ghost) return vec4(0.0);
+    float q = quadroDoEfeito();
+    float s = randomSeed * 0.917;
+    // Um sorteio por quadro do efeito, sem duração (medido: trechos de 1 quadro).
+    if (!punchIt && h2(vec2(q, 91.0 + s)) >= ghostChance / 100.0 * (1.0 + float(moreOften))) return vec4(0.0);
+    float u = unidade() * dano();
+    vec2 des = vec2(0.0);
+    // O deslocamento sorteado é triangular em volta do meio da faixa (medido: metade da meia-faixa).
+    if (h2(vec2(q, 92.0 + s)) < ghostXChance / 100.0)
+        des.x = 0.5 * (ghostXMin + ghostXMax) + 0.25 * (ghostXMax - ghostXMin) * (h2(vec2(q, 93.0 + s)) + h2(vec2(q, 94.0 + s)) - 1.0);
+    if (h2(vec2(q, 95.0 + s)) < ghostYChance / 100.0)
+        des.y = 0.5 * (ghostYMin + ghostYMax) + 0.25 * (ghostYMax - ghostYMin) * (h2(vec2(q, 96.0 + s)) + h2(vec2(q, 97.0 + s)) - 1.0);
+    vec2 p = px - des * u;
+    if (ghostDistortion && h2(vec2(q, 98.0 + s)) < ghostDistChance / 100.0) {
+        // Lente: desvio −0,0047·valor·r·(1 − r²/R²), R = meia diagonal (medido com ±30).
+        vec2 res = quadro();
+        vec2 centro = res * (0.5 + 0.15 * (vec2(h2(vec2(q, 99.0 + s)), h2(vec2(q, 100.0 + s))) - 0.5));
+        vec2 d = p - centro;
+        float r2 = dot(d, d) / (0.25 * dot(res, res));
+        p += -0.0047 * mix(ghostDistMin, ghostDistMax, h2(vec2(q, 101.0 + s))) * d * (1.0 - r2);
+    }
+    return ghostOpacity / 100.0 * lerBase(p);
+}
+
+const float PERFIL_A[21] = float[21](0.0, 0.0201, 0.0714, 0.1568, 0.2618, 0.3801, 0.5007, 0.6176, 0.7196, 0.8028, 0.8729,
+                                     0.9246, 0.9585, 0.9796, 0.9918, 0.9965, 0.9989, 0.9995, 0.9997, 0.9999, 1.0);
+const float PERFIL_D[21] = float[21](0.0, 0.0066, 0.0233, 0.0502, 0.0833, 0.1229, 0.1691, 0.2256, 0.2924, 0.3651, 0.4520,
+                                     0.5452, 0.6326, 0.7163, 0.7967, 0.8529, 0.9061, 0.9462, 0.9758, 0.9905, 1.0);
+
+/**
+ * A scan line num eixo: x = quanto o pixel está DENTRO da linha mais próxima (0 = na borda,
+ * 1 = feather inteiro para dentro). Devolve (cor, alfa): o plugin escurece a cor mais devagar do
+ * que devolve o alfa — as duas curvas foram tiradas dos renders (tools/holomatrix/benchmark).
+ */
+vec2 scanNoEixo(float coordPx) {
+    float d = scanDistance, t = scanThickness;
+    if (d <= 0.0) return vec2(1.0);
+    float yu = coordPx / unidade();
+    float meio = 0.5 * min(t, d);                                 // medido: o centro fica em min(t, d)/2
+    float i = floor((yu - meio) / d + 0.5);
+    float e = 0.5 * t - abs(yu - (i * d + meio));
+    // O feather vai da borda PARA DENTRO, e tem ~1 pixel a mais do que o valor (medido com 3, 8, 24 e 48).
+    float x = clamp(e / (scanFeather + 1.07 * acEscalaDePixel / unidade()), 0.0, 1.0) * 20.0;
+    int n = int(min(floor(x), 19.0));
+    float f = x - float(n);
+    return vec2(mix(PERFIL_D[n], PERFIL_D[n + 1], f), mix(PERFIL_A[n], PERFIL_A[n + 1], f));
+}
+
+/** Quanto do quadro as scan lines deixam passar no alfa (a média de um período). */
+float coberturaDaScan() {
+    float soma = 0.0;
+    float periodo = max(scanDistance, 1e-3) * unidade();
+    for (int n = 0; n < 16; n++) soma += scanNoEixo((float(n) + 0.5) / 16.0 * periodo).y;
+    return soma / 16.0;
+}
+
+/**
+ * A base com o glow secundário, o fantasma e as scan lines num ponto. Medido: o fantasma é SOMADO
+ * sem o glow secundário, e as scan lines valem para os dois; a separação de cor vem depois.
+ */
+vec4 comScan(vec2 px) {
+    vec4 c = lerBase(px);
+    vec4 f = fantasma(px);
+    if (!scanLines) {
+        // Glow secundário sem scan lines (medido): c·(1 + 2·borrão(c)), canal por canal.
+        if (secondaryGlow) c.rgb = min(c.rgb * (1.0 + 2.0 * texture(sv, clamp(px / quadro(), 0.0, 1.0)).rgb), c.a);
+        return min(c + f, 1.0);
+    }
+    vec2 m = scanDirection == 0 ? scanNoEixo(px.y) : scanDirection == 1 ? scanNoEixo(px.x) : min(scanNoEixo(px.y), scanNoEixo(px.x));
+    if (secondaryGlow) {
+        // Com o glow secundário as linhas não chegam ao preto: sobra ~30% da imagem no vão e a
+        // linha fica 1,3–1,6× mais clara. Medido linha a linha em dois desenhos: o padrão (cobre
+        // 75% do quadro: 1,6·m + 0,31) e linhas separadas (37%: 1,3·m + 0,3 + 0,76·m·cor).
+        float t = clamp((coberturaDaScan() - 0.37) / 0.38, 0.0, 1.0);
+        c = vec4(c.rgb * ((1.3 + 0.3 * t) * m.x + 0.3 + 0.76 * (1.0 - t) * m.x * c.rgb), c.a * (0.68 * m.y + 0.28));
+    } else {
+        c = vec4(c.rgb * m.x, c.a * m.y);
+    }
+    // O fantasma soma na cor; no alfa ele só completa o que faltava (a camada opaca continua opaca).
+    float semLinhas = max(lerBase(px).a, 1e-4);
+    // (A cor pode passar do alfa aqui: o limiar do glow olha para ela antes do corte da saída.)
+    return vec4(min(c.rgb + f.rgb * m.x, 1.0), c.a * min(semLinhas + f.a, 1.0) / semLinhas);
+}
+
+vec4 passeMistura(vec2 uv) {
+    vec2 res = quadro();
+    vec2 px = uv * res;
+    vec4 c;
+    float ini, k;
+    if (colorSeparation && evento(sepDuration, sepVariation, sepChance, 21.0, ini, k)) {
+        // Vermelho lê à direita, azul à esquerda; o alfa é a UNIÃO dos três (1 − Π(1 − a), medido).
+        vec2 d = vec2(sepAmount * unidade() * dano(), 0.0);
+        vec4 r = comScan(px + d), g = comScan(px), b = comScan(px - d);
+        c = vec4(r.r, g.g, b.b, 1.0 - (1.0 - r.a) * (1.0 - g.a) * (1.0 - b.a));
+    } else {
+        c = comScan(px);
+    }
+    return c;
+}
+
+// ------------------------------------------------------------------ glow
+/** σ do glow em pixels do quadro cheio (medido em 360 linhas: 1,1 + 0,28·raio, nunca menos de 2,06). */
+float sigmaDoGlow() { return quadro().y / 360.0 * max(2.06, 1.1 + 0.28 * glowRadius * effectScale / 100.0); }
+float sigmaDoSegundo() { return quadro().y / 360.0 * max(0.8, 0.41 * secondaryGlowRadius * effectScale / 100.0); }
+/** Com raio pequeno o glow é quase a própria imagem: só 0,236·raio dela vai para o borrão (medido com 1, 2 e 5). */
+float parteBorrada() { return min(0.236 * glowRadius * effectScale / 100.0, 1.0); }
+
+/** Só o que passa do limiar, canal por canal. O alfa vai inteiro: o borrão dele enche o vão das scan lines. */
+vec4 limiar(vec4 c) { return vec4(c.rgb * step(glowThreshold / 100.0, c.rgb - 1e-4), c.a); }
+
+/** Gaussiano de um eixo neste buffer (meia resolução). `fonte`: 0 = base, 1 = sh, 2 = lim, 3 = gh. */
+vec4 borrar(int fonte, vec2 eixo, float sigmaCheio) {
+    vec2 uv = acScreenNorm;
+    float sigma = max(sigmaCheio * acResolution.y / quadro().y, 0.5);
+    float passo = max(1.0, ceil(3.0 * sigma / 20.0));
+    vec4 soma = vec4(0.0);
+    float pesos = 0.0;
+    for (int n = -20; n <= 20; n++) {
+        float d = float(n) * passo;
+        if (abs(d) > 3.0 * sigma + 0.5) continue;
+        float w = exp(-0.5 * d * d / (sigma * sigma));
+        vec2 q = uv + eixo * d * acTexelSize;
+        vec4 v = vec4(0.0);
+        if (q.x >= 0.0 && q.x <= 1.0 && q.y >= 0.0 && q.y <= 1.0) {
+            if (fonte == 0) v = texture(base, q);
+            else if (fonte == 1) v = texture(sh, q);
+            else if (fonte == 2) v = texture(lim, q);
+            else v = texture(gh, q);
+        }
+        soma += w * v;
+        pesos += w;
+    }
+    return soma / max(pesos, 1e-6);
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    if (acPass == 0) { fragColor = passeBase(uv); return; }
+    if (acPass == 1) { fragColor = secondaryGlow ? borrar(0, vec2(1.0, 0.0), sigmaDoSegundo()) : vec4(0.0); return; }
+    if (acPass == 2) { fragColor = secondaryGlow ? borrar(1, vec2(0.0, 1.0), sigmaDoSegundo()) : vec4(0.0); return; }
+    if (acPass == 3) { fragColor = passeMistura(uv); return; }
+    if (acPass == 4) {
+        // O limiar é tirado pixel a pixel do quadro CHEIO (as scan lines têm 1–2 px: a média de
+        // dois vizinhos ficaria abaixo dele e o glow sumiria) e só então cai para meia resolução.
+        vec4 soma = vec4(0.0);
+        if (glow) {
+            vec2 d = 0.25 * acTexelSize;
+            soma = 0.25 * (limiar(texture(mixado, uv + vec2(-d.x, -d.y))) + limiar(texture(mixado, uv + vec2(d.x, -d.y)))
+                         + limiar(texture(mixado, uv + vec2(-d.x, d.y))) + limiar(texture(mixado, uv + d)));
+        }
+        fragColor = soma;
+        return;
+    }
+    if (acPass == 5) { fragColor = glow ? borrar(2, vec2(1.0, 0.0), sigmaDoGlow()) : vec4(0.0); return; }
+    if (acPass == 6) { fragColor = glow ? borrar(3, vec2(0.0, 1.0), sigmaDoGlow()) : vec4(0.0); return; }
+
+    vec4 c = texture(mixado, uv);
+    if (glow) {
+        // A cor ganha Intensity × o que passa do limiar, borrado. O alfa NÃO depende do limiar nem
+        // da Intensity (medido com 1, 3 e 6): é a união dele com o próprio borrão.
+        vec4 borrao = texture(gv, uv);
+        c.rgb = min(c.rgb + glowIntensity * mix(limiar(c).rgb, borrao.rgb, parteBorrada()), 1.0);
+        c.a = 1.0 - (1.0 - c.a) * (1.0 - parteBorrada() * borrao.a);
+    }
+    c.rgb = min(c.rgb, c.a);
+    float ini, k;
+    if (flicker && evento(flickerDuration, flickerVariation, flickerChance, 11.0, ini, k)) {
+        float g = mix(flickerMin, flickerMax, h2(vec2(quadroDoEfeito(), 12.0 + randomSeed))) / 100.0;
+        c = vec4(c.rgb * g * g, c.a * g);                           // medido: a cor reta E o alfa caem juntos
+    }
+    vec4 original = pre(texture(inputImg, uv));
+    c = mix(c, original, blendOriginal / 100.0);
+    if (unmult) c.a = max(c.r, max(c.g, c.b));
+    fragColor = c.a > 1e-5 ? vec4(min(c.rgb / c.a, 1.0), c.a) : vec4(0.0);
+}
+]]></shader>
+</effect>

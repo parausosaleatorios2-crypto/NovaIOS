@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<effect
+    id="nova.effect.ultramotion.dollyzoom"
+    name="Efeito Vertigo (Ultra Motion)"
+    name-en="Dolly Zoom (Ultra Motion)"
+    desc="Escala do fundo + zoom do centro — efeito Vertigo."
+    desc-en="Background scale plus center zoom — Vertigo effect."
+    category="distort"
+    tags="ultramotion,dollyzoom,vertigo,hitchcock,motion,zoom">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="depth"   label="Profundidade" default="0.2" min="-0.6" max="0.6" step="0.01" />
+        <slider id="focus"   label="Foco"         default="0.3" min="0.0" max="1.0" step="0.01" />
+        <slider id="samples" label="Amostras"     default="14"  min="4" max="32" step="1" type="integer" />
+        <point  id="center"  label="Centro"       defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <passes><pass /></passes>
+
+    <shader><![CDATA[
+void main() {
+    int n = clamp(int(samples), 4, 32);
+    vec2 p = acScreenNorm - center;
+    p.x *= acAspect;
+    float d = length(p);
+    float peso = smoothstep(focus, focus + 0.3, d);
+    if (peso <= 0.0 || abs(depth) < 1e-4) { fragColor = texture(inputImg, acScreenNorm); return; }
+
+    vec4 soma = vec4(0.0);
+    for (int i = 0; i <= 32; i++) {
+        if (i > n) break;
+        float t = float(i) / float(n) - 0.5;
+        float escala = 1.0 + depth * peso * t;
+        vec2 q = p / escala;
+        q.x /= acAspect;
+        soma += texture(inputImg, q + center);
+    }
+    fragColor = soma / float(n + 1);
+}
+    ]]></shader>
+</effect>

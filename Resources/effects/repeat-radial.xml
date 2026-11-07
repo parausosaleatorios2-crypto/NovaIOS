@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   REPETIR EM VOLTA
+  ============================================================================
+
+  Cópias da camada dispostas num círculo, numa linha ou espalhadas. É o arranjo
+  que o "Repetir" e o "Ladrilho" não fazem: eles ladrilham em GRADE, e o que
+  falta é o arranjo que gira.
+
+  ============================================================================
+   A CONTA É AO CONTRÁRIO DO QUE PARECE
+  ============================================================================
+
+  A cabeça pede "desenhe N cópias". O shader não desenha nada: cada pixel só
+  pergunta o que tem nele. Então a conta é invertida — para cada cópia, o pixel
+  volta ao lugar de onde aquela cópia teria vindo, e olha lá.
+
+  Quinze cópias custam quinze leituras, e não quinze desenhos. É a mesma inversão
+  do caleidoscópio, e é o que permite arranjo radial num shader de fragmento.
+
+  ============================================================================
+   POR QUE A ORDEM DE EMPILHAMENTO IMPORTA
+  ============================================================================
+
+  As cópias se sobrepõem. Compor todas com "por cima" na ordem do laço deixa a
+  última sempre na frente, o que fica estranho quando elas se cruzam. Aqui a
+  ordem é de trás para frente e a composição é normal — a cópia 1 fica no topo,
+  que é a que a pessoa vê como "a original".
+-->
+<effect
+    id="nova.effect.repeatradial"
+    name="Repetir em volta"
+    name-en="Repeat Radial"
+    desc="Cópias da camada em círculo, em linha ou espalhadas, com giro e escala."
+    desc-en="Copies around a centre, in a line, or scattered."
+    category="repeat"
+    tags="repetir,radial,círculo,array,cópias,mandala">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <slider id="copies" label="Cópias"
+                default="6" min="1" max="16" step="1" type="integer" />
+        <selector id="mode" label="Arranjo" default="0"
+                  options="Em círculo|Em linha|Espalhadas" />
+        <slider id="radius" label="Distância do centro"
+                default="0.2" min="0.0" max="1.0" step="0.005" />
+
+        <!-- ============================= Arranjo =========================== -->
+        <point id="center" group="Arranjo" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <slider id="startAngle" group="Arranjo" label="Ângulo inicial"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="arc" group="Arranjo" label="Abertura do arco"
+                default="360.0" min="10.0" max="360.0" step="1.0" type="angle" />
+        <slider id="lineAngle" group="Arranjo" label="Direção (em linha)"
+                default="0.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="seed" group="Arranjo" label="Semente (espalhadas)"
+                default="0" min="0" max="99" step="1" type="integer" />
+
+        <!-- ========================= Cada cópia ============================ -->
+        <slider id="spin" group="Cada cópia" label="Girar a cópia"
+                default="0.0" min="-360.0" max="360.0" step="1.0" type="angle" snap="0.0" />
+        <switch id="faceCenter" group="Cada cópia" label="Apontar para o centro" default="false" />
+        <slider id="shrink" group="Cada cópia" label="Encolher a cada cópia"
+                default="0.0" min="-0.5" max="0.5" step="0.01" snap="0.0" />
+        <slider id="fade" group="Cada cópia" label="Apagar a cada cópia"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <switch id="keepOriginal" group="Cada cópia" label="Manter a camada original" default="true" />
+    </params>
+
+    <!-- Amostra: a figura solta no xadrez — a sombra/borda precisa de espaço transparente em volta (vitrine, 0.665.0). -->
+    <preview amostra="figura" />
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+float hash(float x) {
+    return fract(sin(x * 127.1 + seed * 37.13) * 43758.5453);
+}
+
+vec2 girar(vec2 v, float rad) {
+    float c = cos(rad);
+    float s = sin(rad);
+    return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
+vec4 sobre(vec4 baixo, vec4 cima) {
+    float a = cima.a + baixo.a * (1.0 - cima.a);
+    if (a <= 0.0) return vec4(0.0);
+    return vec4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    int quantas = clamp(int(copies + 0.5), 1, 16);
+    vec2 meio = vec2(center.x * acAspect, center.y);
+    vec2 p = vec2(acScreenNorm.x * acAspect, acScreenNorm.y);
+
+    vec4 montado = vec4(0.0);
+    float abertura = arc * PI / 180.0;
+    float inicio = startAngle * PI / 180.0;
+
+    // De trás para frente: a cópia 1 acaba por cima, que é a que se lê como "a
+    // original" quando elas se cruzam.
+    for (int i = 16; i >= 1; i--) {
+        if (i > quantas) continue;
+        float indice = float(i - 1);
+
+        // Onde esta cópia está.
+        vec2 desloca;
+        float giro = spin * PI / 180.0 * indice;
+
+        if (mode == 0) {
+            // O arco fechado (360°) divide por N; o arco aberto divide por N-1,
+            // senão a primeira e a última cópia caem em cima uma da outra.
+            float divisor = abertura >= 6.2 ? float(quantas) : max(float(quantas - 1), 1.0);
+            float ang = inicio + abertura * indice / divisor;
+            desloca = vec2(cos(ang), sin(ang)) * radius;
+            if (faceCenter) giro += ang + PI * 0.5;
+        } else if (mode == 1) {
+            float ang = lineAngle * PI / 180.0;
+            desloca = vec2(cos(ang), sin(ang)) * radius * indice;
+        } else {
+            desloca = vec2(hash(indice * 3.7) - 0.5, hash(indice * 7.1) - 0.5) * radius * 2.0;
+            giro += (hash(indice * 11.3) - 0.5) * 2.0 * PI * 0.15;
+        }
+
+        float escala = 1.0 + shrink * indice;
+        if (abs(escala) < 0.02) continue;
+
+        // A volta: tira o deslocamento, desfaz o giro, desfaz a escala.
+        vec2 local = girar(p - meio - desloca, -giro) / escala + meio;
+        vec2 uv = vec2(local.x / max(acAspect, 1e-4), local.y);
+
+        // Fora do quadro não há camada — e sem este corte, o CLAMP_TO_EDGE
+        // esticaria a borda da imagem por toda a tela.
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+
+        vec4 copia = texture(inputImg, uv);
+        copia.a *= max(1.0 - fade * indice, 0.0);
+        montado = sobre(montado, copia);
+    }
+
+    fragColor = keepOriginal ? sobre(montado, original) : montado;
+}
+
+    ]]></shader>
+</effect>

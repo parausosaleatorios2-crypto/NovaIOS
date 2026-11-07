@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NodeVideo/AssetStore_rgb_displacement
+  Gerado automaticamente do data.unity3d do NodeVideo (HLSLcc → GLSL ES 300).
+  Entradas renomeadas: _SourceTex → inputImg, vs_TEXCOORD0 → acScreenNorm,
+  SV_Target0 → fragColor. Faixas dos sliders são palpites por nome — ajuste conforme o visual.
+-->
+<effect
+    id="nv.effect.nodevideo-assetstore-rgb-displacement"
+    name="Rgb Displacement (NV)"
+    name-en="Rgb Displacement (NV)"
+    desc="NodeVideo Asset Store effect 'rgb_displacement', decompiled do bundle .unity3d."
+    desc-en="NodeVideo Asset Store effect 'rgb_displacement', decompiled do bundle .unity3d."
+    category="nodevideo"
+    tags="nodevideo,nv,unity,asset-store">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="Mask" src="content" empty="transparent" />
+        <slider id="_use_inner_mask" type="integer" label="Use Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_b_clip_mask" type="integer" label="B Clip Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_show_inner_mask" type="integer" label="Show Inner Mask" default="0" min="0" max="1" step="1" />
+        <slider id="_channel" type="integer" label="Channel" default="2" min="0" max="2" step="1" />
+        <slider id="_evolution" label="Evolution" default="0" min="0" max="2" step="0.01" />
+        <slider id="_phase" label="Phase" default="1" min="0" max="2" step="0.01" />
+        <slider id="_scale" label="Scale" default="0.5" min="0" max="10" step="0.01" />
+        <slider id="_saturation" label="Saturation" default="0" min="-1" max="1" step="0.01" />
+        <slider id="_blend" label="Blend" default="1" min="0" max="1" step="0.01" />
+        <color id="_color1" label="Color1" default="#FFFF0000" />
+        <color id="_color2" label="Color2" default="#FF0EFF00" />
+        <color id="_color3" label="Color3" default="#FF0000FF" />
+    </params>
+
+    <shader><![CDATA[
+vec4 ImmCB_0[4];
+
+vec4 u_xlat0;
+vec4 u_xlat1;
+bool u_xlatb1;
+vec4 u_xlat2;
+bvec3 u_xlatb2;
+vec4 u_xlat3;
+vec4 u_xlat4;
+vec4 u_xlat5;
+float u_xlat8;
+vec2 u_xlat9;
+float u_xlat19;
+int u_xlati19;
+float u_xlat20;
+void main()
+{
+ImmCB_0[0] = vec4(1.0,0.0,0.0,0.0);
+ImmCB_0[1] = vec4(0.0,1.0,0.0,0.0);
+ImmCB_0[2] = vec4(0.0,0.0,1.0,0.0);
+ImmCB_0[3] = vec4(0.0,0.0,0.0,1.0);
+    u_xlat0 = texture(inputImg, acScreenNorm.xy);
+    u_xlatb1 = u_xlat0.y>=u_xlat0.z;
+    u_xlat1.x = u_xlatb1 ? 1.0 : float(0.0);
+    u_xlat2.xy = u_xlat0.zy;
+    u_xlat2.z = float(-1.0);
+    u_xlat2.w = float(0.666666687);
+    u_xlat3.xy = u_xlat0.yz + (-u_xlat2.xy);
+    u_xlat3.z = float(1.0);
+    u_xlat3.w = float(-1.0);
+    u_xlat1 = u_xlat1.xxxx * u_xlat3 + u_xlat2;
+    u_xlatb2.x = u_xlat0.x>=u_xlat1.x;
+    u_xlat2.x = u_xlatb2.x ? 1.0 : float(0.0);
+    u_xlat3.xyz = u_xlat1.xyw;
+    u_xlat3.w = u_xlat0.x;
+    u_xlat1.xyw = u_xlat3.wyx;
+    u_xlat1 = (-u_xlat3) + u_xlat1;
+    u_xlat1 = u_xlat2.xxxx * u_xlat1.yzxw + u_xlat3.yzxw;
+    u_xlat2.x = min(u_xlat1.x, u_xlat1.w);
+    u_xlat2.x = u_xlat1.z + (-u_xlat2.x);
+    u_xlat19 = (-u_xlat1.x) + u_xlat1.w;
+    u_xlat8 = u_xlat2.x * 6.0 + 9.99999975e-05;
+    u_xlat19 = u_xlat19 / u_xlat8;
+    u_xlat19 = u_xlat19 + u_xlat1.y;
+    u_xlat1.x = abs(u_xlat19);
+    u_xlat19 = u_xlat1.z + 9.99999975e-05;
+    u_xlat1.y = u_xlat2.x / u_xlat19;
+    u_xlati19 = int(_channel);
+    u_xlat1.x = dot(u_xlat1.xyz, ImmCB_0[u_xlati19].xyz);
+    u_xlat1.x = log2(u_xlat1.x);
+    u_xlat1.x = u_xlat1.x * _scale;
+    u_xlat1.x = exp2(u_xlat1.x);
+    u_xlat1.x = u_xlat1.x * _phase + _evolution;
+    u_xlat1.xyz = u_xlat1.xxx + vec3(10.0, 9.66666698, 9.33333302);
+    u_xlatb2.xyz = greaterThanEqual(u_xlat1.xyzx, (-u_xlat1.xyzx)).xyz;
+    u_xlat1.xyz = fract(abs(u_xlat1.xyz));
+    {
+        vec4 hlslcc_movcTemp = u_xlat1;
+        hlslcc_movcTemp.x = (u_xlatb2.x) ? u_xlat1.x : (-u_xlat1.x);
+        hlslcc_movcTemp.y = (u_xlatb2.y) ? u_xlat1.y : (-u_xlat1.y);
+        hlslcc_movcTemp.z = (u_xlatb2.z) ? u_xlat1.z : (-u_xlat1.z);
+        u_xlat1 = hlslcc_movcTemp;
+    }
+    u_xlat1.xyz = u_xlat1.xyz + vec3(-0.5, -0.5, -0.5);
+    u_xlat1.xyz = abs(u_xlat1.xyz) * vec3(4.0, 4.0, 4.0) + vec3(-0.333299994, -0.333299994, -0.333299994);
+    u_xlat1.xyz = clamp(u_xlat1.xyz, 0.0, 1.0);
+    u_xlat2 = u_xlat1.yyyy * _color2;
+    u_xlat2 = u_xlat1.xxxx * _color1 + u_xlat2;
+    u_xlat1 = u_xlat1.zzzz * _color3 + u_xlat2;
+    u_xlat2.x = dot(vec3(0.298999995, 0.587000012, 0.114), u_xlat1.xyz);
+    u_xlat9.x = dot(vec3(-0.147129998, -0.288859993, 0.43599999), u_xlat1.xyz);
+    u_xlat9.y = dot(vec3(0.61500001, -0.514989972, -0.10001), u_xlat1.xyz);
+    u_xlat20 = _saturation + 1.0;
+    u_xlat2.yz = vec2(u_xlat20) * u_xlat9.xy;
+    u_xlat1.x = dot(vec2(1.0, 1.13982999), u_xlat2.xz);
+    u_xlat1.y = dot(vec3(1.0, -0.394650012, -0.580600023), u_xlat2.xyz);
+    u_xlat1.z = dot(vec2(1.0, 2.03210998), u_xlat2.xy);
+    u_xlat1 = u_xlat1 * u_xlat0.wwww + (-u_xlat0);
+    u_xlat1 = vec4(vec4(_blend, _blend, _blend, _blend)) * u_xlat1 + u_xlat0;
+    if(int(_use_inner_mask) != 0) {
+        u_xlatb2.xy = equal(ivec4(int(_show_inner_mask), int(_b_clip_mask), int(_show_inner_mask), int(_show_inner_mask)), ivec4(1, 1, 0, 0)).xy;
+        u_xlat3 = (u_xlatb2.x) ? vec4(1.0, 0.0, 1.0, 1.0) : u_xlat1;
+        u_xlat4 = texture(Mask, acScreenNorm.xy);
+        u_xlat5 = (-u_xlat4) + vec4(1.0, 1.0, 1.0, 1.0);
+        u_xlat0 = u_xlat0 * u_xlat5;
+        u_xlat0 = u_xlat3 * u_xlat4 + u_xlat0;
+        u_xlat2.x = u_xlat4.x * u_xlat0.w;
+        fragColor.w = (u_xlatb2.y) ? u_xlat2.x : u_xlat0.w;
+        fragColor.xyz = u_xlat0.xyz;
+    } else {
+        fragColor = u_xlat1;
+    }
+    return;
+}
+    ]]></shader>
+</effect>

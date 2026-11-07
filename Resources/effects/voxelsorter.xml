@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   VOXEL SORTER — o Voxel Sorter (CGZY) do After Effects, medido no plugin (0.420.0)
+  ============================================================================
+
+  Pedido do snow (06/10/2026): "pode agora implementar o voxelsorter como efeito? e fazer os
+  benchmark pra ficar 100% igual e também 3D?". Medido no plugin dele (matchName "PSSVXSRT"),
+  numa instância separada do AE: ~170 renders em 16 bits — degraus de cinza, um morro liso, uma
+  placa de quadrados coloridos e a foto dele, de frente, de lado, de cima, por trás e com câmera
+  na composição (tools/voxelsorter/benchmark/).
+
+  O QUE FOI MEDIDO (W = largura do quadro):
+
+  - A imagem vira uma grade de Grid Size colunas de cubos (lado = W / Grid Size).
+  - A profundidade de cada coluna vem da MÉDIA dos três canais (não da luma): brilho 1 = W/2,
+    arredondado para cubos inteiros. Há um teto de voxels: com Grid Size 512 em 16:9 as colunas
+    param em 112 cubos (2^24 voxels na grade inteira), não em 256.
+  - Fill Mode "Skirt": a coluna só desce até a vizinha mais baixa — o volume é uma CASCA, não um
+    bloco (por trás se vê o relevo ao contrário). "Surface" desce até o fundo; "Points" é só o
+    cubo de cima.
+  - Depth Amplitude NÃO é a altura das colunas: é quanto a profundidade "vale" para a câmera. O
+    volume gira em volta do centro da camada (X, depois Y, depois Z) e DEPOIS o eixo da câmera é
+    multiplicado por Amplitude/100: 0 achata (vista paralela), 150 (padrão) dá a perspectiva
+    forte, negativa espelha. Por isso com 0 ainda há relevo quando se gira.
+  - World Position é em % do quadro (X e Z pela largura, Y pela altura).
+  - A câmera: sem câmera na composição, a padrão do AE (zoom 50 mm = 1,3889 × W, no eixo do
+    quadro). Com câmera, o plugin obedece a ela — conferido com a câmera parada, perto, longe,
+    deslocada e girada (24 renders). Aqui o efeito usa a câmera do Nova do mesmo jeito.
+  - A luz (Bevel ligado) é direcional e presa ao MUNDO — de cima, da direita e da frente —, não
+    ao volume: girar o volume muda a luz de cada face. Perto de Amplitude 0 sobra só a ambiente.
+    Bevel desligado = a cor pura da célula. O Bevel também escurece a aresta de cada cubo.
+  - Saturation: em volta da luma Rec.709. Depth Falloff: o fundo fica TRANSPARENTE (é o alfa
+    que cai), não escuro.
+
+  QUANTO BATE (GPU do PC × AE, 1280 × 720, 113 casos + 24 com câmera): a GEOMETRIA (a silhueta)
+  tem erro mediano de 0,4% do quadro, e abaixo de 1,5% com a câmera da composição. A COR tem erro
+  mediano de 2,3% (pior caso sem Size: ~6%): a luz foi ajustada a um modelo simples e o Ambient
+  Occlusion do plugin não foi refeito. Size < 100 acerta o tamanho dos cubos, mas a posição de
+  cada um fica um pouco fora (7–18% de erro de silhueta nesses casos).
+
+  FORA (existem no plugin, não aqui): Voxel Sort, Soften, Fill Density / Randomness, BG Depth,
+  Voxel Size Map, Voxel Displace, Roundness, Specular, Ambient Occlusion, Light Falloff, Depth of
+  Field e Motion Blur (os dois "Pro"). Dois renders do AE com a câmera DENTRO do volume (de lado
+  com Invert, de lado com Amplitude 300) saem pretos opacos lá e não foram reproduzidos.
+-->
+<effect
+    id="nova.effect.voxelsorter"
+    name="Voxel Sorter"
+    name-en="Voxel Sorter"
+    desc="O Voxel Sorter do After Effects: a imagem vira colunas de cubos em 3D, extrudadas pelo brilho, com sombreamento e câmera."
+    desc-en="After Effects' Voxel Sorter: the image becomes 3D columns of cubes extruded by brightness, with shading and camera."
+    category="stylize"
+    tags="voxel,voxels,sorter,cubos,cubes,3d,extrusao,extrusão,extrude,profundidade,depth,pixel,minecraft,blocos,blocks,lego">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <texture id="grade" src="buffer" scale="0.5" />
+
+        <selector id="depthSource" group="Depth / Geometry" label="Depth" default="0" options="Use Luma|Use Alpha" />
+        <switch id="invertDepth" group="Depth / Geometry" label="Invert Depth" default="false" />
+        <slider id="gridSize" group="Depth / Geometry" label="Grid Size" type="integer" default="128.0" min="32.0" max="512.0" step="1.0" snap="128.0" />
+        <slider id="depthAmplitude" group="Depth / Geometry" label="Depth Amplitude" default="150.0" min="-500.0" max="500.0" step="1.0" snap="150.0,0.0" />
+        <selector id="fillMode" group="Depth / Geometry" label="Fill Mode" default="0" options="Skirt|Surface|Points" />
+
+        <slider id="voxelSize" group="Voxel Size" label="Size" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+
+        <switch id="bevel" group="Voxel Shading" label="Bevel" default="true" />
+        <slider id="depthFalloff" group="Voxel Shading" label="Depth Falloff" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="saturation" group="Voxel Shading" label="Saturation" default="15.0" min="-100.0" max="100.0" step="1.0" snap="15.0,0.0" />
+
+        <slider id="positionX" group="World Position" label="Position X" default="0.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="positionY" group="World Position" label="Position Y" default="0.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+        <slider id="positionZ" group="World Position" label="Position Z" default="0.0" min="-1000.0" max="1000.0" step="1.0" snap="0.0" />
+
+        <slider id="rotationX" group="World Rotation" label="Rotation X" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="rotationY" group="World Rotation" label="Rotation Y" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="rotationZ" group="World Rotation" label="Rotation Z" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+
+        <slider id="blend" label="Blend" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+    </params>
+
+    <passes>
+        <pass target="grade" />   <!-- 0: a imagem reduzida (a cor de cada célula) -->
+        <pass />                  <!-- 1: o raio pela grade de colunas -->
+    </passes>
+
+    <shader><![CDATA[
+// Calibrados no benchmark (tools/voxelsorter/benchmark):
+const float FOCO = 1.3889;          // o zoom da câmera padrão do AE, em larguras do quadro
+const float ALTURA = 0.5;      // a coluna de brilho 1, em larguras do quadro
+
+vec2 tamanho() { return vec2(textureSize(inputImg, 0)); }
+
+float brilho(vec4 c) {
+    float v = depthSource == 1 ? c.a : (c.r + c.g + c.b) / 3.0 * c.a;    // medido: a média dos três canais
+    return invertDepth ? 1.0 - v : v;
+}
+
+/** A cor da célula (i, j) da grade. */
+vec4 celula(vec2 ij, vec2 celulas) { return texture(grade, (ij + 0.5) / celulas); }
+
+/**
+ * A altura da coluna de brilho 1, em larguras do quadro. Medido: com Grid Size 512 (16:9) as colunas
+ * param em 112 cubos, não em 256 — bate com um teto de 2^24 voxels na grade inteira (512 × 288 × 113),
+ * arredondado para baixo de 16 em 16. Com 256 o teto não é alcançado (128 cubos, a metade da largura).
+ */
+float alturaMaxima() {
+    vec2 R = tamanho();
+    float linhas = ceil(R.y * gridSize / R.x - 0.001);
+    float teto = max(floor(16777216.0 / (gridSize * linhas) / 16.0) * 16.0, 16.0);
+    return min(ALTURA, teto / gridSize);
+}
+
+/** Quantos cubos de profundidade a célula tem. */
+float cubosDe(vec4 c, float G) {
+    return max(floor(brilho(c) * alturaMaxima() * G + 0.5), 1.0);
+}
+
+/** A altura (px) da coluna vizinha (0 fora da grade). */
+float altDaVizinha(vec2 ij, vec2 celulas, float G, float lado, float propria) {
+    if (ij.x < 0.0) return propria;
+    // medido (e só isto): na borda DIREITA, a coluna de brilho máximo (branco puro) ganha parede até o fundo
+    if (ij.x >= celulas.x) return propria >= alturaMaxima() * G * lado - 0.5 ? 0.0 : propria;
+    if (ij.y < 0.0 || ij.y >= celulas.y) return propria;
+    vec4 c = celula(ij, celulas);
+    return c.a > 0.01 ? cubosDe(c, G) * lado : propria;
+}
+
+mat3 giro() {
+    vec3 a = radians(vec3(rotationX, rotationY, rotationZ));
+    vec3 s = sin(a), c = cos(a);
+    mat3 rx = mat3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);
+    mat3 ry = mat3(c.y, 0.0, -s.y, 0.0, 1.0, 0.0, s.y, 0.0, c.y);
+    mat3 rz = mat3(c.z, s.z, 0.0, -s.z, c.z, 0.0, 0.0, 0.0, 1.0);
+    return rx * ry * rz;
+}
+
+void main() {
+    vec2 uv = acScreenNorm;
+    vec2 R = tamanho();
+    if (acPass == 0) {
+        fragColor = texture(inputImg, uv); return;      // (o filtro linear já faz a média de 2 × 2)
+    }
+
+    float G = gridSize;
+    float lado = R.x / G;                              // o cubo, em px da camada
+    vec2 celulas = vec2(G, ceil(R.y / lado - 0.001));
+    // Medido: a Depth Amplitude NÃO muda a altura das colunas (brilho 1 = metade da largura, sempre):
+    // ela é a PERSPECTIVA. A distância da câmera é a do zoom padrão do AE (50 mm: 1,3889 larguras)
+    // dividida por Amplitude/100 — com 0 a vista é ortográfica, negativa inverte a perspectiva.
+    float amp = depthAmplitude / 100.0;
+    // (com 0 o volume fica achatado no plano: uma escala mínima dá a vista paralela sem dividir por zero)
+    float escalaZ = abs(amp) < 0.003 ? 0.003 : amp;
+    float zMax = max(alturaMaxima() * G, 1.0) * lado;
+
+    // O MUNDO: px da camada, +z para a câmera, a camada em z = 0. Sem câmera na composição, o olho
+    // é o da câmera padrão do AE (zoom de 50 mm = 1,3889 larguras, no eixo do quadro) — conferido:
+    // com a câmera padrão na comp o plugin dá exatamente a mesma imagem.
+    vec3 centro = vec3(0.5 * R, 0.0);
+    vec3 olho, dir;
+    if (acCamera3D == 1) {
+        vec2 tela = acTela(uv);
+        vec4 longe = acCameraInvVP * vec4(tela.x * 2.0 - 1.0, 1.0 - tela.y * 2.0, 1.0, 1.0);
+        vec3 dn = longe.xyz / longe.w - acCameraOlhoNova;          // mundo do Nova: Z para longe
+        olho = vec3(acCameraOlho.xy, -acCameraOlho.z) * acEscalaDePixel;
+        dir = vec3(dn.xy, -dn.z);
+    } else {
+        olho = vec3(0.5 * R, FOCO * R.x);
+        dir = vec3(uv * R, 0.0) - olho;
+    }
+    // O volume no mundo: gira em volta do centro da camada, DEPOIS a profundidade é multiplicada por
+    // Amplitude/100 (é o que se mediu: a Amplitude não muda a altura das colunas na grade, estica o
+    // eixo da câmera — 0 achata, negativa espelha), e por fim a World Position.
+    mat3 M = giro();
+    // medido: World Position em % do quadro (X e Z pela largura, Y pela altura)
+    vec3 T = vec3(positionX * R.x, positionY * R.y, -positionZ * R.x) / 100.0;
+    vec3 ow = olho - centro - T, dw = dir;
+    ow.z /= escalaZ; dw.z /= escalaZ;
+    vec3 o = transpose(M) * ow + centro;
+    vec3 d = normalize(transpose(M) * dw);
+
+    // a caixa da grade inteira
+    vec3 bmin = vec3(0.0), bmax = vec3(celulas * lado, zMax);
+    vec3 inv = 1.0 / (abs(d) + 1e-9) * sign(d + 1e-12);
+    vec3 t0 = (bmin - o) * inv, t1 = (bmax - o) * inv;
+    vec3 tn = min(t0, t1), tf = max(t0, t1);
+    float tEntra = max(max(tn.x, tn.y), max(tn.z, 0.0)), tSai = min(tf.x, min(tf.y, tf.z));
+    vec4 saida = vec4(0.0);
+    if (tEntra < tSai) {
+        vec3 p = o + d * (tEntra + 1e-4);
+        vec2 ij = clamp(floor(p.xy / lado), vec2(0.0), celulas - 1.0);
+        vec2 passo = sign(d.xy + 1e-12);
+        vec2 tDelta = abs(lado * inv.xy);
+        vec2 tProx = ((ij + max(passo, 0.0)) * lado - o.xy) * inv.xy;
+        float t = tEntra;
+        vec3 normal = vec3(0.0, 0.0, 1.0);
+        // por qual face o raio entrou na caixa
+        if (tEntra == tn.x) normal = vec3(-passo.x, 0.0, 0.0); else if (tEntra == tn.y) normal = vec3(0.0, -passo.y, 0.0);
+        bool achou = false;
+        vec4 c = vec4(0.0);
+        float fracao = clamp(voxelSize / 100.0, 0.02, 1.0);
+        for (int n = 0; n < 1100; n++) {
+            if (ij.x < 0.0 || ij.y < 0.0 || ij.x >= celulas.x || ij.y >= celulas.y || t > tSai) break;
+            c = celula(ij, celulas);
+            float tFim = min(min(tProx.x, tProx.y), tSai);
+            if (c.a > 0.01) {
+                float h = cubosDe(c, G) * lado;
+                // Skirt: a coluna só desce até a vizinha mais baixa (fecha os buracos da casca, sem
+                // virar um bloco maciço). Surface: maciço até o fundo. Points: só o cubo de cima.
+                float base = max(h - lado, 0.0);
+                if (fillMode == 0) {
+                    float m = h;
+                    m = min(m, altDaVizinha(ij + vec2(1.0, 0.0), celulas, G, lado, h));
+                    m = min(m, altDaVizinha(ij - vec2(1.0, 0.0), celulas, G, lado, h));
+                    m = min(m, altDaVizinha(ij + vec2(0.0, 1.0), celulas, G, lado, h));
+                    m = min(m, altDaVizinha(ij - vec2(0.0, 1.0), celulas, G, lado, h));
+                    base = min(base, m);
+                } else if (fillMode == 1) base = 0.0;
+                // o trecho do raio com z dentro da coluna
+                float ta = (base - o.z) / (d.z + sign(d.z + 1e-12) * 1e-9), tb = (h - o.z) / (d.z + sign(d.z + 1e-12) * 1e-9);
+                float tzE = min(ta, tb), tzS = max(ta, tb);
+                float e = max(t, tzE), s = min(tFim, tzS);
+                if (e <= s) {
+                    if (fracao > 0.995) {
+                        if (tzE > t) normal = vec3(0.0, 0.0, d.z < 0.0 ? 1.0 : -1.0);
+                        t = e; achou = true; break;
+                    }
+                    // Size < 100: cada cubo encolhe em volta do próprio centro e a coluna vira uma pilha
+                    // de cubos soltos — testa os cubos que o raio atravessa nesta célula, um a um.
+                    vec3 meio = vec3((ij + 0.5) * lado, 0.0);
+                    float k = floor((o.z + d.z * (e + 1e-3)) / lado);
+                    for (int m = 0; m < 24; m++) {
+                        if (k * lado >= h || (k + 1.0) * lado <= base) break;
+                        vec3 cc = vec3(meio.xy, (k + 0.5) * lado);
+                        vec3 a0 = (cc - 0.5 * fracao * lado - o) * inv, a1 = (cc + 0.5 * fracao * lado - o) * inv;
+                        vec3 an = min(a0, a1), af = max(a0, a1);
+                        float te = max(an.x, max(an.y, an.z)), ts = min(af.x, min(af.y, af.z));
+                        if (te <= ts && ts >= t && te <= s + 1e-3) {
+                            normal = te == an.x ? vec3(-passo.x, 0.0, 0.0) : te == an.y ? vec3(0.0, -passo.y, 0.0) : vec3(0.0, 0.0, d.z < 0.0 ? 1.0 : -1.0);
+                            t = max(te, t); achou = true; break;
+                        }
+                        k += d.z < 0.0 ? -1.0 : 1.0;
+                    }
+                    if (achou) break;
+                }
+            }
+            // anda para a próxima célula
+            if (tProx.x < tProx.y) { t = tProx.x; tProx.x += tDelta.x; ij.x += passo.x; normal = vec3(-passo.x, 0.0, 0.0); }
+            else { t = tProx.y; tProx.y += tDelta.y; ij.y += passo.y; normal = vec3(0.0, -passo.y, 0.0); }
+        }
+        if (achou) {
+            vec3 q = o + d * t;
+            vec3 cor = c.rgb;
+            // Saturation
+            float y = dot(cor, vec3(0.2126, 0.7152, 0.0722));
+            cor = clamp(y + (cor - y) * (1.0 + saturation / 100.0), 0.0, 1.0);
+            // A LUZ. Medido face a face em ~100 renders: é uma luz direcional presa ao MUNDO (vem de cima,
+            // da direita e da frente), não ao volume — girar o volume muda a luz de cada face. Com a
+            // Depth Amplitude perto de 0 sobra só a luz ambiente. Bevel desligado = a cor pura da célula.
+            float luz = 1.0;
+            if (bevel) {
+                float difusa = max(dot(M * normal, vec3(0.475, -0.394, 0.314)), 0.0) * clamp(abs(amp) / 1.4, 0.0, 1.0);
+                luz = 0.568 + difusa;
+            }
+            // Bevel: a aresta de cada cubo escurece
+            if (bevel) {
+                vec3 f = fract(q / lado);
+                vec3 borda = min(f, 1.0 - f) * lado;                 // px até a aresta, em cada eixo
+                vec2 nasFaces = abs(normal.z) > 0.5 ? borda.xy : abs(normal.x) > 0.5 ? borda.yz : borda.xz;
+                float aresta = min(nasFaces.x, nasFaces.y);
+                luz *= mix(0.935, 1.0, smoothstep(0.0, 0.065 * lado, aresta));
+            }
+            // Depth Falloff (medido: o fundo some — é o alfa que cai, não a cor que escurece)
+            float some = mix(1.0, clamp(q.z / zMax, 0.0, 1.0), depthFalloff / 100.0);
+            saida = vec4(clamp(cor * luz, 0.0, 1.0), some);
+        }
+    }
+    vec4 orig = texture(inputImg, uv);
+    fragColor = mix(orig, saida, blend / 100.0);
+}
+]]></shader>
+</effect>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ============================================================================
+   GRADIENTE RADIAL
+  ============================================================================
+
+  Dois pontos de cor misturados pela distância a um centro: a cor do miolo é
+  uma, a cor da borda é outra, e a transição é uma curva. O par radial dos
+  gradientes linear/4-cor/rampa que já existem no catálogo.
+
+  ============================================================================
+   POR QUE A FORMA É ELÍPTICA, NÃO CIRCULAR
+  ============================================================================
+
+  Um gradiente radial "circular" numa tela retangular sai ovalado porque a UV
+  vai de 0 a 1 em cada eixo (quadrado forçado). O eixo X multiplicado por
+  `acAspect` reconstrói a geometria real — o círculo volta a ser círculo.
+
+  Mas um gradiente RADIAL muitas vezes é usado como VINHETA, e a vinheta
+  quer seguir a FORMA do quadro (elíptica num widescreen). O slider
+  `aspectMix` escolhe entre os dois: 0 = círculo, 1 = elipse que acompanha o
+  aspecto do quadro.
+
+  ============================================================================
+   CURVA ENTRE AS CORES
+  ============================================================================
+
+  Um `mix` linear produz banding em gradientes grandes; um `smoothstep` dá a
+  curva em S que o olho prefere. Entre os dois há um expoente — `power` aqui
+  — que controla a dureza. 1 = linear; 2 = quadrático (concentra no miolo);
+  0.5 = raiz (concentra na borda).
+-->
+<effect
+    id="nova.effect.radial-gradient"
+    name="Gradiente radial"
+    name-en="Radial Gradient"
+    desc="Gradiente de duas cores do centro para a borda."
+    desc-en="Two-color gradient from the center outward."
+    category="procedural"
+    tags="gradiente,radial,círculo,vinheta,centro,gerador">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <point id="centerAt" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <color id="innerColor" label="Cor do miolo" default="#FFFFFFFF" />
+        <color id="outerColor" label="Cor da borda" default="#000000FF" />
+        <slider id="innerRadius" label="Raio interno"
+                default="0.1" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="outerRadius" label="Raio externo"
+                default="0.7" min="0.05" max="1.5" step="0.01" snap="0.0" />
+        <slider id="power" label="Curva"
+                default="1.0" min="0.2" max="4.0" step="0.05" snap="0.0" />
+        <slider id="aspectMix" label="Forma (0 círculo, 1 elipse da tela)"
+                default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+        <slider id="blend" label="Sobre a imagem"
+                default="1.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <preview>
+        <set param="innerRadius" value="0.05" />
+        <set param="outerRadius" value="0.9" />
+    </preview>
+
+    <shader><![CDATA[
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    // Dois modos: aspectMix = 0 usa coordenada corrigida (círculo real),
+    // aspectMix = 1 usa UV crua (elipse que segue a forma da tela).
+    vec2 delta = acScreenNorm - centerAt;
+    vec2 corrigido = delta * vec2(mix(acAspect, 1.0, aspectMix), 1.0);
+    float d = length(corrigido);
+
+    // Normaliza entre raio interno e externo; eleva à curva escolhida.
+    float t = smoothstep(innerRadius, max(outerRadius, innerRadius + 1e-4), d);
+    t = pow(t, max(power, 1e-4));
+
+    vec4 gradiente = mix(innerColor, outerColor, t);
+
+    // Mistura por opacidade (do blend) e alfa da cor do gradiente.
+    vec3 cor = mix(original.rgb, gradiente.rgb, blend * gradiente.a);
+    float alfa = mix(original.a, max(original.a, gradiente.a), blend);
+
+    fragColor = vec4(cor, alfa);
+}
+
+    ]]></shader>
+</effect>
