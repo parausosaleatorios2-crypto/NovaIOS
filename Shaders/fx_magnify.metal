@@ -22,7 +22,7 @@ struct magnifyParams {
 // Distância medida em unidades de ALTURA. Sem multiplicar X pelo aspecto, a
 // "lupa" sai oval em qualquer composição que não seja quadrada — e oval não
 // parece lente, parece defeito.
-float2 paraAltura(float2 uv) { return float2(uv.x * eng.acAspect, uv.y); }
+static float2 paraAltura(float2 uv) { return float2(uv.x * eng.acAspect, uv.y); }
 
 fragment float4 fx_magnify(
     NovaVertexOut       in   [[stage_in]],

@@ -18,7 +18,7 @@ struct set_matteParams {
 };
 
 // --- funcoes auxiliares do efeito
-float valorDoMatte(float4 m) {
+static float valorDoMatte(float4 m) {
     if (u.matteChannel == 0) return m.a;
 
     float3 c = u.premultiplyMatte ? m.rgb * m.a : m.rgb;

@@ -18,7 +18,7 @@ struct node_fill_colorParams {
 // --- funcoes auxiliares do efeito
 // k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (ver
 // `node-displacement-map.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -29,22 +29,22 @@ float oitoBits(float k) {
     return as_type<float>((uint(150 - e) << 23) + (q - 0x800000u));
 }
 
-float3 oitoBits3(float3 k) {
+static float3 oitoBits3(float3 k) {
     return float3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
 }
 
 // O sRGB do GLES nos dois sentidos: o RT sRGB do Node converte para luz linear ao ler e de volta ao escrever.
-float3 linear(float3 c) {
+static float3 linear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
 
-float3 srgb(float3 l) {
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 
 // Os bytes que o RT sRGB de 8 bits guarda para esta cor linear.
-float3 bytesSrgb(float3 l) {
+static float3 bytesSrgb(float3 l) {
     return floor(srgb(l) * 255.0 + 0.5);
 }
 

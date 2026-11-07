@@ -24,7 +24,7 @@ const float PI = 3.14159265359;
 
 // 1 = fica, 0 = sai. A maior diferença entre os canais, em 0..255, contra a
 // tolerância — com meio nível de rampa para a borda não serrilhar.
-float fica(float2 uv) {
+static float fica(float2 uv) {
     float3 c = inputImg.sample(__nv_smp, clamp(uv, 0.0, 1.0)).rgb;
     float3 d = abs(c - u.keyColor.rgb) * 255.0;
     float dif = max(d.r, max(d.g, d.b));
@@ -33,7 +33,7 @@ float fica(float2 uv) {
 
 // A fração de um disco de raio r que fica do lado opaco de uma borda reta,
 // quando o centro está a uma distância d DENTRO do opaco (negativa = fora).
-float fracaoNoDisco(float d, float r) {
+static float fracaoNoDisco(float d, float r) {
     float x = clamp(d / r, -1.0, 1.0);
     return 0.5 + (x * sqrt(1.0 - x * x) + asin(x)) / PI;
 }

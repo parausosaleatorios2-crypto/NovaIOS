@@ -13,7 +13,7 @@ using namespace metal;
 struct toji_skexnxxqualityfixerParams { int __vazio; };
 
 // --- funcoes auxiliares do efeito
-float4 blurInternal(sampler2D texture, float2 texOffset, float2 st, float numBlurPixelsPerSide)
+static float4 blurInternal(sampler2D texture, float2 texOffset, float2 st, float numBlurPixelsPerSide)
         {
             if(0.0 <= 0.0)
                 return float4(0,0,0,0);

@@ -29,17 +29,17 @@ struct repeat_radialParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float hash(float x) {
+static float hash(float x) {
     return fract(sin(x * 127.1 + u.seed * 37.13) * 43758.5453);
 }
 
-float2 girar(float2 v, float rad) {
+static float2 girar(float2 v, float rad) {
     float c = cos(rad);
     float s = sin(rad);
     return float2(v.x * c - v.y * s, v.x * s + v.y * c);
 }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     return float4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);

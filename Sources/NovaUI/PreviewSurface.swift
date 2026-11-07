@@ -8,7 +8,6 @@
 
 import SwiftUI
 import MetalKit
-import NovaEngine
 import os
 
 public struct PreviewSurface: UIViewRepresentable {

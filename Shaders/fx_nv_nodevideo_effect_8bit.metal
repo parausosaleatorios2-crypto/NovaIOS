@@ -60,7 +60,7 @@ int u_xlati7;
 float2 u_xlat13;
 bool u_xlatb13;
 float u_xlat19;
-int int_bitfieldInsert(int base, int insert, int offset, int bits) {
+static int int_bitfieldInsert(int base, int insert, int offset, int bits) {
     uint mask = uint(~(int(~0) << uint(bits)) << uint(offset));
     return int((uint(base) & ~mask) | ((uint(insert) << uint(offset)) & mask));
 }

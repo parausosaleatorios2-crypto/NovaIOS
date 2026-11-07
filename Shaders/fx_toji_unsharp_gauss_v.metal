@@ -16,7 +16,7 @@ struct toji_unsharp_gauss_vParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 s(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+static float4 s(float2 uv){ return inputImg.sample(__nv_smp, uv); }
     float w(float x, float sigma){ return exp(-(x*x)/(2.0*sigma*sigma)); }
 
 fragment float4 fx_toji_unsharp_gauss_v(

@@ -25,13 +25,13 @@ struct handwriting_revealParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash21(float2 p) {
+static float hash21(float2 p) {
     p = fract(p * float2(127.1, 311.7));
     p += dot(p, p + 34.23);
     return fract(p.x * p.y);
 }
 
-float valueNoise(float2 p) {
+static float valueNoise(float2 p) {
     float2 cell = floor(p);
     float2 f = fract(p);
     float2 w = f * f * (3.0 - 2.0 * f);
@@ -42,7 +42,7 @@ float valueNoise(float2 p) {
     return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
 }
 
-float fbm(float2 p) {
+static float fbm(float2 p) {
     float soma = 0.0;
     float amplitude = 0.5;
     for (int i = 0; i < 3; i++) {

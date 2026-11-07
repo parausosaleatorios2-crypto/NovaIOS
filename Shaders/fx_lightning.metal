@@ -25,12 +25,12 @@ struct lightningParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float x) {
+static float hash(float x) {
     return fract(sin(x * 127.1 + u.seed * 13.7) * 43758.5453);
 }
 
 /** Ruído de uma dimensão, suave: é ele que entorta a linha reta. */
-float ruido1(float x) {
+static float ruido1(float x) {
     float i = floor(x);
     float f = fract(x);
     float s = f * f * (3.0 - 2.0 * f);
@@ -43,7 +43,7 @@ float ruido1(float x) {
  * O `sin(t * PI)` é o que prende as pontas: ele vale zero nos dois extremos e um
  * no meio. Sem isso, o raio sairia dos terminais e o efeito perderia o sentido.
  */
-float desvio(float t, float semente, float tempo, int oitavas) {
+static float desvio(float t, float semente, float tempo, int oitavas) {
     float soma = 0.0;
     float amplitude = 1.0;
     float frequencia = 3.0;
@@ -63,7 +63,7 @@ float desvio(float t, float semente, float tempo, int oitavas) {
 const int PASSOS = 20;
 
 /** O trecho de um raio: o principal (0) vai de 0 a 1; o galho i nasce num ponto do principal e morre antes do fim. */
-float2 trecho(int raio) {
+static float2 trecho(int raio) {
     if (raio == 0) return float2(0.0, 1.0);
     float s = float(raio);
     float nasce = 0.15 + hash(s * 3.1) * 0.6;
@@ -72,7 +72,7 @@ float2 trecho(int raio) {
 }
 
 /** O desvio guardado pelo passe 0: o ponto i do raio. */
-float desvioGuardado(int raio, int i) {
+static float desvioGuardado(int raio, int i) {
     uint4 b = uint4(desvios.read(uint2(int2(i, raio)), uint(0)) * 255.0 + 0.5);
     return as_type<float>(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
 }
@@ -84,7 +84,7 @@ float desvioGuardado(int raio, int i) {
  * Vinte passos bastam porque o raio é fino: buracos entre os passos ficariam
  * menores que a espessura da linha.
  */
-float distanciaAoRaio(float2 p, float2 origem, float2 destino, int raio,
+static float distanciaAoRaio(float2 p, float2 origem, float2 destino, int raio,
                       float inicio, float fim, float forca) {
     float2 direcao = destino - origem;
     float comprimento = length(direcao);

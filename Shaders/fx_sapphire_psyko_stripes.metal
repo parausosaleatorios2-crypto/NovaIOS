@@ -39,52 +39,52 @@ struct sapphire_psyko_stripesParams {
 const float LARGURA_MAX = 720.0;
 
 // Os sliders do Sapphire chegam em ponto fixo 16.16.
-float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
 
 int2 gT;          // o buffer
 int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (o Source Blur é em px da composição)
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
     gEscala = eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0;
 }
 
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
     i = i - (i / p) * p; if (i < 0) i += p;
     return i < n ? i : p - 1 - i;
 }
 
-int2 naCamada(int2 q) { return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
+static int2 naCamada(int2 q) { return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
 
-float4 guardar(float f) {
+static float4 guardar(float f) {
     uint b = as_type<uint>(f);
     return float4(float(b & 255u), float((b >> 8u) & 255u), float((b >> 16u) & 255u), float(b >> 24u)) / 255.0;
 }
 
-float lido(float4 c) {
+static float lido(float4 c) {
     uint4 b = uint4(floor(c * 255.0 + 0.5));
     return as_type<float>(b.r | (b.g << 8u) | (b.b << 16u) | (b.a << 24u));
 }
 
 // Input Opacity (medido): Normal (1) usa a cor pré-multiplicada; All Opaque (0) e As Premult (2), a reta.
-float3 entrada(int2 p) {
+static float3 entrada(int2 p) {
     float4 s = inputImg.read(uint2(p), uint(0));
     return u.inputOpacity == 1 ? s.rgb * s.a : s.rgb;
 }
 
-float monochrome(float3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
+static float monochrome(float3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
 
 // Medido: o Source Blur do AE já é a largura em px (subpixel ligado de fábrica no plugin).
-float larguraPx() { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
+static float larguraPx() { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
 
 /** Uma das três caixas de um eixo (a conta do S_GlowAura): a que cresce leva as pontas com a fração. */
-float caixa(int2 q, bool emX, int qual, bool deA) {
+static float caixa(int2 q, bool emX, int qual, bool deA) {
     float w = larguraPx();
     int a = int(floor(w));
     float f = w - float(a);

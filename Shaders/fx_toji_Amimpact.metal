@@ -29,7 +29,7 @@ struct toji_AmimpactParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
+static float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
     float2x2 rot2(float a){ float s=sin(a), c=cos(a); return float2x2(c,-s,s,c); }
     float2 mirror(float2 uv){ return abs(fract(uv*0.5+0.5)*2.0-1.0); }
 

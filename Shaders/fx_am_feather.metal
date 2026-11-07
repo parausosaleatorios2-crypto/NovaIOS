@@ -18,7 +18,7 @@ struct am_featherParams {
 // --- funcoes auxiliares do efeito
 // Uma caixa do AM no alfa de `fonte`: o centro e n amostras de cada lado até ±alcance, com o filtro linear. As contas
 // são escritas como as do AM (o ângulo em graus × 0,0174533, a velocidade ÷ o texel) para dar o mesmo n.
-float caixa(sampler2D fonte, float graus, float alcance) {
+static float caixa(sampler2D fonte, float graus, float alcance) {
     float2 texel = 1.0 / float2(int2(int(fonte.get_width()), int(fonte.get_height())));
     float rad = graus * 0.0174533;
     float2 velocidade = float2(cos(rad) * alcance, -sin(rad) * alcance);

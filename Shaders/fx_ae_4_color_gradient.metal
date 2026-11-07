@@ -26,39 +26,39 @@ struct ae_4_color_gradientParams {
 };
 
 // --- funcoes auxiliares do efeito
-float lum(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }      // medido (0,30 / 0,59 / 0,11 erra 0,3 nível)
+static float lum(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }      // medido (0,30 / 0,59 / 0,11 erra 0,3 nível)
 
-float3 prenderCor(float3 c) {
+static float3 prenderCor(float3 c) {
     float l = lum(c), n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
     if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-9);
     if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-9);
     return c;
 }
 
-float3 comLum(float3 c, float l) { return prenderCor(c + (l - lum(c))); }
+static float3 comLum(float3 c, float l) { return prenderCor(c + (l - lum(c))); }
 
-float sat(float3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+static float sat(float3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
 
-float3 comSat(float3 c, float s) {
+static float3 comSat(float3 c, float s) {
     float n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
     return x > n ? (c - n) * s / (x - n) : float3(0.0);
 }
 
-float3 luzSuave(float3 b, float3 s) {
+static float3 luzSuave(float3 b, float3 s) {
     float3 d = mix(sqrt(b), ((16.0 * b - 12.0) * b + 4.0) * b, float3(lessThanEqual(b, float3(0.25))));
     return mix(b + (2.0 * s - 1.0) * (d - b), b - (1.0 - 2.0 * s) * b * (1.0 - b), float3(lessThanEqual(s, float3(0.5))));
 }
 
-float3 subexpor(float3 b, float3 s) {          // Color Dodge
+static float3 subexpor(float3 b, float3 s) {          // Color Dodge
     return mix(min(float3(1.0), b / max(1.0 - s, float3(1e-9))), float3(1.0), float3(greaterThanEqual(s, float3(1.0))));
 }
 
-float3 superexpor(float3 b, float3 s) {        // Color Burn
+static float3 superexpor(float3 b, float3 s) {        // Color Burn
     return mix(1.0 - min(float3(1.0), (1.0 - b) / max(s, float3(1e-9))), float3(0.0), float3(lessThanEqual(s, float3(0.0))));
 }
 
 /** O resultado do modo `m` com as duas cores retas (b: a fonte, s: o gradiente). */
-float3 misturar(int m, float3 b, float3 s) {
+static float3 misturar(int m, float3 b, float3 s) {
     if (m == 3) return b * s;
     if (m == 4) return 1.0 - (1.0 - b) * (1.0 - s);
     if (m == 5) return mix(1.0 - 2.0 * (1.0 - b) * (1.0 - s), 2.0 * b * s, float3(lessThan(b, float3(0.5))));
@@ -74,7 +74,7 @@ float3 misturar(int m, float3 b, float3 s) {
     return s;
 }
 
-float sorteio(float2 p, float k) {
+static float sorteio(float2 p, float k) {
     float3 q = fract(float3(p.xyx) * float3(0.1031, 0.1030, 0.0973) + k);
     q += dot(q, q.yzx + 33.33);
     return fract((q.x + q.y) * q.z);

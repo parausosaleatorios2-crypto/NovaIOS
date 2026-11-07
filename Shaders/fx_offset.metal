@@ -17,10 +17,10 @@ struct offsetParams {
 
 // --- funcoes auxiliares do efeito
 // O filtro de textura da GPU (o do AE no render, medido): os pesos do bilinear andam em 1/256 de pixel.
-float2 pesoDaGpu(float2 f) { return floor(f * 256.0 + 0.5) / 256.0; }
+static float2 pesoDaGpu(float2 f) { return floor(f * 256.0 + 0.5) / 256.0; }
 
 // O texel em níveis de 8 bits, inteiros.
-float4 nivel(float4 c) { return floor(c * 255.0 + 0.5); }
+static float4 nivel(float4 c) { return floor(c * 255.0 + 0.5); }
 
 fragment float4 fx_offset(
     NovaVertexOut       in   [[stage_in]],

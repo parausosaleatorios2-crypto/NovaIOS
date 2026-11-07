@@ -28,34 +28,34 @@ int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (Width e Softness são em px da composição)
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
     gEscala = eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0;
 }
 
-int2 naCamada(int2 q) {
+static int2 naCamada(int2 q) {
     return gInicio + clamp(q, int2(0), gN - int2(1));     // borda repetida
 }
 
-int4 bytes4(float4 c) { return int4(floor(c * 255.0 + 0.5)); }
-float4 cor4(int4 b) { return float4(b) / 255.0; }
+static int4 bytes4(float4 c) { return int4(floor(c * 255.0 + 0.5)); }
+static float4 cor4(int4 b) { return float4(b) / 255.0; }
 
-bool temFundo() { return int2(int(bgImg.get_width()), int(bgImg.get_height())).x > 1; }
+static bool temFundo() { return int2(int(bgImg.get_width()), int(bgImg.get_height())).x > 1; }
 
 // O fundo no lugar dele na composição, em bytes (cor reta).
-int4 fundo(int2 q) {
+static int4 fundo(int2 q) {
     return bytes4(bgImg.sample(__nv_smp, (float2(naCamada(q)) + 0.5) / float2(gT)));
 }
 
-int mascara(int2 q) { return 255 - bytes4(inputImg.read(uint2(naCamada(q)), uint(0))).a; }
+static int mascara(int2 q) { return 255 - bytes4(inputImg.read(uint2(naCamada(q)), uint(0))).a; }
 
 // ---- a caixa do BCC: raio r, ponta fracionária com peso = fração, total 2r + 1 ----------------
-float raioDoFundo() { return min(u.softness * gEscala, RAIO_MAX); }
-float raioDaMascara() { return min(u.width * gEscala, RAIO_MAX); }
+static float raioDoFundo() { return min(u.softness * gEscala, RAIO_MAX); }
+static float raioDaMascara() { return min(u.width * gEscala, RAIO_MAX); }
 
-int4 fundoEmX(int2 q) {
+static int4 fundoEmX(int2 q) {
     float r = raioDoFundo();
     if (!(u.softness > 0.1)) return fundo(q);
     int n = int(floor(r));
@@ -69,7 +69,7 @@ int4 fundoEmX(int2 q) {
     return int4(floor(soma / (2.0 * r + 1.0) + 0.5));
 }
 
-int4 fundoEmY(int2 q) {
+static int4 fundoEmY(int2 q) {
     if (!(u.softness > 0.1)) return fundo(q);
     float r = raioDoFundo();
     int n = int(floor(r));
@@ -83,7 +83,7 @@ int4 fundoEmY(int2 q) {
     return int4(floor(soma / (2.0 * r + 1.0) + 0.5));
 }
 
-int mascaraEm(int2 q, bool emX) {
+static int mascaraEm(int2 q, bool emX) {
     float r = raioDaMascara();
     if (r < 0.05) return emX ? mascara(q) : bytes4(mX.read(uint2(naCamada(q)), uint(0))).r;
     int n = int(floor(r));
@@ -98,17 +98,17 @@ int mascaraEm(int2 q, bool emX) {
 }
 
 // ---- contas de 8 bits do plugin ---------------------------------------------------------------
-int div255(int t) { t += 128; return (t + (t >> 8)) >> 8; }          // m·a/255 arredondado
-int truncDiv(int a, int b) { int q = abs(a) / b; return a < 0 ? -q : q; }   // divisão truncada (b > 0)
-int luma(int3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
+static int div255(int t) { t += 128; return (t + (t >> 8)) >> 8; }          // m·a/255 arredondado
+static int truncDiv(int a, int b) { int q = abs(a) / b; return a < 0 ? -q : q; }   // divisão truncada (b > 0)
+static int luma(int3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
 
-int3 ajustaLuma(int3 d, int lq) {
+static int3 ajustaLuma(int3 d, int lq) {
     int l2 = (d.r * 77 + d.g * 150 + d.b * 29) >> 8;
     return clamp(d + int3(lq - l2), int3(0), int3(255));
 }
 
 // 0x180425fe0: o croma de P com a luma de Q.
-int3 setLum(int3 P, int3 Q) {
+static int3 setLum(int3 P, int3 Q) {
     int lp = luma(P), lq = luma(Q);
     int3 d = P - int3(lp);
     float s = 1.0;
@@ -122,10 +122,10 @@ int3 setLum(int3 P, int3 Q) {
     return ajustaLuma(d, lq);
 }
 
-int amplitude(int3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+static int amplitude(int3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
 
 // Hue e Saturation: o croma D escalado pela razão (limitada com 256 − luma) e a luma lq.
-int3 setSat(int3 D, int lq, float razao) {
+static int3 setSat(int3 D, int lq, float razao) {
     float r = razao;
     if (r > 1.0) {
         for (int i = 0; i < 3; i++) {
@@ -138,19 +138,19 @@ int3 setSat(int3 D, int lq, float razao) {
     return ajustaLuma(int3(trunc(float3(D) * r)), lq);
 }
 
-int3 matiz(int3 P, int3 Q) {           // 0x1804261c0: P = o wrap, Q = a camada
+static int3 matiz(int3 P, int3 Q) {           // 0x1804261c0: P = o wrap, Q = a camada
     int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
     if (sp == 0) return int3(lq);
     return setSat(P - int3(luma(P)), lq, float(sq) / float(sp));
 }
 
-int3 saturacao(int3 P, int3 Q) {       // 0x180426450: P = o wrap, Q = a camada
+static int3 saturacao(int3 P, int3 Q) {       // 0x180426450: P = o wrap, Q = a camada
     int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
     if (sq == 0) return Q;
     return setSat(Q - int3(lq), lq, float(sp) / float(sq));
 }
 
-int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wrap
+static int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wrap
     if (A > 128) {
         int s = 255 - ((((255 - B) * (255 - A)) * 0x8081) >> 23);
         return truncDiv((s - B) * (A - 128), 127) + B;
@@ -160,7 +160,7 @@ int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wr
 }
 
 // 0x18042a480: a = o wrap, b = a camada (os dois em bytes). Devolve a cor e se a camada inteira foi escolhida.
-int3 modo(int m, int3 a, int3 b, out bool pegaB) {
+static int3 modo(int m, int3 a, int3 b, out bool pegaB) {
     pegaB = false;
     if (m == 0) return max(a, b);                                          // Lighten
     if (m == 1) return min(a, b);                                          // Darken
@@ -203,7 +203,7 @@ int3 modo(int m, int3 a, int3 b, out bool pegaB) {
 }
 
 // 0x180426d00: Y sobre X em 8 bits.
-int4 sobre(int4 X, int4 Y) {
+static int4 sobre(int4 X, int4 Y) {
     if (Y.a == 0) return X;
     if (Y.a == 255 || X.a == 0) return Y;
     if (X.a == 255) return int4(X.rgb + (((Y.rgb - X.rgb) * Y.a) >> 8), 255);
@@ -214,7 +214,7 @@ int4 sobre(int4 X, int4 Y) {
 }
 
 // 0x1804283b0: M = o resultado do modo, X = o wrap, Y = a camada. Só a cor (o alfa sai o da camada).
-int3 compor(int4 M, int4 X, int4 Y) {
+static int3 compor(int4 M, int4 X, int4 Y) {
     if (X.a == 0) return Y.rgb;
     if (Y.a == 0) return X.rgb;
     if (Y.a == 255) return X.a == 255 ? M.rgb : (Y.rgb + (((M.rgb - Y.rgb) * X.a) >> 8)) & 255;

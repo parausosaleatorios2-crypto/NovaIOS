@@ -16,19 +16,19 @@ struct am_colorizeParams {
 
 // --- funcoes auxiliares do efeito
 // O croma (U, V) e a volta do YUV para o RGB, nos números do BT.601 (os mesmos do AM).
-float2 cromaDe(float3 c) {
+static float2 cromaDe(float3 c) {
     return float2(dot(c, float3(-0.14713, -0.28886, 0.436)),
                 dot(c, float3(0.615, -0.51499, -0.10001)));
 }
 
-float3 rgbDe(float y, float2 uv) {
+static float3 rgbDe(float y, float2 uv) {
     return float3(y + 1.13983 * uv.y,
                 y - 0.39465 * uv.x - 0.58060 * uv.y,
                 y + 2.03211 * uv.x);
 }
 
 // A cor pura do matiz (em voltas, 0..1) com brilho 0,5: a rampa de seis lados do HSV com saturação 1.
-float3 corDoMatiz(float voltas) {
+static float3 corDoMatiz(float voltas) {
     float3 rampa = abs(fract(float3(voltas) + float3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
     return 0.5 * clamp(rampa - 1.0, 0.0, 1.0);
 }

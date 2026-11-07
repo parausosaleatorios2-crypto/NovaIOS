@@ -20,7 +20,7 @@ struct toji_noise2Params {
 };
 
 // --- funcoes auxiliares do efeito
-float rand(float2 co)
+static float rand(float2 co)
         {
             float a = 719.310;
             float b = 178.233;

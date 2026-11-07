@@ -21,7 +21,7 @@ const int N = 7;
 const float OFF[7] = float[7](-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0);
 const float WT[7]  = float[7](0.071,0.131,0.190,0.216,0.190,0.131,0.071);
 
-float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+static float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
 
 fragment float4 fx_nv_blurrr_grain(
     NovaVertexOut       in   [[stage_in]],

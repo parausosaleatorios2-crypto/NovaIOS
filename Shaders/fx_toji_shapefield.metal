@@ -35,7 +35,7 @@ struct toji_shapefieldParams {
 };
 
 // --- funcoes auxiliares do efeito
-float rand2(float2 co){
+static float rand2(float2 co){
             return fract(sin(dot(co.xy ,float2(12.9898,78.233))) * 43758.5453);
         }
 

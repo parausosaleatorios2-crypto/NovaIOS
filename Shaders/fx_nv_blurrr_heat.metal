@@ -18,8 +18,8 @@ struct nv_blurrr_heatParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
-float noise(float2 p) {
+static float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+static float noise(float2 p) {
     float2 i = floor(p); float2 f = fract(p);
     float a = hash(i);
     float b = hash(i + float2(1.0, 0.0));

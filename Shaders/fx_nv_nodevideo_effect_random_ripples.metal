@@ -27,35 +27,35 @@ struct nv_nodevideo_effect_random_ripplesParams {
 #define _cur_time eng.acTime
 
 // Os RTs do Node: luz linear, cor pré-multiplicada.
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
-float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
-float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
-float4 nvNova(float4 p) {
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
+static float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
+static float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvNova(float4 p) {
     if (p.a <= 0.0) return float4(0.0);
     return float4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
 }
 
 // Um float32 inteiro nos 4 bytes de um texel RGBA8.
-float4 nvGuardar(float v) {
+static float4 nvGuardar(float v) {
     uint u = as_type<uint>(v);
     return float4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
 }
-float nvDecodificar(float4 c) {
+static float nvDecodificar(float4 c) {
     uint4 b = uint4(floor(c * 255.0 + 0.5));
     return as_type<float>(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
 }
 
 // O RT limpo com zero (a 1ª vez, ou depois de pular o cursor): o Node recomeça a simulação.
-bool nvNovo() { return eng.acStateFresh == 1; }
+static bool nvNovo() { return eng.acStateFresh == 1; }
 
-float nvTexel(int qual, int2 p) {
+static float nvTexel(int qual, int2 p) {
     // o `alt` dos passes 0 e 1 é o do quadro anterior (zero se não há); o do passe 3, o deste quadro
     if (qual == 0) return nvNovo() && eng.acPass <= 1 ? 0.0 : nvDecodificar(alt.read(uint2(p), uint(0)));
     if (qual == 1) return nvNovo() ? 0.0 : nvDecodificar(ant.read(uint2(p), uint(0)));
     return nvDecodificar(meio.read(uint2(p), uint(0)));
 }
 
-int2 nvTamanho(int qual) {
+static int2 nvTamanho(int qual) {
     if (qual == 0) return int2(int(alt.get_width()), int(alt.get_height()));
     if (qual == 1) return int2(int(ant.get_width()), int(ant.get_height()));
     return int2(int(meio.get_width()), int(meio.get_height()));
@@ -63,7 +63,7 @@ int2 nvTamanho(int qual) {
 
 // O texture() do Node num RT float (Clamp + Bilinear), em coordenadas de texel (o centro do texel i é i + 0,5);
 // `lim` = o último texel válido.
-float nvLerRT(int qual, float2 px, int2 lim) {
+static float nvLerRT(int qual, float2 px, int2 lim) {
     float2 q = px - 0.5;
     float2 i = floor(q);
     float2 f = q - i;
@@ -78,9 +78,9 @@ float nvLerRT(int qual, float2 px, int2 lim) {
 }
 
 // O buffer em pixels (o RT do Node é do tamanho da composição: na exportação, o mesmo).
-float2 nvPxPorUv() { return float2(nvTamanho(0)); }
+static float2 nvPxPorUv() { return float2(nvTamanho(0)); }
 // As células da simulação (o u_xlat1 do Node): o vizinho fica a u._scale pixels da composição.
-float2 nvCelulas() { return _resolution.xy / float2(float(int(u._scale))); }
+static float2 nvCelulas() { return _resolution.xy / float2(float(int(u._scale))); }
 
 /*
  * Como guardar a simulação.
@@ -92,18 +92,18 @@ float2 nvCelulas() { return _resolution.xy / float2(float(int(u._scale))); }
  *    interpolada (o que as raias vizinhas do Node dão). Sem lugar para a grade (u._scale 1 na prévia reduzida), as
  *    raias com a leitura bilinear.
  */
-bool nvGrade() {
+static bool nvGrade() {
     float2 d = nvPxPorUv() / nvCelulas();
     bool inteiro = all(lessThan(abs(d - floor(d + 0.5)), float2(1e-3))) && all(greaterThan(d, float2(0.999)));
     return !inteiro && all(lessThanEqual(ceil(nvCelulas()), nvPxPorUv()));
 }
-int2 nvLimite(bool grade) { return grade ? int2(ceil(nvCelulas())) - 1 : nvTamanho(0) - 1; }
+static int2 nvLimite(bool grade) { return grade ? int2(ceil(nvCelulas())) - 1 : nvTamanho(0) - 1; }
 
 /*
  * O passe 0 do shader do Node, conta por conta. `atual` e `anterior` são os dois canais do RT lido (o .x e o .y):
  * 0 = alt, 1 = ant, 2 = meio. Devolve a altura nova (o .x que o Node escreve).
  */
-float nvPasso(int atual, int anterior) {
+static float nvPasso(int atual, int anterior) {
     bool grade = nvGrade();
     int2 lim = nvLimite(grade);
     float2 vs_TEXCOORD0;

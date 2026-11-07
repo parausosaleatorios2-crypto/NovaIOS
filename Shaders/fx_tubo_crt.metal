@@ -49,7 +49,7 @@ struct tubo_crtParams {
 const float TAU = 6.28318530718;
 
 /** Disco de Vogel: pontos espalhados por ângulo dourado, sem aglomerar. */
-float2 vogel(int i, int total, float giro) {
+static float2 vogel(int i, int total, float giro) {
     float dourado = 2.39996323;
     float r = sqrt(float(i) + 0.5) / sqrt(float(total));
     float a = float(i) * dourado + giro;
@@ -57,12 +57,12 @@ float2 vogel(int i, int total, float giro) {
 }
 
 /** Ruído barato e determinístico, de 0 a 1. */
-float ruido(float2 p) {
+static float ruido(float2 p) {
     return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453);
 }
 
 /** Dois ruídos de uma vez, para deslocar em X e Y. */
-float2 ruido2(float2 p) {
+static float2 ruido2(float2 p) {
     return float2(ruido(p), ruido(p + 37.19));
 }
 
@@ -74,7 +74,7 @@ float2 ruido2(float2 p) {
  * nunca repete de um jeito que o olho perceba, porque as três frequências não
  * são múltiplas entre si.
  */
-float tremorDaFonte(float t) {
+static float tremorDaFonte(float t) {
     return sin(t * 99.542) * 0.5 + sin(t * 26.523) * 0.3 + sin(t * 9.802) * 0.2;
 }
 
@@ -86,7 +86,7 @@ float tremorDaFonte(float t) {
  * é corrigido pela proporção antes da conta, senão um vídeo deitado estufaria
  * mais na largura que na altura.
  */
-float2 curvar(float2 uv) {
+static float2 curvar(float2 uv) {
     float2 p = uv - u.centro;
     p.x *= eng.acAspect;
     float d = dot(p, p);
@@ -116,7 +116,7 @@ float2 curvar(float2 uv) {
  * O `* 3.0` compensa a energia: como cada célula acende só um dos três canais,
  * sem ele a tela sairia com um terço do brilho.
  */
-float4 fosforos(float2 uv) {
+static float4 fosforos(float2 uv) {
     float lado = max(1.0, u.pontoDeTela);
     float2 celulas = eng.acResolution / lado;
     float2 gradeUV = uv * celulas;
@@ -242,7 +242,7 @@ float4 fosforos(float2 uv) {
  * não um seno: o feixe de um tubo não oscila suave, ele varre e volta. Com um
  * seno a faixa fica com cara de "brilho pulsando", que é outra coisa.
  */
-float varrer(float2 uv) {
+static float varrer(float2 uv) {
     if (u.tremida <= 0.001) return 1.0;
     float faixa = fract(uv.x * 0.2 - eng.acTime * u.varredura + uv.y * 1.2);
     float trapezio = min(faixa * 2.0, 1.0) - max(0.0, (faixa - 0.95) * 20.0);
@@ -262,7 +262,7 @@ float varrer(float2 uv) {
  * que mantém a imagem no lugar. Separar os três para o mesmo lado deslocaria a
  * cena inteira, e aí seria mais fácil mover a camada.
  */
-float4 comAberracao(float2 uv) {
+static float4 comAberracao(float2 uv) {
     float4 base = tela.sample(__nv_smp, clamp(uv, 0.0, 1.0));
     if (u.deslocamento <= 0.001) return base;
 
@@ -300,7 +300,7 @@ float4 comAberracao(float2 uv) {
  * lado" é a borda — daí o reflexo ser fraco no meio e forte na moldura. É a
  * pista que o olho usa para saber que a superfície é curva.
  */
-float3 reflexoDoVidro(float2 uv, float distanciaRadial) {
+static float3 reflexoDoVidro(float2 uv, float distanciaRadial) {
     float3 total = float3(0.0);
 
     // ---------------------------------------------------- o lustro do ambiente
@@ -359,7 +359,7 @@ float3 reflexoDoVidro(float2 uv, float distanciaRadial) {
 }
 
 /** Desfoque em disco no buffer anterior. Poucas amostras, porque ele é pequeno. */
-float3 desfocar(sampler2D fonte, float2 uv, float raio) {
+static float3 desfocar(sampler2D fonte, float2 uv, float raio) {
     float3 soma = float3(0.0);
     float giro = ruido(uv * eng.acResolution) * TAU;
     for (int i = 0; i < 12; i++) {

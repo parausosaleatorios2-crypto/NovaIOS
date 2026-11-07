@@ -17,16 +17,16 @@ struct color_temperatureParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 paraLinear(float3 c) {
+static float3 paraLinear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c));
 }
 
-float3 paraSrgb(float3 c) {
+static float3 paraSrgb(float3 c) {
     return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
 
 // Rec. 709: os pesos com que o olho soma os três canais.
-float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+static float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 fragment float4 fx_color_temperature(
     NovaVertexOut       in   [[stage_in]],

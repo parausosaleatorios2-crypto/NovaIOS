@@ -18,7 +18,7 @@ struct um_tone_curveParams {
 };
 
 // --- funcoes auxiliares do efeito
-float curva(float x) {
+static float curva(float x) {
     float bk = u.blackLift;
     float wh = 1.0 + u.whiteHold;
     float y = (x - bk) / max(wh - bk, 1e-4);

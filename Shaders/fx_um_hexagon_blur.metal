@@ -16,7 +16,7 @@ struct um_hexagon_blurParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 varrer(sampler2D s, float2 uv, float2 dir, int n, float r) {
+static float4 varrer(sampler2D s, float2 uv, float2 dir, int n, float r) {
     float4 soma = float4(0.0);
     for (int i = 0; i <= 24; i++) {
         if (i > n) break;

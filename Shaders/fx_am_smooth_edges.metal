@@ -21,7 +21,7 @@ const float PI = 3.14159265;
 // A gaussiana de meio-lado `lado` (em pixels de `img`), com os pesos tirados um do outro por
 // multiplicação e duas amostras juntas numa leitura (a posição entre elas pelo peso), como no AM:
 // sigma = lado ÷ 2,146 (a ponta fica em 10 % do centro).
-float4 desfocar(sampler2D img, float2 passo, float lado) {
+static float4 desfocar(sampler2D img, float2 passo, float lado) {
     if (u.strength <= 0.0) return float4(0.0);
     float sigma = lado / 2.14596602;
     float3 g;
@@ -46,13 +46,13 @@ float4 desfocar(sampler2D img, float2 passo, float lado) {
 }
 
 // O meio-lado do desfoque de dentro: Intensidade · 1,14 / 24 da diagonal da imagem cheia.
-float ladoDoDesfoque() {
+static float ladoDoDesfoque() {
     return u.strength / 2.0 * 1.14 / 4.0 / 3.0 * length(float2(int2(int(pre.get_width()), int(pre.get_height()))));
 }
 
 // Um rastro num eixo: de −dist/2 a +dist/2 em fração da imagem (sem a primeira ponta), cada amostra
 // por baixo das que estão mais perto do centro. `projeto` = o lado da composição neste eixo.
-float4 rastro(sampler2D img, float2 eixo, float projeto) {
+static float4 rastro(sampler2D img, float2 eixo, float projeto) {
     float texel = 1.0 / projeto;
     float dist = u.strength * 0.05;
     int n = int(clamp(dist / texel, 1.01, 100.01));
@@ -69,12 +69,12 @@ float4 rastro(sampler2D img, float2 eixo, float projeto) {
     return c;
 }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     return baixo * (1.0 - cima.a) + cima;
 }
 
 // Uma passada: o rastro horizontal e o vertical de `img`, por baixo da camada.
-float4 rastros(sampler2D img) {
+static float4 rastros(sampler2D img) {
     // O tamanho da composição (o `eng.acScreenSize` do AM): o buffer na escala da exportação.
     float2 projeto = eng.acResolution / eng.acEscalaDePixel;
     float cima = eng.acEntradaDePe == 1 ? 1.0 : -1.0;

@@ -25,18 +25,18 @@ struct am_contour_linesParams {
 // O buffer guarda a distância como fração deste teto (16 bits em dois canais de 8).
 const float TETO = 16383.0;
 
-float2 guardar(float d) {
+static float2 guardar(float d) {
     float v = d / TETO;
     float baixo = fract(v * 255.0);
     return float2(v - baixo / 255.0, baixo);
 }
 
-float ler(float2 rg) {
+static float ler(float2 rg) {
     return (rg.x + rg.y / 255.0) * TETO;
 }
 
 // O smoothstep com as pontas em qualquer ordem (o GLSL não garante o resultado com e0 > e1).
-float degrau(float e0, float e1, float x) {
+static float degrau(float e0, float e1, float x) {
     float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
 }

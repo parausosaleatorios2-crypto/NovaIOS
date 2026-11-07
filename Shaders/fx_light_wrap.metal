@@ -44,29 +44,29 @@ const float2 CANTOS[4] = float2[4](
 );
 
 /** sRGB para luz linear. Com o Linear Workflow desligado, não faz nada. */
-float3 aLinear(float3 c) {
+static float3 aLinear(float3 c) {
     if (!u.linearWorkflow) return c;
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
 
 /** Luz linear para sRGB. Com o Linear Workflow desligado, não faz nada. */
-float3 deLinear(float3 c) {
+static float3 deLinear(float3 c) {
     if (!u.linearWorkflow) return c;
     c = max(c, float3(0.0));
     return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), c));
 }
 
 /** Cor reta e codificada -> pré-multiplicada em luz (linear, se ligado). */
-float4 emLuz(float4 c) { return float4(aLinear(c.rgb) * c.a, c.a); }
+static float4 emLuz(float4 c) { return float4(aLinear(c.rgb) * c.a, c.a); }
 
 /** Pré-multiplicada em luz -> cor RETA e codificada, que é o que os buffers guardam. */
-float4 empacotar(float4 pm) {
+static float4 empacotar(float4 pm) {
     float3 reto = pm.a > 0.0 ? pm.rgb / pm.a : float3(0.0);
     return float4(deLinear(reto), pm.a);
 }
 
 /** Sigma em fração da ALTURA, para uma largura em "pixels de 1080". Largura = 2 sigmas. */
-float sigmaDe(float px) { return px / REFERENCIA * 0.5; }
+static float sigmaDe(float px) { return px / REFERENCIA * 0.5; }
 
 /**
  * O fundo na posição `uv` da camada, pré-multiplicado e em luz.
@@ -75,7 +75,7 @@ float sigmaDe(float px) { return px / REFERENCIA * 0.5; }
  * uma leitura só pularia pixels. `eng.acTela` leva a posição da camada para o lugar
  * dela na tela, que é onde o fundo está.
  */
-float4 fundoEm(float2 uv) {
+static float4 fundoEm(float2 uv) {
     float2 d = eng.acTexelSize * 0.25;
     float4 soma = float4(0.0);
     for (int i = 0; i < 4; i++) {
@@ -87,7 +87,7 @@ float4 fundoEm(float2 uv) {
 }
 
 /** O alfa do recorte em `uv`: o do conteúdo, vezes a cobertura da máscara. */
-float alfaEm(float2 uv) {
+static float alfaEm(float2 uv) {
     float2 d = eng.acTexelSize * 0.25;
     float soma = 0.0;
     for (int i = 0; i < 4; i++) {
@@ -107,7 +107,7 @@ float alfaEm(float2 uv) {
  * sigma; na horizontal ele é dividido pela proporção, para ser o mesmo tamanho.
  * Devolve pré-multiplicado em luz; quem escreve no buffer chama `empacotar`.
  */
-float4 desfocar(int passe, float2 uv, float2 eixo, float sigma) {
+static float4 desfocar(int passe, float2 uv, float2 eixo, float sigma) {
     float passoAltura = 0.25 * sigma;
     float2 passo = float2(passoAltura / eng.acAspect, passoAltura) * eixo;
 
@@ -139,7 +139,7 @@ float4 desfocar(int passe, float2 uv, float2 eixo, float sigma) {
  * pixel e um passo na direção da normal —, então a comparação com a luz é feita
  * no espaço em que a luz existe, e não no da camada.
  */
-float pesoDaDirecao(float2 uv) {
+static float pesoDaDirecao(float2 uv) {
     if (!u.useDirection || u.lightSpread >= 359.0) return 1.0;
 
     float2 t = 1.0 / float2(int2(int(aB.get_width()), int(aB.get_height())));
@@ -169,7 +169,7 @@ float pesoDaDirecao(float2 uv) {
  * luz — um contorno com a cor viva do fundo pertence à cena; um contorno cinza
  * parece um halo colado por cima.
  */
-float3 saturar(float3 c, float s) {
+static float3 saturar(float3 c, float s) {
     return max(mix(float3(dot(c, LUMA)), c, s), 0.0);
 }
 
@@ -180,7 +180,7 @@ float3 saturar(float3 c, float s) {
  * fazia a luz forte virar uma mancha leitosa. Aqui o topo rola de mansinho e a
  * cor sobrevive.
  */
-float3 ombro(float3 c) {
+static float3 ombro(float3 c) {
     const float joelho = 0.8;
     float folga = 1.0 - joelho;                 // 0.2
     float3 alto = joelho + folga * (1.0 - exp(-(max(c, joelho) - joelho) / folga));

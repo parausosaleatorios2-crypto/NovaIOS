@@ -19,13 +19,13 @@ struct chroma_keyParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 chroma(float3 rgb) {
+static float2 chroma(float3 rgb) {
     float cb = -0.168736 * rgb.r - 0.331264 * rgb.g + 0.5 * rgb.b;
     float cr =  0.5 * rgb.r - 0.418688 * rgb.g - 0.081312 * rgb.b;
     return float2(cb, cr);
 }
 
-float luma(float3 rgb) {
+static float luma(float3 rgb) {
     return dot(rgb, float3(0.299, 0.587, 0.114));
 }
 

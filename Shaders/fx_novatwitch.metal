@@ -59,14 +59,14 @@ struct novatwitchParams {
 const float PI = 3.14159265;
 
 // ------------------------------------------------------------------ sorteio
-float hash11(float n) { return fract(sin(n * 12.9898 + 4.1414) * 43758.5453); }
-float hash21(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
-float4 hash4(float k, float s) {
+static float hash11(float n) { return fract(sin(n * 12.9898 + 4.1414) * 43758.5453); }
+static float hash21(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+static float4 hash4(float k, float s) {
     return float4(hash21(float2(k, s)), hash21(float2(k + 17.31, s * 1.7 + 3.1)),
                 hash21(float2(k * 1.31 + 7.7, s + 11.0)), hash21(float2(k + 41.9, s * 2.3 + 5.5)));
 }
 
-float duracaoDoQuadro() { return eng.acFrameDuration > 0.0 ? eng.acFrameDuration : 1.0 / 30.0; }
+static float duracaoDoQuadro() { return eng.acFrameDuration > 0.0 ? eng.acFrameDuration : 1.0 / 30.0; }
 
 /*
  * O CALENDÁRIO DE TRANCOS — ver o cabeçalho. Devolve o envelope (0..1, o
@@ -77,7 +77,7 @@ float duracaoDoQuadro() { return eng.acFrameDuration > 0.0 ? eng.acFrameDuration
  * A subida/descida pode chegar a 2 casas (Ease 100%), então olhar 3 casas
  * para cada lado cobre tudo.
  */
-float envelope(float t, float twitches, float sementeDoCalendario, out float k) {
+static float envelope(float t, float twitches, float sementeDoCalendario, out float k) {
     k = -1.0;
     float taxa = u.velocidade * twitches;
     if (taxa <= 0.0) return 0.0;
@@ -97,10 +97,10 @@ float envelope(float t, float twitches, float sementeDoCalendario, out float k) 
     return clamp(melhor, 0.0, 1.0);
 }
 
-float sementeDoCalendario(float propria) { return 101.0 + u.semente * 7.13 + propria * 13.7; }
+static float sementeDoCalendario(float propria) { return 101.0 + u.semente * 7.13 + propria * 13.7; }
 
 /** O tamanho sorteado do tranco, entre o mínimo e 1 (no AE quase não há tranco abaixo de 7%). */
-float tamanho(float u) { return mix(max(u.minimo / 100.0, 0.07), 1.0, u); }
+static float tamanho(float u) { return mix(max(u.minimo / 100.0, 0.07), 1.0, u); }
 
 /*
  * OS TRANCOS SE SOMAM (0.753.0). O Slide e o Scale pegavam só o tranco mais forte do instante: quando dois se
@@ -110,7 +110,7 @@ float tamanho(float u) { return mix(max(u.minimo / 100.0, 0.07), 1.0, u); }
  * quando estão separados (o caso de quase todo quadro, e o que foi medido no AE) e um caminho contínuo quando se
  * encostam.
  */
-float envelopeDaCasa(float t, float kk, float twitches, float sementeDoCalendario) {
+static float envelopeDaCasa(float t, float kk, float twitches, float sementeDoCalendario) {
     float taxa = u.velocidade * twitches;
     if (taxa <= 0.0) return 0.0;
     float casa = 1.0 / taxa;
@@ -123,13 +123,13 @@ float envelopeDaCasa(float t, float kk, float twitches, float sementeDoCalendari
 }
 
 /** A casa do calendário em que `t` cai (as 3 de cada lado podem ter tranco valendo em `t`). */
-float casaAtual(float t, float twitches) {
+static float casaAtual(float t, float twitches) {
     float taxa = u.velocidade * twitches;
     return taxa > 0.0 ? floor(t * taxa) : 0.0;
 }
 
 /** O deslocamento do Slide (em UV, y para baixo) num instante, para um canal. */
-float2 slide(float t, float canal) {
+static float2 slide(float t, float canal) {
     if (u.velocidade * u.slideTwitches <= 0.0) return float2(0.0);
     float sem = sementeDoCalendario(u.slideSeed);
     float atual = casaAtual(t, u.slideTwitches);
@@ -149,7 +149,7 @@ float2 slide(float t, float canal) {
     return soma;
 }
 
-float2 slideDoCanal(float t, float canal) {
+static float2 slideDoCanal(float t, float canal) {
     float2 verde = slide(t, 0.0);
     if (canal == 0.0 || u.slideRgb <= 0.0) return verde;
     // No AE os canais não se soltam de todo: em 100% a distância entre dois canais fica em
@@ -158,7 +158,7 @@ float2 slideDoCanal(float t, float canal) {
 }
 
 /** Escala (≥ 1) e origem do Scale num instante. */
-float3 escala(float t) {
+static float3 escala(float t) {
     if (u.velocidade * u.scaleTwitches <= 0.0) return float3(1.0, u.scaleOrigin);
     float sem = sementeDoCalendario(u.scaleSeed);
     float atual = casaAtual(t, u.scaleTwitches);
@@ -179,7 +179,7 @@ float3 escala(float t) {
     return float3(s, pesos > 0.0 ? origens / pesos : u.scaleOrigin);
 }
 
-float4 amostrar(float2 uv) {
+static float4 amostrar(float2 uv) {
     if (u.borda == 3) {
         if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return float4(0.0);
     } else if (u.borda == 1) {
@@ -194,7 +194,7 @@ float4 amostrar(float2 uv) {
  * O pixel→origem de um canal no instante `t` (o Slide e depois o Scale), como uma conta só: origem = uv · a + b.
  * p = uv − S; p = O + (p − O)/s  ⇒  a = 1/s, b = O − (S + O)/s.
  */
-float3 mapa(float t, float canal) {
+static float3 mapa(float t, float canal) {
     float2 s = u.slideEnabled ? slideDoCanal(t, canal) : float2(0.0);
     if (!u.scaleEnabled) return float3(1.0, -s);
     float3 e = escala(t);
@@ -203,7 +203,7 @@ float3 mapa(float t, float canal) {
 
 /** σ do Blur neste quadro ÷ a largura do alvo do passe (1/16 da largura com Amount 50: no
  *  pico o AE apaga os pontos do benchmark — σ ≥ 40 px em 640). */
-float fatorDoBlur(float t) {
+static float fatorDoBlur(float t) {
     if (!u.blurEnabled) return 0.0;
     float k;
     float env = envelope(t, u.blurTwitches, sementeDoCalendario(u.blurSeed), k);
@@ -212,7 +212,7 @@ float fatorDoBlur(float t) {
 }
 
 /** Time: quantos quadros para trás, durante o tranco (o histórico só tem os de trás). */
-int quadrosAtras(float t) {
+static int quadrosAtras(float t) {
     if (!u.timeEnabled) return 0;
     float k;
     float env = envelope(t, u.timeTwitches, sementeDoCalendario(u.timeSeed), k);
@@ -222,7 +222,7 @@ int quadrosAtras(float t) {
 }
 
 /** Light: o quanto (l) e se escurece (1) ou clareia (0). */
-float2 luz(float t) {
+static float2 luz(float t) {
     if (!u.lightEnabled) return float2(0.0);
     float k;
     float env = envelope(t, u.lightTwitches, sementeDoCalendario(u.lightSeed), k);
@@ -233,7 +233,7 @@ float2 luz(float t) {
 }
 
 /** Color: o quanto (c) e o giro do matiz. */
-float2 cor(float t) {
+static float2 cor(float t) {
     if (!u.colorEnabled) return float2(0.0);
     float k;
     float env = envelope(t, u.colorTwitches, sementeDoCalendario(u.colorSeed), k);
@@ -250,7 +250,7 @@ float2 cor(float t) {
  * ida e a volta do pico, e o Scale no canto da tela), com no máximo ~1,5 px entre duas imagens, até 64.
  * `res` = a resolução da saída (a tabela é montada num alvo de 513 × 10).
  */
-float caminhoEmPixels(float t, float2 res) {
+static float caminhoEmPixels(float t, float2 res) {
     float quadro = duracaoDoQuadro();
     float px = 0.0;
     if (u.slideEnabled && u.slideBlur > 0.0) {
@@ -275,7 +275,7 @@ float caminhoEmPixels(float t, float2 res) {
 }
 
 /** A fração do quadro em que o obturador fica aberto: o maior dos motion blur ligados. */
-float obturador() {
+static float obturador() {
     float o = 0.0;
     if (u.slideEnabled) o = max(o, u.slideBlur / 100.0);
     if (u.scaleEnabled) o = max(o, u.scaleBlur / 100.0);
@@ -288,21 +288,21 @@ const float FAIXA_B = 16.0;       // o b do mapa, em [−16, 16)
 const float CAMINHO_MAX = 4096.0; // o caminho guardado, em px da saída (64 amostras já saem com 96 px)
 
 /** Um número de 0 a 1 em quatro bytes (o da sapphire-distort-chroma: os buffers do motor são RGBA8). */
-float4 empacotar(float v) {
+static float4 empacotar(float v) {
     v = clamp(v, 0.0, 0.99999994);
     float4 e = fract(v * float4(1.0, 255.0, 65025.0, 16581375.0));
     e -= e.yzww * float4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
     return e;
 }
 
-float desempacotar(float4 c) { return dot(c, float4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
+static float desempacotar(float4 c) { return dot(c, float4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
 
 /*
  * Um texel da tabela (passe 0). Linhas 0–8: a, b.x e b.y do mapa do verde (0–2), do vermelho (3–5) e do azul (6–8)
  * na coluna `j`, o instante t + (j/512 − ½) · obturador · quadro. Linha 9, um número por coluna: o caminho do tranco
  * (0), o Blur (1), o Time (2), o Light (3, 4) e o Color (5, 6).
  */
-float4 texelDaTabela(int j, int linha, float t) {
+static float4 texelDaTabela(int j, int linha, float t) {
     if (linha < 9) {
         int c = linha / 3;
         int componente = linha - 3 * c;
@@ -322,10 +322,10 @@ float4 texelDaTabela(int j, int linha, float t) {
 }
 
 /** Um número do quadro (a linha 9 da tabela). */
-float doQuadro(int j) { return desempacotar(trilha.read(uint2(int2(j, 9)), uint(0))); }
+static float doQuadro(int j) { return desempacotar(trilha.read(uint2(int2(j, 9)), uint(0))); }
 
 /** Onde, na camada, cai o pixel `uv` no instante da coluna `j`, pelo mapa do `bloco` (0 verde, 1 vermelho, 2 azul). */
-float2 origemNaTabela(float2 uv, int j, int bloco) {
+static float2 origemNaTabela(float2 uv, int j, int bloco) {
     float a = desempacotar(trilha.read(uint2(int2(j, 3 * bloco)), uint(0)));
     float2 b = float2(desempacotar(trilha.read(uint2(int2(j, 3 * bloco + 1)), uint(0))),
                   desempacotar(trilha.read(uint2(int2(j, 3 * bloco + 2)), uint(0))));
@@ -334,7 +334,7 @@ float2 origemNaTabela(float2 uv, int j, int bloco) {
 
 /** A camada com o Slide e o Scale do quadro (com o motion blur: a posição integrada ao longo do
  *  obturador, lida da tabela). `limite` = o máximo de instantes do obturador neste passe. */
-float4 comTranco(float2 uv, int limite) {
+static float4 comTranco(float2 uv, int limite) {
     int amostras = 1;
     if (obturador() > 0.0) {
         // O caminho guardado é em px da saída; o passe do Blur é menor (1/4).
@@ -370,7 +370,7 @@ float4 comTranco(float2 uv, int limite) {
 }
 
 /** Um eixo do gaussiano (33 toques até 3σ; passo maior que 1 px quando o σ pede). */
-float4 gauss(sampler2D tex, float2 uv, float2 eixo, float sigma) {
+static float4 gauss(sampler2D tex, float2 uv, float2 eixo, float sigma) {
     if (sigma < 0.3) return tex.sample(__nv_smp, uv);
     float passo = max(1.0, ceil(3.0 * sigma / 16.0));
     float4 acc = float4(0.0);

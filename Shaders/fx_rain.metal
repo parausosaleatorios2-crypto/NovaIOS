@@ -22,13 +22,13 @@ struct rainParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash2(float2 c) {
+static float hash2(float2 c) {
     c += float2(float(u.seed) * 13.7);
     return fract(sin(dot(c, float2(127.1, 311.7))) * 43758.5453);
 }
 
 /** A distância de um ponto p ao segmento `a → b` (SDF 2D canônico). */
-float distanciaAoSegmento(float2 p, float2 a, float2 b) {
+static float distanciaAoSegmento(float2 p, float2 a, float2 b) {
     float2 pa = p - a;
     float2 ba = b - a;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
@@ -36,7 +36,7 @@ float distanciaAoSegmento(float2 p, float2 a, float2 b) {
 }
 
 /** O traço de uma gota dentro de uma célula. Retorna a intensidade em `uvDaTela`. */
-float gotaDaCelula(float2 celula, float2 uvDaTela, float t) {
+static float gotaDaCelula(float2 celula, float2 uvDaTela, float t) {
     // Posição x da gota dentro da célula (hash estável).
     float xDaGota = hash2(celula + 0.1);
     float yFase = hash2(celula + 0.3);

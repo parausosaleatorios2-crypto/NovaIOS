@@ -21,23 +21,23 @@ struct look_purple_ccParams {
 
 // Quantos níveis de pirâmide a imagem está acima ou abaixo de 1080 (o lado menor,
 // em pixels da camada): o ajuste foi feito em 1080p.
-float acDeltaNivel() {
+static float acDeltaNivel() {
     float2 tam = float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))) / max(eng.acEscalaDePixel, 0.05);
     return log2(max(min(tam.x, tam.y), 16.0) / 1080.0);
 }
 
-float3 paraLuz(float3 c) {
+static float3 paraLuz(float3 c) {
     float3 alto = pow(max(c + 0.055, 0.0) / 1.055, float3(2.4));
     return mix(c / 12.92, alto, step(float3(0.04045), c));
 }
 
-float3 paraTela(float3 l) {
+static float3 paraTela(float3 l) {
     float3 s = max(l, 0.0);
     return mix(s * 12.92, 1.055 * pow(s, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), s));
 }
 
 // A LUT 33³ do atlas: 33 ladrilhos 33×33 lado a lado (x = b·33 + r, y = linha0 + g).
-float3 lut(float3 c, float linha0) {
+static float3 lut(float3 c, float linha0) {
     float2 tam = float2(int2(int(atlas.get_width()), int(atlas.get_height())));
     float3 p = clamp(c, 0.0, 1.0) * 32.0;
     float b0 = floor(p.b);
@@ -50,7 +50,7 @@ float3 lut(float3 c, float linha0) {
 }
 
 // A descida da pirâmide: tenda 4×4 (como o Deep Glow).
-float3 descer(sampler2D origem) {
+static float3 descer(sampler2D origem) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -69,19 +69,19 @@ float3 descer(sampler2D origem) {
 }
 
 // O glow guarda LUZ (linear) em 8 bits com raiz — a mesma de Deep Glow — e com ruído.
-float ruidoDoPixel() {
+static float ruidoDoPixel() {
     return fract(52.9829189 * fract(dot(__nv_fragCoord.xy, float2(0.06711056, 0.00583715)))) - 0.5;
 }
-float4 guardar(float3 luz) { return float4(sqrt(max(luz, 0.0)) + ruidoDoPixel() / 255.0, 1.0); }
-float3 abrir(float3 g) { return g * g; }
+static float4 guardar(float3 luz) { return float4(sqrt(max(luz, 0.0)) + ruidoDoPixel() / 255.0, 1.0); }
+static float3 abrir(float3 g) { return g * g; }
 
-float3 cortar(float3 c, float limiar, float joelho) {
+static float3 cortar(float3 c, float limiar, float joelho) {
     float vista = dot(c, float3(0.2126, 0.7152, 0.0722));
     float t = clamp((vista - limiar) / max(joelho, 0.0001), 0.0, 1.0);
     return paraLuz(c) * (t * t * (3.0 - 2.0 * t));
 }
 
-float4 descerComCorte(sampler2D origem, float limiar, float joelho) {
+static float4 descerComCorte(sampler2D origem, float limiar, float joelho) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -99,7 +99,7 @@ float4 descerComCorte(sampler2D origem, float limiar, float joelho) {
     return guardar(soma / max(pesos, 0.0001));
 }
 
-float4 descerLuz(sampler2D origem) {
+static float4 descerLuz(sampler2D origem) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -118,7 +118,7 @@ float4 descerLuz(sampler2D origem) {
 }
 
 // A subida: B-spline cúbica em quatro leituras (o `lerLiso` do Deep Glow).
-float3 lerLiso(sampler2D t, float2 uv) {
+static float3 lerLiso(sampler2D t, float2 uv) {
     float2 tam = float2(int2(int(t.get_width()), int(t.get_height())));
     float2 p = uv * tam - 0.5;
     float2 i = floor(p);
@@ -140,7 +140,7 @@ float3 lerLiso(sampler2D t, float2 uv) {
 }
 
 
-float3 nivelX2(float n, float2 uv) {
+static float3 nivelX2(float n, float2 uv) {
     n = clamp(n, 1.0, 8.0);
     float a = floor(n);
     float t = n - a;
@@ -156,7 +156,7 @@ float3 nivelX2(float n, float2 uv) {
     return r;
 }
 
-float3 nivelF2_luz(float n, float2 uv) {
+static float3 nivelF2_luz(float n, float2 uv) {
     n = clamp(n, 1.0, 8.0);
     float a = floor(n);
     float t = n - a;
@@ -172,7 +172,7 @@ float3 nivelF2_luz(float n, float2 uv) {
     return r;
 }
 
-float3 popDe2(float2 uv) {
+static float3 popDe2(float2 uv) {
     float3 x = x2.sample(__nv_smp, uv).rgb;
     float3 g = x;
     g = g + (nivelX2(float(2) + 1.0 + acDeltaNivel(), uv) - g) * atlas.sample(__nv_smp, float2((0.0 + clamp(uv.x * 16.0, 0.5, 16.0 - 0.5)) / 1089.0, (69.0 + clamp(uv.y * 9.0, 0.5, 9.0 - 0.5)) / 147.0)).rgb.r * u.uDetalhe;
@@ -188,14 +188,14 @@ float3 popDe2(float2 uv) {
     return clamp(g, 0.0, 1.0);
 }
 
-float3 saida2(float2 uv) {
+static float3 saida2(float2 uv) {
     float3 lin = paraLuz(g2.sample(__nv_smp, uv).rgb);
     float3 luz = u.uGlow * (float3(0.020912, 0.034098, 0.000000) * nivelF2_luz(1.0 + 1.0 + acDeltaNivel(), uv) + float3(0.035133, 0.015803, 0.034629) * nivelF2_luz(2.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.002209, 0.000000) * nivelF2_luz(3.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.000000, 0.007047) * nivelF2_luz(4.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.000000, 0.002600) * nivelF2_luz(5.0 + 1.0 + acDeltaNivel(), uv));
     lin += luz * (1.0 - lin);
     return paraTela(lin);
 }
 
-float3 nivelX3(float n, float2 uv) {
+static float3 nivelX3(float n, float2 uv) {
     n = clamp(n, 1.0, 8.0);
     float a = floor(n);
     float t = n - a;
@@ -211,7 +211,7 @@ float3 nivelX3(float n, float2 uv) {
     return r;
 }
 
-float3 nivelF3_luz(float n, float2 uv) {
+static float3 nivelF3_luz(float n, float2 uv) {
     n = clamp(n, 1.0, 8.0);
     float a = floor(n);
     float t = n - a;
@@ -227,7 +227,7 @@ float3 nivelF3_luz(float n, float2 uv) {
     return r;
 }
 
-float3 popDe3(float2 uv) {
+static float3 popDe3(float2 uv) {
     float3 x = x3.sample(__nv_smp, uv).rgb;
     float3 g = x;
     float3 n0 = nivelX3(0.0 + 1.0 + acDeltaNivel(), uv);
@@ -242,14 +242,14 @@ float3 popDe3(float2 uv) {
     return clamp(g, 0.0, 1.0);
 }
 
-float3 saida3(float2 uv) {
+static float3 saida3(float2 uv) {
     float3 lin = paraLuz(g3.sample(__nv_smp, uv).rgb);
     float3 luz = u.uGlow * (float3(0.007268, 0.000000, 0.000000) * nivelF3_luz(0.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.000770, 0.008810) * nivelF3_luz(2.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.003105, 0.000424) * nivelF3_luz(4.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.000000, 0.002765) * nivelF3_luz(5.0 + 1.0 + acDeltaNivel(), uv));
     lin += luz * (1.0 - lin);
     return paraTela(lin);
 }
 
-float3 nivelF5_luz(float n, float2 uv) {
+static float3 nivelF5_luz(float n, float2 uv) {
     n = clamp(n, 1.0, 8.0);
     float a = floor(n);
     float t = n - a;
@@ -265,38 +265,38 @@ float3 nivelF5_luz(float n, float2 uv) {
     return r;
 }
 
-float3 popDe5(float2 uv) {
+static float3 popDe5(float2 uv) {
     float3 x = x5.sample(__nv_smp, uv).rgb;
     float3 g = x;
     return clamp(g, 0.0, 1.0);
 }
 
-float3 saida5(float2 uv) {
+static float3 saida5(float2 uv) {
     float3 lin = paraLuz(g5.sample(__nv_smp, uv).rgb);
     float3 luz = u.uGlow * (float3(0.093060, 0.095552, 0.235638) * nivelF5_luz(0.0 + 1.0 + acDeltaNivel(), uv) + float3(0.133189, 0.200121, 0.039201) * nivelF5_luz(1.0 + 1.0 + acDeltaNivel(), uv) + float3(0.297974, 0.264439, 0.149420) * nivelF5_luz(2.0 + 1.0 + acDeltaNivel(), uv) + float3(0.000000, 0.021793, 0.000000) * nivelF5_luz(4.0 + 1.0 + acDeltaNivel(), uv) + float3(0.363954, 0.359585, 0.366160) * nivelF5_luz(5.0 + 1.0 + acDeltaNivel(), uv) + float3(0.038759, 0.071159, 0.021058) * nivelF5_luz(6.0 + 1.0 + acDeltaNivel(), uv) + float3(0.038073, 0.000000, 0.106629) * nivelF5_luz(7.0 + 1.0 + acDeltaNivel(), uv));
     lin += luz * (1.0 - lin);
     return paraTela(lin);
 }
 
-float3 antes2(float2 uv) {
+static float3 antes2(float2 uv) {
     float3 c = clamp(inputImg.sample(__nv_smp, uv).rgb, 0.0, 1.0);
     c = lut(c, 0.0);
     c = paraTela(clamp(paraLuz(c) * (atlas.sample(__nv_smp, float2((0.0 + clamp(uv.x * 64.0, 0.5, 64.0 - 0.5)) / 1089.0, (33.0 + clamp(uv.y * 36.0, 0.5, 36.0 - 0.5)) / 147.0)).rgb * 4.0), 0.0, 1.0));
     return c;
 }
 
-float3 antes3(float2 uv) {
+static float3 antes3(float2 uv) {
     float3 c = saida2(uv);
     return c;
 }
 
-float3 antes5(float2 uv) {
+static float3 antes5(float2 uv) {
     float3 c = saida3(uv);
     c = lut(c, 78.0);
     return c;
 }
 
-float3 fim(float2 uv) {
+static float3 fim(float2 uv) {
     float3 c = saida5(uv);
     c = clamp(c * (atlas.sample(__nv_smp, float2((0.0 + clamp(uv.x * 64.0, 0.5, 64.0 - 0.5)) / 1089.0, (111.0 + clamp(uv.y * 36.0, 0.5, 36.0 - 0.5)) / 147.0)).rgb * 2.0) + (atlas.sample(__nv_smp, float2((64.0 + clamp(uv.x * 64.0, 0.5, 64.0 - 0.5)) / 1089.0, (111.0 + clamp(uv.y * 36.0, 0.5, 36.0 - 0.5)) / 147.0)).rgb - 0.5), 0.0, 1.0);
     return c;

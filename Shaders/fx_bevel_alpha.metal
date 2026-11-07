@@ -21,7 +21,7 @@ struct bevel_alphaParams {
 const float PI = 3.14159265;
 
 // Converte da fase (x·aspect, y) de volta para UV (x, y).
-float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
+static float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
 
 /**
  * Coroa de 8 amostras ao redor de `ph` no raio `raio` (em unidades de fase,
@@ -29,7 +29,7 @@ float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
  *   rampa  — 1 no interior plano, ~0 exatamente na borda, 0 fora
  *   normal — direção "para fora" da superfície do chanfro (normalizada)
  */
-float3 bordaEm(float2 ph, float raio) {
+static float3 bordaEm(float2 ph, float raio) {
     float media = inputImg.sample(__nv_smp, paraUv(ph)).a * 0.2;
     float2 soma = float2(0.0);
     for (int i = 0; i < 8; i++) {

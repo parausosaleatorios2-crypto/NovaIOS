@@ -25,30 +25,30 @@ struct nv_nodevideo_effect_echoParams {
 const int NV_MAX = 11;
 
 // Os RTs do Node: luz linear, cor pré-multiplicada.
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
-float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
-float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
-float4 nvNova(float4 p) {
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
+static float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
+static float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvNova(float4 p) {
     if (p.a <= 0.0) return float4(0.0);
     return float4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
 }
 
-float nvDt() { return eng.acFrameDuration > 0.0 ? eng.acFrameDuration : 1.0 / 30.0; }
-int nvQuadro() { return int(floor(eng.acTime / nvDt() + 0.5)); }
-float nvTempoDoEco() { return max(u._echo_time, nvDt()); }   // if (T < 1/FPS) T = 1/FPS
+static float nvDt() { return eng.acFrameDuration > 0.0 ? eng.acFrameDuration : 1.0 / 30.0; }
+static int nvQuadro() { return int(floor(eng.acTime / nvDt() + 0.5)); }
+static float nvTempoDoEco() { return max(u._echo_time, nvDt()); }   // if (T < 1/FPS) T = 1/FPS
 
 // 24 bits num texel (com folga de 2^23 para tempo negativo).
-float3 nvGuardar(int n) {
+static float3 nvGuardar(int n) {
     int u = clamp(n + 8388608, 0, 16777215);
     return float3(float((u >> 16) & 255), float((u >> 8) & 255), float(u & 255)) / 255.0;
 }
-int nvLer(float3 c) {
+static int nvLer(float3 c) {
     int3 b = int3(floor(c * 255.0 + 0.5));
     return ((b.r << 16) | (b.g << 8) | b.b) - 8388608;
 }
-int2 nvCasa(int i) { return int2(i % 4, i / 4); }
+static int2 nvCasa(int i) { return int2(i % 4, i / 4); }
 
-float4 nvRetrato(int i, float2 uv) {
+static float4 nvRetrato(int i, float2 uv) {
     if (i == 0) return eco0.sample(__nv_smp, uv);
     if (i == 1) return eco1.sample(__nv_smp, uv);
     if (i == 2) return eco2.sample(__nv_smp, uv);
@@ -62,10 +62,10 @@ float4 nvRetrato(int i, float2 uv) {
     return eco10.sample(__nv_smp, uv);
 }
 
-bool nvTirouRetrato() { return agenda.read(uint2(nvCasa(NV_MAX)), uint(0)).r > 0.5; }
+static bool nvTirouRetrato() { return agenda.read(uint2(nvCasa(NV_MAX)), uint(0)).r > 0.5; }
 
 // O passe 0 do shader do Node (Effect/echo), conta por conta.
-float4 nvPasse0(float4 e1, float4 e2, float op1, float op2, int operador) {
+static float4 nvPasse0(float4 e1, float4 e2, float op1, float op2, int operador) {
     float4 u_xlat0 = e2;
     float4 u_xlat2 = e1;
     float4 u_xlat1 = u_xlat0 * op2;
@@ -84,7 +84,7 @@ float4 nvPasse0(float4 e1, float4 e2, float op1, float op2, int operador) {
 }
 
 // Blend SrcAlpha OneMinusSrcAlpha num RT de 8 bits (a saída do shader e a mistura presas em 0..1).
-float4 nvMisturar(float4 o, float4 d) {
+static float4 nvMisturar(float4 o, float4 d) {
     o = clamp(o, 0.0, 1.0);
     return clamp(o * o.a + d * (1.0 - o.a), 0.0, 1.0);
 }

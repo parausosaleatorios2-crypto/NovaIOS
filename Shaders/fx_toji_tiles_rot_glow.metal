@@ -27,12 +27,12 @@ struct toji_tiles_rot_glowParams {
 // --- funcoes auxiliares do efeito
 // Rotating tiled boxes glow - AM single pass
 
-float sdBox(in float2 p, in float b){
+static float sdBox(in float2 p, in float b){
     float2 d = abs(p) - float2(b);
     return length(max(d, 0.0));
 }
 
-float2x2 rot(float a){ return float2x2(cos(a), -sin(a), sin(a), cos(a)); }
+static float2x2 rot(float a){ return float2x2(cos(a), -sin(a), sin(a), cos(a)); }
 
 fragment float4 fx_toji_tiles_rot_glow(
     NovaVertexOut       in   [[stage_in]],

@@ -15,7 +15,7 @@ struct invertParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 toHsv(float3 c) {
+static float3 toHsv(float3 c) {
     float maxC = max(c.r, max(c.g, c.b));
     float minC = min(c.r, min(c.g, c.b));
     float span = maxC - minC;
@@ -34,7 +34,7 @@ float3 toHsv(float3 c) {
     return float3(hue, maxC > 0.0 ? span / maxC : 0.0, maxC);
 }
 
-float3 toRgb(float3 hsv) {
+static float3 toRgb(float3 hsv) {
     float3 k = __nv_mod(hsv.x * 6.0 + float3(0.0, 4.0, 2.0), 6.0);
     float3 base = clamp(min(k, 4.0 - k), 0.0, 1.0);
     return hsv.z * mix(float3(1.0), base, hsv.y);

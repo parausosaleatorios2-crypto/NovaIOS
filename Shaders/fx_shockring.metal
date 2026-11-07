@@ -25,7 +25,7 @@ struct shockringParams {
 
 // --- funcoes auxiliares do efeito
 /** O ruído do Scatter, com o hash inteiro do plugin (0x45d9f3b) e o resto em C. */
-float ruido(int x, int y, float semente) {
+static float ruido(int x, int y, float semente) {
     uint s = uint(int(semente));
     uint h = uint(y) * uint(y) + s + uint(x);
     h = ((h >> 16u) ^ h) * 0x45d9f3bu;

@@ -20,7 +20,7 @@ struct levelsParams {
 };
 
 // --- funcoes auxiliares do efeito
-float applyLevels(float value) {
+static float applyLevels(float value) {
     float range = max(u.inWhite - u.inBlack, 0.0001);
     float stretched = clamp((value - u.inBlack) / range, 0.0, 1.0);
     float shaped = pow(stretched, 1.0 / max(u.gammaF, 0.01));

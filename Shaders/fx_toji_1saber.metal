@@ -46,7 +46,7 @@ struct toji_1saberParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 random2( float2 p ) { return fract(sin(float2(dot(p,float2(127.1,311.7)),dot(p,float2(269.5,183.3))))*43758.5453); }
+static float2 random2( float2 p ) { return fract(sin(float2(dot(p,float2(127.1,311.7)),dot(p,float2(269.5,183.3))))*43758.5453); }
         float2 noise (in float2 st) {
             float2 i = floor(st);
             float2 f = fract(st);

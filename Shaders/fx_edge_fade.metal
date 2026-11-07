@@ -20,7 +20,7 @@ struct edge_fadeParams {
 
 // --- funcoes auxiliares do efeito
 /** 0 na borda, 1 depois de `width`. Largura 0 devolve 1: o lado fica intacto. */
-float sideMask(float distanceToEdge, float width) {
+static float sideMask(float distanceToEdge, float width) {
     if (width <= 0.0) return 1.0;
     return smoothstep(0.0, width, distanceToEdge);
 }

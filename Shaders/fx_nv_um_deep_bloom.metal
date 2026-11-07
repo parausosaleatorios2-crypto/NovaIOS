@@ -18,7 +18,7 @@ struct nv_um_deep_bloomParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 bright(float3 c) {
+static float3 bright(float3 c) {
     float L = dot(c, float3(0.2126, 0.7152, 0.0722));
     return c * max(0.0, L - u.threshold);
 }

@@ -27,13 +27,13 @@ struct toji_cosmic_nebulaParams {
 // --- funcoes auxiliares do efeito
 // Cosmic Nebula port
 
-float hash(float2 p){
+static float hash(float2 p){
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
 }
 
-float noise2d(float2 p){
+static float noise2d(float2 p){
     float2 i = floor(p);
     float2 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
@@ -44,7 +44,7 @@ float noise2d(float2 p){
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-float3 nebula(float2 uv){
+static float3 nebula(float2 uv){
     float t = eng.acTime * u.SPEED;
     float3 col1 = u.COL1.rgb;
     float3 col2 = u.COL2.rgb;
@@ -62,7 +62,7 @@ float3 nebula(float2 uv){
     return color;
 }
 
-float starCore(float2 uv, float flare, float depth){
+static float starCore(float2 uv, float flare, float depth){
     float d = max(abs(uv.x), abs(uv.y));
     float m = (0.02 * depth) / max(d, 1e-4);
 

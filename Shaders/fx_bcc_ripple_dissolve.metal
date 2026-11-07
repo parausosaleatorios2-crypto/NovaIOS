@@ -55,34 +55,34 @@ int W, H;
 int2 gBuf, gInicio;
 bool dePe;
 
-void preparar() {
+static void preparar() {
     gBuf = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 tam = clamp(int2(floor(eng.acCamada * float2(gBuf) + 0.5)), int2(1), gBuf);
     gInicio = (gBuf - tam) / 2;
     W = tam.x; H = tam.y;
     dePe = eng.acEntradaDePe == 1;
 }
-int2 noBuffer(int x, int y) { return gInicio + int2(x, dePe ? H - 1 - y : y); }
+static int2 noBuffer(int x, int y) { return gInicio + int2(x, dePe ? H - 1 - y : y); }
 
 // O pixel (x, y) da camada (linha 0 = topo, como no AE). Fora do quadro: a cor do vizinho de dentro, alfa 0.
-float4 pixel(int x, int y) {
+static float4 pixel(int x, int y) {
     int cx = clamp(x, 0, W - 1), cy = clamp(y, 0, H - 1);
     float4 c = inputImg.read(uint2(noBuffer(cx, cy)), uint(0));
     if (cx != x || cy != y) c.a = 0.0;
     return c;
 }
-float4 bilinear(float2 p) {
+static float4 bilinear(float2 p) {
     float2 b = floor(p), f = p - b;
     int x = int(b.x), y = int(b.y);
     if (x < -1 || y < -1 || x >= W || y >= H) return float4(0.0);
     return mix(mix(pixel(x, y), pixel(x + 1, y), f.x), mix(pixel(x, y + 1), pixel(x + 1, y + 1), f.x), f.y);
 }
 
-float mod360(float a) { return a - 360.0 * floor(a / 360.0); }
+static float mod360(float a) { return a - 360.0 * floor(a / 360.0); }
 
 // O Pin Width (0x18052d100, medido no AE): o deslocamento × peso(x)·peso(y), d = distância do CENTRO do pixel à
 // borda; rampa d·2/(2k + L − k) até k = 0,8·L, depois 1 − (L − d)²/(2(L − k)k + (L − k)²) até 1 em L = n·pino/2.
-float pesoDoPino(float d, float L) {
+static float pesoDoPino(float d, float L) {
     if (d >= max(L, 1.0)) return 1.0;
     float k = 0.8 * L, a = L - k;
     float f = d < k ? d * 2.0 / (2.0 * k + a) : 1.0 - (L - d) * (L - d) / (2.0 * a * k + a * a);
@@ -90,7 +90,7 @@ float pesoDoPino(float d, float L) {
 }
 
 // O envelope radial: a rampa de dentro, 1, a cauda; 0 antes de r0 e depois do alcance.
-float envelope(float r, float Ir, float R, out float alcance) {
+static float envelope(float r, float Ir, float R, out float alcance) {
     alcance = (rdQueda * 0.9 + 2.0) * R;
     float r0 = (0.5 - rdQueda * 0.45) * Ir;
     if (r < r0 || r0 > alcance) return 0.0;
@@ -100,7 +100,7 @@ float envelope(float r, float Ir, float R, out float alcance) {
 }
 
 // O lobo da luz (0x180e300b0): 0 fora de (l2c, l30), a curva u·(k·u + 1 − k) nas rampas, inteiro como no plugin.
-float lobo(float y) {
+static float lobo(float y) {
     y = mod360(y);
     if (y >= rdLobo.y || y <= rdLobo.x) return 0.0;
     float u;
@@ -111,7 +111,7 @@ float lobo(float y) {
     return floor(float(rdNivel) * c);
 }
 // A (frente) e B (trás) crus no grau inteiro i da fase da onda (o laço de 360 do WaveLight).
-float2 loboCru(float i) {
+static float2 loboCru(float i) {
     float x = i + rdFase;
     float sv = sin(x * GRAU), sv2 = sin((x - 0.1) * GRAU);
     float ac = acos(clamp(sv, -1.0, 1.0)) / GRAU;
@@ -119,13 +119,13 @@ float2 loboCru(float i) {
     return float2(lobo(ac + rdElev), lobo(ac - rdElev));
 }
 // Suavizado como o 0x18036b250 (s = 1,5): 0,1·(i ± 2) + 0,26667·(i − 1, i, i + 1), truncado.
-float2 loboSuave(float i) {
+static float2 loboSuave(float i) {
     float2 s3 = loboCru(i - 1.0) + loboCru(i) + loboCru(i + 1.0);
     float2 s2 = loboCru(i - 2.0) + loboCru(i + 2.0);
     return floor(s2 * 0.1 + s3 * 0.26666668);
 }
 // L0 e o lado (frente/trás) pela direção j (graus inteiros) do pixel.
-float2 direcao(float j) {
+static float2 direcao(float j) {
     float a = j + u.lightAngle;
     a = a - 360.0 * floor((a + 180.0) / 360.0);
     a *= GRAU;

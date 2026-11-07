@@ -25,7 +25,7 @@ const int TAPS = 5;
 const float TAP_OFFSETS[5] = float[5](-3.2307692308, -1.3846153846, 0.0, 1.3846153846, 3.2307692308);
 const float WEIGHTS[5] = float[5](0.0702702703, 0.3162162162, 0.2270270270, 0.3162162162, 0.0702702703);
 
-float4 blurPass(sampler2D tex, float2 direction) {
+static float4 blurPass(sampler2D tex, float2 direction) {
     // Em pixels da COMPOSIÇÃO: `eng.acEscalaDePixel` converte para o buffer, e a prévia
     // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
     float2 stepUv = direction * eng.acTexelSize * max(u.softness * eng.acEscalaDePixel / 4.0, 0.001);

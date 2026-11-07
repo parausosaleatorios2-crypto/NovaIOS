@@ -26,14 +26,14 @@ struct am_linear_streaksParams {
 float3x3 g_invParaTela;
 
 // A volta do `eng.acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
-float2 daTela(float2 t) {
+static float2 daTela(float2 t) {
     float3 c = g_invParaTela * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // O `inputImg.sample(__nv_smp, t)` do AM: a camada pré-multiplicada num ponto da tela, com o filtro da GPU. Na
 // tela o buffer É a tela; no filho de grupo, fora do buffer não há camada (o AM a desenha na tela do grupo).
-float4 camadaNaTela(float2 t) {
+static float4 camadaNaTela(float2 t) {
     if (eng.acEntradaDePe == 1) return pre.sample(__nv_smp, t);
     float2 uv = daTela(t);
     if (any(lessThan(uv, float2(0.0))) || any(greaterThan(uv, float2(1.0)))) return float4(0.0);

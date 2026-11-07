@@ -16,7 +16,7 @@ struct toji_360_reorient_sphereParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4x4 rotationAxisAngle( float3 v, float angle )
+static float4x4 rotationAxisAngle( float3 v, float angle )
         {
             float s = sin( angle );
             float c = cos( angle );

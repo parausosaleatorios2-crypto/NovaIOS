@@ -19,7 +19,7 @@ struct nv_um_night_visionParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float2 p) { return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
+static float hash(float2 p) { return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
 
 fragment float4 fx_nv_um_night_vision(
     NovaVertexOut       in   [[stage_in]],

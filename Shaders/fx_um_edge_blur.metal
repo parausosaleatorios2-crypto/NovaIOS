@@ -21,7 +21,7 @@ const float OFF[9] = float[9](-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0);
 const float WT[9]  = float[9](0.028,0.070,0.133,0.196,0.228,0.196,0.133,0.070,0.028);
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float sobel(sampler2D s, float2 uv, float2 tex) {
+static float sobel(sampler2D s, float2 uv, float2 tex) {
     float tl = dot(s.sample(__nv_smp, uv + float2(-tex.x,-tex.y)).rgb, LUMA);
     float t  = dot(s.sample(__nv_smp, uv + float2( 0.0, -tex.y)).rgb, LUMA);
     float tr = dot(s.sample(__nv_smp, uv + float2( tex.x,-tex.y)).rgb, LUMA);

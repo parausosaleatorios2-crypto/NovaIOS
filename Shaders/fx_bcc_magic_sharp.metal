@@ -48,17 +48,17 @@ struct bcc_magic_sharpParams {
 // com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
 float um;
 float UM_255;                  // float32(1/255) da DLL: 0x3B808081
-float fixa(float x) { return x * um; }
-float3 fixa3(float3 x) { return x * um; }
-float mul(float a, float b) { return (a * b) * um; }
-float3 mul3(float3 a, float3 b) { return (a * b) * um; }
+static float fixa(float x) { return x * um; }
+static float3 fixa3(float3 x) { return x * um; }
+static float mul(float a, float b) { return (a * b) * um; }
+static float3 mul3(float3 a, float3 b) { return (a * b) * um; }
 
 // 2^k exato (k de −126 a 127), sem o exp2 da GPU.
-float pot2(int k) { return as_type<float>(uint(k + 127) << 23); }
+static float pot2(int k) { return as_type<float>(uint(k + 127) << 23); }
 
 // float32 de num/den arredondado UMA vez (ao par), por divisão longa em inteiros: o que o host faz em double e
 // converte. num e den abaixo de 2^31.
-float divExata(uint num, uint den) {
+static float divExata(uint num, uint den) {
     if (num == 0u) return 0.0;
     uint q = num / den;
     uint r = num % den;
@@ -82,63 +82,63 @@ float divExata(uint num, uint den) {
 }
 
 // x = m·2^e com m de 24 bits (x > 0, normal).
-uint mantissa(float x) { return (as_type<uint>(x) & 8388607u) | 8388608u; }
-int expoente(float x) { return int((as_type<uint>(x) >> 23) & 255u) - 150; }
+static uint mantissa(float x) { return (as_type<uint>(x) & 8388607u) | 8388608u; }
+static int expoente(float x) { return int((as_type<uint>(x) >> 23) & 255u) - 150; }
 
 // O AE entrega o slider ao BCC em ponto fixo 16.16 (o 1,6 chega como 1,60000610…).
-float fx16(float v) { return floor(v * 65536.0 + 0.5) * pot2(-16); }
+static float fx16(float v) { return floor(v * 65536.0 + 0.5) * pot2(-16); }
 
 // float32(fx16(v) · 0,01) com a conta em double: |v|·65536 é inteiro, então é esse inteiro / 100 · 2^-16.
-float pct(float v) {
+static float pct(float v) {
     float f = fx16(v);
     float r = divExata(uint(abs(f) * 65536.0), 100u) * pot2(-16);
     return f < 0.0 ? -r : r;
 }
 
 // float32(x · 2,56) em double = x · 64 / 25, arredondado uma vez.
-float vezes256(float x) {
+static float vezes256(float x) {
     if (x <= 0.0) return 0.0;
     return divExata(mantissa(x) * 64u, 25u) * pot2(expoente(x));
 }
 
 // float32(1 / x), arredondado uma vez.
-float inverso(float x) { return divExata(1u, mantissa(x)) * pot2(-expoente(x)); }
+static float inverso(float x) { return divExata(1u, mantissa(x)) * pot2(-expoente(x)); }
 
 // ============================================================ a imagem
 int2 gT;
 int2 gP;
 
-float canal(int2 p, int c) { return float(int(inputImg.read(uint2(p), uint(0))[c] * 255.0 + 0.5)) * UM_255; }
-float3 fonte(int2 p) { return float3(int3(inputImg.read(uint2(p), uint(0)).rgb * 255.0 + 0.5)) * UM_255; }
+static float canal(int2 p, int c) { return float(int(inputImg.read(uint2(p), uint(0))[c] * 255.0 + 0.5)) * UM_255; }
+static float3 fonte(int2 p) { return float3(int3(inputImg.read(uint2(p), uint(0)).rgb * 255.0 + 0.5)) * UM_255; }
 
-float lerF(sampler2D t, int2 p) {
+static float lerF(sampler2D t, int2 p) {
     uint4 b = uint4(t.read(uint2(p), uint(0)) * 255.0 + 0.5);
     return as_type<float>(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
 }
-float4 gravarF(float v) {
+static float4 gravarF(float v) {
     uint u = as_type<uint>(v);
     return float4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
 }
-float3 acumulado(int2 p) { return float3(lerF(accR, p), lerF(accG, p), lerF(accB, p)); }
+static float3 acumulado(int2 p) { return float3(lerF(accR, p), lerF(accG, p), lerF(accB, p)); }
 
 // ============================================================ o bilateral (`DiffusionPassRenderer`)
 // Meia-largura n = ⌈raio⌉ e o peso espacial float32(exp(−0,5·i²/raio)).
-int meia(float raio) {
+static int meia(float raio) {
     int n = int(raio);
     if (raio > 0.0 && fract(raio) != 0.0) n++;
     return min(n, 4000);
 }
-float peso(int i, float raio) {
+static float peso(int i, float raio) {
     if (i == 0) return 1.0;
     float fi = float(i);
     return exp((fi * -0.5) * fi / raio);
 }
 // No rascunho do play/arraste, janela maior que ±24 lê de passo em passo.
-int passoDaJanela(int n) { return (eng.acRascunho == 1 && n > 24) ? (n + 23) / 24 : 1; }
-float limiar(float t) { return inverso(t * t) * 65536.0; }
+static int passoDaJanela(int n) { return (eng.acRascunho == 1 && n > 24) ? (n + 23) / 24 : 1; }
+static float limiar(float t) { return inverso(t * t) * 65536.0; }
 
 // Um bilateral ao longo de y num buffer (o 2º eixo): centro e vizinhos do próprio buffer.
-float bilateralY(sampler2D t, float raio, float K) {
+static float bilateralY(sampler2D t, float raio, float K) {
     int n = meia(raio);
     int passo = passoDaJanela(n);
     int ini = -(n / passo) * passo;
@@ -156,23 +156,23 @@ float bilateralY(sampler2D t, float raio, float K) {
 }
 
 // ============================================================ os controles
-bool passeLigado(int k) { return k == 0 ? u.finePass : (k == 1 ? u.smallPass : (k == 2 ? u.mediumPass : u.coarsePass)); }
-float nitidezDoPasse(int k) { return k == 0 ? u.fineSharpen : (k == 1 ? u.smallSharpen : (k == 2 ? u.mediumSharpen : u.coarseSharpen)); }
-float raioDoPasse(int k) {
+static bool passeLigado(int k) { return k == 0 ? u.finePass : (k == 1 ? u.smallPass : (k == 2 ? u.mediumPass : u.coarsePass)); }
+static float nitidezDoPasse(int k) { return k == 0 ? u.fineSharpen : (k == 1 ? u.smallSharpen : (k == 2 ? u.mediumSharpen : u.coarseSharpen)); }
+static float raioDoPasse(int k) {
     float r = fx16(u.radius);
     for (int i = 0; i < 3; i++) if (i < k) r = r * 2.0;            // o fator escondido 9962015 = 200 %
     return r * eng.acEscalaDePixel;
 }
 
 // `SharpenCompositeRenderer`: o 3a do passe k.
-float tresA(int k) {
+static float tresA(int k) {
     float a1 = pct(u.amount) * fx16(nitidezDoPasse(k));
     float a = vezes256(a1) * pot2(-8);
     return a * 3.0;
 }
-float ruido() { return 1.0 - (255.0 - fx16(u.noise)) * pot2(-8); }
+static float ruido() { return 1.0 - (255.0 - fx16(u.noise)) * pot2(-8); }
 
-float nitidez(float A, float B, float a3, float nr) {
+static float nitidez(float A, float B, float a3, float nr) {
     float x = mul(a3 + 1.0, A) - mul(a3, B);
     float xp = x > A + nr ? x - nr : (x < A - nr ? x + nr : A);
     return fixa(xp - A) + A;
@@ -181,12 +181,12 @@ float nitidez(float A, float B, float a3, float nr) {
 // `EffectScaler`: cada bloco só roda se algum ganho dele sair de 1 por mais de 1e-5.
 const float gYiq[15] = float[15](0.299, 0.587, 0.114, 0.596, -0.275, -0.321, 0.212, -0.523, 0.311, 0.956, 0.621, -0.272,
                            -0.647, -1.105, 1.702);
-float3 yiq(float3 X) {
+static float3 yiq(float3 X) {
     return float3((mul(X.r, gYiq[0]) + mul(X.g, gYiq[1])) + mul(X.b, gYiq[2]),
                 (mul(X.r, gYiq[3]) + mul(X.g, gYiq[4])) + mul(X.b, gYiq[5]),
                 (mul(X.r, gYiq[6]) + mul(X.g, gYiq[7])) + mul(X.b, gYiq[8]));
 }
-float3 sintonia(float3 A, float3 B) {
+static float3 sintonia(float3 A, float3 B) {
     float3 kc = float3(pct(u.redSharpen), pct(u.greenSharpen), pct(u.blueSharpen));
     if (max(max(abs(kc.r - 1.0), abs(kc.g - 1.0)), abs(kc.b - 1.0)) > 1e-5) B = mul3(B - A, kc) + A;
     float kl = pct(u.lumaSharpen);
@@ -220,7 +220,7 @@ float3 sintonia(float3 A, float3 B) {
     }
     return B;
 }
-float3 sintonizado(int2 p) { return sintonia(fonte(p), acumulado(p)); }
+static float3 sintonizado(int2 p) { return sintonia(fonte(p), acumulado(p)); }
 
 // ============================================================ os passes
 

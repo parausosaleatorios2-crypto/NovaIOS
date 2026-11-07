@@ -41,18 +41,18 @@ const int MAX_ITER = 32;
 
 // O valor do mapa em 16 bits (dois canais de um buffer de 8): com 8 bits, um Translate de
 // 50 % numa camada de 1080 px andaria em degraus de 4 px.
-float2 enc16(float v) {
+static float2 enc16(float v) {
     float q = floor(clamp(v, 0.0, 1.0) * 65535.0 + 0.5);
     float a = floor(q / 256.0);
     return float2(a, q - a * 256.0) / 255.0;
 }
-float dec16(float2 c) {
+static float dec16(float2 c) {
     float2 b = floor(c * 255.0 + 0.5);
     return (b.x * 256.0 + b.y) / 65535.0;
 }
 
 /** O canal escolhido de uma cor (reta); os de cor leem a PRÉ-MULTIPLICADA, como o AE. */
-float canalDe(float4 c) {
+static float canalDe(float4 c) {
     if (u.channel == 3) return c.a;
     float3 p = c.rgb * c.a;
     if (u.channel == 0) return p.r;
@@ -70,17 +70,17 @@ float canalDe(float4 c) {
     return (p.r + p.g + p.b) / 3.0;                                 // Lightness: a média
 }
 
-float vaEm(int2 p) {
+static float vaEm(int2 p) {
     return dec16(va.read(uint2(clamp(p, int2(0), int2(int(va.get_width()), int(va.get_height())) - 1)), uint(0)).rg);
 }
-float vbEm(int2 p) {
+static float vbEm(int2 p) {
     return dec16(vb.read(uint2(clamp(p, int2(0), int2(int(vb.get_width()), int(vb.get_height())) - 1)), uint(0)).rg);
 }
 
 /** Um eixo do gaussiano do Map Softness (σ = Softness/4 px da camada). */
-float sigmaDoMapa() { return u.mapSoftness * 0.25 * max(eng.acEscalaDePixel, 1e-3); }
+static float sigmaDoMapa() { return u.mapSoftness * 0.25 * max(eng.acEscalaDePixel, 1e-3); }
 
-float borrar(bool deVa, int2 eixo) {
+static float borrar(bool deVa, int2 eixo) {
     int2 p = int2(__nv_fragCoord.xy);
     float sigma = sigmaDoMapa();
     if (sigma < 0.05) return deVa ? vaEm(p) : vbEm(p);
@@ -102,13 +102,13 @@ float borrar(bool deVa, int2 eixo) {
 }
 
 /** O alfa do mapa naquele pixel (só para a vista do mapa), guardado no azul. */
-float alfaDoMapa(bool deVa) {
+static float alfaDoMapa(bool deVa) {
     int2 p = int2(__nv_fragCoord.xy);
     return deVa ? va.read(uint2(p), uint(0)).b : vb.read(uint2(p), uint(0)).b;
 }
 
 /** O valor (borrado) do mapa em `uv`, com a interpolação bilinear feita à mão (16 bits). */
-float mapaEm(float2 uv) {
+static float mapaEm(float2 uv) {
     float2 t = uv * float2(int2(int(va.get_width()), int(va.get_height()))) - 0.5;
     int2 i = int2(floor(t));
     float2 f = t - float2(i);
@@ -116,11 +116,11 @@ float mapaEm(float2 uv) {
                mix(vaEm(i + int2(0, 1)), vaEm(i + int2(1, 1)), f.x), f.y);
 }
 
-float expoIn(float x) { return pow(2.0, 10.0 * x - 10.0); }
-float expoOut(float x) { return 1.0 - pow(2.0, -10.0 * x); }
+static float expoIn(float x) { return pow(2.0, 10.0 * x - 10.0); }
+static float expoOut(float x) { return 1.0 - pow(2.0, -10.0 * x); }
 
 /** De valor do mapa (0..1) para o `m` que comanda a transformação. */
-float forca(float v) {
+static float forca(float v) {
     if (u.invertMap) v = 1.0 - v;
     v = pow(max(v, 0.0), u.mapGamma);
     float m = u.mapInterpretation == 0 ? v * 2.0 - 1.0 : v;
@@ -131,7 +131,7 @@ float forca(float v) {
     return m;
 }
 
-float4 lerFonte(float2 uv) {
+static float4 lerFonte(float2 uv) {
     if (u.edgeBehavior == 0) {
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return float4(0.0);
     } else if (u.edgeBehavior == 1) {
@@ -144,7 +144,7 @@ float4 lerFonte(float2 uv) {
 
 /** De onde o pixel `uv` lê, com a força `m` (ver a conta no cabeçalho). `some` = o Clamp
  *  Negative Scale apagou este pixel (a escala inverteria). */
-float2 origem(float2 uv, float m, out bool some) {
+static float2 origem(float2 uv, float m, out bool some) {
     float2 res = eng.acResolution;
     float2 p = (uv - u.anchor) * res;
     float ang = radians(u.rotate) * m;
@@ -160,7 +160,7 @@ float2 origem(float2 uv, float m, out bool some) {
     return u.anchor + k * q / res;
 }
 
-float4 lerCom(float2 uv, float m) {
+static float4 lerCom(float2 uv, float m) {
     bool some;
     float2 o = origem(uv, m, some);
     return some ? float4(0.0) : lerFonte(o);

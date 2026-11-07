@@ -21,10 +21,10 @@ struct nv_nodevideo_assetstore_rippleParams {
 
 // --- funcoes auxiliares do efeito
 // Os RTs do Node: luz linear, cor pré-multiplicada.
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
-float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
-float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
-float4 nvNova(float4 p) {
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
+static float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
+static float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvNova(float4 p) {
     if (p.a <= 0.0) return float4(0.0);
     return float4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
 }
@@ -48,10 +48,10 @@ const float4 NV_CHAVES[20] = float4[20](
 );
 
 // AERipple::Render: u._count 1 e 2 escolhem a 1ª e a 2ª textura; qualquer outro valor, a 3ª.
-int nvQual() { int c = int(u._count); return c == 1 ? 0 : (c == 2 ? 1 : 2); }
+static int nvQual() { int c = int(u._count); return c == 1 ? 0 : (c == 2 ? 1 : 2); }
 
 // AnimationCurve.Evaluate (weightedMode 0, pré e pós presos).
-float nvCurva(float t) {
+static float nvCurva(float t) {
     int q = nvQual();
     int ini = q == 0 ? 0 : (q == 1 ? 4 : 11);
     int n = q == 0 ? 4 : (q == 1 ? 7 : 9);
@@ -74,12 +74,12 @@ float nvCurva(float t) {
 
 // _GradTex.sample(__nv_smp, (x, 0)).w: a curva no lugar (Clamp). O Node lê a textura de 8 bits com mipmap (Trilinear), que
 // alisa o degrau dos 8 bits; a curva sem degrau fica tão perto dele quanto imitar o mipmap (ver o topo do arquivo).
-float nvGradTex(float x) { return clamp(nvCurva(clamp(x, 0.0, 2047.0 / 2048.0)), 0.0, 1.0); }
+static float nvGradTex(float x) { return clamp(nvCurva(clamp(x, 0.0, 2047.0 / 2048.0)), 0.0, 1.0); }
 
 // _SourceTex.sample(__nv_smp, uv) do Node: o RT da camada em sRGB de 8 bits, que a GPU filtra em luz linear (pré-multiplicada,
 // Clamp + Bilinear). O filtro é feito à mão sobre os 4 texels já em luz linear: com o deslocamento fracionário em
 // toda a imagem, filtrar a cor sRGB (o texture() comum) mudava as bordas em até 50 níveis.
-float4 nvFonte(float2 uv) {
+static float4 nvFonte(float2 uv) {
     int2 n = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 q = uv * float2(n) - 0.5;
     float2 i = floor(q);

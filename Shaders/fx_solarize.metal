@@ -17,7 +17,7 @@ struct solarizeParams {
 };
 
 // --- funcoes auxiliares do efeito
-float solarizeChannel(float value) {
+static float solarizeChannel(float value) {
     float folded = 1.0 - abs(value - u.level) / max(1.0 - u.level, 0.001);
     return mix(value, folded, smoothstep(u.level - u.softness, u.level + u.softness, value));
 }

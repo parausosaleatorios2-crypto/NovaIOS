@@ -23,7 +23,7 @@ struct voronoiParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 hash2(float2 c) {
+static float2 hash2(float2 c) {
     c = float2(
         dot(c, float2(127.1, 311.7)),
         dot(c, float2(269.5, 183.3))
@@ -31,7 +31,7 @@ float2 hash2(float2 c) {
     return fract(sin(c) * 43758.5453);
 }
 
-float hash1(float2 c) {
+static float hash1(float2 c) {
     return fract(sin(dot(c, float2(419.2, 371.9)) + u.seed * 13.7) * 9999.9);
 }
 
@@ -39,7 +39,7 @@ float hash1(float2 c) {
  * As duas menores distâncias (F1, F2) e a célula dona do pixel. Olha as 9 células
  * da vizinhança 3×3: a ingênua olharia TODAS, esta prende a conta no grid.
  */
-float3 voronoi(float2 p, float t) {
+static float3 voronoi(float2 p, float t) {
     float2 i = floor(p);
     float2 f = fract(p);
 

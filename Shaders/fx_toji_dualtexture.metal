@@ -21,7 +21,7 @@ struct toji_dualtextureParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 wrapUV(float2 p) {
+static float2 wrapUV(float2 p) {
             // u.edgeMode: 0 clamp, 1 repeat
             if (u.edgeMode == 0) {
                 return clamp(p, 0.0, 1.0);

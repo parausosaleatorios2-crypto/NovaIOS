@@ -25,7 +25,7 @@ struct halftoneParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float luminancia(float3 c) {
+static float luminancia(float3 c) {
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 
@@ -45,7 +45,7 @@ struct Celula {
     float2 uvDoCentro;
 };
 
-Celula celulaEm(float2 uv, float anguloGraus, bool continuaNoComprimento) {
+static Celula celulaEm(float2 uv, float anguloGraus, bool continuaNoComprimento) {
     // Células quadradas em qualquer proporção de composição: sem o eng.acAspect,
     // um projeto 9:16 teria pontos ovais.
     float porAltura = eng.acResolution.y / (max(u.dotSize, 1.0) * eng.acEscalaDePixel);
@@ -78,7 +78,7 @@ Celula celulaEm(float2 uv, float anguloGraus, bool continuaNoComprimento) {
  * fechar os cantos. O losango cobre 2L² até encostar, e depois perde só os
  * quatro triângulos dos cantos.
  */
-float cobertura(float2 local, float tinta, int forma, float borda) {
+static float cobertura(float2 local, float tinta, int forma, float borda) {
     float t = clamp(tinta, 0.0, 1.0);
     float metrica;
     float limite;
@@ -104,7 +104,7 @@ float cobertura(float2 local, float tinta, int forma, float borda) {
     return 1.0 - smoothstep(limite - borda, limite + borda, metrica);
 }
 
-float4 paraCmyk(float3 cor) {
+static float4 paraCmyk(float3 cor) {
     float k = 1.0 - max(max(cor.r, cor.g), cor.b);
     float resto = max(1.0 - k, 1e-4);
     return float4(

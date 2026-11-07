@@ -20,7 +20,7 @@ struct toji_atimesliceParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 getFromColor(float2 coord){ return inputImg.sample(__nv_smp, coord); }
+static float4 getFromColor(float2 coord){ return inputImg.sample(__nv_smp, coord); }
     float4 getToColor(float2 coord){ return inputImg2.sample(__nv_smp, coord); }
     float4 getMask(float2 coord){ return mask.sample(__nv_smp, coord); }
 

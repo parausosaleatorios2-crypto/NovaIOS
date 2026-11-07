@@ -27,31 +27,31 @@ struct nv_nodevideo_effect_blur_lensblurParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 linear(float3 c) {
+static float3 linear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 srgb(float3 l) {
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
-float4 texelDePe(sampler2D img) {
+static float4 texelDePe(sampler2D img) {
     int2 T = int2(int(img.get_width()), int(img.get_height()));
     int2 p = int2(min(floor(in.acScreenNorm * float2(T)), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
     return img.read(uint2(p), uint(0));
 }
 // powf do C: x^0 = 1 (o pow do GLSL não define 0^0).
-float potencia(float x, float e) { return e == 0.0 ? 1.0 : pow(max(x, 0.0), e); }
+static float potencia(float x, float e) { return e == 0.0 ? 1.0 : pow(max(x, 0.0), e); }
 
 // ---- A pirâmide e a escolha do nível (CreatePyramid + Render) ----
 const float PI = 3.14159265;
-int raioNoNivel(int2 n) {
+static int raioNoNivel(int2 n) {
     int m = max(n.x, n.y);
     float r = clamp(u.raio, 0.0, 1.0) * 0.2 * float(m / 2);
     return min(int(r), 60);
 }
 // A contagem de deslocamentos de cada u.forma, pela área (o Node conta a lista).
-float amostras(int R) {
+static float amostras(int R) {
     float N = float(2 * R + 1);
     int f = int(u.forma);
     float n = float(int(u.lados));
@@ -61,9 +61,9 @@ float amostras(int R) {
     float ro = 0.2 * N, ri = ro * ro * clamp(u.raioInterno, 0.0, 1.0);
     return max(1.0, n * ro * ri * sin(PI / n) / 4.0);
 }
-int2 par(int2 v) { return v + int2(v.x % 2 == 1 ? 1 : 0, v.y % 2 == 1 ? 1 : 0); }
+static int2 par(int2 v) { return v + int2(v.x % 2 == 1 ? 1 : 0, v.y % 2 == 1 ? 1 : 0); }
 // O tamanho do nível escolhido; R sai junto.
-int2 nivel(out int R) {
+static int2 nivel(out int R) {
     int q = int(u.qualidade);
     int piso = q == 0 ? 128 : 256;
     int2 base = int2(eng.acTamanhoDaTela + 0.5);
@@ -92,9 +92,9 @@ int2 nivel(out int R) {
 }
 
 // ---- As formas (GetDirs) ----
-float2 girar(float2 p, float a) { float c = cos(a), s = sin(a); return float2(p.x * c - p.y * s, p.x * s + p.y * c); }
+static float2 girar(float2 p, float a) { float c = cos(a), s = sin(a); return float2(p.x * c - p.y * s, p.x * s + p.y * c); }
 // AELensBlur.star: distância ao lado da estrela (negativa dentro), o ponto dobrado no 1º setor.
-float estrela(float2 p, float r, float rf, float n) {
+static float estrela(float2 p, float r, float rf, float n) {
     float an = 2.0 * PI / n;
     float m = __nv_mod(__nv_atan(-p.x, -p.y) + PI + PI / n, 2.0 * PI);
     if (an < m) {
@@ -112,9 +112,9 @@ float estrela(float2 p, float r, float rf, float n) {
     float d = length(a - b * t);
     return b.x * a.y - b.y * a.x < 0.0 ? -d : d;
 }
-float coracao(float2 p, float N4) { return p.x * p.x + 1.5 * pow(p.y - 2.0 * sqrt(abs(p.x) + 1.0), 2.0) - N4; }
+static float coracao(float2 p, float N4) { return p.x * p.x + 1.5 * pow(p.y - 2.0 * sqrt(abs(p.x) + 1.0), 2.0) - N4; }
 // O peso do deslocamento o (px do nível, Y para cima); < 0 = fora da u.forma.
-float pesoDaForma(int2 o, int R) {
+static float pesoDaForma(int2 o, int R) {
     int f = int(u.forma);
     float N = float(2 * R + 1);
     float corte = clamp(u.recorteInterno, 0.0, 1.0);
@@ -150,7 +150,7 @@ float pesoDaForma(int2 o, int R) {
     return potencia(abs(d) / N, corte * 5.0);
 }
 // A caixa de cada u.forma (para não varrer a grade inteira).
-int4 caixa(int R) {
+static int4 caixa(int R) {
     int f = int(u.forma);
     float N = float(2 * R + 1);
     if (f == 1) { int rc = int(float(R) / 1.5); return int4(-rc, -rc, rc, rc); }
@@ -168,17 +168,17 @@ int4 caixa(int R) {
 }
 
 // ---- LensBlurAccum + LensBlurAvg, juntando em vez de espalhar ----
-float3 rgbParaHsv(float3 c) {
+static float3 rgbParaHsv(float3 c) {
     float4 p = c.g >= c.b ? float4(c.gb, 0.0, -1.0 / 3.0) : float4(c.bg, -1.0, 0.666666687);
     float4 q = c.r >= p.x ? float4(c.r, p.yzx) : float4(p.xyw, c.r);
     float d = q.x - min(q.w, q.y);
     return float3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-4)), d / (q.x + 1e-4), q.x);
 }
-float3 hsvParaRgb(float3 h) {
+static float3 hsvParaRgb(float3 h) {
     float3 k = clamp(abs(fract(h.x + float3(1.0, 0.666666687, 0.333333343)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
     return h.z * mix(float3(1.0), k, h.y);
 }
-float4 acumular() {
+static float4 acumular() {
     int R;
     int2 n = nivel(R);
     float2 passo = 1.0 / float2(n);

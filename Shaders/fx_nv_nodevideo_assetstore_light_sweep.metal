@@ -35,15 +35,15 @@ struct nv_nodevideo_assetstore_light_sweepParams {
 // --- funcoes auxiliares do efeito
 // ---- a ponte Nova <-> Node (tools/nodeluzes/gerar.py)
 float2 nvUV;   // o in.vs_TEXCOORD0 dos programas do Node: o in.acScreenNorm, ou outro ponto que o passe escolhe
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
-float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
+static float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 // O passe 0: a camada como o Node a guarda (pre-multiplicada, luz linear; o buffer `pre` e sRGB de 8 bits).
-float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
-float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
+static float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
 // A saída do Node (pre-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz que
 // o Node soma acima do alfa (o brilho fora do recorte) vira alfa: a = max(alfa, r, g, b). NaN (0 x infinito na
 // conta do Node) vira 0, como no RT de 8 bits dele; a escolha pelo bvec não faz conta com o NaN.
-float4 nvSaida(float4 p) {
+static float4 nvSaida(float4 p) {
     p = mix(float4(0.0), min(p, float4(1.0)), greaterThanEqual(p, float4(0.0)));
     float a = max(p.a, max(p.r, max(p.g, p.b)));
     return a > 0.0 ? float4(nvGama(p.rgb / a), a) : float4(0.0);
@@ -65,7 +65,7 @@ float p0_x9;
 int p0_xi9;
 float p0_x10;
 bool p0_xb10;
-void p0_main()
+static void p0_main()
 {
     p0_x0.xy = float2(u._thickness) * float2(100.0, 200.0);
     p0_xi6 = int(p0_x0.x);
@@ -204,7 +204,7 @@ bool p1_xb77;
 float p1_x78;
 float4 p1_TempArray0[6];
 float4 p1_TempArray1[6];
-void p1_main()
+static void p1_main()
 {
     p1_x0.x = u._thickness * 100.0;
     p1_xi22 = int(p1_x0.x);

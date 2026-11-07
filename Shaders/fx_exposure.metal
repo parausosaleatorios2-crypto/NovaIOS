@@ -21,7 +21,7 @@ struct exposureParams {
 // --- funcoes auxiliares do efeito
 // sRGB → luz linear. A parte reta perto do zero não é capricho: sem ela a
 // curva tem derivada infinita na origem e o ruído da sombra explode.
-float3 paraLinear(float3 c) {
+static float3 paraLinear(float3 c) {
     return mix(
         c / 12.92,
         pow((c + 0.055) / 1.055, float3(2.4)),
@@ -29,7 +29,7 @@ float3 paraLinear(float3 c) {
     );
 }
 
-float3 paraSrgb(float3 c) {
+static float3 paraSrgb(float3 c) {
     return mix(
         c * 12.92,
         1.055 * pow(c, float3(1.0 / 2.4)) - 0.055,

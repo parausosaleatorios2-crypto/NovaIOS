@@ -26,15 +26,15 @@ struct cc_light_burstParams {
 // com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
 float um;
 int z0;
-float fixa(float x) { return x * um; }
-float3 fixa3(float3 x) { return x * um; }
-float4 fixa4(float4 x) { return x * um; }
-float mul(float a, float b) { return (a * b) * um; }
-float3 mul3(float a, float3 b) { return (a * b) * um; }
-float4 mul4(float4 a, float b) { return (a * b) * um; }
+static float fixa(float x) { return x * um; }
+static float3 fixa3(float3 x) { return x * um; }
+static float4 fixa4(float4 x) { return x * um; }
+static float mul(float a, float b) { return (a * b) * um; }
+static float3 mul3(float a, float3 b) { return (a * b) * um; }
+static float4 mul4(float4 a, float b) { return (a * b) * um; }
 
 /** a·b = p + e, exato (Dekker). */
-float2 produtoExato(float a, float b) {
+static float2 produtoExato(float a, float b) {
     float p = mul(a, b);
     float t = mul(4097.0, a);
     float ah = t - fixa(t - a);
@@ -46,13 +46,13 @@ float2 produtoExato(float a, float b) {
     return float2(p, e);
 }
 
-float restoDaDivisao(float a, float b, float q) {
+static float restoDaDivisao(float a, float b, float q) {
     float2 p = produtoExato(q, b);
     return fixa(a - p.x) - p.y;
 }
 
 /** a / b arredondado como no IEEE (a ≥ 0, b > 0): a divisão da GPU pode errar o último bit. */
-float divisao(float a, float b) {
+static float divisao(float a, float b) {
     if (a == 0.0) return 0.0;
     float q = a / b;
     float e = restoDaDivisao(a, b, q);
@@ -65,7 +65,7 @@ float divisao(float a, float b) {
 }
 
 /** O valor do controle em 16.16, como o AE o entrega ao plugin: o float32 · 65536, meio para longe do zero. */
-int fixo(float v) {
+static int fixo(float v) {
     float m = abs(v) * 65536.0;
     float i = floor(m);
     int r = int(i) + (m - i >= 0.5 ? 1 : 0);
@@ -74,34 +74,34 @@ int fixo(float v) {
 
 // ============================================================ dois floats (~48 bits)
 // v = hi + lo, |lo| ≤ meio ulp de hi. As somas e produtos exatos (Knuth, Dekker) com o `um` entre cada conta.
-float2 somaExata(float a, float b) {
+static float2 somaExata(float a, float b) {
     float s = fixa(a + b);
     float bb = fixa(s - a);
     return float2(s, fixa(fixa(a - fixa(s - bb)) + fixa(b - bb)));
 }
-float2 somaRapida(float a, float b) {
+static float2 somaRapida(float a, float b) {
     float s = fixa(a + b);
     return float2(s, fixa(b - fixa(s - a)));
 }
-float2 dfSoma(float2 a, float2 b) {
+static float2 dfSoma(float2 a, float2 b) {
     float2 s = somaExata(a.x, b.x);
     float2 t = somaExata(a.y, b.y);
     s = somaRapida(s.x, fixa(s.y + t.x));
     return somaRapida(s.x, fixa(s.y + t.y));
 }
-float2 dfNeg(float2 a) { return -a; }
-float2 dfMul(float2 a, float2 b) {
+static float2 dfNeg(float2 a) { return -a; }
+static float2 dfMul(float2 a, float2 b) {
     float2 p = produtoExato(a.x, b.x);
     return somaRapida(p.x, fixa(p.y + fixa(mul(a.x, b.y) + mul(a.y, b.x))));
 }
 
 /** a / b (b > 0) e √a em dois floats (~2⁻⁴⁴): a primeira aproximação em float, um passo de correção exato. */
-float2 dfDiv(float2 a, float2 b) {
+static float2 dfDiv(float2 a, float2 b) {
     float q1 = a.x / b.x;
     float2 r = dfSoma(a, dfNeg(dfMul(float2(q1, 0.0), b)));
     return somaRapida(q1, r.x / b.x);
 }
-float2 dfRaiz(float2 a) {
+static float2 dfRaiz(float2 a) {
     if (!(a.x > 0.0)) return float2(0.0);
     float h = sqrt(a.x);
     float2 r = dfSoma(a, dfNeg(produtoExato(h, h)));
@@ -113,23 +113,23 @@ float2 dfRaiz(float2 a) {
  * poderia trocar o lado da divisa, e `seguro` vira false. A distância é medida direto (q − round(q)): com margem de
  * 10⁻⁹, "1 − margem" em float32 já é 1, e um v um fio abaixo do inteiro passaria por seguro.
  */
-int dfPiso(float2 v, float margem, inout bool seguro) {
+static int dfPiso(float2 v, float margem, inout bool seguro) {
     float f = floor(v.x);
     float2 r = dfSoma(v, float2(-f, 0.0));
     float q = r.x + r.y;
     if (abs(q - floor(q + 0.5)) < margem) seguro = false;
     return int(f) + int(floor(q));
 }
-int dfCorte(float2 v, float margem, inout bool seguro) { return v.x < 0.0 ? -dfPiso(-v, margem, seguro) : dfPiso(v, margem, seguro); }
+static int dfCorte(float2 v, float margem, inout bool seguro) { return v.x < 0.0 ? -dfPiso(-v, margem, seguro) : dfPiso(v, margem, seguro); }
 
 /** O inteiro i · k (k potência de 2) em dois floats, exato (|i| < 2³¹). */
-float2 dfDeInt(int i, float k) {
+static float2 dfDeInt(int i, float k) {
     int b = i & 255;
     return somaRapida(float(i - b) * k, float(b) * k);
 }
 
 /** trunc (para o zero) de um par normalizado, |v| < 2³¹. */
-int dfTrunc(float2 v) {
+static int dfTrunc(float2 v) {
     float t = trunc(v.x);
     if (t != v.x) return int(t);
     return int(t) + int(v.x >= 0.0 ? floor(v.y) : ceil(v.y));
@@ -143,36 +143,36 @@ const uint2 D_UM = uint2(0x3FF00000u, 0u);
 const uint2 D_MEIO = uint2(0x3FE00000u, 0u);
 const uint2 D_MENOS_0005 = uint2(0xBF747AE1u, 0x47AE147Bu);   // −0,005
 
-bool dZero(uint2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
-uint dSinal(uint2 a) { return a.x >> 31; }
-int dExpo(uint2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
-uint2 dMant(uint2 a) { return uint2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
-uint2 dNeg(uint2 a) { return dZero(a) ? a : uint2(a.x ^ 0x80000000u, a.y); }
-uint2 dAbs(uint2 a) { return uint2(a.x & 0x7FFFFFFFu, a.y); }
-uint2 dEscala2(uint2 a, int k) { return dZero(a) ? a : uint2(a.x + uint(k << 20), a.y); }
+static bool dZero(uint2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
+static uint dSinal(uint2 a) { return a.x >> 31; }
+static int dExpo(uint2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
+static uint2 dMant(uint2 a) { return uint2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
+static uint2 dNeg(uint2 a) { return dZero(a) ? a : uint2(a.x ^ 0x80000000u, a.y); }
+static uint2 dAbs(uint2 a) { return uint2(a.x & 0x7FFFFFFFu, a.y); }
+static uint2 dEscala2(uint2 a, int k) { return dZero(a) ? a : uint2(a.x + uint(k << 20), a.y); }
 
-uint2 soma64(uint2 a, uint2 b) { uint lo = a.y + b.y; return uint2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
-uint2 sub64(uint2 a, uint2 b) { return uint2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
-bool menor64(uint2 a, uint2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
-uint2 shl64(uint2 a, int n) {
+static uint2 soma64(uint2 a, uint2 b) { uint lo = a.y + b.y; return uint2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
+static uint2 sub64(uint2 a, uint2 b) { return uint2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
+static bool menor64(uint2 a, uint2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
+static uint2 shl64(uint2 a, int n) {
     if (n == 0) return a;
     if (n >= 64) return uint2(0u);
     if (n >= 32) return uint2(a.y << (n - 32), 0u);
     return uint2((a.x << n) | (a.y >> (32 - n)), a.y << n);
 }
-uint2 shr64(uint2 a, int n) {
+static uint2 shr64(uint2 a, int n) {
     if (n == 0) return a;
     if (n >= 64) return uint2(0u);
     if (n >= 32) return uint2(0u, a.x >> (n - 32));
     return uint2(a.x >> n, (a.y >> n) | (a.x << (32 - n)));
 }
 
-uint2 dMontar(uint s, int e, uint2 m) {
+static uint2 dMontar(uint s, int e, uint2 m) {
     return uint2((s << 31) | (uint(e + 1023) << 20) | (m.x & 0xFFFFFu), m.y);
 }
 
 /** m56 em [2^55, 2^56): 53 bits + guarda + 2 de resto (o último já com o que saiu); ao par. */
-uint2 dArredondar(uint s, int e, uint2 m56) {
+static uint2 dArredondar(uint s, int e, uint2 m56) {
     uint extra = m56.y & 7u;
     uint2 m = shr64(m56, 3);
     if (extra > 4u || (extra == 4u && (m.y & 1u) == 1u)) m = soma64(m, uint2(0u, 1u));
@@ -181,7 +181,7 @@ uint2 dArredondar(uint s, int e, uint2 m56) {
 }
 
 /** O produto das mantissas em dígitos de 16 bits (laços de limite fixo: o compilador desenrola). */
-uint2 dMul(uint2 a, uint2 b) {
+static uint2 dMul(uint2 a, uint2 b) {
     if (dZero(a) || dZero(b)) return uint2((dSinal(a) ^ dSinal(b)) << 31, 0u);
     uint2 ma = dMant(a), mb = dMant(b);
     uint A[4];
@@ -209,7 +209,7 @@ uint2 dMul(uint2 a, uint2 b) {
     return dArredondar(dSinal(a) ^ dSinal(b), e, m);
 }
 
-uint2 dSoma(uint2 a, uint2 b) {
+static uint2 dSoma(uint2 a, uint2 b) {
     if (dZero(a)) return dZero(b) ? uint2((dSinal(a) & dSinal(b)) << 31, 0u) : b;
     if (dZero(b)) return a;
     if (menor64(uint2(a.x & 0x7FFFFFFFu, a.y), uint2(b.x & 0x7FFFFFFFu, b.y))) { uint2 t = a; a = b; b = t; }
@@ -240,13 +240,13 @@ uint2 dSoma(uint2 a, uint2 b) {
     return dArredondar(dSinal(a), e, m);
 }
 
-uint2 dSub(uint2 a, uint2 b) { return dSoma(a, dNeg(b)); }
+static uint2 dSub(uint2 a, uint2 b) { return dSoma(a, dNeg(b)); }
 
 /**
  * a / n em double, para n inteiro de 1 a 4095, com o arredondamento do IEEE: a divisão longa da mantissa em dígitos
  * de 16 bits (5 divisões de inteiro).
  */
-uint2 dDivInt(uint2 a, int n) {
+static uint2 dDivInt(uint2 a, int n) {
     if (dZero(a)) return a;
     uint un = uint(n);
     int bn = 0;
@@ -278,7 +278,7 @@ uint2 dDivInt(uint2 a, int n) {
 }
 
 /** trunc (para o zero), para |a| < 2^31. */
-int dTrunc(uint2 a) {
+static int dTrunc(uint2 a) {
     if (dZero(a)) return 0;
     int e = dExpo(a);
     if (e < 0) return 0;
@@ -287,7 +287,7 @@ int dTrunc(uint2 a) {
     return dSinal(a) == 1u ? -v : v;
 }
 
-uint2 dDeInt(int i) {
+static uint2 dDeInt(int i) {
     if (i == 0) return uint2(0u);
     uint u = uint(abs(i));
     int e = 31;
@@ -295,7 +295,7 @@ uint2 dDeInt(int i) {
     return dMontar(i < 0 ? 1u : 0u, e, shl64(uint2(0u, u), 21));
 }
 
-uint2 dDeFloat(float f) {
+static uint2 dDeFloat(float f) {
     uint b = as_type<uint>(f);
     uint E = (b >> 23) & 0xFFu;
     if (E == 0u) return uint2(b & 0x80000000u, 0u);
@@ -304,7 +304,7 @@ uint2 dDeFloat(float f) {
 }
 
 /** O double para float32, ao par. */
-float dParaFloat(uint2 d) {
+static float dParaFloat(uint2 d) {
     if (dZero(d)) return as_type<float>(d.x & 0x80000000u);
     uint2 m = dMant(d);
     int e = dExpo(d);
@@ -316,13 +316,13 @@ float dParaFloat(uint2 d) {
 }
 
 /** O double em dois floats: hi = o float mais perto, lo = o resto (perde só os 5 últimos bits). */
-float2 dfDeD(uint2 d) {
+static float2 dfDeD(uint2 d) {
     float hi = dParaFloat(d);
     return float2(hi, dParaFloat(dSub(d, dDeFloat(hi))));
 }
 
 /** a < b */
-bool dMenor(uint2 a, uint2 b) {
+static bool dMenor(uint2 a, uint2 b) {
     bool za = dZero(a), zb = dZero(b);
     if (za && zb) return false;
     if (za) return dSinal(b) == 0u;
@@ -337,7 +337,7 @@ bool dMenor(uint2 a, uint2 b) {
 // emulado: a·2^sh contra b·v, os dois produtos inteiros inteiros, em dígitos de 16 bits.
 
 /** O sinal de A·2^sh − B·V (A, B, V inteiros sem sinal de até 64 bits, uint2(alto, baixo); |sh| até ~80). */
-int compara(uint2 A, int sh, uint2 B, uint2 V) {
+static int compara(uint2 A, int sh, uint2 B, uint2 V) {
     uint b[4];
     uint v[4];
     uint P[9];
@@ -379,14 +379,14 @@ int compara(uint2 A, int sh, uint2 B, uint2 V) {
 }
 
 /** O expoente de 2 do maior bit de M ≥ 1. */
-int log2Int(int M) {
+static int log2Int(int M) {
     int k = 0;
     for (int i = 0; i < 30 && (M >> (k + 1)) != 0; i++) k++;
     return k;
 }
 
 /** O par de dois floats como double (o mais perto). */
-uint2 dDeDf(float2 v) { return dSoma(dDeFloat(v.x), dDeFloat(v.y)); }
+static uint2 dDeDf(float2 v) { return dSoma(dDeFloat(v.x), dDeFloat(v.y)); }
 
 /**
  * fl(a/b), o quociente em double do plugin (a inteiro exato, b ≠ 0 exato), sem dividir em double emulado: `aprox` é o
@@ -394,7 +394,7 @@ uint2 dDeDf(float2 v) { return dSoma(dDeFloat(v.x), dDeFloat(v.y)); }
  * m + j·ulp com j pequeno: j sai comparando a com b·(|m| ± (2i + 1)·½ulp), exato (`compara`); o empate vai ao par
  * (m tem a mantissa par). |j| ≥ 3 conta como 3: daí em diante nenhuma soma com 1 ou 2 volta ao inteiro.
  */
-uint2 quocienteExato(uint2 a, uint2 b, float2 aprox) {
+static uint2 quocienteExato(uint2 a, uint2 b, float2 aprox) {
     if (dZero(a)) return uint2(0u);
     float qf = aprox.x + aprox.y;
     int m = int(floor(qf + 0.5));
@@ -427,7 +427,7 @@ uint2 quocienteExato(uint2 a, uint2 b, float2 aprox) {
 }
 
 /** round(fração · lado · 65536), meio para longe do zero — a conta é exata em double (24 + 13 + 16 bits). */
-int pontoFixo(float fracao, int lado) {
+static int pontoFixo(float fracao, int lado) {
     uint2 v = dEscala2(dMul(dDeFloat(abs(fracao)), dDeInt(lado)), 16);
     int r = dTrunc(dSoma(v, D_MEIO));
     return fracao < 0.0 ? -r : r;
@@ -438,7 +438,7 @@ int pontoFixo(float fracao, int lado) {
 // emulado com inteiros e as comparacoes de 144 bits passam do que o compilador deles aguenta. Quando o driver recusa,
 // o motor compila de novo com NV_LEVE (ver `EffectPipeline.programFor`): sem o double, tudo nos dois floats (~48 bits).
 // Muda so o pixel que cai perto da divisa de um inteiro (o passo, o comeco do Center e o corte na borda), por 1 nivel.
-int pontoFixo(float fracao, int lado) {
+static int pontoFixo(float fracao, int lado) {
     bool ok = true;
     float2 v = produtoExato(abs(fracao), float(lado)) * 65536.0;
     int r = dfPiso(dfSoma(v, float2(0.5, 0.0)), 0.0, ok);
@@ -452,21 +452,21 @@ int2 inicio;
 bool dePe;
 
 /** Um pixel da camada (RGBA 0..255, u.cor reta) na orientação da IMAGEM (a linha 0 é o topo); fora, transparente. */
-int4 daCamada(int x, int y) {
+static int4 daCamada(int x, int y) {
     if (x < 0 || y < 0 || x >= W || y >= H) return int4(0);
     int2 b = inicio + int2(x, dePe ? H - 1 - y : y);
     return int4(inputImg.read(uint2(b), uint(0)) * 255.0 + 0.5);
 }
 
 /** O índice inteiro de uma posição 16.16 como o AE: (short)(X >> 16). */
-int indice(int X) { return int(uint(X >> 16) << 16) >> 16; }
+static int indice(int X) { return int(uint(X >> 16) << 16) >> 16; }
 
 /**
  * O subpixel_sample de 8 bits do AE (PF.dll; o do CC Lens), na ordem da SSE dele. Sem fração: o pixel. Os quatro
  * iguais: o pixel. Alfas iguais: cada canal (p3·w3 + p2·w2) + (p1·w1 + p0·w0) + 0,5. Senão: a u.cor pesada pelo alfa,
  * vezes 1/S, + 0,5; o alfa S + 0,5. Fora da camada conta como zero.
  */
-int4 amostraDoAe(int X, int Y) {
+static int4 amostraDoAe(int X, int Y) {
     int ix = indice(X), iy = indice(Y);
     int fx = X & 0xFFFF, fy = Y & 0xFFFF;
     int4 p0 = daCamada(ix, iy);
@@ -504,7 +504,7 @@ int4 amostraDoAe(int X, int Y) {
  * pelo lado em x (`base` − trunc(N·x / dX) à esquerda, trunc((W − x)·N / dX) + 1 à direita), depois o menor com o
  * lado em y. O `base` é 2, menos no Straight com Set Color (0x180003bf0), que usa 1. Em dois floats.
  */
-int corte(int x, int y, float2 dX, float2 dY, int N, int base, inout bool ok) {
+static int corte(int x, int y, float2 dX, float2 dY, int N, int base, inout bool ok) {
     float n = float(N);
     int cnt = N;
     float2 fx = dfSoma(dX, float2(float(x), 0.0));
@@ -532,7 +532,7 @@ int corte(int x, int y, float2 dX, float2 dY, int N, int base, inout bool ok) {
  * emulado, e cada quociente pelo `quocienteExato` (sem dividir). O + 1 e o `base` − de y também arredondam no plugin
  * (2 − (−14,999999999999998) dá 17: cruza a potência de 2 e o empate vai ao par).
  */
-int corteExato(int x, int y, uint2 eX, uint2 eY, float2 dX, float2 dY, int N, int base) {
+static int corteExato(int x, int y, uint2 eX, uint2 eY, float2 dX, float2 dY, int N, int base) {
     float n = float(N);
     int cnt = N;
     uint2 fx = dSoma(dDeInt(x), eX);

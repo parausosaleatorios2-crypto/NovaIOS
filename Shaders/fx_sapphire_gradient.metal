@@ -25,7 +25,7 @@ struct sapphire_gradientParams {
 };
 
 // --- funcoes auxiliares do efeito
-float sorteio(float2 p) {
+static float sorteio(float2 p) {
     float3 q = fract(float3(p.xyx) * float3(0.1031, 0.1030, 0.0973));
     q += dot(q, q.yzx + 33.33);
     return fract((q.x + q.y) * q.z);

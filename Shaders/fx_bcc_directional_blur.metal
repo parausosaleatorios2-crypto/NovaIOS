@@ -30,7 +30,7 @@ const int MEIA_MAXIMA = 2000;
 const int TABELA_DE = -360;
 const int TABELA_ATE = 720;
 
-float daTabela(int linha, int k) {          // o k-ésimo float32 da linha
+static float daTabela(int linha, int k) {          // o k-ésimo float32 da linha
     int b = 4 * k;
     int3 t0 = int3(graus.read(uint2(int2(b / 3, linha)), uint(0)).rgb * 255.0 + 0.5);
     int3 t1 = int3(graus.read(uint2(int2(b / 3 + 1, linha)), uint(0)).rgb * 255.0 + 0.5);
@@ -50,12 +50,12 @@ float gCs, gSn, gTg;
 int gW2, gH2, gCx, gCy;
 bool gEmPe, gVale;
 
-int cru(int j) { return int(exp(-float(j * j) * gC) * 100.0); }
-int bruto(int j) { return j >= gMeia0 ? 0 : cru(j); }
+static int cru(int j) { return int(exp(-float(j * j) * gC) * 100.0); }
+static int bruto(int j) { return j >= gMeia0 ? 0 : cru(j); }
 
 // trunc(a · (1 − f) + float(b) · f) como o plugin faz: o segundo produto em float, a soma em double.
 // Aqui em inteiros: (1 − f) é múltiplo de 2^-24.
-int misturar(int a, int b, float f) {
+static int misturar(int a, int b, float f) {
     float um = 1.0 - f;
     int qn = a * int(um * 16777216.0);
     int inteiro = qn >> 24;
@@ -67,7 +67,7 @@ int misturar(int a, int b, float f) {
 }
 
 // A escada de 100 níveis (só com mais de 100 pesos).
-int nivel(int k) {
+static int nivel(int k) {
     if (k <= 0) return 100;
     if (k >= 100) return 0;
     float x = float(k) * float(gMeia0);
@@ -76,7 +76,7 @@ int nivel(int k) {
     return misturar(bruto(i0), bruto(i0 + 1), x - float(i0));
 }
 
-int escada(int j) {
+static int escada(int j) {
     int v = bruto(j);
     if (gMeia0 <= 100) return v;
     // o primeiro nível k com v > (nível[k] + nível[k + 1]) / 2. A varredura começa do 0: os níveis NÃO descem
@@ -94,7 +94,7 @@ int escada(int j) {
 }
 
 // O núcleo 1D final: a escada e o pente do Thin.
-int nucleo1d(int i) {
+static int nucleo1d(int i) {
     int j = i - (gMeia - 1);
     if (j < 0) j = -j;
     int q = escada(j);
@@ -107,7 +107,7 @@ int nucleo1d(int i) {
 }
 
 // O 1D numa posição quebrada.
-int em(float t) {
+static int em(float t) {
     if (!(t > -1.0)) return 0;
     if (t > float(gN)) return 0;
     if (t < 0.0) return int((t + 1.0) * float(nucleo1d(0)));
@@ -118,7 +118,7 @@ int em(float t) {
 }
 
 // trunc(k · d) exato, com 0 < d <= 1 e k de 0 a 100 (no plugin, em double).
-int vezes(int k, float d) {
+static int vezes(int k, float d) {
     if (k == 0 || !(d > 0.0)) return 0;
     int s = 0;
     for (int i = 0; i < 7; i++) {
@@ -130,7 +130,7 @@ int vezes(int k, float d) {
     return (k * int(d * 16777216.0)) >> (24 + s);
 }
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gVale = false;
     float escala = eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0;
@@ -193,7 +193,7 @@ void preparar() {
 }
 
 // O peso da célula (linha r, coluna c) da grade, a uma distância d (< 1) do traço.
-int celula(int r, int c, float d) {
+static int celula(int r, int c, float d) {
     float a1 = float(c - gCx) * gCs;
     float a2 = gSn * float(r - gCy);
     float t = a1 + a2;
@@ -205,7 +205,7 @@ int celula(int r, int c, float d) {
 }
 
 // A entrada i do núcleo: os dois pesos e onde começam (em relação ao centro).
-void entrada(int i, out int wa, out int wb, out int inicio) {
+static void entrada(int i, out int wa, out int wb, out int inicio) {
     wa = 0;
     wb = 0;
     if (!gEmPe) {
@@ -239,7 +239,7 @@ void entrada(int i, out int wa, out int wb, out int inicio) {
 }
 
 // A soma pesada -> o nível: M = 2^23 / soma, deslocar 23 bits, devolvendo o resto (× 256) quando cabe.
-int dividir(int acc, int soma) {
+static int dividir(int acc, int soma) {
     int m = 8388608 / soma;
     int resto = 8388608 - m * soma;
     if (resto <= 32767) return (acc * m + resto * 256) >> 23;
@@ -248,7 +248,7 @@ int dividir(int acc, int soma) {
 
 // piso((alto · 65536 + baixo) / a), exato: a soma pesada pelo alfa não cabe em 32 bits (vai em duas palavras).
 // O quociente é um nível (0 a 255): a conta em float acha o candidato e o resto em inteiros acerta.
-int dividirLongo(int alto, int baixo, int a) {
+static int dividirLongo(int alto, int baixo, int a) {
     alto += baixo >> 16;
     baixo = baixo & 65535;
     int q = clamp(int((float(alto) * 65536.0 + float(baixo)) / float(a)), 0, 255);
@@ -263,8 +263,8 @@ int dividirLongo(int alto, int baixo, int a) {
     return clamp(q, 0, 255);
 }
 
-float4 bytes2(int v) { return float4(float(v / 256), float(v % 256), 0.0, 255.0) / 255.0; }
-int ler2(float4 v) { return int(v.r * 255.0 + 0.5) * 256 + int(v.g * 255.0 + 0.5); }
+static float4 bytes2(int v) { return float4(float(v / 256), float(v % 256), 0.0, 255.0) / 255.0; }
+static int ler2(float4 v) { return int(v.r * 255.0 + 0.5) * 256 + int(v.g * 255.0 + 0.5); }
 
 fragment float4 fx_bcc_directional_blur(
     NovaVertexOut       in   [[stage_in]],

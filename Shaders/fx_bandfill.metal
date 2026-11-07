@@ -36,7 +36,7 @@ struct bandfillParams {
 const float PI = 3.14159265;
 
 /** A coordenada da faixa, em faixas, num ponto (px do buffer, relativo ao Centro). */
-float coordenada(float2 d, float tam) {
+static float coordenada(float2 d, float tam) {
     float th = radians(u.rotation);
     float c = cos(th);
     float s = sin(th);
@@ -58,7 +58,7 @@ float coordenada(float2 d, float tam) {
     return ang / (2.0 * PI) * u.divisions;
 }
 
-float degrau(float d, float largura, float aa) {
+static float degrau(float d, float largura, float aa) {
     // Largura zero: borda seca, só com o antialias de um pixel.
     float w = max(largura, aa);
     return clamp(d / w + 0.5, 0.0, 1.0);

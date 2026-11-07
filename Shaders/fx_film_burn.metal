@@ -21,16 +21,16 @@ struct film_burnParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash1(float x) {
+static float hash1(float x) {
     return fract(sin(x * 127.1 + float(u.seed) * 13.7) * 43758.5453);
 }
 
-float hash2(float2 c) {
+static float hash2(float2 c) {
     c += float2(float(u.seed) * 13.7);
     return fract(sin(dot(c, float2(127.1, 311.7))) * 43758.5453);
 }
 
-float ruido2(float2 p) {
+static float ruido2(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     float2 s = f * f * (3.0 - 2.0 * f);
@@ -41,7 +41,7 @@ float ruido2(float2 p) {
     return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
 }
 
-float fbm(float2 p) {
+static float fbm(float2 p) {
     float soma = 0.0;
     float amp = 0.5;
     for (int i = 0; i < 4; i++) {

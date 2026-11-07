@@ -18,7 +18,7 @@ struct toji_1ghostParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 getResolution(){ float2 s=__nv_getTexSize(inputImg_info.size); if(s.x<=0.0||s.y<=0.0) s=float2(1920.0,1080.0); return s; }
+static float2 getResolution(){ float2 s=__nv_getTexSize(inputImg_info.size); if(s.x<=0.0||s.y<=0.0) s=float2(1920.0,1080.0); return s; }
     const float PI=3.14159265358979323846;
     float luma(float3 c){ return dot(c, float3(0.299,0.587,0.114)); }
 

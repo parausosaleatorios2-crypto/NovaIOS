@@ -23,7 +23,7 @@ struct toji_radialshadow2Params {
 };
 
 // --- funcoes auxiliares do efeito
-float projectAndClampDist(float2 a, float2 b) {
+static float projectAndClampDist(float2 a, float2 b) {
             return clamp(dot(a,b)/dot(b,b),0.0,1.0);
         }
 

@@ -19,7 +19,7 @@ struct glitchParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float n) {
+static float hash(float n) {
     return fract(sin(n * 12.9898) * 43758.5453);
 }
 

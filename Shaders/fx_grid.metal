@@ -29,7 +29,7 @@ struct gridParams {
  * densidade e em qualquer zoom — sem isso, uma grade fina desaparece num
  * aparelho de tela densa.
  */
-float gridLines(float2 uv, float divisions, float width) {
+static float gridLines(float2 uv, float divisions, float width) {
     float2 scaled = uv * divisions;
     float2 distanceToLine = abs(fract(scaled) - 0.5) / max(fwidth(scaled), 0.0001);
     float nearest = min(distanceToLine.x, distanceToLine.y);

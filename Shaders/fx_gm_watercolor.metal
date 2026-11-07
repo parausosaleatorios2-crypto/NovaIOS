@@ -18,8 +18,8 @@ struct gm_watercolorParams {
 };
 
 // --- funcoes auxiliares do efeito
-float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
-float gmNoise(float2 p){
+static float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
+static float gmNoise(float2 p){
   float2 i = floor(p), f = fract(p);
   float2 u = f * f * (3.0 - 2.0 * f);
   return mix(mix(gmHash(i), gmHash(i + float2(1.0, 0.0)), u.x),

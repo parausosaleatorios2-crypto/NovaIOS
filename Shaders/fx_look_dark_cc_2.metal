@@ -22,23 +22,23 @@ const float uGlow = 1.0;
 
 // Quantos níveis de pirâmide a imagem está acima ou abaixo de 1080 (o lado menor,
 // em pixels da camada): o ajuste foi feito em 1080p.
-float acDeltaNivel() {
+static float acDeltaNivel() {
     float2 tam = float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))) / max(eng.acEscalaDePixel, 0.05);
     return log2(max(min(tam.x, tam.y), 16.0) / 1080.0);
 }
 
-float3 paraLuz(float3 c) {
+static float3 paraLuz(float3 c) {
     float3 alto = pow(max(c + 0.055, 0.0) / 1.055, float3(2.4));
     return mix(c / 12.92, alto, step(float3(0.04045), c));
 }
 
-float3 paraTela(float3 l) {
+static float3 paraTela(float3 l) {
     float3 s = max(l, 0.0);
     return mix(s * 12.92, 1.055 * pow(s, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), s));
 }
 
 // A LUT 33³ do atlas: 33 ladrilhos 33×33 lado a lado (x = b·33 + r, y = linha0 + g).
-float3 lut(float3 c, float linha0) {
+static float3 lut(float3 c, float linha0) {
     float2 tam = float2(int2(int(atlas.get_width()), int(atlas.get_height())));
     float3 p = clamp(c, 0.0, 1.0) * 32.0;
     float b0 = floor(p.b);
@@ -51,7 +51,7 @@ float3 lut(float3 c, float linha0) {
 }
 
 // A descida da pirâmide: tenda 4×4 (como o Deep Glow).
-float3 descer(sampler2D origem) {
+static float3 descer(sampler2D origem) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -70,19 +70,19 @@ float3 descer(sampler2D origem) {
 }
 
 // O glow guarda LUZ (linear) em 8 bits com raiz — a mesma de Deep Glow — e com ruído.
-float ruidoDoPixel() {
+static float ruidoDoPixel() {
     return fract(52.9829189 * fract(dot(__nv_fragCoord.xy, float2(0.06711056, 0.00583715)))) - 0.5;
 }
-float4 guardar(float3 luz) { return float4(sqrt(max(luz, 0.0)) + ruidoDoPixel() / 255.0, 1.0); }
-float3 abrir(float3 g) { return g * g; }
+static float4 guardar(float3 luz) { return float4(sqrt(max(luz, 0.0)) + ruidoDoPixel() / 255.0, 1.0); }
+static float3 abrir(float3 g) { return g * g; }
 
-float3 cortar(float3 c, float limiar, float joelho) {
+static float3 cortar(float3 c, float limiar, float joelho) {
     float vista = dot(c, float3(0.2126, 0.7152, 0.0722));
     float t = clamp((vista - limiar) / max(joelho, 0.0001), 0.0, 1.0);
     return paraLuz(c) * (t * t * (3.0 - 2.0 * t));
 }
 
-float4 descerComCorte(sampler2D origem, float limiar, float joelho) {
+static float4 descerComCorte(sampler2D origem, float limiar, float joelho) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -100,7 +100,7 @@ float4 descerComCorte(sampler2D origem, float limiar, float joelho) {
     return guardar(soma / max(pesos, 0.0001));
 }
 
-float4 descerLuz(sampler2D origem) {
+static float4 descerLuz(sampler2D origem) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -119,7 +119,7 @@ float4 descerLuz(sampler2D origem) {
 }
 
 // A subida: B-spline cúbica em quatro leituras (o `lerLiso` do Deep Glow).
-float3 lerLiso(sampler2D t, float2 uv) {
+static float3 lerLiso(sampler2D t, float2 uv) {
     float2 tam = float2(int2(int(t.get_width()), int(t.get_height())));
     float2 p = uv * tam - 0.5;
     float2 i = floor(p);
@@ -141,7 +141,7 @@ float3 lerLiso(sampler2D t, float2 uv) {
 }
 
 
-float3 fim(float2 uv) {
+static float3 fim(float2 uv) {
     float3 c = clamp(inputImg.sample(__nv_smp, uv).rgb, 0.0, 1.0);
     c = lut(c, 0.0);
     return c;

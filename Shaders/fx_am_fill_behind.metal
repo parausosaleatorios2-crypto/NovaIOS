@@ -35,7 +35,7 @@ const float PI = 3.14159265;
 
 // O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
 // num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -48,7 +48,7 @@ float oitoBits(float k) {
 
 // A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
 // do `am-gaussian-blur.xml`): os pesos tirados um do outro por multiplicação e duas amostras juntas numa leitura.
-float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
+static float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
     if (u.strength <= 0.0) return float4(0.0);
     float sigma = lado / 2.14596602;
     float3 g;
@@ -79,30 +79,30 @@ float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
 }
 
 // O meio-lado: Intensidade ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `eng.acPreviewSize` do AM).
-float ladoDoDesfoque() {
+static float ladoDoDesfoque() {
     return u.strength / 2.0 * 1.14 / 4.0 / 3.0 * length(float2(int2(int(pre.get_width()), int(pre.get_height()))));
 }
 
 // A volta do `eng.acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
-float2 daTela(float2 t) {
+static float2 daTela(float2 t) {
     float3 c = __nv_inverse(eng.acParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // Um ponto da tela do AM (`in.acScreenNorm`, t = 0 embaixo) no buffer em que o efeito roda.
-float2 noBuffer(float2 st) {
+static float2 noBuffer(float2 st) {
     return eng.acEntradaDePe == 1 ? st : daTela(st);
 }
 
 // O `eng.acLayerToScreen` do AM aplicado a um VETOR da camada (w = 0): o retângulo do conteúdo de 0 a 1 → a fração da
 // tela. A fração do conteúdo vira fração do buffer da camada (que cobre `eng.acTamanhoDaTela`) e vai pela parte linear da
 // `eng.acCamadaParaTela`. O sinal do Y (o buffer do Nova cresce para baixo, a camada do AM para cima) some no `abs`.
-float2 camadaParaTelaVetor(float2 v) {
+static float2 camadaParaTelaVetor(float2 v) {
     return (eng.acCamadaParaTela * float3(v * eng.acTamanhoDaCamada / eng.acTamanhoDaTela, 0.0)).xy;
 }
 
 // O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -111,7 +111,7 @@ float3 fundoNoPixel() {
 
 // A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta; onde a cor passa do alfa, com o fundo (o `paraReta`
 // do Anel e do Sharpen: o menor alfa que dá a mesma soma na composição Normal com qualquer opacidade).
-float4 paraReta(float4 q) {
+static float4 paraReta(float4 q) {
     if (all(lessThanEqual(q.rgb, float3(q.a)))) return q.a > 0.0 ? float4(q.rgb / q.a, q.a) : float4(0.0);
     float3 d = fundoNoPixel();
     float3 sobra = q.rgb - d * q.a;
@@ -129,7 +129,7 @@ float4 paraReta(float4 q) {
 
 const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
-float4 composite( float4 a, float4 b) {
+static float4 composite( float4 a, float4 b) {
     return a * (1. - b.a) + b;
 }
 
@@ -144,7 +144,7 @@ float3x3 yuv2rgb = float3x3(
     1.0,  2.03211,  0.0
 );
 
-float maxComponent( float2 v ) {
+static float maxComponent( float2 v ) {
     return max(v.x,v.y);
 }
 

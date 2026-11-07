@@ -18,7 +18,7 @@ struct gm_ditherParams {
 };
 
 // --- funcoes auxiliares do efeito
-float bayer(float2 p){
+static float bayer(float2 p){
   float2 f = floor(__nv_mod(p, 4.0));
   float m = 0.0;
   if (f.y < 0.5){ m = f.x < 0.5 ? 0.0 : 2.0; }

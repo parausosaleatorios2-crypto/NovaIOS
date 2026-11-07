@@ -41,7 +41,7 @@ struct node_color_gradingParams {
 uniform float gradacaoPosExposicao;
 
 // k/255 pelo mais perto, montado nos bits do float (ver `node-manga.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -52,24 +52,24 @@ float oitoBits(float k) {
     return as_type<float>((uint(150 - e) << 23) + (q - 0x800000u));
 }
 
-float3 oitoBits3(float3 k) {
+static float3 oitoBits3(float3 k) {
     return float3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
 }
 
-float3 linear(float3 c) {
+static float3 linear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
 
-float3 srgb(float3 l) {
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 
-float3 bytesSrgb(float3 l) {
+static float3 bytesSrgb(float3 l) {
     return floor(srgb(l) * 255.0 + 0.5);
 }
 
-float4 texelDePe(sampler2D img) {
+static float4 texelDePe(sampler2D img) {
     int2 T = int2(int(img.get_width()), int(img.get_height()));
     int2 p = int2(min(floor(in.acScreenNorm * float2(T)), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
@@ -78,7 +78,7 @@ float4 texelDePe(sampler2D img) {
 
 // `NodeVideo/RenderCommand/color_grading`, conta por conta (o `_SourceTex` é o `camadaRt`, o `_Lut3D` a `u.gradacao`).
 // `_lut_space` = 0 (a LUT interna, em LogC), `_Lut3D_Params` = (1/33, 32), `_blend` = 1, sem a máscara interna.
-float4 colorGrading(float2 in.vs_TEXCOORD0) {
+static float4 colorGrading(float2 in.vs_TEXCOORD0) {
     const float _blend = 1.0;
     const float2 _Lut3D_Params = float2(1.0 / 33.0, 32.0);
     float _PostExposure = gradacaoPosExposicao;

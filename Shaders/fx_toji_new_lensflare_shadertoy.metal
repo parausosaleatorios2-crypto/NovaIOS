@@ -30,9 +30,9 @@ struct toji_new_lensflare_shadertoyParams {
 const float PI = 3.14159265359;
 const float3 suncolor = float3(0.643,0.494,0.867);
 
-float getSun(float2 uv){ return (length(uv) < 0.009) ? 1.0 : 0.0; }
+static float getSun(float2 uv){ return (length(uv) < 0.009) ? 1.0 : 0.0; }
 
-float3 lensflares(float2 uv, float2 pos, out float3 sunflare, out float3 lensflare){
+static float3 lensflares(float2 uv, float2 pos, out float3 sunflare, out float3 lensflare){
     float2 main = uv - pos;
     float2 uvd = uv * (length(uv));
 
@@ -68,13 +68,13 @@ float3 lensflares(float2 uv, float2 pos, out float3 sunflare, out float3 lensfla
     return sunflare + lensflare;
 }
 
-float3 anflares1(float2 uv, float intensity, float stretch, float brightness){
+static float3 anflares1(float2 uv, float intensity, float stretch, float brightness){
     uv.x *= 1.0 / max(intensity*stretch, 1e-3);
     uv.y *= 0.5;
     return float3(smoothstep(0.009, 0.0, length(uv))) * brightness;
 }
 
-float3 anflares2(float2 uv, float threshold, float intensity, float stretch, float brightness){
+static float3 anflares2(float2 uv, float threshold, float intensity, float stretch, float brightness){
     threshold = 1.0 - threshold;
     float3 hdr = float3(getSun(uv));
     hdr = float3(floor(threshold + pow(hdr.r, 1.0)));
@@ -91,7 +91,7 @@ float3 anflares2(float2 uv, float threshold, float intensity, float stretch, flo
     return hdr * brightness;
 }
 
-float3 applyBlend(float3 base, float3 over, float a, int mode){
+static float3 applyBlend(float3 base, float3 over, float a, int mode){
     float3 outc = base;
     if (mode == 0){ // NORMAL
         outc = mix(base, over, a);

@@ -25,22 +25,22 @@ struct ae_wave_warpParams {
 // ------------------------------------------------------------------ inteiros
 
 // 64 bits sem sinal em (alto, baixo); os com sinal em complemento de dois.
-uint2 mul64(uint a, uint b) {
+static uint2 mul64(uint a, uint b) {
     uint a0 = a & 0xFFFFu, a1 = a >> 16, b0 = b & 0xFFFFu, b1 = b >> 16;
     uint p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
     uint meio = (p00 >> 16) + (p01 & 0xFFFFu) + (p10 & 0xFFFFu);
     return uint2(p11 + (p01 >> 16) + (p10 >> 16) + (meio >> 16), (p00 & 0xFFFFu) | (meio << 16));
 }
-uint2 soma64(uint2 a, uint2 b) {
+static uint2 soma64(uint2 a, uint2 b) {
     uint baixo = a.y + b.y;
     return uint2(a.x + b.x + (baixo < a.y ? 1u : 0u), baixo);
 }
-uint2 neg64(uint2 a) { return soma64(uint2(~a.x, ~a.y), uint2(0u, 1u)); }
-uint2 de32(int a) { return uint2(a < 0 ? 0xFFFFFFFFu : 0u, uint(a)); }
-bool menor64(uint2 a, uint2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }     // sem sinal
+static uint2 neg64(uint2 a) { return soma64(uint2(~a.x, ~a.y), uint2(0u, 1u)); }
+static uint2 de32(int a) { return uint2(a < 0 ? 0xFFFFFFFFu : 0u, uint(a)); }
+static bool menor64(uint2 a, uint2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }     // sem sinal
 
 /** n / d e o resto, com d < 65536 (a divisão longa em 16 bits). */
-uint2 div64(uint2 n, uint d, out uint r) {
+static uint2 div64(uint2 n, uint d, out uint r) {
     uint t = n.x >> 16;                 uint q3 = t / d; t = ((t % d) << 16) | (n.x & 0xFFFFu);
     uint q2 = t / d; t = ((t % d) << 16) | (n.y >> 16);
     uint q1 = t / d; t = ((t % d) << 16) | (n.y & 0xFFFFu);
@@ -49,7 +49,7 @@ uint2 div64(uint2 n, uint d, out uint r) {
 }
 
 /** trunc(a · b / 65536), com |a| < 2^31 e |b| ≤ 65536 — o produto vai a 47 bits, como no double do plugin. */
-int corte16(int a, int b) {
+static int corte16(int a, int b) {
     uint2 p = mul64(uint(abs(a)), uint(abs(b)));
     int m = int((p.x << 16) | (p.y >> 16));
     return (a < 0) != (b < 0) ? -m : m;
@@ -57,7 +57,7 @@ int corte16(int a, int b) {
 
 /** O ponto fixo 16.16 que o AE daria ao valor (arredonda, meio para longe do zero). O valor chega em float: um
  *  494,8 vira 494,79998 — com até 4 casas decimais, a conta volta ao decimal antes de converter. */
-int fixo(float v) {
+static int fixo(float v) {
     float m = abs(v);
     float i = floor(m);
     float f = m - i;
@@ -72,25 +72,25 @@ int fixo(float v) {
     return v < 0.0 ? -r : r;
 }
 
-int rndf(float v) { return int(v < 0.0 ? ceil(v - 0.5) : floor(v + 0.5)); }
+static int rndf(float v) { return int(v < 0.0 ? ceil(v - 0.5) : floor(v + 0.5)); }
 
 // ------------------------------------------------------------------ as tabelas
 
-int3 bytes(int x, int y) { return int3(tabelas.read(uint2(int2(x, y)), uint(0)).rgb * 255.0 + 0.5); }
-int tres(int x, int y) { int3 b = bytes(x, y); return b.r | (b.g << 8) | (b.b << 16); }
+static int3 bytes(int x, int y) { return int3(tabelas.read(uint2(int2(x, y)), uint(0)).rgb * 255.0 + 0.5); }
+static int tres(int x, int y) { int3 b = bytes(x, y); return b.r | (b.g << 8) | (b.b << 16); }
 
 /** A onda do tipo `t` (0..8) no índice i, em 16.16. */
-int onda(int t, int i) { return tres(i, t) - 65536; }
+static int onda(int t, int i) { return tres(i, t) - 65536; }
 
 /** |valor|·2^53 (64 bits) e o sinal, da direção em graus inteiros. */
-uint2 dupla(int x, int y, out bool negativo) {
+static uint2 dupla(int x, int y, out bool negativo) {
     int3 a = bytes(x, y), b = bytes(x + 1, y), c = bytes(x + 2, y);
     negativo = c.g == 1;
     return uint2(uint(b.g | (b.b << 8) | (c.r << 16)), uint(a.r | (a.g << 8) | (a.b << 16) | (b.r << 24)));
 }
 
 /** rnd(2^39 · |valor| / d) para o valor dado por M = |valor|·2^53: floor((M + 2^13·d) / 2^14 / d). d < 2^33. */
-int passoExato(uint2 M, uint2 d) {
+static int passoExato(uint2 M, uint2 d) {
     uint2 u = soma64(M, uint2((d.x << 13) | (d.y >> 19), d.y << 13));
     uint2 u14 = uint2(u.x >> 14, (u.y >> 14) | (u.x << 18));
     float aprox = (float(u14.x) * 4294967296.0 + float(u14.y)) / (float(d.x) * 4294967296.0 + float(d.y));

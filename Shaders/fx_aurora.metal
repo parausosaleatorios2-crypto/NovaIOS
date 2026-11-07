@@ -36,11 +36,11 @@ struct auroraParams {
 // --------------------------------------------------------------- o plugin
 // Nomes do original (Stormoid): tri, tri2, triNoise2d, aurora, u.stars, bg.
 
-float tri(float x) { return clamp(abs(fract(x) - 0.5), 0.01, 0.49); }
+static float tri(float x) { return clamp(abs(fract(x) - 0.5), 0.01, 0.49); }
 
-float2 tri2(float2 p) { return float2(tri(p.x) + tri(p.y), tri(p.y + tri(p.x))); }
+static float2 tri2(float2 p) { return float2(tri(p.x) + tri(p.y), tri(p.y + tri(p.x))); }
 
-float2x2 mm2(float a) { float c = cos(a), s = sin(a); return float2x2(c, s, -s, c); }
+static float2x2 mm2(float a) { float c = cos(a), s = sin(a); return float2x2(c, s, -s, c); }
 
 const float2x2 M2 = float2x2(-0.95534, -0.29552, 0.29552, -0.95534);
 
@@ -63,7 +63,7 @@ float N_OITAVAS;    // u.auroraDetail × 0,05
 float2x2 GIRO;          // mm2(giro) do ruído da aurora
 
 /** O ruído triangular deformado. [rot] é a rotação de cada oitava (mm2 do ângulo). */
-float triNoise2d(float2 p, float2x2 rot) {
+static float triNoise2d(float2 p, float2x2 rot) {
     float W = W_DEF;
     float tw = TW_DEF;
     for (float k = 1.0; k < 5.0; k += 1.0) {
@@ -87,12 +87,12 @@ float triNoise2d(float2 p, float2x2 rot) {
     return rz;
 }
 
-float alfaDaAurora(float rz) {
+static float alfaDaAurora(float rz) {
     return max(clamp(1.0 / pow(rz * 29.0, 2.8 - u.amount / 100.0), 0.0, 0.55), 0.0);
 }
 
 /** A marcha pela aurora. [rdy] é |rd.y|; [refl] pondera o reflexo. */
-float4 aurora(float3 ro, float3 rd, float rdy, float2 uv, float T, float refl) {
+static float4 aurora(float3 ro, float3 rd, float rdy, float2 uv, float T, float refl) {
     float4 col = float4(0.0);
     float4 avg = float4(0.0);
     float iter = max(u.iterations, 1.0);
@@ -115,7 +115,7 @@ float4 aurora(float3 ro, float3 rd, float rdy, float2 uv, float T, float refl) {
     return col;
 }
 
-float3 estrelas(float3 p, float largura) {
+static float3 estrelas(float3 p, float largura) {
     float3 c = float3(0.0);
     float n = u.stars * 0.1;
     for (float i = 0.0; i < n; i += 1.0) {
@@ -131,7 +131,7 @@ float3 estrelas(float3 p, float largura) {
     return c;
 }
 
-float3 ceu(float3 rd, float fade) {
+static float3 ceu(float3 rd, float fade) {
     float3 c1335 = mix(u.auroraColor.rgb, u.auroraColor2.rgb * 4.0, 0.1);
     float h = pow(-rd.y * 1.1 + 1.1, 11.0) * (u.skyGlow / 100.0);
     return mix(u.skyColor.rgb, c1335, h) * 0.63 * fade;

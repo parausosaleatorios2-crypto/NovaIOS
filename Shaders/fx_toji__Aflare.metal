@@ -28,7 +28,7 @@ struct toji__AflareParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 src(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+static float4 src(float2 uv){ return inputImg.sample(__nv_smp, uv); }
 
 fragment float4 fx_toji__Aflare(
     NovaVertexOut       in   [[stage_in]],

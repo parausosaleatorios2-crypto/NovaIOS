@@ -73,22 +73,22 @@ const float3 PRESETS[55] = float3[55](
     float3(0.8851, 0.0273, 0.0796), float3(0.9171, 0.3508, 0.0507), float3(1.0000, 0.8625, 0.0549), float3(0.0455, 0.5975, 0.2258), float3(0.0521, 0.2521, 0.5812),
     float3(0.9602, 0.0209, 0.2497), float3(0.0109, 0.2877, 0.6494), float3(0.9898, 0.7614, 0.8719), float3(1.0000, 0.4698, 0.2294), float3(0.9991, 0.7935, 0.0000));
 
-float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
+static float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
 /** Um px da composição, em UV do quadro. */
-float2 px() { return eng.acEscalaDePixel / tamanho(); }
-float forma(float2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? 0.0 : inputImg.sample(__nv_smp, uv).a; }
-float h1(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
-float3 h3(float3 p) { p = fract(p * float3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+static float2 px() { return eng.acEscalaDePixel / tamanho(); }
+static float forma(float2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? 0.0 : inputImg.sample(__nv_smp, uv).a; }
+static float h1(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+static float3 h3(float3 p) { p = fract(p * float3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 
 // 16 bits num par de canais de 8.
-float2 emDois(float v) { v = clamp(v, 0.0, 1.0) * 65535.0; return float2(floor(v / 256.0), __nv_mod(floor(v), 256.0)) / 255.0; }
-float deDois(float2 c) { return (floor(c.x * 255.0 + 0.5) * 256.0 + floor(c.y * 255.0 + 0.5)) / 65535.0; }
+static float2 emDois(float v) { v = clamp(v, 0.0, 1.0) * 65535.0; return float2(floor(v / 256.0), __nv_mod(floor(v), 256.0)) / 255.0; }
+static float deDois(float2 c) { return (floor(c.x * 255.0 + 0.5) * 256.0 + floor(c.y * 255.0 + 0.5)) / 65535.0; }
 
 // ------------------------------------------------------------------ a paleta
 // Medido: cinco cores numa volta (a última volta para a primeira), interpoladas em linha reta na cor
 // do monitor. As do "Custom" ficam a 0, 20, 40, 60 e 80% da volta; os presets também, menos o 1
 // (Ocean, o azul de fábrica), que tem as paradas a 0, 25, 50, 72 e 88%.
-float3 paleta(float t) {
+static float3 paleta(float t) {
     t = fract(t);
     float3 c[5]; float p[5];
     int pr = u.colors - 1;
@@ -101,7 +101,7 @@ float3 paleta(float t) {
 }
 
 // ------------------------------------------------------------------ Turbulence
-float ruidoGrad(float3 p) {
+static float ruidoGrad(float3 p) {
     float3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
     float n = 0.0;
     for (int z = 0; z < 2; z++) for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) {
@@ -112,7 +112,7 @@ float ruidoGrad(float3 p) {
     }
     return n;
 }
-float turbulencia(float2 P) {
+static float turbulencia(float2 P) {
     float3 q = float3(P.x / (TURB_ESCALA * u.sizeX), P.y / (TURB_ESCALA * u.sizeY), u.evolution / 360.0);
     // duas oitavas; o fator leva o desvio do ruído a ~1
     return 3.2 * ruidoGrad(q);
@@ -123,7 +123,7 @@ float turbulencia(float2 P) {
 // × Cycles (a partir de t = 0), + Offset/100 + Phase/360. O Depth soma Bulge/100 × r × m, onde r é a
 // mesma rampa no ângulo do Depth, medida na CAIXA da forma (dividida pela diagonal dela) e com o
 // Contrast em volta de 0,5; m é o alfa borrado (o "domo" do Rounding).
-float campoT(float2 uv) {
+static float campoT(float2 uv) {
     float2 R = tamanho();
     float2 P = uv * R;
     float a = radians(u.angle);
@@ -141,15 +141,15 @@ float campoT(float2 uv) {
 }
 
 /** Saturation (luma Rec.601) e Brightness (multiplica), na cor do monitor. */
-float3 ajustar(float3 c) {
+static float3 ajustar(float3 c) {
     float y = dot(c, float3(0.299, 0.587, 0.114));
     return clamp((y + (c - y) * u.saturation / 100.0) * u.brightness / 100.0, 0.0, 1.0);
 }
 
-float peso(float i, float n) { float x = 3.0 * i / n; return exp(-0.5 * x * x); }
+static float peso(float i, float n) { float x = 3.0 * i / n; return exp(-0.5 * x * x); }
 
 /** Gaussiana separável num canal ou em todos; `volta` = borda que dá a volta (o Softness). */
-float4 borrar(sampler2D t, float2 eixo, float sigmaPx, bool volta) {
+static float4 borrar(sampler2D t, float2 eixo, float sigmaPx, bool volta) {
     if (sigmaPx < 0.3) return t.sample(__nv_smp, in.acScreenNorm);
     const float N = 24.0;
     float4 soma = float4(0.0); float tot = 0.0;
@@ -166,21 +166,21 @@ float4 borrar(sampler2D t, float2 eixo, float sigmaPx, bool volta) {
 // PICO do próprio nível no quadro (é por isso que um ponto pequeno brilha longe e um texto grosso
 // não estoura). O Radius corta os níveis acima do tamanho dele (o Falloff empurra o corte); o alfa
 // da camada ganha o mesmo halo (preto) mesmo com Intensity 0.
-float sigmaDoNivel(int k) { return 3.0 * exp2(float(k - 1)); }    // px: 3, 6, 12 … 768
-float corte(int k, float A, float c0, float c1, float s) {
+static float sigmaDoNivel(int k) { return 3.0 * exp2(float(k - 1)); }    // px: 3, 6, 12 … 768
+static float corte(int k, float A, float c0, float c1, float s) {
     float x = log2(sigmaDoNivel(k) / max(u.glowRadius, 1.0));
     float c = c0 + c1 * (50.0 - u.glowFalloff) / 50.0;
     return A / (1.0 + exp((x - c) * s));
 }
-float4 nivel(int k, float2 uv) {
+static float4 nivel(int k, float2 uv) {
     float4 v = k == 1 ? g1.sample(__nv_smp, uv) : k == 2 ? g2.sample(__nv_smp, uv) : k == 3 ? g3.sample(__nv_smp, uv) : k == 4 ? g4.sample(__nv_smp, uv) :
              k == 5 ? g5.sample(__nv_smp, uv) : k == 6 ? g6.sample(__nv_smp, uv) : k == 7 ? g7.sample(__nv_smp, uv) : k == 8 ? g8.sample(__nv_smp, uv) : g9.sample(__nv_smp, uv);
     return v * v;                         // cor e alfa vão em raiz quadrada (8 bits)
 }
-float picoDo(int k) { return max(deDois(picos.read(uint2(int2((k - 1) % 3, (k - 1) / 3)), uint(0)).rg), 1e-4); }
+static float picoDo(int k) { return max(deDois(picos.read(uint2(int2((k - 1) % 3, (k - 1) / 3)), uint(0)).rg), 1e-4); }
 
 /** Um nível a partir do anterior (ou da imagem, no primeiro): só o σ que falta. */
-float4 descer(int k) {
+static float4 descer(int k) {
     float2 uv = in.acScreenNorm;
     float falta = sqrt(max(sigmaDoNivel(k) * sigmaDoNivel(k) - (k == 1 ? 0.0 : sigmaDoNivel(k - 1) * sigmaDoNivel(k - 1)), 0.0));
     float2 passo = falta / 1.2 * px();
@@ -205,7 +205,7 @@ float4 descer(int k) {
 }
 
 /** O pico do alfa de um nível no quadro: os três primeiros pelos máximos em blocos (`mp`), os outros texel a texel. */
-float picoDeNivel(int k) {
+static float picoDeNivel(int k) {
     float m = 0.0;
     int2 t = k <= 3 ? int2(int(mp.get_width()), int(mp.get_height())) : k == 4 ? int2(int(g4.get_width()), int(g4.get_height())) : k == 5 ? int2(int(g5.get_width()), int(g5.get_height())) : k == 6 ? int2(int(g6.get_width()), int(g6.get_height())) : k == 7 ? int2(int(g7.get_width()), int(g7.get_height())) : k == 8 ? int2(int(g8.get_width()), int(g8.get_height())) : int2(int(g9.get_width()), int(g9.get_height()));
     for (int j = 0; j < 128; j++) {
@@ -222,7 +222,7 @@ float picoDeNivel(int k) {
 }
 
 /** O máximo (em raiz) do alfa dos níveis 1, 2 e 3 em cada bloco deste buffer. */
-float4 maximosEmBloco() {
+static float4 maximosEmBloco() {
     float3 m = float3(0.0);
     int2 o = int2(__nv_fragCoord.xy);
     for (int j = 0; j < 8; j++) for (int i = 0; i < 8; i++) {

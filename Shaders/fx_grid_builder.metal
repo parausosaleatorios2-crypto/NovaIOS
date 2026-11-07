@@ -76,23 +76,23 @@ float3x3 giroDaEsfera;      // a esfera girada até a cópia em foco
 
 // ---------------------------------------------------------------------------------- sorteio
 
-uint misturar(uint x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
+static uint misturar(uint x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
 /** Um número de 0 a 1 para o par (a, b) de inteiros não negativos. */
-float acaso(float a, float b) {
+static float acaso(float a, float b) {
     return float(misturar(uint(a) * 0x9E3779B9U + misturar(uint(b) + 0x1234567U)) >> 8) / 16777216.0;
 }
 
 // ---------------------------------------------------------------------------------- formações
 
-float3x3 girarX(float a) { float c = cos(a), s = sin(a); return float3x3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
-float3x3 girarY(float a) { float c = cos(a), s = sin(a); return float3x3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
-float3x3 girarZ(float a) { float c = cos(a), s = sin(a); return float3x3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0); }
+static float3x3 girarX(float a) { float c = cos(a), s = sin(a); return float3x3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
+static float3x3 girarY(float a) { float c = cos(a), s = sin(a); return float3x3(c, 0.0, -s, 0.0, 1.0, 0.0, s, 0.0, c); }
+static float3x3 girarZ(float a) { float c = cos(a), s = sin(a); return float3x3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0); }
 /** O resto de `a / b` para inteiros guardados em float (o `mod` da GPU erra em múltiplos exatos). */
-float resto(float a, float b) { return a - b * floor((a + 0.5) / b); }
-float2 girar2(float2 p, float a) { float c = cos(a), s = sin(a); return float2(p.x * c - p.y * s, p.x * s + p.y * c); }
+static float resto(float a, float b) { return a - b * floor((a + 0.5) / b); }
+static float2 girar2(float2 p, float a) { float c = cos(a), s = sin(a); return float2(p.x * c - p.y * s, p.x * s + p.y * c); }
 
 /** O ponto `u` (0..1) do caminho, sem o giro da formação — as quatro formas prontas da extensão. */
-float2 pontoDoCaminho(float u) {
+static float2 pontoDoCaminho(float u) {
     float2 s = raioDoCaminho;
     if (u.pathShape == 0) {
         float a = u * 2.0 * PI - PI / 2.0;
@@ -120,20 +120,20 @@ float2 pontoDoCaminho(float u) {
 }
 
 /** Onde a cópia `i` está no caminho (0..1), já com Espalhar, Andar e o trecho Começo–Fim. */
-float noCaminho(float i, float mais) {
+static float noCaminho(float i, float mais) {
     float bruto = (i / N) * (u.pathSpread / 100.0) + u.pathProgress / 100.0 + mais;
     return u.trimStart / 100.0 + __nv_mod(bruto, 1.0) * (u.trimEnd - u.trimStart) / 100.0;
 }
 
 /** Um ponto da esfera de Fibonacci de `N` pontos (raio 1), antes do giro até o foco. */
-float3 naEsfera(float i) {
+static float3 naEsfera(float i) {
     float phi = acos(1.0 - 2.0 * (i + 0.5) / N);
     float theta = PI * (1.0 + sqrt(5.0)) * i;
     return float3(cos(theta) * sin(phi), cos(phi), sin(theta) * sin(phi));
 }
 
 /** O quatérnio (w, x, y, z) que leva a direção `v` para a frente (0, 0, -1). */
-float4 ateAFrente(float3 v) {
+static float4 ateAFrente(float3 v) {
     float ang = acos(clamp(-v.z, -1.0, 1.0));
     float2 eixo = float2(-v.y, v.x);
     float len = length(eixo);
@@ -142,7 +142,7 @@ float4 ateAFrente(float3 v) {
 }
 
 /** A esfera gira para a cópia em foco ficar de frente; valor quebrado = a meio caminho entre duas. */
-float3x3 montarGiroDaEsfera() {
+static float3x3 montarGiroDaEsfera() {
     float F = clamp(u.focus - 1.0, 0.0, N - 1.0);
     float a = floor(F), b = min(N - 1.0, a + 1.0), t = F - a;
     float4 qA = ateAFrente(naEsfera(a)), qB = ateAFrente(naEsfera(b));
@@ -160,7 +160,7 @@ float3x3 montarGiroDaEsfera() {
 }
 
 /** O lugar da cópia `i` na formação `f`, em px a partir do centro (sem profundidade nem sorteio). */
-float3 lugar(int f, float i) {
+static float3 lugar(int f, float i) {
     if (f == 0) {
         float linhas = max(ceil(N / colunas), 1.0);
         float2 d = (float2(resto(i, colunas), floor((i + 0.5) / colunas)) - (float2(colunas, linhas) - 1.0) / 2.0) * espaco;
@@ -178,10 +178,10 @@ float3 lugar(int f, float i) {
 }
 
 /** A profundidade por cópia (a esfera não tem: ela já é o Z). */
-float fundo(int f, float i) { return f == 2 ? 0.0 : (i - (floor(u.zAnchor + 0.5) - 1.0)) * u.zDepth / 100.0 * R.x; }
+static float fundo(int f, float i) { return f == 2 ? 0.0 : (i - (floor(u.zAnchor + 0.5) - 1.0)) * u.zDepth / 100.0 * R.x; }
 
 /** Quanto a cópia `i` está "no fim" (0 = começo, 1 = fim) para a escala por posição — a conta de cada formação. */
-float posicaoNaEscala(int f, float i, float3 p) {
+static float posicaoNaEscala(int f, float i, float3 p) {
     float t = N > 1.0 ? i / (N - 1.0) : 0.0;
     float F = clamp(u.scaleFalloff, 0.0, 100.0) / 100.0;
     if (u.scaleMode == 1) {
@@ -236,7 +236,7 @@ float posicaoNaEscala(int f, float i, float3 p) {
 }
 
 /** Para onde a cópia está virada ANTES do giro dela: as colunas são os eixos X, Y e Z da cópia. */
-float3x3 base(int f, float i, float3 p, float3x3 daCamera) {
+static float3x3 base(int f, float i, float3 p, float3x3 daCamera) {
     if (u.orientation == 1) return daCamera;
     if (u.orientation == 0) return float3x3(1.0);
     if (f == 2) {
@@ -268,7 +268,7 @@ float3x3 base(int f, float i, float3 p, float3x3 daCamera) {
 
 // ---------------------------------------------------------------------------------- imagem
 
-float4 imagem(int qual, float2 uv) {
+static float4 imagem(int qual, float2 uv) {
     if (qual == 1) return imagem2.sample(__nv_smp, uv);
     if (qual == 2) return imagem3.sample(__nv_smp, uv);
     if (qual == 3) return imagem4.sample(__nv_smp, uv);
@@ -277,7 +277,7 @@ float4 imagem(int qual, float2 uv) {
 }
 
 /** A imagem `qual` no ponto `uv`, pré-multiplicada, com a média de `n × n` toques quando ela está reduzida. */
-float4 amostra(int qual, float2 uv, float2 passo, int n) {
+static float4 amostra(int qual, float2 uv, float2 passo, int n) {
     float4 soma = float4(0.0);
     for (int a = 0; a < 3; a++) {
         if (a >= n) break;
@@ -294,7 +294,7 @@ float4 amostra(int qual, float2 uv, float2 passo, int n) {
 // ---------------------------------------------------------------------------------- câmera
 
 /** O raio do pixel `uv`: de onde sai e para onde vai, em px da camada (X direita, Y baixo, Z para longe). */
-void raio(float2 uv, out float3 o, out float3 d) {
+static void raio(float2 uv, out float3 o, out float3 d) {
     if (eng.acCamera3D == 1) {
         float2 tela = __nv_acTela(uv);
         float4 longe = eng.acCameraInvVP * float4(tela.x * 2.0 - 1.0, 1.0 - tela.y * 2.0, 1.0, 1.0);

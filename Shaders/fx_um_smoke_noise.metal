@@ -18,15 +18,15 @@ struct um_smoke_noiseParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float ruido(float2 p) {
+static float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+static float ruido(float2 p) {
     float2 i = floor(p), f = fract(p);
     float a = hash21(i), b = hash21(i + float2(1,0));
     float c = hash21(i + float2(0,1)), d = hash21(i + float2(1,1));
     float2 u = f * f * (3.0 - 2.0 * f);
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
-float fbm(float2 p) {
+static float fbm(float2 p) {
     float v = 0.0; float a = 0.5;
     for (int i = 0; i < 5; i++) { v += a * ruido(p); p *= 2.0; a *= 0.5; }
     return v;

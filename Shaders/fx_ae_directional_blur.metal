@@ -36,7 +36,7 @@ int gLargura;     // e quantas colunas
 int gN;           // ceil(raio)
 int gExt;         // 3 · ceil(raio): quanto a caixa cresce de cada lado
 
-void preparar() {
+static void preparar() {
     int2 buf = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gTam = clamp(int2(floor(eng.acCamada * float2(buf) + 0.5)), int2(1), buf);
     gIni = (buf - gTam) / 2;
@@ -48,24 +48,24 @@ void preparar() {
 }
 
 // (coluna, linha) no eixo do cisalhamento, na orientação do AE (linha 0 = o topo da camada) <-> buffer
-int2 noBuffer(int a, int l) {
+static int2 noBuffer(int a, int l) {
     int2 p = dbEixoH == 1 ? int2(l, a) : int2(a, l);
     return int2(gIni.x + p.x, gDePe ? gIni.y + gTam.y - 1 - p.y : gIni.y + p.y);
 }
-int2 doBuffer(int2 b) {
+static int2 doBuffer(int2 b) {
     int2 p = int2(b.x - gIni.x, gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y);
     return dbEixoH == 1 ? int2(p.y, p.x) : p;
 }
 
 // A camada (reta, k / 255 exato); fora dela, transparente.
-float4 entrada(int a, int l) {
+static float4 entrada(int a, int l) {
     if (a < 0 || a >= gLargura || l < 0 || l >= gLinhas) return float4(0.0);
     return floor(inputImg.read(uint2(noBuffer(a, l)), uint(0)) * 255.0 + 0.5) / 255.0;
 }
 
 // A leitura do kernel do AE numa linha, na posição p: o filtro bilinear (fração em 1/256) no meio, a
 // borda vezes o peso exato entre −1 e 0 (e entre W−1 e W), zero fora.
-float4 cisalhada(int l, float p) {
+static float4 cisalhada(int l, float p) {
     if (l < 0 || l >= gLinhas) return float4(0.0);
     float w1 = float(gLargura - 1);
     if (p >= 0.0 && p <= w1) {
@@ -80,22 +80,22 @@ float4 cisalhada(int l, float p) {
 }
 
 // srcX do kernel de ida: (tx − dx) − OffX − (y + OffY) · s, em float32 e nesta ordem
-float posIda(int t, int l) {
+static float posIda(int t, int l) {
     float a = float(t - dbDIda) - dbBase;
     return a - (float(l) + dbOffLinha) * dbS;
 }
 
 // o da volta: −OffX, OffY − ext, −s, lido na linha l + ext do quadro desfocado
-float posVolta(int a, int l) {
+static float posVolta(int a, int l) {
     float x = float(a + dbDIda) + dbBase;
     return x + (float(l + gExt) + (dbOffLinha - float(gExt))) * dbS;
 }
 
 // Onde a linha l do quadro cisalhado mora no buffer: a coluna T do AE fica em T − K(l).
-int desloc(int l) { return int(floor(posVolta(0, l))); }
+static int desloc(int l) { return int(floor(posVolta(0, l))); }
 
 // 16 bits fixos em dois RGBA8
-float4 ler16(sampler2D alto, sampler2D baixo, int u, int l) {
+static float4 ler16(sampler2D alto, sampler2D baixo, int u, int l) {
     int2 b = noBuffer(u, l) + MARGEM;
     int2 n = int2(int(alto.get_width()), int(alto.get_height()));
     if (any(lessThan(b, int2(0))) || any(greaterThanEqual(b, n))) return float4(0.0);
@@ -103,7 +103,7 @@ float4 ler16(sampler2D alto, sampler2D baixo, int u, int l) {
     float4 lo = floor(baixo.read(uint2(b), uint(0)) * 255.0 + 0.5);
     return (h * 256.0 + lo) / 65535.0;
 }
-void gravar16(float4 v) {
+static void gravar16(float4 v) {
     float4 q = floor(clamp(v, 0.0, 1.0) * 65535.0 + 0.5);
     float4 h = floor(q / 256.0);
     __nv_out = h / 255.0;
@@ -112,7 +112,7 @@ void gravar16(float4 v) {
 
 // O valor da linha j na coluna T do quadro que a passada lê: na 1ª, o cisalhamento na hora (e
 // pré-multiplicado); nas outras, o buffer da passada anterior.
-float4 linhaAnterior(int passada, int t, int j, int largura) {
+static float4 linhaAnterior(int passada, int t, int j, int largura) {
     if (passada == 0) {
         if (t < 0 || t >= largura) return float4(0.0);
         float4 c = cisalhada(j, posIda(t, j));

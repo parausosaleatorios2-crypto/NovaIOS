@@ -32,32 +32,32 @@ const float3 BRILHO = float3(5.0, 8.0, 3.0) / 16.0;      // o `monochrome` do Sa
 int2 TAM;
 bool JUNTO;                         // Sharpen Luma = Sharpen Chroma: o RGB junto; senão, brilho e cor em separado
 
-float3 fonte(int2 p) { return inputImg.read(uint2(clamp(p, int2(0), TAM - 1)), uint(0)).rgb; }
+static float3 fonte(int2 p) { return inputImg.read(uint2(clamp(p, int2(0), TAM - 1)), uint(0)).rgb; }
 
 /**
  * Os três números com que os passes trabalham. Junto: R, G, B. Separado: o brilho e a cor (fonte −
  * brilho) do vermelho e do azul — a do verde sai das outras duas, porque 5·Cr + 8·Cg + 3·Cb = 0.
  */
-float3 trabalho(float3 rgb) {
+static float3 trabalho(float3 rgb) {
     if (JUNTO) return rgb;
     float l = dot(rgb, BRILHO);
     return float3(l, rgb.r - l, rgb.b - l);
 }
 
 /** A cor (R, G, B) a partir de (·, Cr, Cb). */
-float3 corInteira(float3 t) { return float3(t.y, -(5.0 * t.y + 3.0 * t.z) / 8.0, t.z); }
+static float3 corInteira(float3 t) { return float3(t.y, -(5.0 * t.y + 3.0 * t.z) / 8.0, t.z); }
 
 /**
  * Um valor intermediário num texel RGBA8: (valor − fonte), que é pequeno quase sempre, com raiz
  * quadrada (mais precisão perto de zero) em 10 bits por número — 8 no RGB e os 2 de baixo no alfa.
  */
-float4 guardar(float3 valor, float3 s) {
+static float4 guardar(float3 valor, float3 s) {
     float3 x = clamp(valor - s, -1.0, 1.0);
     int3 q = int3(floor((sign(x) * sqrt(abs(x)) * 0.5 + 0.5) * 1023.0 + 0.5));
     return float4(float3(q >> 2), float((q.r & 3) | ((q.g & 3) << 2) | ((q.b & 3) << 4))) / 255.0;
 }
 
-float3 abrir(float4 t, float3 s) {
+static float3 abrir(float4 t, float3 s) {
     int4 b = int4(t * 255.0 + 0.5);
     int3 q = (b.rgb << 2) | int3(b.a & 3, (b.a >> 2) & 3, (b.a >> 4) & 3);
     float3 e = float3(q) / 1023.0 * 2.0 - 1.0;
@@ -65,7 +65,7 @@ float3 abrir(float4 t, float3 s) {
 }
 
 /** A imagem que este passe filtra: a fonte no primeiro de cada nível, senão o passe anterior. */
-float3 atual(int2 p, float3 rgbDaFonte, int j) {
+static float3 atual(int2 p, float3 rgbDaFonte, int j) {
     float3 s = trabalho(rgbDaFonte);
     if (j == 0) return s;
     int2 q = clamp(p, int2(0), TAM - 1);
@@ -77,7 +77,7 @@ float3 atual(int2 p, float3 rgbDaFonte, int j) {
  * nos três canais) vezes sigma / (Edge Threshold · 3). x vale para o primeiro número do passe e y para
  * os outros dois: junto é a mesma distância (a do RGB); separado, a do brilho e a da cor.
  */
-float2 afastamento(float3 a, float3 b, float k) {
+static float2 afastamento(float3 a, float3 b, float k) {
     if (JUNTO) { float3 d = abs(a - b); return float2(1.0 + k * (d.r + d.g + d.b)); }
     float la = dot(a, BRILHO), lb = dot(b, BRILHO);
     float3 d = abs((a - la) - (b - lb));
@@ -89,7 +89,7 @@ float2 afastamento(float3 a, float3 b, float k) {
  * as duas janelas do caminho separado andariam iguais, passo a passo: aqui anda UMA, com os três números. As mesmas
  * contas, na mesma ordem (0.660.0: até a 0.659 este caminho levava as duas, com a contabilidade em dobro).
  */
-float3 passadaJunta(int2 p, float3 vC, float3 rgbC, int j, float n, float fracao, float k, int2 passo, int limite, int aqui) {
+static float3 passadaJunta(int2 p, float3 vC, float3 rgbC, int j, float n, float fracao, float k, int2 passo, int limite, int aqui) {
     float3 soma = vC;
     float cont = 1.0;
     float3 pontaE = vC, pontaD = vC;

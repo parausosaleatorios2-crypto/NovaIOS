@@ -53,10 +53,10 @@ const float PESOS[5] = float[5](
 
 // Espaço "altura": X multiplicado pelo aspecto, então distância é fração da
 // ALTURA e nada estica numa composição que não é quadrada.
-float2 paraAltura(float2 uv) { return float2(uv.x * eng.acAspect, uv.y); }
-float2 paraUv(float2 ph) { return float2(ph.x / max(eng.acAspect, 1e-4), ph.y); }
+static float2 paraAltura(float2 uv) { return float2(uv.x * eng.acAspect, uv.y); }
+static float2 paraUv(float2 ph) { return float2(ph.x / max(eng.acAspect, 1e-4), ph.y); }
 
-float2 girar(float2 v, float graus) {
+static float2 girar(float2 v, float graus) {
     float a = graus * PI / 180.0;
     float c = cos(a);
     float s = sin(a);
@@ -68,7 +68,7 @@ float2 girar(float2 v, float graus) {
  * distância de verdade, o que faz a banda da borda ter largura uniforme
  * inclusive nos cantos.
  */
-float sdCaixa(float2 p, float2 meia, float r) {
+static float sdCaixa(float2 p, float2 meia, float r) {
     float2 q = abs(p) - meia + r;
     return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
@@ -80,7 +80,7 @@ float sdCaixa(float2 p, float2 meia, float r) {
  * junção. O mínimo suave arredonda essa junção num raio `k`, que é o que a
  * tensão superficial faz quando duas gotas encostam.
  */
-float sminSuave(float a, float b, float k) {
+static float sminSuave(float a, float b, float k) {
     if (k <= 1e-4) return min(a, b);
     float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
     return mix(b, a, h) - k * h * (1.0 - h);
@@ -97,13 +97,13 @@ float sminSuave(float a, float b, float k) {
  * Com o de fora valendo zero, a MOLDURA da camada vira a silhueta, que é o que
  * "o formato da camada" quer dizer quando o formato é o retângulo cheio.
  */
-float alfaEm(float2 uv) {
+static float alfaEm(float2 uv) {
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
     return inputImg.sample(__nv_smp, uv).a;
 }
 
 /** O menor "raio interno" da forma: até onde dá para afundar antes do meio. */
-float raioInterno() {
+static float raioInterno() {
     float2 meia = max(u.size * float2(eng.acAspect, 1.0) * 0.5, float2(1e-4));
     float menor = min(meia.x, meia.y);
     if (u.size2.x > 0.0 && u.size2.y > 0.0) {
@@ -125,14 +125,14 @@ float raioInterno() {
  * Com o teto de 45% do raio interno sempre sobra meio da placa plano — que é o
  * que faz o olho ler "janela".
  */
-float bandaLente() {
+static float bandaLente() {
     float pedida = max(u.thickness, 1e-4);
     if (u.shape == 1) return pedida;
     return min(pedida, 0.45 * raioInterno());
 }
 
 /** Distância com sinal até a silhueta do vidro. Negativa dentro. */
-float silhueta(float2 ph) {
+static float silhueta(float2 ph) {
     if (u.shape == 1) {
         float banda = bandaLente();
         float a0 = alfaEm(paraUv(ph));
@@ -194,7 +194,7 @@ float silhueta(float2 ph) {
  * rampa suave, a soma vetorial dá para onde ela cresce. E de brinde, no meio da
  * forma as amostras dão todas 1: a rampa satura e o chanfro se apaga sozinho.
  */
-float3 formaEm(float2 ph) {
+static float3 formaEm(float2 ph) {
     float banda = bandaLente();
 
     if (u.shape == 1) {
@@ -235,7 +235,7 @@ float3 formaEm(float2 ph) {
  * transparente o RGB não quer dizer nada, e misturá-lo junto puxaria a borda do
  * vidro para preto.
  */
-float4 borrar(sampler2D tex, float2 uv, float2 passo) {
+static float4 borrar(sampler2D tex, float2 uv, float2 passo) {
     float4 c = tex.sample(__nv_smp, uv);
     float3 soma = c.rgb * c.a * PESOS[0];
     float peso = c.a * PESOS[0];
@@ -255,7 +255,7 @@ float4 borrar(sampler2D tex, float2 uv, float2 passo) {
     return float4(soma / max(peso, 1e-4), clamp(peso, 0.0, 1.0));
 }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     float3 rgb = (cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a;
@@ -269,7 +269,7 @@ float4 sobre(float4 baixo, float4 cima) {
  * refratado daria uma placa preta. Cair na própria camada mostra vidro em vez de
  * um buraco.
  */
-float4 fundoNitido(float2 uv) {
+static float4 fundoNitido(float2 uv) {
     if (u.refractFrom == 0) return inputImg.sample(__nv_smp, uv);
 
     /*
@@ -298,7 +298,7 @@ float4 fundoNitido(float2 uv) {
 }
 
 /** Uma amostra do que o vidro atravessa, já misturando nítido com embaçado. */
-float3 atras(float2 uv, float fosco) {
+static float3 atras(float2 uv, float fosco) {
     return mix(fundoNitido(uv).rgb, blurD.sample(__nv_smp, uv).rgb, clamp(fosco, 0.0, 1.0));
 }
 
@@ -312,7 +312,7 @@ float3 atras(float2 uv, float fosco) {
  * grossa) e some na beirada, onde quem manda é a refração de Snell. As duas
  * contas se somam em vez de brigar.
  */
-float2 ampliar(float2 uv, float alturaRel) {
+static float2 ampliar(float2 uv, float alturaRel) {
     if (u.magnify <= 0.001) return float2(0.0);
     return (uv - u.center) * (-u.magnify) * alturaRel;
 }
@@ -325,7 +325,7 @@ float2 ampliar(float2 uv, float alturaRel) {
  * analítica: medir a inclinação por diferenças finitas custaria mais avaliações
  * e daria ruído justamente na beirada, onde ela importa.
  */
-float2 perfilEm(float d, float banda) {
+static float2 perfilEm(float d, float banda) {
     // Plano: laje de faces paralelas. Só a parede lateral entorta, e ela é fina
     // demais para aparecer — serve para quem quer só o fosco e a cor.
     if (u.profile == 2) return float2(1.0, 0.0);
@@ -344,7 +344,7 @@ float2 perfilEm(float d, float banda) {
 }
 
 /** Fresnel de Schlick: quanto reflete, dado o cosseno do ângulo de visão. */
-float schlick(float coseno, float indice) {
+static float schlick(float coseno, float indice) {
     float f0 = (1.0 - indice) / (1.0 + indice);
     f0 *= f0;
     return f0 + (1.0 - f0) * pow(clamp(1.0 - coseno, 0.0, 1.0), 5.0);
@@ -356,7 +356,7 @@ float schlick(float coseno, float indice) {
  * `refract` devolve zero quando o ângulo passa do limite — reflexão interna
  * total. Aí não há travessia, e quem chama trata o ponto como reflexo puro.
  */
-float2 travessia(float3 normal, float indice, float espessuraLocal, out bool refletiu) {
+static float2 travessia(float3 normal, float indice, float espessuraLocal, out bool refletiu) {
     float3 entrada = float3(0.0, 0.0, -1.0);
     float3 raio = refract(entrada, normal, 1.0 / max(indice, 1.0001));
 
@@ -372,7 +372,7 @@ float2 travessia(float3 normal, float indice, float espessuraLocal, out bool ref
  * O fosco da beirada. No painel há um "Fosco" só: abaixo do padrão dele (0,22)
  * ele apaga o da beirada junto, e em zero o vidro fica limpo de verdade.
  */
-float foscoDaBorda() {
+static float foscoDaBorda() {
     return u.edgeBlur * clamp(u.blurAmount / 0.22, 0.0, 1.0);
 }
 

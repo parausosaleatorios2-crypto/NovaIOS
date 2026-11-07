@@ -18,7 +18,7 @@ struct crystallizeParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 hash22(float2 p) {
+static float2 hash22(float2 p) {
     float n = sin(dot(p, float2(41.0, 289.0)));
     return fract(float2(262144.0, 32768.0) * n);
 }

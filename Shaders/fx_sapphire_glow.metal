@@ -39,7 +39,7 @@ const float RAIO_MAX = 240.0;         // o maior raio de uma caixa (largura de u
  * fila — com 8 bits diretos o erro de cada um se somava. O maior canal fica entre 0,5 e 1 (guardado com raiz)
  * e o alfa leva a potência de dois.
  */
-float4 codificar(float3 l) {
+static float4 codificar(float3 l) {
     l = max(l, float3(0.0));
     float m = max(l.r, max(l.g, l.b));
     if (m < 1e-9) return float4(0.0);
@@ -47,7 +47,7 @@ float4 codificar(float3 l) {
     return float4(sqrt(min(l / exp2(e), float3(1.0))), (e + 32.0) / 255.0);
 }
 
-float3 decodificar(float4 t) {
+static float3 decodificar(float4 t) {
     if (t.a <= 0.0) return float3(0.0);
     return t.rgb * t.rgb * exp2(floor(t.a * 255.0 + 0.5) - 32.0);
 }
@@ -57,18 +57,18 @@ float3 decodificar(float4 t) {
  * sobre a soma dos canais, com o (1 − limiar) que leva o branco de volta a 1. A cor somada ao limiar entra em
  * 8 bits, como no plugin.
  */
-float3 corDoLimiar(int2 p) {
+static float3 corDoLimiar(int2 p) {
     float4 t = inputImg.read(uint2(p), uint(0));
     float3 c = max(t.rgb * t.a, float3(0.0));
     return mix(c, float3(t.a), clamp(u.glowFromAlpha, 0.0, 1.0));
 }
-float fatorDoLimiar(float3 c) {
+static float fatorDoLimiar(float3 c) {
     float soma = c.r + c.g + c.b;
     if (soma < 1e-6) return 0.0;
     float3 passa = max(c - (u.threshold + floor(u.thresholdAddColor.rgb * 255.0 + 0.5) / 255.0), float3(0.0));
     return (passa.r + passa.g + passa.b) / soma / max(1.0 - u.threshold, 1e-6);
 }
-float3 limiar(int2 p) {
+static float3 limiar(int2 p) {
     float3 c = corDoLimiar(p);
     return c * fatorDoLimiar(c);
 }
@@ -78,17 +78,17 @@ float3 limiar(int2 p) {
  * pixel com a largura de fábrica: 28 dos 37 ms do passe na GPU do PC). O passe 0 o guarda inteiro — os 32 bits do
  * float nos 4 bytes do texel — e a caixa só multiplica a cor da fonte por ele: o mesmo número de antes.
  */
-float4 guardarFator(float f) {
+static float4 guardarFator(float f) {
     uint b = as_type<uint>(f);
     return float4(float(b & 255u), float((b >> 8u) & 255u), float((b >> 16u) & 255u), float(b >> 24u)) / 255.0;
 }
-float3 limiarGuardado(int2 p) {
+static float3 limiarGuardado(int2 p) {
     uint4 b = uint4(gb.read(uint2(p), uint(0)) * 255.0 + 0.5);
     return corDoLimiar(p) * as_type<float>(b.r | (b.g << 8u) | (b.b << 16u) | (b.a << 24u));
 }
 
 /** Espelha o índice repetindo o pixel da borda (medido: o Reflect do plugin). */
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     int p = 2 * n;
     i = i - (i / p) * p; if (i < 0) i += p;
     return i < n ? i : p - 1 - i;
@@ -98,7 +98,7 @@ int espelhar(int i, int n) {
  * O que o passe `passo` lê: a fonte com o limiar, ou o buffer do passe anterior. O espelho (com divisão inteira)
  * só para o tap que cai FORA da imagem: dentro, ele devolve o próprio índice (0.569.0: 72 → 44 ms na GPU do PC).
  */
-float3 ler(int passo, int2 p, int2 T) {
+static float3 ler(int passo, int2 p, int2 T) {
     bool fora = p.x < 0 || p.y < 0 || p.x >= T.x || p.y >= T.y;
     if (u.edgeMode == 1 && fora) p = int2(espelhar(p.x, T.x), espelhar(p.y, T.y));
     else if (p.x < 0 || p.y < 0 || p.x >= T.x || p.y >= T.y) return float3(0.0);
@@ -112,7 +112,7 @@ float3 ler(int passo, int2 p, int2 T) {
  * parelhos possível; de W para W + 1 só a caixa (W mod 3) cresce, e a largura quebrada mistura as duas —
  * o que dá a caixa de raio r com mais uma ponta de peso menor.
  */
-float3 caixa(int passo, int2 p, int2 T, bool vertical, int qual) {
+static float3 caixa(int passo, int2 p, int2 T, bool vertical, int qual) {
     float3 w = u.glowWidth * eng.acEscalaDePixel * float3(u.widthRed, u.widthGreen, u.widthBlue) * (vertical ? u.widthY : u.widthX);
     w = clamp(w, float3(0.0), float3(3.0 * RAIO_MAX));
     float3 a = u.subpixel ? floor(w) : floor(w + 0.5);

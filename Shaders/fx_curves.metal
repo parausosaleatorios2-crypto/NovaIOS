@@ -25,7 +25,7 @@ const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
  * fronteira entre duas entradas pega a vizinha errada — e no degradê isso
  * aparece como uma listra deslocada de uma entrada inteira.
  */
-float consultar(float valor, int canal) {
+static float consultar(float valor, int canal) {
     float x = clamp(valor, 0.0, 1.0) * (255.0 / 256.0) + (0.5 / 256.0);
     float4 tabela = u.curve.sample(__nv_smp, float2(x, 0.5));
     return canal == 0 ? tabela.r : (canal == 1 ? tabela.g : tabela.b);

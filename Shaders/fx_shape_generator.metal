@@ -25,13 +25,13 @@ struct shape_generatorParams {
 
 // --- funcoes auxiliares do efeito
 /** SDF do retângulo arredondado (Inigo Quilez): negativo dentro, positivo fora. */
-float sdfRetangulo(float2 p, float2 metade, float raio) {
+static float sdfRetangulo(float2 p, float2 metade, float raio) {
     float2 q = abs(p) - metade + float2(raio);
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - raio;
 }
 
 /** SDF da elipse por fórmula aproximada (precisa o bastante para pintar com AA). */
-float sdfElipse(float2 p, float2 raio) {
+static float sdfElipse(float2 p, float2 raio) {
     float2 r = max(raio, float2(1e-5));
     float d = length(p / r);
     // Projeta para pseudo-distância em unidades da menor dimensão: isso dá uma

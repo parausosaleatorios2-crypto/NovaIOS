@@ -23,7 +23,7 @@ const int BLOCO = 32;
 const int MEIO = 128;    // o nível do meio do estado (passe 1); o de cima (passe 0) é 512 ou 1024
 
 /** O gerador do plugin: 48271 · (x mod 44488) + 3399 · (x div 44488), em 32 bits; zero vira 2³¹ − 1. */
-uint sorteio(uint x) {
+static uint sorteio(uint x) {
     uint r = (x % 44488u) * 48271u + (x / 44488u) * 3399u;
     return r == 0u ? 0x7fffffffu : r;
 }
@@ -32,7 +32,7 @@ uint sorteio(uint x) {
  * O centro do plugin em ponto fixo 16.16: (c / n, truncado) · (n − 2). Aqui `c` já vem dividido
  * por n (o ponto do app é de 0 a 1).
  */
-int centroFixo(float c, int n) {
+static int centroFixo(float c, int n) {
     return (c < 0.0 ? -1 : 1) * int(abs(c) * 65536.0) * (n - 2);
 }
 
@@ -40,7 +40,7 @@ int centroFixo(float c, int n) {
  * O preparo do plugin: 32 sorteios a partir da semente, cada um um tremor de 0 a 15 para o raio. Devolve o
  * estado depois dos 32 e põe em [tremor] o do sorteio [qual].
  */
-uint preparo(uint semente, int qual, out int tremor) {
+static uint preparo(uint semente, int qual, out int tremor) {
     tremor = 0;
     uint st = semente;
     for (int k = 0; k < 32; k++) {
@@ -51,28 +51,28 @@ uint preparo(uint semente, int qual, out int tremor) {
 }
 
 /** O estado do gerador antes do primeiro pixel da linha `y`. */
-uint estadoDaLinha(int y, int W, uint depoisDoPreparo) {
+static uint estadoDaLinha(int y, int W, uint depoisDoPreparo) {
     uint a = sorteio(uint(W * y));
     uint b = sorteio((a >> 7) & 0x7fffu);
     return ((b >> 7) & 0x7fffu) * depoisDoPreparo;
 }
 
 /** O estado guardado em (b, y): 24 bits no texel b, 8 no b + 1. */
-uint lerEstado(sampler2D buf, int b, int y) {
+static uint lerEstado(sampler2D buf, int b, int y) {
     int3 lo = int3(buf.read(uint2(int2(b, y)), uint(0)).rgb * 255.0 + 0.5);
     int hi = int(buf.read(uint2(int2(b + 1, y)), uint(0)).r * 255.0 + 0.5);
     return uint(lo.r) | (uint(lo.g) << 8) | (uint(lo.b) << 16) | (uint(hi) << 24);
 }
 
 /** O texel b (os 24 bits de baixo) ou o b + 1 (os 8 de cima) do estado [e]. */
-float4 gravarEstado(uint e, bool primeiro) {
+static float4 gravarEstado(uint e, bool primeiro) {
     return primeiro
         ? float4(float(e & 255u), float((e >> 8) & 255u), float((e >> 16) & 255u), 255.0) / 255.0
         : float4(float(e >> 24), 0.0, 0.0, 255.0) / 255.0;
 }
 
 /** Um texel da fonte em bytes, com a cor PRÉ-MULTIPLICADA (é assim que o AE entrega ao efeito). */
-int4 ler(int2 p) {
+static int4 ler(int2 p) {
     int4 c = int4(inputImg.read(uint2(p), uint(0)) * 255.0 + 0.5);
     return int4((c.rgb * c.a + 127) / 255, c.a);
 }

@@ -25,7 +25,7 @@ struct toji_3orbit_gradient_screenParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 sample(float2 uv){ return inputImg.sample(__nv_smp, uv); }
+static float4 sample(float2 uv){ return inputImg.sample(__nv_smp, uv); }
     float rnd(float2 p){ return fract(sin(dot(p, float2(12.9898,78.233))) * 43758.5453); }
 
     float3 rgb2hsv(float3 c){

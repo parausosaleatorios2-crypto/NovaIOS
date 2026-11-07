@@ -20,14 +20,14 @@ struct gm_energy_stormParams {
 };
 
 // --- funcoes auxiliares do efeito
-float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
-float gmNoise(float2 p){
+static float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
+static float gmNoise(float2 p){
   float2 i = floor(p), f = fract(p);
   float2 u = f * f * (3.0 - 2.0 * f);
   return mix(mix(gmHash(i), gmHash(i + float2(1.0, 0.0)), u.x),
              mix(gmHash(i + float2(0.0, 1.0)), gmHash(i + float2(1.0, 1.0)), u.x), u.y);
 }
-float gmFbm(float2 p){
+static float gmFbm(float2 p){
   float total = 0.0, amp = 0.5;
   for (int i = 0; i < 5; i++){
     total += amp * gmNoise(p);

@@ -18,19 +18,19 @@ struct nv_nodevideo_rendercommand_time_warp_rgbParams {
 
 // --- funcoes auxiliares do efeito
 // Os RTs do Node: luz linear, cor pré-multiplicada.
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
-float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
-float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
-float4 nvNova(float4 p) {
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
+static float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
+static float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvNova(float4 p) {
     if (p.a <= 0.0) return float4(0.0);
     return float4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
 }
 
 // O quadro que o anel não tem chega 1x1 (a textura transparente do FrameHistory).
-bool nvTem(int2 tamanho) { return tamanho.x > 1 || tamanho.y > 1; }
+static bool nvTem(int2 tamanho) { return tamanho.x > 1 || tamanho.y > 1; }
 
 // A camada `atras` quadros atrás; sem ele no anel, o mais novo que houver (até o de agora).
-float4 nvQuadro(int atras, float2 uv) {
+static float4 nvQuadro(int atras, float2 uv) {
     if (atras >= 10 && nvTem(int2(int(h10.get_width()), int(h10.get_height())))) return h10.sample(__nv_smp, uv);
     if (atras >= 9 && nvTem(int2(int(h9.get_width()), int(h9.get_height())))) return h9.sample(__nv_smp, uv);
     if (atras >= 8 && nvTem(int2(int(h8.get_width()), int(h8.get_height())))) return h8.sample(__nv_smp, uv);

@@ -26,9 +26,9 @@ struct transformParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 premult(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 premult(float4 c) { return float4(c.rgb * c.a, c.a); }
 
-float4 depremult(float4 c) {
+static float4 depremult(float4 c) {
     return c.a > 0.0 ? float4(c.rgb / c.a, c.a) : float4(0.0);
 }
 
@@ -42,16 +42,16 @@ uniform int   mtEspelhar;  // Mirror Edges
 uniform float mtFase;      // Phase, em voltas
 uniform int   mtFaseH;     // Horizontal Phase Shift
 
-bool impar(float k) { return __nv_mod(k, 2.0) == 1.0; }
+static bool impar(float k) { return __nv_mod(k, 2.0) == 1.0; }
 
 /** A fração `f` do ladrilho, posta no ladrilho `k`: espelhada nos ímpares com o Mirror Edges. */
-float noLadrilho(float f, float k) { return (mtEspelhar == 1 && impar(k)) ? 1.0 - f : f; }
+static float noLadrilho(float f, float k) { return (mtEspelhar == 1 && impar(k)) ? 1.0 - f : f; }
 
 /**
  * Num eixo: `x` (px da camada) levado ao mesmo ponto do desenho num ladrilho que caia dentro de [0, n). `kDe` sai
  * com o ladrilho de `x`, `kPara` com o de destino. O ladrilho maior que a camada pode não ter o ponto: a borda.
  */
-float dobrarNoEixo(float x, float org, float t, float n, out float kDe, out float kPara) {
+static float dobrarNoEixo(float x, float org, float t, float n, out float kDe, out float kPara) {
     float u = (x - org) / t;
     kDe = floor(u);
     float f = noLadrilho(u - kDe, kDe);
@@ -66,10 +66,10 @@ float dobrarNoEixo(float x, float org, float t, float n, out float kDe, out floa
 }
 
 /** O deslocamento da Phase no ladrilho `k` (só os ímpares andam), no outro eixo. */
-float faseDe(float k, float t) { return impar(k) ? mtFase * t : 0.0; }
+static float faseDe(float k, float t) { return impar(k) ? mtFase * t : 0.0; }
 
 /** O pixel `c`, fora da imagem, na continuação do ladrilho; (-1, -1) = fora da saída do Motion Tile. */
-int2 continuarLadrilho(int2 c, int2 tam) {
+static int2 continuarLadrilho(int2 c, int2 tam) {
     // A camada dentro do buffer, como o `motion-tile.xml` a mede.
     float2 T = float2(tam);
     float2 n = clamp(floor(max(eng.acCamada, float2(0.001)) * T + 0.5), float2(1.0), T);
@@ -100,7 +100,7 @@ int2 continuarLadrilho(int2 c, int2 tam) {
 }
 
 /** Um pixel da entrada, pré-multiplicado. Fora da imagem, transparente (ou o ladrilho que continua). */
-float4 pixelDe(int2 c, int2 tam) {
+static float4 pixelDe(int2 c, int2 tam) {
     if (c.x < 0 || c.y < 0 || c.x >= tam.x || c.y >= tam.y) {
         if (mtAtivo != 1) return float4(0.0);
         c = continuarLadrilho(c, tam);
@@ -110,7 +110,7 @@ float4 pixelDe(int2 c, int2 tam) {
 }
 
 /** Bilinear à mão: 4 leituras. `pos` em pixels. */
-float4 lerBilinear(float2 pos, int2 tam) {
+static float4 lerBilinear(float2 pos, int2 tam) {
     float2 p = pos - 0.5;
     float2 base = floor(p);
     float2 f = p - base;
@@ -123,7 +123,7 @@ float4 lerBilinear(float2 pos, int2 tam) {
 }
 
 /** Pesos de Catmull-Rom para os quatro vizinhos (-1, 0, 1, 2) a uma distância t. */
-float4 pesosCubicos(float t) {
+static float4 pesosCubicos(float t) {
     float t2 = t * t;
     float t3 = t2 * t;
     return float4(
@@ -135,7 +135,7 @@ float4 pesosCubicos(float t) {
 }
 
 /** Bicúbico (Catmull-Rom) à mão: 16 leituras. */
-float4 lerBicubico(float2 pos, int2 tam) {
+static float4 lerBicubico(float2 pos, int2 tam) {
     float2 p = pos - 0.5;
     float2 base = floor(p);
     float2 f = p - base;
@@ -158,7 +158,7 @@ float4 lerBicubico(float2 pos, int2 tam) {
 }
 
 /** Gira `v` no sentido HORÁRIO da tela (o eixo y cresce para baixo). */
-float2 girar(float2 v, float angulo) {
+static float2 girar(float2 v, float angulo) {
     float c = cos(angulo);
     float s = sin(angulo);
     return float2(c * v.x - s * v.y, s * v.x + c * v.y);
@@ -172,7 +172,7 @@ float2 girar(float2 v, float angulo) {
  * girado pelo Skew Axis, e é aplicada por FORA do giro; desfazê-la é o
  * cisalhamento oposto, no mesmo referencial, antes de desfazer o giro.
  */
-float2 origemDe(float2 p, float2 ancora, float2 pos, float2 escala, float inclina, float eixo, float giro) {
+static float2 origemDe(float2 p, float2 ancora, float2 pos, float2 escala, float inclina, float eixo, float giro) {
     float2 v = p - pos;
     v = girar(v, eixo);
     v.y -= tan(inclina) * v.x;

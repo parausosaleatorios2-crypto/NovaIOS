@@ -21,19 +21,19 @@ struct nv_nodevideo_effect_grainParams {
 // ---- comum aos portes de classe C# do Node (tools/nodepassesc/comum.glsl, colado pelo montar.py) ----
 // Os RTs do Node: cor PRÉ-multiplicada em luz LINEAR, sRGB de 8 bits, de pé (a linha 0 é a base). O Nova guarda a
 // camada reta, em gama; no buffer de camada (`eng.acEntradaDePe` = 0) a linha 0 é o topo.
-float3 nvLinear(float3 c) {
+static float3 nvLinear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 nvSrgb(float3 l) {
+static float3 nvSrgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 // O UV do Node (Y para cima) do pixel que este passe escreve na saída do Nova.
-float2 nvUvDePe() {
+static float2 nvUvDePe() {
     return eng.acEntradaDePe == 1 ? in.acScreenNorm : float2(in.acScreenNorm.x, 1.0 - in.acScreenNorm.y);
 }
 // O texel da camada em `uv` do Node (de pé), como o RT do Node o guarda: linear × alfa.
-float4 nvFonte(float2 uv) {
+static float4 nvFonte(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 p = int2(clamp(floor(uv * float2(T)), float2(0.0), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
@@ -42,7 +42,7 @@ float4 nvFonte(float2 uv) {
 }
 // A camada lida com filtro linear em `uv` do Node, como o `_SourceTex.sample(__nv_smp, uv)` dele (o filtro em luz linear, a
 // borda presa).
-float4 nvFonteFiltrada(float2 uv) {
+static float4 nvFonteFiltrada(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 q = uv * float2(T) - 0.5;
     float2 f = fract(q);
@@ -54,7 +54,7 @@ float4 nvFonteFiltrada(float2 uv) {
     return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
 }
 // O RT de saída do Node (pré-multiplicado, linear, preso em 0..1 pelo ARGB32) de volta à cor reta em gama do Nova.
-float4 nvVolta(float4 o) {
+static float4 nvVolta(float4 o) {
     o = clamp(o, 0.0, 1.0);
     if (o.a <= 0.0) return float4(0.0);
     return float4(nvSrgb(o.rgb / o.a), o.a);
@@ -63,7 +63,7 @@ float4 nvVolta(float4 o) {
 #define _NoiseParameters float3(12.9898005, 78.2330017, 43758.5469)
 
 // O programa 0 do shader NodeVideo/Effect/grain do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 ruidoCinza(float2 in.vs_TEXCOORD0)
+static float4 ruidoCinza(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;
@@ -274,7 +274,7 @@ float4 ruidoCinza(float2 in.vs_TEXCOORD0)
 }
 
 // O programa 1 do shader NodeVideo/Effect/grain do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 ruidoColorido(float2 in.vs_TEXCOORD0)
+static float4 ruidoColorido(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;
@@ -845,7 +845,7 @@ float4 ruidoColorido(float2 in.vs_TEXCOORD0)
 
 
 // O RT 128 × 128 com REPEAT e filtro linear (em luz linear: o buffer é sRGB e o texelFetch já decodifica).
-float4 lerRuido(float2 uv) {
+static float4 lerRuido(float2 uv) {
     float2 q = uv * 128.0 - 0.5;
     float2 f = fract(q);
     int2 b = int2(floor(q));
@@ -857,7 +857,7 @@ float4 lerRuido(float2 uv) {
 }
 
 // O programa 2 do shader NodeVideo/Effect/grain do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 aplicar(float2 in.vs_TEXCOORD0)
+static float4 aplicar(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;

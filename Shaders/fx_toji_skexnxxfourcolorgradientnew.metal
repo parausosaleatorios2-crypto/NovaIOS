@@ -27,7 +27,7 @@ struct toji_skexnxxfourcolorgradientnewParams {
 };
 
 // --- funcoes auxiliares do efeito
-float gradientNoise(in float2 uv)
+static float gradientNoise(in float2 uv)
         {
             const float3 magic = float3(0.06711056, 0.00583715, 52.9829189);
             return fract(magic.z * fract(dot(uv, magic.xy)));

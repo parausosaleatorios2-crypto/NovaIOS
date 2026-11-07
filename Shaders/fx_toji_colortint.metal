@@ -15,7 +15,7 @@ struct toji_colortintParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 rotUV( float3 yuv, float degrees ) {
+static float3 rotUV( float3 yuv, float degrees ) {
             float rad = degrees * 0.0174533;
             float3x3 rmat = float3x3(
                 1.0,  0.0,       0.0,

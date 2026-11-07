@@ -19,12 +19,12 @@ struct infraredParams {
 
 // --- funcoes auxiliares do efeito
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** Rampa "inferno" aproximada em 5 pontos: preto-azul-roxo-vermelho-amarelo-branco. */
-float3 rampaTermica(float t) {
+static float3 rampaTermica(float t) {
     t = clamp(t, 0.0, 1.0);
     float3 c;
     if (t < 0.2)      c = mix(float3(0.0),              float3(0.1, 0.0, 0.5),  t / 0.2);

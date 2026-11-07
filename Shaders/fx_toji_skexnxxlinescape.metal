@@ -24,7 +24,7 @@ struct toji_skexnxxlinescapeParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2x2 rot2m(float a){
+static float2x2 rot2m(float a){
         
 	float s = sin(a);
 	float c = cos(a);

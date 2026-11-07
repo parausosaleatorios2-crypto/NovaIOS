@@ -29,7 +29,7 @@ struct depth_mapParams {
  * A profundidade naquele ponto, 0 (longe) a 1 (perto) — já com canal e
  * inversão resolvidos.
  */
-float profundidadeEm(float2 uv) {
+static float profundidadeEm(float2 uv) {
     float4 texel = depthMap.sample(__nv_smp, uv);
 
     float valor;
@@ -47,7 +47,7 @@ float profundidadeEm(float2 uv) {
 }
 
 /** Onde buscar, respeitando o comportamento de borda escolhido — mesma regra de `displace.xml`. */
-float2 wrapUv(float2 uv) {
+static float2 wrapUv(float2 uv) {
     if (u.edges == 1) {
         return fract(uv);
     }
@@ -60,7 +60,7 @@ float2 wrapUv(float2 uv) {
     return uv;
 }
 
-float4 fetch(float2 uv) {
+static float4 fetch(float2 uv) {
     if (u.edges == 0 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
         return float4(0.0);
     }

@@ -24,8 +24,8 @@ struct nv_nodevideo_assetstore_unsharp_maskParams {
 // O desfoque do C# (0.915.0): DoGaussianBlur(quantidade = u._radius x 0,01). A gaussiana do Node (node-gaussian-blur.xml)
 // tem meio-lado = quantidade x 0,0475 x a diagonal da composicao em px da METADE, sigma = meio-lado x 0,4660; aqui na
 // resolucao cheia (o dobro), separavel em dois passes, em cor pre-multiplicada.
-float4 lerPre(sampler2D t, float2 uv) { float4 c = t.sample(__nv_smp, uv); return float4(c.rgb * c.a, c.a); }
-float4 desfoque(sampler2D t, float2 eixo, bool preMultiplicar) {
+static float4 lerPre(sampler2D t, float2 uv) { float4 c = t.sample(__nv_smp, uv); return float4(c.rgb * c.a, c.a); }
+static float4 desfoque(sampler2D t, float2 eixo, bool preMultiplicar) {
     float diag = length(eng.acTamanhoDaTela);
     float sigma = 2.0 * (u._radius * 0.01) * 0.0475 * diag * 0.4660 * eng.acEscalaDePixel;
     float2 passo = eixo / float2(int2(int(t.get_width()), int(t.get_height())));

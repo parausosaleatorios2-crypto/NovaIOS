@@ -35,7 +35,7 @@ struct toji_noisetunnelblueParams {
 
 // Hash and simplex noise (hash33-based)
 #define MOD3 float3(0.1031, 0.11369, 0.13787)
-float3 hash33(float3 p3){
+static float3 hash33(float3 p3){
     p3 = fract(p3 * MOD3);
     p3 += dot(p3, p3.yxz + 19.19);
     return -1.0 + 2.0 * fract(float3(
@@ -45,7 +45,7 @@ float3 hash33(float3 p3){
     ));
 }
 
-float simplexNoise(float3 p){
+static float simplexNoise(float3 p){
     const float K1 = 0.333333333;
     const float K2 = 0.166666667;
     float3 i = floor(p + (p.x + p.y + p.z) * K1);
@@ -61,7 +61,7 @@ float simplexNoise(float3 p){
     return dot(float4(31.316), n);
 }
 
-float fbm3(float3 p){
+static float fbm3(float3 p){
     float f = 0.0;
     float scale = u.FBM_SCALE;
     float amp = 0.75;
@@ -76,8 +76,8 @@ float fbm3(float3 p){
     return min(f, 1.0);
 }
 
-float3x3 rotY(float a){ return float3x3(cos(a),0.0,sin(a), 0.0,1.0,0.0, -sin(a),0.0,cos(a)); }
-float3x3 rotX(float a){ return float3x3(1.0,0.0,0.0, 0.0,cos(a),sin(a), 0.0,-sin(a),cos(a)); }
+static float3x3 rotY(float a){ return float3x3(cos(a),0.0,sin(a), 0.0,1.0,0.0, -sin(a),0.0,cos(a)); }
+static float3x3 rotX(float a){ return float3x3(1.0,0.0,0.0, 0.0,cos(a),sin(a), 0.0,-sin(a),cos(a)); }
 
 fragment float4 fx_toji_noisetunnelblue(
     NovaVertexOut       in   [[stage_in]],

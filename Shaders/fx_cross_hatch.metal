@@ -20,12 +20,12 @@ struct cross_hatchParams {
 
 // --- funcoes auxiliares do efeito
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** A linha num eixo girado por `graus`: 1 na linha, 0 fora dela. */
-float linhaEm(float2 p, float graus, float frequencia) {
+static float linhaEm(float2 p, float graus, float frequencia) {
     float a = radians(graus);
     float eixo = p.x * cos(a) - p.y * sin(a);
     // `sin(frequencia * eixo)` oscila entre -1 e 1; a linha é onde o valor passa de um limiar.

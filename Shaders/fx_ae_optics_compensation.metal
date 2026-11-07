@@ -19,7 +19,7 @@ struct ae_optics_compensationParams {
 
 // --- funcoes auxiliares do efeito
 /** Um ponto da camada, pré-multiplicado; fora dela, transparente. */
-float4 ponto(int2 p, int2 T) {
+static float4 ponto(int2 p, int2 T) {
     if (p.x < 0 || p.y < 0 || p.x >= T.x || p.y >= T.y) return float4(0.0);
     float4 c = inputImg.read(uint2(p), uint(0));
     return float4(c.rgb * c.a, c.a);

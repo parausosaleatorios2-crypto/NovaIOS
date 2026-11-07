@@ -26,15 +26,15 @@ const float SIGMA = 0.24494897;       // do shader do plugin: sqrt(0,06) da meia
 const float GAMA = 2.2222222;
 const int MEIA_MAX = 24;              // o desfoque soma até 49 pontos por passe
 
-float3 paraLuz(float3 g) { return pow(max(g, float3(0.0)), float3(GAMA)); }
-float3 paraGama(float3 l) { return pow(max(l, float3(0.0)), float3(1.0 / GAMA)); }
+static float3 paraLuz(float3 g) { return pow(max(g, float3(0.0)), float3(GAMA)); }
+static float3 paraGama(float3 l) { return pow(max(l, float3(0.0)), float3(1.0 / GAMA)); }
 
 /**
  * A luz num buffer de 8 bits: o halo de um ponto pequeno vale 0,0001 ou menos, e 8 bits (mesmo com gama) não
  * guardam isso. Vai então como mantissa e expoente: o maior canal fica entre 0,5 e 1 (guardado com raiz, para
  * render mais) e o alfa leva a potência de dois — o erro é sempre uma fração do valor, claro ou escuro.
  */
-float4 codificar(float3 l) {
+static float4 codificar(float3 l) {
     l = max(l, float3(0.0));
     float m = max(l.r, max(l.g, l.b));
     if (m < 1e-9) return float4(0.0);
@@ -42,13 +42,13 @@ float4 codificar(float3 l) {
     return float4(sqrt(min(l / exp2(e), float3(1.0))), (e + 32.0) / 255.0);
 }
 
-float3 decodificar(float4 t) {
+static float3 decodificar(float4 t) {
     if (t.a <= 0.0) return float3(0.0);
     return t.rgb * t.rgb * exp2(floor(t.a * 255.0 + 0.5) - 32.0);
 }
 
 /** A luz da fonte num pixel: pré-multiplicada, com o limiar do plugin (canal a canal), em linear, presa em 1. */
-float3 entrada(int2 p) {
+static float3 entrada(int2 p) {
     float4 t = inputImg.read(uint2(p), uint(0));
     float3 c = max(t.rgb * t.a, float3(0.0));
     float lim = u.threshold / 100.0;
@@ -60,7 +60,7 @@ float3 entrada(int2 p) {
 }
 
 /** Espelha o índice na borda (medido: a borda do plugin é espelhada). */
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
@@ -68,7 +68,7 @@ int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-int2 tamanhoDe(int d) {
+static int2 tamanhoDe(int d) {
     if (d == 0) return int2(int(inputImg.get_width()), int(inputImg.get_height()));
     if (d == 1) return int2(int(p1.get_width()), int(p1.get_height()));
     if (d == 2) return int2(int(p2.get_width()), int(p2.get_height()));
@@ -78,7 +78,7 @@ int2 tamanhoDe(int d) {
 }
 
 /** Um ponto do degrau `d` da pirâmide (0 = a própria entrada), em luz. */
-float3 degrau(int d, int2 p) {
+static float3 degrau(int d, int2 p) {
     int2 T = tamanhoDe(d);
     p = int2(espelhar(p.x, T.x), espelhar(p.y, T.y));
     if (d == 0) return entrada(p);
@@ -90,7 +90,7 @@ float3 degrau(int d, int2 p) {
 }
 
 /** O tamanho do buffer do desfoque horizontal do degrau `d` (o mesmo do degrau). */
-int2 tamanhoDoH(int d) {
+static int2 tamanhoDoH(int d) {
     if (d == 0) return int2(int(tf.get_width()), int(tf.get_height()));
     if (d == 1) return int2(int(h1.get_width()), int(h1.get_height()));
     if (d == 2) return int2(int(h2.get_width()), int(h2.get_height()));
@@ -99,7 +99,7 @@ int2 tamanhoDoH(int d) {
     return int2(int(h5.get_width()), int(h5.get_height()));
 }
 
-float3 horizontal(int d, int2 p) {
+static float3 horizontal(int d, int2 p) {
     // No passe vertical o alvo é o próprio degrau (o motor não o entrega como textura): o tamanho vem do buffer do horizontal.
     int2 T = tamanhoDoH(d);
     p = int2(espelhar(p.x, T.x), espelhar(p.y, T.y));
@@ -112,7 +112,7 @@ float3 horizontal(int d, int2 p) {
 }
 
 /** O degrau `d` lido num ponto qualquer da tela (uv), com interpolação bilinear feita em luz. */
-float3 degrauEm(int d, float2 uv) {
+static float3 degrauEm(int d, float2 uv) {
     float2 c = uv * float2(tamanhoDe(d)) - 0.5;
     int2 b = int2(floor(c));
     float2 f = c - float2(b);
@@ -120,19 +120,19 @@ float3 degrauEm(int d, float2 uv) {
 }
 
 /** O sigma (em pixels do buffer cheio) do nível `k`: 0 é o mais largo. */
-float sigmaDoNivel(int k) {
+static float sigmaDoNivel(int k) {
     return SIGMA * u.radius * eng.acEscalaDePixel * 0.5 / exp2(float(k));
 }
 
 /** Em que degrau o nível mais largo é desfocado: aquele em que o sigma dele fica entre 1,5 e 3 pontos. */
-int degrauDoMaior() {
+static int degrauDoMaior() {
     float s = sigmaDoNivel(0);
     if (s < 3.0) return 0;
     return clamp(int(floor(log2(s / 1.5))), 0, DEGRAUS);
 }
 
 /** Um passe do desfoque gaussiano no degrau `d`, com `sigma` em pontos desse degrau. */
-float3 desfocar(int d, int2 p, float sigma, bool vertical) {
+static float3 desfocar(int d, int2 p, float sigma, bool vertical) {
     int meia = min(int(ceil(sigma * 3.0)), MEIA_MAX);
     // Centro (i = 0, w = 1.0).
     float3 soma = vertical ? horizontal(d, p) : degrau(d, p);
@@ -160,7 +160,7 @@ float3 desfocar(int d, int2 p, float sigma, bool vertical) {
  * O sigma, em pontos do degrau `d`, que falta aplicar para o nível `k`: a própria pirâmide já
  * desfocou um pouco (cada descida de 2 x 2 soma 1/12 de ponto² de variância).
  */
-float sigmaNoDegrau(int k, int d, int2 T) {
+static float sigmaNoDegrau(int k, int d, int2 T) {
     float ponto = float(int2(int(inputImg.get_width()), int(inputImg.get_height())).x) / float(T.x);
     float s = sigmaDoNivel(k) / ponto;
     float jaFeito = d == 0 ? 0.0 : (1.0 - exp2(-2.0 * float(d))) / 12.0;

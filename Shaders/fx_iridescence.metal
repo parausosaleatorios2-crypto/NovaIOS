@@ -27,13 +27,13 @@ struct iridescenceParams {
  * com a vantagem de ser suave de verdade (nada de discontinuidade no limite dos 6
  * setores do HSV).
  */
-float3 arcoIris(float fase) {
+static float3 arcoIris(float fase) {
     const float3 defasagem = float3(0.0, 2.094395, 4.188790); // 0°, 120°, 240°
     return 0.5 + 0.5 * cos(6.2831853 * fase + defasagem);
 }
 
 /** A luminância ITU-R BT.709 — mesmo peso que o resto do app usa. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 

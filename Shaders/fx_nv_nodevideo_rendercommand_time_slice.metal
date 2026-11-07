@@ -23,21 +23,21 @@ struct nv_nodevideo_rendercommand_time_sliceParams {
 #define _viewport_ratio eng.acProporcaoDoNode
 
 // Os RTs do Node: luz linear, cor pré-multiplicada.
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
-float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
-float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
-float4 nvNova(float4 p) {
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
+static float3 nvGama(float3 l) { return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l)); }
+static float4 nvNode(float4 c) { return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvNova(float4 p) {
     if (p.a <= 0.0) return float4(0.0);
     return float4(nvGama(clamp(p.rgb / p.a, 0.0, 1.0)), p.a);
 }
 
 // O quadro que o anel não tem chega 1x1 (a textura transparente do FrameHistory).
-bool nvTem(int2 tamanho) { return tamanho.x > 1 || tamanho.y > 1; }
+static bool nvTem(int2 tamanho) { return tamanho.x > 1 || tamanho.y > 1; }
 
-int nvContagem() { return clamp(int(u._slice_count), 1, 30); }
+static int nvContagem() { return clamp(int(u._slice_count), 1, 30); }
 
 // A faixa do pixel (o u_xlati0 do Node) e a fração dentro dela.
-int nvFaixa(float2 uv, out float fracao) {
+static int nvFaixa(float2 uv, out float fracao) {
     float2 p = (uv - 0.5) * _viewport_ratio.xy;
     float a = u._slice_angle * 0.0174532924;
     float x = float(nvContagem()) * (dot(float2(sin(a), cos(a)), p) + 0.5);
@@ -47,14 +47,14 @@ int nvFaixa(float2 uv, out float fracao) {
 
 // Quantos quadros atrás está a fatia k: t + (offset + intervalo x (k + 1 - c)) / FPS; o offset positivo (o futuro)
 // vira atraso da saída inteira.
-int nvAtras(int k) {
+static int nvAtras(int k) {
     int c = nvContagem();
     int off = int(u._frame_offset);
     return int(u._frame_interval) * (c - 1 - k) - off + max(off, 0);
 }
 
 // Dos 12 mais novos: o quadro `atras` (até 12), ou o mais velho que houver até ele.
-float4 nvPerto(int atras, float2 uv) {
+static float4 nvPerto(int atras, float2 uv) {
     if (atras >= 12 && nvTem(int2(int(h12.get_width()), int(h12.get_height())))) return h12.sample(__nv_smp, uv);
     if (atras >= 11 && nvTem(int2(int(h11.get_width()), int(h11.get_height())))) return h11.sample(__nv_smp, uv);
     if (atras >= 10 && nvTem(int2(int(h10.get_width()), int(h10.get_height())))) return h10.sample(__nv_smp, uv);
@@ -71,7 +71,7 @@ float4 nvPerto(int atras, float2 uv) {
 }
 
 // Dos 13..23: o quadro `atras` (preso em 23) ou o mais velho que houver até o 13; sem nenhum, `perto`.
-float4 nvLonge(int atras, float2 uv, float4 perto) {
+static float4 nvLonge(int atras, float2 uv, float4 perto) {
     if (atras >= 23 && nvTem(int2(int(h23.get_width()), int(h23.get_height())))) return h23.sample(__nv_smp, uv);
     if (atras >= 22 && nvTem(int2(int(h22.get_width()), int(h22.get_height())))) return h22.sample(__nv_smp, uv);
     if (atras >= 21 && nvTem(int2(int(h21.get_width()), int(h21.get_height())))) return h21.sample(__nv_smp, uv);
@@ -87,7 +87,7 @@ float4 nvLonge(int atras, float2 uv, float4 perto) {
 }
 
 // O programa do Node para _cur_slice = cur, conta por conta (o peso da fonte no pixel).
-float nvPeso(int u_xlati0, float fracao, int cur) {
+static float nvPeso(int u_xlati0, float fracao, int cur) {
     float u_xlat3 = fracao + -1.0;
     float u_xlat6 = float(1.0) / (-u._feather);
     u_xlat3 = u_xlat6 * u_xlat3;
@@ -101,7 +101,7 @@ float nvPeso(int u_xlati0, float fracao, int cur) {
 }
 
 // Uma passada do Node: o shader (fonte x peso + RT x (1 - peso)) e a mistura SrcAlpha OneMinusSrcAlpha num RT de 8 bits.
-float4 nvPassada(float4 fonte, float4 rt, float peso) {
+static float4 nvPassada(float4 fonte, float4 rt, float peso) {
     float4 o = clamp(fonte * peso + rt * (1.0 - peso), 0.0, 1.0);
     return clamp(o * o.a + rt * (1.0 - o.a), 0.0, 1.0);
 }

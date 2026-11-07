@@ -34,7 +34,7 @@ struct toji_psykostripesParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 getResolution(){
+static float2 getResolution(){
       float2 s = __nv_getTexSize(inputImg_info.size);
       if (s.x <= 0.0 || s.y <= 0.0) s = float2(1920.0, 1080.0);
       return s;

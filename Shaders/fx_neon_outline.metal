@@ -22,12 +22,12 @@ struct neon_outlineParams {
 const float TAU = 6.2831853;
 
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** Sobel: magnitude do gradiente da luma com um kernel 3×3. */
-float sobelAqui(float2 uv) {
+static float sobelAqui(float2 uv) {
     float2 px = 1.0 / float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
 
     float tl = luma(inputImg.sample(__nv_smp, uv + float2(-px.x,  px.y)).rgb);

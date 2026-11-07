@@ -27,7 +27,7 @@ struct am_color_balanceParams {
 // k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve (o AM lê a camada assim). A
 // divisão do shader vai pelo recíproco e erra o último bit em metade dos k (130 de 256 na AMD do PC), e o último
 // bit decide a costura em Y = 0,555. Aqui: n·2^e ÷ 255 pelo mais perto, em 24 bits, montado direto nos bits do float.
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;

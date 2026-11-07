@@ -25,15 +25,15 @@ struct nv_nodevideo_effect_star_glowParams {
 // --- funcoes auxiliares do efeito
 // ---- a ponte Nova <-> Node (tools/nodeluzes/gerar.py)
 float2 nvUV;   // o in.vs_TEXCOORD0 dos programas do Node: o in.acScreenNorm, ou outro ponto que o passe escolhe
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
-float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
+static float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 // O passe 0: a camada como o Node a guarda (pre-multiplicada, luz linear; o buffer `pre` e sRGB de 8 bits).
-float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
-float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
+static float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
 // A saída do Node (pre-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz que
 // o Node soma acima do alfa (o brilho fora do recorte) vira alfa: a = max(alfa, r, g, b). NaN (0 x infinito na
 // conta do Node) vira 0, como no RT de 8 bits dele; a escolha pelo bvec não faz conta com o NaN.
-float4 nvSaida(float4 p) {
+static float4 nvSaida(float4 p) {
     p = mix(float4(0.0), min(p, float4(1.0)), greaterThanEqual(p, float4(0.0)));
     float a = max(p.a, max(p.r, max(p.g, p.b)));
     return a > 0.0 ? float4(nvGama(p.rgb / a), a) : float4(0.0);
@@ -48,10 +48,10 @@ float4 nvSaida(float4 p) {
 float vs_TEXCOORD1;   // 4^(iteração - 1): o passo e o expoente do peso
 float2 vs_TEXCOORD2;    // o passo em UV: 4^(it-1) x _offset / _resolution
 #define _attenuation max(min(sqrt(u._length), 0.99), 1e-6)
-int nvN() { return clamp(int(u._streaks), 1, 6); }
-float2 nvGrade() { return max(floor(float2(int2(int(pre.get_width()), int(pre.get_height()))) / max(trunc(u._blur), 2.0)), float2(1.0)); }
-float2 nvCentro(float2 uv) { float2 g = nvGrade(); return (floor(uv * g) + 0.5) / g; }
-float4 nvLe(sampler2D t, float2 uv) {
+static int nvN() { return clamp(int(u._streaks), 1, 6); }
+static float2 nvGrade() { return max(floor(float2(int2(int(pre.get_width()), int(pre.get_height()))) / max(trunc(u._blur), 2.0)), float2(1.0)); }
+static float2 nvCentro(float2 uv) { float2 g = nvGrade(); return (floor(uv * g) + 0.5) / g; }
+static float4 nvLe(sampler2D t, float2 uv) {
     float2 g = nvGrade();
     int2 tam = int2(int(t.get_width()), int(t.get_height()));
     if (all(equal(g, float2(tam)))) return t.sample(__nv_smp, uv);
@@ -66,7 +66,7 @@ float4 nvLe(sampler2D t, float2 uv) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 // O raio k (1..N) do C#: ângulo = trunc(u._angle) + 360/N x k; _offset = AngleAxis(ângulo, frente) x Vector2.down.
-void nvRaio(int k, int it) {
+static void nvRaio(int k, int it) {
     float a = radians(trunc(u._angle) + 360.0 / float(nvN()) * float(k));
     vs_TEXCOORD1 = exp2(2.0 * float(it - 1));
     vs_TEXCOORD2 = vs_TEXCOORD1 * float2(sin(a), -cos(a)) / eng.acTamanhoDaTela;
@@ -75,7 +75,7 @@ void nvRaio(int k, int it) {
 // ---- programa 0 do Node: NodeVideo_Effect_star_glow_1.glsl
 float4 p0_x0;
 float2 p0_x1;
-void p0_main()
+static void p0_main()
 {
     p0_x0 = pre.sample(__nv_smp, nvUV.xy);
     p0_x1.xy = float2(u._threshold, u._intensity) * float2(u._threshold, u._intensity);
@@ -94,7 +94,7 @@ float3 p1_x3;
 int p1_xi7;
 float p1_x10;
 bool p1_xb10;
-void p1_main(sampler2D _blur_tex)
+static void p1_main(sampler2D _blur_tex)
 {
     p1_x0 = log2(abs(_attenuation));
     p1_x3.x = float(0.0);
@@ -119,7 +119,7 @@ void p1_main(sampler2D _blur_tex)
 }
 
 // ---- programa 2 do Node: NodeVideo_Effect_star_glow_3.glsl
-void p2_main(sampler2D _blur_tex)
+static void p2_main(sampler2D _blur_tex)
 {
     __nv_out = nvLe(_blur_tex, nvUV.xy);
     return;
@@ -134,7 +134,7 @@ float4 p3_x3;
 float4 p3_x4;
 float4 p3_x5;
 float p3_x14;
-void p3_main(sampler2D _composite_tex)
+static void p3_main(sampler2D _composite_tex)
 {
     p3_x0 = pre.sample(__nv_smp, nvUV.xy);
     p3_x1 = nvLe(_composite_tex, nvUV.xy);

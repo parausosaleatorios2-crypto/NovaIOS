@@ -19,7 +19,7 @@ struct nv_um_vhs_retroParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+static float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
 
 fragment float4 fx_nv_um_vhs_retro(
     NovaVertexOut       in   [[stage_in]],

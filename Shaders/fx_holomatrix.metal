@@ -151,14 +151,14 @@ struct holomatrixParams {
 
 // --- funcoes auxiliares do efeito
 // ------------------------------------------------------------------ sorteio
-float h2(float2 p) {
+static float h2(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
 /** Ruído de valor entre −1 e 1 (bilinear suavizado). */
-float ruido(float2 p, float semente) {
+static float ruido(float2 p, float semente) {
     float2 i = floor(p), f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
     float a = h2(i + semente), b = h2(i + float2(1.0, 0.0) + semente);
@@ -168,13 +168,13 @@ float ruido(float2 p, float semente) {
 
 // ------------------------------------------------------------------ medidas
 /** O tamanho do quadro CHEIO (os passes de u.glow rodam em meia resolução). */
-float2 quadro() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
+static float2 quadro() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
 /** Pixels do buffer por unidade do plugin: as medidas dele são em pixels de um quadro de 486 linhas. */
-float unidade() { return u.effectScale / 100.0 * quadro().y / 486.0; }
+static float unidade() { return u.effectScale / 100.0 * quadro().y / 486.0; }
 /** O tempo do efeito: ele só anda `Frame Rate` vezes por segundo. */
-float tempoDoEfeito() { return floor(eng.acTime * u.frameRate + 1e-3) / u.frameRate; }
-float quadroDoEfeito() { return floor(eng.acTime * u.frameRate + 1e-3); }
-float dano() { return 1.0 + float(u.moreDamage); }
+static float tempoDoEfeito() { return floor(eng.acTime * u.frameRate + 1e-3) / u.frameRate; }
+static float quadroDoEfeito() { return floor(eng.acTime * u.frameRate + 1e-3); }
+static float dano() { return 1.0 + float(u.moreDamage); }
 
 /*
  * OS EVENTOS — medido em 1800 quadros: o tempo é uma fila de trechos de `dur` segundos (cada um
@@ -182,7 +182,7 @@ float dano() { return 1.0 + float(u.moreDamage); }
  * (trechos seguidos emendam). Aqui: grade de `dur` com as divisas tremidas — a mesma estatística,
  * sem memória entre quadros. `inicio` = quando o trecho começou; `k` = o número dele.
  */
-bool evento(float dur, float variacao, float chance, float semente, out float inicio, out float k) {
+static bool evento(float dur, float variacao, float chance, float semente, out float inicio, out float k) {
     inicio = 0.0; k = 0.0;
     float s = semente + u.randomSeed * 0.731;
     if (u.punchIt) return true;
@@ -200,14 +200,14 @@ bool evento(float dur, float variacao, float chance, float semente, out float in
     return false;
 }
 
-float4 pre(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 pre(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // ------------------------------------------------------------------ passe 0: geometria + cor + linhas + estática
-float3 overlay(float3 a, float b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
-float3 overlay3(float3 a, float3 b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
+static float3 overlay(float3 a, float b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
+static float3 overlay3(float3 a, float3 b) { return mix(2.0 * a * b, 1.0 - 2.0 * (1.0 - a) * (1.0 - b), step(0.5, a)); }
 
 /** Tritone linear pela luma Rec. 709 (medido: 0,2127 / 0,7152 / 0,0720). */
-float3 colorir(float3 c) {
+static float3 colorir(float3 c) {
     float l = dot(c, float3(0.2126, 0.7152, 0.0722));
     l = l + u.sourceBrightness / 255.0;
     l = clamp(1.0 - (1.0 - l) * (1.0 + u.sourceContrast / 100.0), 0.0, 1.0);   // o contraste gira em volta do BRANCO
@@ -216,7 +216,7 @@ float3 colorir(float3 c) {
 }
 
 /** Uma camada de faixas: o cinza sorteado da faixa e a opacidade (pisca a cada X quadros). */
-float3 faixas(float3 c, float y, float sentido, float vel, float altura, float semente, float opMin, float opMax, float strobe, bool fade) {
+static float3 faixas(float3 c, float y, float sentido, float vel, float altura, float semente, float opMin, float opMax, float strobe, bool fade) {
     float h = max(altura * u.effectScale / 100.0 * quadro().y / 715.5, 1.0);
     // A velocidade é em pixels da COMPOSIÇÃO por segundo, em qualquer resolução (medido em 90p, 360p e 720p).
     float andou = vel * eng.acEscalaDePixel * tempoDoEfeito() * sentido;
@@ -230,7 +230,7 @@ float3 faixas(float3 c, float y, float sentido, float vel, float altura, float s
 }
 
 /** A estática: um grão cinza por célula (N = 0,854·u^2,7), em overlay. */
-float graoDaEstatica(float2 px) {
+static float graoDaEstatica(float2 px) {
     float hc = quadro().y / eng.acEscalaDePixel;                               // altura em pixels da composição
     float a = min((0.13 + 0.008 * u.staticSize) * pow(hc / 1080.0, 0.8) * u.effectScale / 100.0, 0.95);
     float cel = max(hc / 244.0 / (1.0 - a) * eng.acEscalaDePixel, 1.0);
@@ -242,7 +242,7 @@ float graoDaEstatica(float2 px) {
 }
 
 /** O deslocamento "de TV" das distorções: riscos largos e baixos que tremem. */
-float2 tremor(float2 px, float escala, float vel, float2 forca, float semente) {
+static float2 tremor(float2 px, float escala, float vel, float2 forca, float semente) {
     float u = unidade();
     float2 p = px / (max(escala, 1.0) * u * float2(1.2, 0.2));
     float t = floor(eng.acTime * max(vel, 1.0) / 23.0);
@@ -250,7 +250,7 @@ float2 tremor(float2 px, float escala, float vel, float2 forca, float semente) {
 }
 
 /** De onde o pixel lê, depois dos defeitos de geometria. `furo` = o Glitch Holes apagou. */
-float2 geometria(float2 px, out bool furo) {
+static float2 geometria(float2 px, out bool furo) {
     furo = false;
     float2 res = quadro();
     float u = unidade();
@@ -310,7 +310,7 @@ float2 geometria(float2 px, out bool furo) {
     return px;
 }
 
-float4 passeBase(float2 uv) {
+static float4 passeBase(float2 uv) {
     float2 res = quadro();
     bool furo;
     float2 px = geometria(uv * res, furo);
@@ -336,14 +336,14 @@ float4 passeBase(float2 uv) {
 }
 
 // ------------------------------------------------------------------ passe 1: fantasma + separação + scan u.lines
-float4 lerBase(float2 px) {
+static float4 lerBase(float2 px) {
     float2 q = px / quadro();
     if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return float4(0.0);
     return base.sample(__nv_smp, q);
 }
 
 /** O fantasma num ponto: uma cópia da base deslocada (às vezes com a lente torta), já na opacidade dele. */
-float4 fantasma(float2 px) {
+static float4 fantasma(float2 px) {
     if (!u.ghost) return float4(0.0);
     float q = quadroDoEfeito();
     float s = u.randomSeed * 0.917;
@@ -378,7 +378,7 @@ const float PERFIL_D[21] = float[21](0.0, 0.0066, 0.0233, 0.0502, 0.0833, 0.1229
  * 1 = feather inteiro para dentro). Devolve (cor, alfa): o plugin escurece a cor mais devagar do
  * que devolve o alfa — as duas curvas foram tiradas dos renders (tools/holomatrix/benchmark).
  */
-float2 scanNoEixo(float coordPx) {
+static float2 scanNoEixo(float coordPx) {
     float d = u.scanDistance, t = u.scanThickness;
     if (d <= 0.0) return float2(1.0);
     float yu = coordPx / unidade();
@@ -393,7 +393,7 @@ float2 scanNoEixo(float coordPx) {
 }
 
 /** Quanto do quadro as scan u.lines deixam passar no alfa (a média de um período). */
-float coberturaDaScan() {
+static float coberturaDaScan() {
     float soma = 0.0;
     float periodo = max(u.scanDistance, 1e-3) * unidade();
     for (int n = 0; n < 16; n++) soma += scanNoEixo((float(n) + 0.5) / 16.0 * periodo).y;
@@ -404,7 +404,7 @@ float coberturaDaScan() {
  * A base com o u.glow secundário, o fantasma e as scan u.lines num ponto. Medido: o fantasma é SOMADO
  * sem o u.glow secundário, e as scan u.lines valem para os dois; a separação de cor vem depois.
  */
-float4 comScan(float2 px) {
+static float4 comScan(float2 px) {
     float4 c = lerBase(px);
     float4 f = fantasma(px);
     if (!u.scanLines) {
@@ -428,7 +428,7 @@ float4 comScan(float2 px) {
     return float4(min(c.rgb + f.rgb * m.x, 1.0), c.a * min(semLinhas + f.a, 1.0) / semLinhas);
 }
 
-float4 passeMistura(float2 uv) {
+static float4 passeMistura(float2 uv) {
     float2 res = quadro();
     float2 px = uv * res;
     float4 c;
@@ -446,16 +446,16 @@ float4 passeMistura(float2 uv) {
 
 // ------------------------------------------------------------------ u.glow
 /** σ do u.glow em pixels do quadro cheio (medido em 360 linhas: 1,1 + 0,28·raio, nunca menos de 2,06). */
-float sigmaDoGlow() { return quadro().y / 360.0 * max(2.06, 1.1 + 0.28 * u.glowRadius * u.effectScale / 100.0); }
-float sigmaDoSegundo() { return quadro().y / 360.0 * max(0.8, 0.41 * u.secondaryGlowRadius * u.effectScale / 100.0); }
+static float sigmaDoGlow() { return quadro().y / 360.0 * max(2.06, 1.1 + 0.28 * u.glowRadius * u.effectScale / 100.0); }
+static float sigmaDoSegundo() { return quadro().y / 360.0 * max(0.8, 0.41 * u.secondaryGlowRadius * u.effectScale / 100.0); }
 /** Com raio pequeno o u.glow é quase a própria imagem: só 0,236·raio dela vai para o borrão (medido com 1, 2 e 5). */
-float parteBorrada() { return min(0.236 * u.glowRadius * u.effectScale / 100.0, 1.0); }
+static float parteBorrada() { return min(0.236 * u.glowRadius * u.effectScale / 100.0, 1.0); }
 
 /** Só o que passa do limiar, canal por canal. O alfa vai inteiro: o borrão dele enche o vão das scan u.lines. */
-float4 limiar(float4 c) { return float4(c.rgb * step(u.glowThreshold / 100.0, c.rgb - 1e-4), c.a); }
+static float4 limiar(float4 c) { return float4(c.rgb * step(u.glowThreshold / 100.0, c.rgb - 1e-4), c.a); }
 
 /** Gaussiano de um eixo neste buffer (meia resolução). `fonte`: 0 = base, 1 = sh, 2 = lim, 3 = gh. */
-float4 borrar(int fonte, float2 eixo, float sigmaCheio) {
+static float4 borrar(int fonte, float2 eixo, float sigmaCheio) {
     float2 uv = in.acScreenNorm;
     float sigma = max(sigmaCheio * eng.acResolution.y / quadro().y, 0.5);
     float passo = max(1.0, ceil(3.0 * sigma / 20.0));

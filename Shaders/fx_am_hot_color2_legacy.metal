@@ -15,7 +15,7 @@ struct am_hot_color2_legacyParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -23,7 +23,7 @@ float3 fundoNoPixel() {
 }
 
 // A do `am-hot-color.xml` (e do `am-sharpen.xml`).
-float4 paraReta(float4 q) {
+static float4 paraReta(float4 q) {
     if (all(lessThanEqual(q.rgb, float3(q.a)))) return q.a > 0.0 ? float4(q.rgb / q.a, q.a) : float4(0.0);
     float3 d = fundoNoPixel();
     float3 sobra = q.rgb - d * q.a;
@@ -36,7 +36,7 @@ float4 paraReta(float4 q) {
     return a > 0.0 ? float4(clamp(d + sobra / a, 0.0, 1.0), a) : float4(0.0);
 }
 
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -47,7 +47,7 @@ float oitoBits(float k) {
     return as_type<float>((uint(150 - e) << 23) + (q - 0x800000u));
 }
 
-float3 hsv2rgb(float3 c)
+static float3 hsv2rgb(float3 c)
 {
     float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
     float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);

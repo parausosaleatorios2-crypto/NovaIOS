@@ -21,7 +21,7 @@ struct um_star_glintParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float3 amostrar(float2 uv, float2 dir, float len) {
+static float3 amostrar(float2 uv, float2 dir, float len) {
     float3 soma = float3(0.0);
     float pt = 0.0;
     for (int i = 0; i <= 32; i++) {

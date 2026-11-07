@@ -19,7 +19,7 @@ struct palette_8bitParams {
 
 // --- funcoes auxiliares do efeito
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
@@ -31,7 +31,7 @@ const float BAYER[16] = float[16](
     15.0 / 16.0,  7.0 / 16.0, 13.0 / 16.0,  5.0 / 16.0
 );
 
-float bayerEm(int2 p) {
+static float bayerEm(int2 p) {
     int x = p.x - (p.x / 4) * 4;
     int y = p.y - (p.y / 4) * 4;
     return BAYER[y * 4 + x];

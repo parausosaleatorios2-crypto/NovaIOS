@@ -28,9 +28,9 @@ const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 // muito menos, o hexágono vira uma fileira de fantasmas em vez de um borrão.
 const int PASSOS = 16;
 
-float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
+static float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
 
-float2 direcao(float graus) {
+static float2 direcao(float graus) {
     float a = (graus + u.rotation) * PI / 180.0;
     return float2(sin(a), cos(a));
 }
@@ -51,7 +51,7 @@ const float FAIXA_DE_QUEDA = 0.3;
  * qualquer lado) desfoca proporcionalmente — não é mais "claro borra, escuro
  * não", que ignorava qual profundidade a pessoa queria manter nítida.
  */
-float raioEm(float2 uv) {
+static float raioEm(float2 uv) {
     if (u.useMap <= 0.0) return u.radius;
     float profundidade = dot(focusMap.sample(__nv_smp, uv).rgb, LUMA);
     float queda = clamp(abs(profundidade - u.focusDistance) / FAIXA_DE_QUEDA, 0.0, 1.0);
@@ -59,7 +59,7 @@ float raioEm(float2 uv) {
 }
 
 /** A cor da fonte já preparada para somar: realçada e em energia. */
-float4 fonteEm(float2 uv) {
+static float4 fonteEm(float2 uv) {
     float4 c = inputImg.sample(__nv_smp, uv);
 
     // Realce só do que já é claro. Espalhar tudo igualmente clarearia a imagem
@@ -82,7 +82,7 @@ float4 fonteEm(float2 uv) {
  * O alfa entra multiplicando a cor e sai dividindo: pixel transparente não tem
  * cor que signifique alguma coisa, e misturá-la puxaria a borda para preto.
  */
-float4 borrarDirecao(sampler2D tex, float2 uv, float2 dir, float raio, bool jaEmEnergia) {
+static float4 borrarDirecao(sampler2D tex, float2 uv, float2 dir, float raio, bool jaEmEnergia) {
     if (raio <= 0.0) {
         return jaEmEnergia ? tex.sample(__nv_smp, uv) : fonteEm(uv);
     }

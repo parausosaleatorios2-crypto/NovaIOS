@@ -18,7 +18,7 @@ struct nv_um_glitch_blocksParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 hash2(float2 p) {
+static float2 hash2(float2 p) {
     p = float2(dot(p, float2(127.1, 311.7)), dot(p, float2(269.5, 183.3)));
     return fract(sin(p) * 43758.5453);
 }

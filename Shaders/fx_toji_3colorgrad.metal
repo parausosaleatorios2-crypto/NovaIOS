@@ -26,7 +26,7 @@ struct toji_3colorgradParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 newLayer( float4 a, float4 b) {
+static float4 newLayer( float4 a, float4 b) {
     return a * (1. - b.a) + b;
     }
     

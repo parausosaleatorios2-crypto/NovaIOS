@@ -22,7 +22,7 @@ struct inner_borderParams {
 const int AMOSTRAS = 8;
 
 /** O alfa num pixel com deslocamento em px (vai pra UV pela textura de entrada). */
-float alfaEm(float2 uv, float2 deslocamentoPx) {
+static float alfaEm(float2 uv, float2 deslocamentoPx) {
     float2 tam = float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
     return inputImg.sample(__nv_smp, uv + deslocamentoPx / tam).a;
 }
@@ -31,7 +31,7 @@ float alfaEm(float2 uv, float2 deslocamentoPx) {
  * A menor "proximidade do limite" nas 8 amostras em volta, no raio dado (px).
  * Retorna 0 = tudo opaco em volta; 1 = alguém ali está transparente.
  */
-float probaForaNoRaio(float2 uv, float raio) {
+static float probaForaNoRaio(float2 uv, float raio) {
     float maximo = 0.0;
     for (int i = 0; i < AMOSTRAS; i++) {
         float a = 6.2831853 * (float(i) + 0.5) / float(AMOSTRAS);

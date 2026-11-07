@@ -36,7 +36,7 @@ int2 gBuf, gInicio;
 int W, H;
 bool dePe;
 
-void preparar() {
+static void preparar() {
     gBuf = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 tam = clamp(int2(floor(eng.acCamada * float2(gBuf) + 0.5)), int2(1), gBuf);
     gInicio = (gBuf - tam) / 2;
@@ -45,7 +45,7 @@ void preparar() {
 }
 
 // Um <point> como o plugin o recebe: fração da camada, x da esquerda e y do ALTO.
-float2 fracao(float2 p) {
+static float2 fracao(float2 p) {
     float2 cb = __nv_acPontoNoBuffer(p) * float2(gBuf) - float2(gInicio);
     if (dePe) cb.y = float(H) - cb.y;
     return cb / float2(float(W), float(H));
@@ -53,18 +53,18 @@ float2 fracao(float2 p) {
 
 // texture2DRect bilinear (medido no AE em 32 bpc) no sistema do GL do plugin: y para cima, a base da imagem na
 // linha 0, a borda da CAMADA repetida (CLAMP_TO_EDGE da textura do plugin, que tem o tamanho da camada).
-float4 ler(float2 r) {
+static float4 ler(float2 r) {
     float2 p = clamp(r, float2(0.5), float2(float(W), float(H)) - 0.5);
     if (!dePe) p.y = float(H) - p.y;
     return inputImg.sample(__nv_smp, (float2(gInicio) + p) / float2(gBuf));
 }
 
 // ---- as funções do shader do plugin, como estão lá ----------------------------------------------
-float bfxMod(float a, float b) {
+static float bfxMod(float a, float b) {
     float ret = a - float(int(a / b)) * b;
     return ret >= 0.0 ? ret : ret + b;
 }
-float2 outsideTexCoord(float2 transformed, float textureX, float textureY, bool mirrored) {
+static float2 outsideTexCoord(float2 transformed, float textureX, float textureY, bool mirrored) {
     float2 textureCoord;
     textureCoord.s = transformed.s / textureX;
     textureCoord.t = transformed.t / textureY;
@@ -80,7 +80,7 @@ float2 outsideTexCoord(float2 transformed, float textureX, float textureY, bool 
 // O que o 0x180a56910/0x180a56d80 calculam antes de desenhar (as cores do prisma e a soma delas).
 float3 gMin, gMid, gSoma, gPasso0, gPasso1;
 int gMeio;
-void cores(int n) {
+static void cores(int n) {
     float k = u.prismAmount * 0.0099999998;          // 0x181152c08
     gMin = (u.shortColor.rgb - float3(1.0)) * k + float3(1.0);
     gMid = (u.midColor.rgb - float3(1.0)) * k + float3(1.0);
@@ -93,7 +93,7 @@ void cores(int n) {
     float3 b = gMid * float(n - m) + gPasso1 * (float((n - m - 1) * (n - m)) * 0.5);
     gSoma = a + b;
 }
-float3 peso(int index) {
+static float3 peso(int index) {
     float3 w = index < gMeio ? gMin + gPasso0 * float(index) : gMid + gPasso1 * float(index - gMeio);
     if (gSoma.r > 1.0) w.r *= 1.0 / gSoma.r;
     if (gSoma.g > 1.0) w.g *= 1.0 / gSoma.g;

@@ -25,7 +25,7 @@ struct am_stripesParams {
 // O smoothstep do AM com as pontas em qualquer ordem (o GLSL não garante o resultado com e0 > e1). Com as
 // pontas iguais o AM divide por zero: ±infinito, preso em 0 ou 1 — o degrau x > e0 (a GPU do PC; no ponto
 // exato ela dá NaN e o pixel some, aqui fica 0).
-float degrau(float e0, float e1, float x) {
+static float degrau(float e0, float e1, float x) {
     if (e1 == e0) return x > e0 ? 1.0 : 0.0;
     float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
@@ -34,7 +34,7 @@ float degrau(float e0, float e1, float x) {
 // UV do buffer → UV da tela, com Y para baixo (o do AM). O `eng.acTela` devolve a UV da cena guardada de pé, a do GL
 // (t = 0 EMBAIXO: é com ela que o Copiar fundo amostra o fundo), e a cena de pé (grupo solto, modelo 3D, ajuste) já
 // é essa tela. Nos dois casos, inverter o t.
-float2 naTela(float2 uv) {
+static float2 naTela(float2 uv) {
     float2 t = eng.acEntradaDePe == 1 ? uv : __nv_acTela(uv);
     return float2(t.x, 1.0 - t.y);
 }

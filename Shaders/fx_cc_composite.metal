@@ -28,19 +28,19 @@ const int COPY = 0, BEHIND = 1, IN_FRONT = 2, DARKEN = 3, MULTIPLY = 4, LINEAR_B
 const float3 LUMA = float3(0.299, 0.587, 0.114);
 
 // O dodge/burn "novos" testam o fundo antes; os "Classic" (e o Vivid Light) testam o original antes.
-float dodge(float b, float s)  { return b <= 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
-float burn(float b, float s)   { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
-float dodgeC(float b, float s) { return s >= 1.0 ? 1.0 : (b <= 0.0 ? 0.0 : min(1.0, b / (1.0 - s))); }
-float burnC(float b, float s)  { return s <= 0.0 ? 0.0 : (b >= 1.0 ? 1.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+static float dodge(float b, float s)  { return b <= 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
+static float burn(float b, float s)   { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+static float dodgeC(float b, float s) { return s >= 1.0 ? 1.0 : (b <= 0.0 ? 0.0 : min(1.0, b / (1.0 - s))); }
+static float burnC(float b, float s)  { return s <= 0.0 ? 0.0 : (b >= 1.0 ? 1.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
 
-float macia(float b, float s) {
+static float macia(float b, float s) {
     if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
     float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
     return b + (2.0 * s - 1.0) * (d - b);
 }
 
 /** Os separáveis, nas cores retas: b = o resultado (fundo), s = o original (por cima). */
-float canal(int m, float b, float s) {
+static float canal(int m, float b, float s) {
     if (m == DARKEN) return min(b, s);
     if (m == MULTIPLY) return b * s;
     if (m == LINEAR_BURN) return max(b + s - 1.0, 0.0);
@@ -61,19 +61,19 @@ float canal(int m, float b, float s) {
 }
 
 // Hue/Saturation/Color/Luminosity (as do W3C, luma 0,299/0,587/0,114).
-float3 cortarCor(float3 c) {
+static float3 cortarCor(float3 c) {
     float l = dot(c, LUMA), n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
     if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-12);
     if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-12);
     return c;
 }
-float3 comLuma(float3 c, float l) { return cortarCor(c + (l - dot(c, LUMA))); }
-float satDe(float3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
-float3 comSat(float3 c, float s) {
+static float3 comLuma(float3 c, float l) { return cortarCor(c + (l - dot(c, LUMA))); }
+static float satDe(float3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+static float3 comSat(float3 c, float s) {
     float n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
     return x > n ? (c - n) * s / (x - n) : float3(0.0);
 }
-float3 componente(int m, float3 b, float3 s) {
+static float3 componente(int m, float3 b, float3 s) {
     if (m == HUE) return comLuma(comSat(s, satDe(b)), dot(b, LUMA));
     if (m == SATURATION) return comLuma(comSat(b, satDe(s)), dot(b, LUMA));
     if (m == COLOR) return comLuma(s, dot(b, LUMA));

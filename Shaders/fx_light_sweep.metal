@@ -23,7 +23,7 @@ struct light_sweepParams {
 };
 
 // --- funcoes auxiliares do efeito
-float sweepProfile(float normalizedDistance) {
+static float sweepProfile(float normalizedDistance) {
     float x = 1.0 - clamp(normalizedDistance, 0.0, 1.0);
     if (u.shape == 0) return x;
     if (u.shape == 1) return x * x * (3.0 - 2.0 * x);

@@ -12,7 +12,6 @@
 //
 
 import SwiftUI
-import NovaEngine
 import MetalKit
 
 public struct EditorView: View {

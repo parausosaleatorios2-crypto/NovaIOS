@@ -21,7 +21,7 @@ struct toji_transformParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2x2 rot2(float a) {
+static float2x2 rot2(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2(c, -s, s, c);

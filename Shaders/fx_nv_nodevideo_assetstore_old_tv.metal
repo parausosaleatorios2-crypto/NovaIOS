@@ -59,19 +59,19 @@ struct nv_nodevideo_assetstore_old_tvParams {
 // ---- comum aos portes de classe C# do Node (tools/nodepassesc/comum.glsl, colado pelo montar.py) ----
 // Os RTs do Node: cor PRÉ-multiplicada em luz LINEAR, sRGB de 8 bits, de pé (a linha 0 é a base). O Nova guarda a
 // camada reta, em gama; no buffer de camada (`eng.acEntradaDePe` = 0) a linha 0 é o topo.
-float3 nvLinear(float3 c) {
+static float3 nvLinear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 nvSrgb(float3 l) {
+static float3 nvSrgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 // O UV do Node (Y para cima) do pixel que este passe escreve na saída do Nova.
-float2 nvUvDePe() {
+static float2 nvUvDePe() {
     return eng.acEntradaDePe == 1 ? in.acScreenNorm : float2(in.acScreenNorm.x, 1.0 - in.acScreenNorm.y);
 }
 // O texel da camada em `uv` do Node (de pé), como o RT do Node o guarda: linear × alfa.
-float4 nvFonte(float2 uv) {
+static float4 nvFonte(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 p = int2(clamp(floor(uv * float2(T)), float2(0.0), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
@@ -80,7 +80,7 @@ float4 nvFonte(float2 uv) {
 }
 // A camada lida com filtro linear em `uv` do Node, como o `_SourceTex.sample(__nv_smp, uv)` dele (o filtro em luz linear, a
 // borda presa).
-float4 nvFonteFiltrada(float2 uv) {
+static float4 nvFonteFiltrada(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 q = uv * float2(T) - 0.5;
     float2 f = fract(q);
@@ -92,7 +92,7 @@ float4 nvFonteFiltrada(float2 uv) {
     return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
 }
 // O RT de saída do Node (pré-multiplicado, linear, preso em 0..1 pelo ARGB32) de volta à cor reta em gama do Nova.
-float4 nvVolta(float4 o) {
+static float4 nvVolta(float4 o) {
     o = clamp(o, 0.0, 1.0);
     if (o.a <= 0.0) return float4(0.0);
     return float4(nvSrgb(o.rgb / o.a), o.a);
@@ -111,7 +111,7 @@ float4 nvVolta(float4 o) {
 const int2 nvMipOrigem[9] = int2[9](int2(0, 0), int2(0, 0), int2(128, 0), int2(128, 64), int2(128, 96),
                                       int2(0, 0), int2(8, 0), int2(12, 0), int2(14, 0));
 // O texel (x, y) do nível L, com a linha 0 EMBAIXO (a do Unity), em luz linear.
-float4 nvTexelRuido(int L, int2 p) {
+static float4 nvTexelRuido(int L, int2 p) {
     int s = 256 >> L;
     p = p & (s - 1);
     if (L == 0) {
@@ -122,7 +122,7 @@ float4 nvTexelRuido(int L, int2 p) {
     return ruidoMipB.read(uint2(nvMipOrigem[L] + p), uint(0));
 }
 // `_texture0.sample(__nv_smp, uv)` do Node.
-float4 lerRuidoNode(float2 uv) {
+static float4 lerRuidoNode(float2 uv) {
     float2 dx = dfdx(uv) * 256.0, dy = dfdy(uv) * 256.0;
     float lambda = log2(max(max(length(dx), length(dy)), 1e-8));
     int L = lambda <= 0.5 ? 0 : min(int(ceil(lambda + 0.5)) - 1, 8);
@@ -135,7 +135,7 @@ float4 lerRuidoNode(float2 uv) {
     return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
 }
 // O passe que escreve `ruidoMipA`: os níveis 1–4, cada texel a média do bloco do nível 0 (até 16 × 16).
-float4 nvMipRuidoA() {
+static float4 nvMipRuidoA() {
     int2 p = int2(__nv_fragCoord.xy);
     int L = p.x < 128 ? 1 : (p.y < 64 ? 2 : (p.y < 96 ? 3 : (p.y < 112 ? 4 : 0)));
     if (L == 0 || (L > 1 && p.x >= 128 + (256 >> L))) return float4(0.0);
@@ -152,7 +152,7 @@ float4 nvMipRuidoA() {
     return soma / float(n * n);
 }
 // O passe que escreve `ruidoMipB`: os níveis 5–8, da média do bloco do nível 4.
-float4 nvMipRuidoB() {
+static float4 nvMipRuidoB() {
     int2 p = int2(__nv_fragCoord.xy);
     int L = p.x < 8 ? 5 : (p.x < 12 ? 6 : (p.x < 14 ? 7 : (p.x < 15 ? 8 : 0)));
     if (L == 0 || p.y >= (256 >> L)) return float4(0.0);
@@ -170,16 +170,16 @@ float4 nvMipRuidoB() {
 }
 // ---- fim da textura "noise" ----
 
-float4 lerPre(float2 uv) { return pre.sample(__nv_smp, uv); }
-float4 lerBuff1(float2 uv) { return vhsBuff.sample(__nv_smp, uv); }
+static float4 lerPre(float2 uv) { return pre.sample(__nv_smp, uv); }
+static float4 lerBuff1(float2 uv) { return vhsBuff.sample(__nv_smp, uv); }
 
 // `_vhs_buff2`: o VHSBuff2 com o VHS ligado; desligado, o VHSBuff do passe 3.
-float4 lerBuff2(float2 uv) {
+static float4 lerBuff2(float2 uv) {
     return u._enable_vhs ? vhsBuff2.sample(__nv_smp, uv) : vhsBuff.sample(__nv_smp, uv);
 }
 
 // O programa 0 do shader NodeVideo/AssetStore/old_tv do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 vhsReduzir(float2 in.vs_TEXCOORD0)
+static float4 vhsReduzir(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;
@@ -2128,7 +2128,7 @@ float4 vhsReduzir(float2 in.vs_TEXCOORD0)
 }
 
 // O programa 1 do shader NodeVideo/AssetStore/old_tv do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 vhsAumentar(float2 in.vs_TEXCOORD0)
+static float4 vhsAumentar(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;
@@ -2183,7 +2183,7 @@ float4 vhsAumentar(float2 in.vs_TEXCOORD0)
 }
 
 // O programa 3 do shader NodeVideo/AssetStore/old_tv do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 linhasSo(float2 in.vs_TEXCOORD0)
+static float4 linhasSo(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float3 u_xlat0;
@@ -2214,7 +2214,7 @@ float4 linhasSo(float2 in.vs_TEXCOORD0)
 }
 
 // O programa 2 do shader NodeVideo/AssetStore/old_tv do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 vhsCompor(float2 in.vs_TEXCOORD0)
+static float4 vhsCompor(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;

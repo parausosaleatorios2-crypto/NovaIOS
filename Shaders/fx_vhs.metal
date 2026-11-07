@@ -62,32 +62,32 @@ const float TAU = 6.28318530718;
 //  ACASO
 // ============================================================================
 
-float semente() {
+static float semente() {
     return u.seed * 13.71 + 1.37;
 }
 
-float hash11(float p) {
+static float hash11(float p) {
     p = fract(p * 0.1031);
     p *= p + 33.33;
     p *= p + p;
     return fract(p);
 }
 
-float hash21(float2 p) {
+static float hash21(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
 /** Ruído de valor 1D, -1..1, liso. */
-float ruido1(float x) {
+static float ruido1(float x) {
     float i = floor(x);
     float f = fract(x);
     float u = f * f * (3.0 - 2.0 * f);
     return mix(hash11(i + semente()), hash11(i + 1.0 + semente()), u) * 2.0 - 1.0;
 }
 
-float indiceDoQuadro() {
+static float indiceDoQuadro() {
     float fd = eng.acFrameDuration > 0.0 ? eng.acFrameDuration : 1.0 / 30.0;
     return floor(eng.acTime / fd + 0.5);
 }
@@ -96,18 +96,18 @@ float indiceDoQuadro() {
 //  COR (YIQ: o NTSC separa luz e cor, e a fita trata as duas de jeitos diferentes)
 // ============================================================================
 
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 
-float3 paraYiq(float3 c) {
+static float3 paraYiq(float3 c) {
     return float3(
         dot(c, float3(0.299, 0.587, 0.114)),
         dot(c, float3(0.596, -0.274, -0.322)),
         dot(c, float3(0.211, -0.523, 0.312)));
 }
 
-float3 deYiq(float3 q) {
+static float3 deYiq(float3 q) {
     return float3(
         q.x + 0.956 * q.y + 0.621 * q.z,
         q.x - 0.272 * q.y - 0.647 * q.z,
@@ -122,7 +122,7 @@ float3 deYiq(float3 q) {
  * A proporção da tela. "Automática" é 4:3 numa camada deitada e 3:4 numa em pé:
  * um quadro 4:3 deitado num vídeo vertical ficaria minúsculo.
  */
-float proporcaoDaTela() {
+static float proporcaoDaTela() {
     if (u.screenAspect == 1) return eng.acAspect >= 1.0 ? 4.0 / 3.0 : 3.0 / 4.0;
     if (u.screenAspect == 2) return 4.0 / 3.0;
     if (u.screenAspect == 3) return 3.0 / 4.0;
@@ -132,22 +132,22 @@ float proporcaoDaTela() {
 }
 
 /** O tamanho da tela dentro da camada (0..1), centrada. */
-float2 tamanhoDaTela() {
+static float2 tamanhoDaTela() {
     float a = proporcaoDaTela();
     return a < eng.acAspect ? float2(a / eng.acAspect, 1.0) : float2(1.0, eng.acAspect / max(a, 0.0001));
 }
 
 /** A imagem PREENCHE a tela (corta o que sobra), como uma TV 4:3 passando algo mais largo. */
-float2 escalaDoConteudo() {
+static float2 escalaDoConteudo() {
     float a = proporcaoDaTela();
     return a < eng.acAspect ? float2(a / eng.acAspect, 1.0) : float2(1.0, eng.acAspect / max(a, 0.0001));
 }
 
-float2 paraTela(float2 uv) {
+static float2 paraTela(float2 uv) {
     return (uv - 0.5) / tamanhoDaTela() + 0.5;
 }
 
-bool foraDe(float2 p) {
+static bool foraDe(float2 p) {
     return p.x < 0.0 || p.y < 0.0 || p.x > 1.0 || p.y > 1.0;
 }
 
@@ -162,7 +162,7 @@ bool foraDe(float2 p) {
  * alto, o do meio (foco, pausa) no meio, o de baixo (data, contador) embaixo.
  * Entre eles, nada. Devolve (-1, -1) para "sem OSD aqui".
  */
-float2 uvDoOsd(float2 p) {
+static float2 uvDoOsd(float2 p) {
     float2 tela = tamanhoDaTela();
     float aspectoDaTela = eng.acAspect * tela.x / max(tela.y, 0.0001);
     if (aspectoDaTela >= 1.0) return p;
@@ -181,7 +181,7 @@ float2 uvDoOsd(float2 p) {
 // ============================================================================
 
 /** A energia das linhas claras do glitch filmado nesta altura. */
-float energiaDoGlitch(float y) {
+static float energiaDoGlitch(float y) {
     if (u.glitchOverlay == 0) return 0.0;
     float soma = 0.0;
     float maior = 0.0;
@@ -194,14 +194,14 @@ float energiaDoGlitch(float y) {
 }
 
 /** A faixa de u.tracking: onde ela está nesta altura (0..1). */
-float faixaDeTracking(float y) {
+static float faixaDeTracking(float y) {
     if (u.tracking <= 0.0) return 0.0;
     float centro = fract(eng.acTime * u.bandSpeed * 0.08 + hash11(semente() + 3.0));
     float d = abs(fract(y - centro + 0.5) - 0.5);
     return 1.0 - smoothstep(0.0, 0.05 + u.tracking * 0.05, d);
 }
 
-float2 deslocamento(float2 p) {
+static float2 deslocamento(float2 p) {
     float k = u.vhsAmount;
     float q = indiceDoQuadro();
     float s = semente();
@@ -244,11 +244,11 @@ float2 deslocamento(float2 p) {
 //  PASSE 0 — A FITA
 // ============================================================================
 
-float4 amostra(float2 c) {
+static float4 amostra(float2 c) {
     return inputImg.sample(__nv_smp, clamp(c, 0.0, 1.0));
 }
 
-float4 passeFita() {
+static float4 passeFita() {
     float2 p = paraTela(in.acScreenNorm);
     if (foraDe(p)) return float4(0.0);
     float k = u.vhsAmount;
@@ -300,7 +300,7 @@ float4 passeFita() {
 //  PASSE 1 — A TELA (o que a câmera gravou, com as barras)
 // ============================================================================
 
-float4 passeTela() {
+static float4 passeTela() {
     float2 uv = in.acScreenNorm;
     float2 p = paraTela(uv);
     if (foraDe(p)) return float4(u.barColor.rgb, 1.0);
@@ -396,23 +396,23 @@ float4 passeTela() {
 
 const float PI = 3.14159265359;
 
-float sementeTv() {
+static float sementeTv() {
     return u.seed * 37.0 + 140.0;
 }
 
-float hash31(float3 p) {
+static float hash31(float3 p) {
     float3 p3 = fract(p * 0.1031);
     p3 += dot(p3, p3.zyx + 31.32);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-float3 hash33(float3 p) {
+static float3 hash33(float3 p) {
     float3 p3 = fract(p * float3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yxz + 33.33);
     return fract((p3.xxy + p3.yxx) * p3.zyx);
 }
 
-float ruidoTv(float x) {
+static float ruidoTv(float x) {
     float i = floor(x);
     float f = fract(x);
     float u = f * f * (3.0 - 2.0 * f);
@@ -421,7 +421,7 @@ float ruidoTv(float x) {
 }
 
 /** Gira a fase da croma: é o que um sinal de cor fora de fase faz. */
-float3 girarCroma(float3 c, float angulo) {
+static float3 girarCroma(float3 c, float angulo) {
     float3 q = paraYiq(c);
     float cs = cos(angulo);
     float sn = sin(angulo);
@@ -434,7 +434,7 @@ float3 girarCroma(float3 c, float angulo) {
  * a tremida e a vinheta do vidro. Fora do vidro é a moldura: a cor das barras,
  * opaca.
  */
-float4 noTubo(float2 a) {
+static float4 noTubo(float2 a) {
     float4 moldura = float4(u.barColor.rgb, 1.0);
     if (foraDe(a)) return moldura;
     float2 c = a * 2.0 - 1.0;
@@ -462,7 +462,7 @@ float4 noTubo(float2 a) {
  * A imagem como a TV a vê: `tvRes` amostras, reconstruídas com interpolação
  * (sem degrau torto quando a conta não dá inteira).
  */
-float4 lerNaTv(float2 uv, float2 tvRes) {
+static float4 lerNaTv(float2 uv, float2 tvRes) {
     float2 p = uv * tvRes - 0.5;
     float2 i = floor(p);
     float2 f = fract(p);
@@ -477,7 +477,7 @@ float4 lerNaTv(float2 uv, float2 tvRes) {
  * A faixa entre um quadro e outro, que aparece quando a imagem rola: o código
  * de tempo em blocos e a legenda oculta (a fileira de tracinhos piscando).
  */
-float3 faixaDeServico(float y, float x, float2 tv, float quadro, float2 tvRes) {
+static float3 faixaDeServico(float y, float x, float2 tv, float quadro, float2 tvRes) {
     float s = sementeTv();
     float total = max(floor(0.1 * tvRes.y), 1.0);
     float linha = floor(y * total);
@@ -499,7 +499,7 @@ float3 faixaDeServico(float y, float x, float2 tv, float quadro, float2 tvRes) {
     return v;
 }
 
-float4 passeTv() {
+static float4 passeTv() {
     float2 uvTela = in.acScreenNorm;
     float s = sementeTv();
     float quadro = floor(eng.acTime * 60.0);

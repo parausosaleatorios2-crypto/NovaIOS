@@ -27,7 +27,7 @@ struct sapphire_invertParams {
 
 // --- funcoes auxiliares do efeito
 /** O croma de `x` em volta da luma do Sapphire, vezes `k` (medido: luma = (5 R + 8 G + 3 B) / 16). */
-float3 croma(float3 x, float k) {
+static float3 croma(float3 x, float k) {
     float y = dot(x, float3(0.3125, 0.5, 0.1875));
     return y + (x - y) * k;
 }

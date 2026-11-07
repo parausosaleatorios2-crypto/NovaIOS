@@ -26,7 +26,7 @@ struct toji_skexnxxeclipseParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 newLayer( float4 a, float4 b) { return a * (1.0 - b.a) + b;  }
+static float4 newLayer( float4 a, float4 b) { return a * (1.0 - b.a) + b;  }
     float2x2 rot2m(float a){ float s = sin(a); float c = cos(a); return float2x2(c, -s, s, c); }
     float2 l2s( float2 v ) { return (float4(v,0.0,1.0)*eng.acLayerToScreen).xy; }
     #define fragCoord __nv_fragCoord.xy

@@ -26,7 +26,7 @@ struct hsl_range_selectionParams {
 // A mesma conversão RGB↔HSV de `replace-color.xml` — provada ali, repetida
 // aqui porque cada efeito deste catálogo é autocontido (sem import entre
 // arquivos de shader).
-float3 paraHsv(float3 c) {
+static float3 paraHsv(float3 c) {
     float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
     float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
     float4 q = mix(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
@@ -36,7 +36,7 @@ float3 paraHsv(float3 c) {
 }
 
 /** Uma faixa [min,max] com rampa suave nos dois lados, largura `soft`. */
-float faixaSuave(float valor, float minimo, float maximo, float suave) {
+static float faixaSuave(float valor, float minimo, float maximo, float suave) {
     float rampa = max(suave, 0.001);
     float subindo = smoothstep(minimo - rampa, minimo + rampa, valor);
     float descendo = 1.0 - smoothstep(maximo - rampa, maximo + rampa, valor);

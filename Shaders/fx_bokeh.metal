@@ -40,12 +40,12 @@ const float2 CANTOS[4] = float2[4](
     float2(-1.0, -1.0), float2(1.0, -1.0), float2(-1.0, 1.0), float2(1.0, 1.0)
 );
 
-float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
+static float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
 
-float3 srgbParaLinear(float3 c) {
+static float3 srgbParaLinear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 linearParaSrgb(float3 c) {
+static float3 linearParaSrgb(float3 c) {
     c = max(c, float3(0.0));
     return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), c));
 }
@@ -59,7 +59,7 @@ float3 linearParaSrgb(float3 c) {
  * qualquer lado) desfoca. `u.nearFar` dá mais desfoque de um lado (frente) que do
  * outro (fundo) — 1,0 é simétrico.
  */
-float raioEm(float2 uv) {
+static float raioEm(float2 uv) {
     if (u.useMap <= 0.0) return u.radius;
     float profundidade = dot(focusMap.sample(__nv_smp, uv).rgb, LUMA);
     float dir = profundidade - u.focusDistance;                 // >0 = mais perto (branco = perto)
@@ -69,7 +69,7 @@ float raioEm(float2 uv) {
 }
 
 /** O raio da abertura no ângulo `a`, para `n` lâminas retas (1 no vértice). */
-float poligono(float a, float n) {
+static float poligono(float a, float n) {
     float seg = (2.0 * PI) / n;
     float x = __nv_mod(a, seg) - seg * 0.5;
     return cos(seg * 0.5) / max(cos(x), 1e-3);
@@ -80,7 +80,7 @@ float poligono(float a, float n) {
  * direção RADIAL (a que aponta para o centro), o que deixa o disco em forma de
  * amêndoa com o eixo longo tangencial — o recorte que uma lente de verdade faz.
  */
-float2 catEye(float2 off, float2 uv) {
+static float2 catEye(float2 off, float2 uv) {
     if (u.cateye <= 0.0) return off;
     float2 fc = uv - 0.5; fc.x *= eng.acAspect;
     float dcentro = length(fc);
@@ -93,20 +93,20 @@ float2 catEye(float2 off, float2 uv) {
 }
 
 /** O peso de uma amostra pelo raio normalizado no disco (0 centro, 1 borda). */
-float pesoRim(float r) {
+static float pesoRim(float r) {
     float borda = smoothstep(0.55, 1.0, r);
     if (u.rim >= 0.0) return mix(1.0, 0.15 + 3.0 * borda, u.rim);     // bolha: borda forte
     return mix(1.0, 0.5 + 1.2 * (1.0 - r), -u.rim);                 // creme: centro forte
 }
 
-int amostrasQ() { return u.quality == 0 ? 24 : (u.quality == 1 ? 48 : MAX_AMOSTRAS); }
+static int amostrasQ() { return u.quality == 0 ? 24 : (u.quality == 1 ? 48 : MAX_AMOSTRAS); }
 
 /**
  * Baixa `tex` 2× por um filtro de caixa de 4 amostras em grade rotacionada — o
  * mesmo do passe 0 (ver o comentário lá), só que a fonte já está em energia
  * linear pré-multiplicada, então não há sRGB nem realce para refazer aqui.
  */
-float4 caixaDaPiramide(sampler2D tex, float2 uv) {
+static float4 caixaDaPiramide(sampler2D tex, float2 uv) {
     float2 d = eng.acTexelSize * 0.25;
     float4 acc = float4(0.0);
     for (int i = 0; i < 4; i++) acc += tex.sample(__nv_smp, uv + CANTOS[i] * d);
@@ -123,7 +123,7 @@ float4 caixaDaPiramide(sampler2D tex, float2 uv) {
  * mesmo formato de um mip trilinear, montado à mão porque este pool de
  * buffers não gera mipmap.
  */
-void pesosDaPiramide(float centroR, int taps, out float w0, out float w1, out float w2, out float w3) {
+static void pesosDaPiramide(float centroR, int taps, out float w0, out float w1, out float w2, out float w3) {
     float espacamento = centroR * sqrt(PI / float(taps));
     float texelBase = max(eng.acTexelSize.y, 1e-6);
     float nivel = clamp(log2(max(espacamento / texelBase, 1.0)), 0.0, 3.0);
@@ -138,17 +138,17 @@ void pesosDaPiramide(float centroR, int taps, out float w0, out float w1, out fl
 }
 
 /** Rola o topo mantendo a COR (divide pela maior componente amaciada). */
-float suave(float x) {
+static float suave(float x) {
     const float k = 0.8;
     return x <= k ? x : k + (1.0 - k) * (1.0 - exp(-(x - k) / (1.0 - k)));
 }
-float3 ombroCor(float3 c) {
+static float3 ombroCor(float3 c) {
     float m = max(max(c.r, c.g), c.b);
     if (m <= 1e-4) return c;
     return c * (suave(m) / m);
 }
 
-float3 amostraLin(float2 uv) {
+static float3 amostraLin(float2 uv) {
     float4 b = bokeh.sample(__nv_smp, uv);
     return b.rgb / max(b.a, 1e-4);
 }

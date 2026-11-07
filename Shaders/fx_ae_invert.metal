@@ -16,13 +16,13 @@ struct ae_invertParams {
 };
 
 // --- funcoes auxiliares do efeito
-float matizDe(float3 c, float mx, float d) {
+static float matizDe(float3 c, float mx, float d) {
     if (d < 1e-9) return 0.0;
     float h = mx == c.r ? __nv_mod((c.g - c.b) / d, 6.0) : (mx == c.g ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0);
     return h / 6.0;
 }
 
-float canalDoHls(float p, float q, float t) {
+static float canalDoHls(float p, float q, float t) {
     t = fract(t);
     if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
     if (t < 0.5) return q;
@@ -31,7 +31,7 @@ float canalDoHls(float p, float q, float t) {
 }
 
 /** Matiz, claridade e CROMA (maior − menor canal) de volta para RGB. */
-float3 deHlc(float h, float l, float d) {
+static float3 deHlc(float h, float l, float d) {
     float q = l + 0.5 * d, p = l - 0.5 * d;
     return float3(canalDoHls(p, q, h + 1.0 / 3.0), canalDoHls(p, q, h), canalDoHls(p, q, h - 1.0 / 3.0));
 }

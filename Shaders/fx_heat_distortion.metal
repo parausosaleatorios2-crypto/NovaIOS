@@ -32,42 +32,42 @@ struct heat_distortionParams {
 
 // --- funcoes auxiliares do efeito
 // ------------------------------------------------------------------ 16 bits
-float2 empacota(float v01) {
+static float2 empacota(float v01) {
     float q = floor(clamp(v01, 0.0, 1.0) * 65535.0 + 0.5);
     return float2(floor(q / 256.0), __nv_mod(q, 256.0)) / 255.0;
 }
 
-float desempacota(float2 c) {
+static float desempacota(float2 c) {
     return (floor(c.x * 255.0 + 0.5) * 256.0 + floor(c.y * 255.0 + 0.5)) / 65535.0;
 }
 
 // O maior h guardado (px do buffer): 512.
 const float H_MAX = 512.0;
 
-int2 tamanho() { return int2(eng.acResolution + 0.5); }
+static int2 tamanho() { return int2(eng.acResolution + 0.5); }
 
-bool dentro(int2 p, int2 t) { return p.x >= 0 && p.y >= 0 && p.x < t.x && p.y < t.y; }
+static bool dentro(int2 p, int2 t) { return p.x >= 0 && p.y >= 0 && p.x < t.x && p.y < t.y; }
 
 /** N ou v em −1..1, guardado em RG. */
-float lerSinal(sampler2D b, int2 p) { return desempacota(b.read(uint2(p), uint(0)).rg) * 2.0 - 1.0; }
+static float lerSinal(sampler2D b, int2 p) { return desempacota(b.read(uint2(p), uint(0)).rg) * 2.0 - 1.0; }
 
-float esc() { return max(eng.acEscalaDePixel, 1e-4); }
+static float esc() { return max(eng.acEscalaDePixel, 1e-4); }
 
 // ------------------------------------------------------- Perlin (Ken Perlin)
 const int PERM[256] = int[256](151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180);
 
-int perm(int i) { return PERM[i & 255]; }
+static int perm(int i) { return PERM[i & 255]; }
 
-float grad(int h, float x, float y, float z) {
+static float grad(int h, float x, float y, float z) {
     h = h & 15;
     float u = h < 8 ? x : y;
     float v = h < 4 ? y : ((h == 12 || h == 14) ? x : z);
     return ((h & 1) != 0 ? -u : u) + ((h & 2) != 0 ? -v : v);
 }
 
-float fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+static float fade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 
-float perlin(float3 p) {
+static float perlin(float3 p) {
     float3 f = floor(p);
     int X = int(f.x) & 255;
     int Y = int(f.y) & 255;
@@ -83,7 +83,7 @@ float perlin(float3 p) {
                    mix(grad(perm(AB + 1), x, y - 1.0, z - 1.0), grad(perm(BB + 1), x - 1.0, y - 1.0, z - 1.0), u), v), w);
 }
 
-float fbm(float3 p, int oitavas) {
+static float fbm(float3 p, int oitavas) {
     float s = 0.0;
     float a = 1.0;
     for (int i = 0; i < 10; i++) {
@@ -96,14 +96,14 @@ float fbm(float3 p, int oitavas) {
 }
 
 // ------------------------------------------------------------ as etapas
-float escalaDoRuido() { return max(floor(u.scale), 1.0) * esc(); }
+static float escalaDoRuido() { return max(floor(u.scale), 1.0) * esc(); }
 
-bool comDeslocamento() { return u.renderMode == 0 || u.renderMode == 1; }
+static bool comDeslocamento() { return u.renderMode == 0 || u.renderMode == 1; }
 
-bool comCalor() { return (u.renderMode == 0 || u.renderMode == 2) && u.heat > 0.0 && u.bias < 1.0; }
+static bool comCalor() { return (u.renderMode == 0 || u.renderMode == 2) && u.heat > 0.0 && u.bias < 1.0; }
 
 /** Passe 0: N em −1..1 no pixel p. */
-float ruidoNo(int2 p) {
+static float ruidoNo(int2 p) {
     float e = esc();
     float borda = u.clipBounds ? 0.0 : 1.5 * u.distortion * e;
     float2 xy = float2(p) + borda;
@@ -128,10 +128,10 @@ float ruidoNo(int2 p) {
 }
 
 /** N fora da imagem conta como 0 (a normal do plugin). */
-float nOuZero(int2 p, int2 t) { return dentro(p, t) ? lerSinal(ruido, p) : 0.0; }
+static float nOuZero(int2 p, int2 t) { return dentro(p, t) ? lerSinal(ruido, p) : 0.0; }
 
 /** Bilinear do plugin no ruído (borda presa; o canto esquerdo/superior com o mesmo arredondamento dele). */
-float ruidoBilinear(float2 s, int2 t) {
+static float ruidoBilinear(float2 s, int2 t) {
     float2 f = floor(s);
     float2 fr = s - f;
     // int(f + 0,5) trunca para zero: em f = −1 dá 0 e 1, como no plugin.
@@ -146,7 +146,7 @@ float ruidoBilinear(float2 s, int2 t) {
 }
 
 /** A imagem em (s), bilinear, com a borda presa ou transparente fora (Clip Bounds). */
-float4 imagemBilinear(float2 s, int2 t) {
+static float4 imagemBilinear(float2 s, int2 t) {
     float2 f = floor(s);
     float2 fr = s - f;
     int2 i0 = int2(f);
@@ -159,18 +159,18 @@ float4 imagemBilinear(float2 s, int2 t) {
     return mix(mix(c[0], c[1], fr.x), mix(c[2], c[3], fr.x), fr.y);
 }
 
-float calorDoPixel(int2 p) {
+static float calorDoPixel(int2 p) {
     if (!comCalor()) return 0.0;
     float v = lerSinal(ruido2, p);
     return max(abs(v) - u.bias, 0.0) / (1.0 - u.bias) * u.heat * esc();
 }
 
-float lerCalor(sampler2D b, int2 p) { return desempacota(b.read(uint2(p), uint(0)).rg) * H_MAX; }
+static float lerCalor(sampler2D b, int2 p) { return desempacota(b.read(uint2(p), uint(0)).rg) * H_MAX; }
 
-float4 guardarCalor(float h) { return float4(empacota(h / H_MAX), 0.0, 1.0); }
+static float4 guardarCalor(float h) { return float4(empacota(h / H_MAX), 0.0, 1.0); }
 
 /** Caixa do Softness: (x − r, x + r], zeros fora, ÷ 2r, num eixo. */
-float caixaDoCalor(sampler2D b, int2 p, int2 t, int2 eixo, int r, bool doRuido) {
+static float caixaDoCalor(sampler2D b, int2 p, int2 t, int2 eixo, int r, bool doRuido) {
     float s = 0.0;
     for (int i = -r + 1; i <= r; i++) {
         int2 q = p + eixo * i;
@@ -181,7 +181,7 @@ float caixaDoCalor(sampler2D b, int2 p, int2 t, int2 eixo, int r, bool doRuido) 
 }
 
 /** Média exata por área num eixo: [c + ½ − h/2, c + ½ + h/2] recortado na imagem. */
-float4 caixaDaImagem(sampler2D b, int2 p, int2 t, int eixo, float h) {
+static float4 caixaDaImagem(sampler2D b, int2 p, int2 t, int eixo, float h) {
     int n = eixo == 0 ? t.x : t.y;
     float c = float(eixo == 0 ? p.x : p.y) + 0.5;
     float a = max(c - 0.5 * h, 0.0);

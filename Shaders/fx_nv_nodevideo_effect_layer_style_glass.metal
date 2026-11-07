@@ -27,19 +27,19 @@ struct nv_nodevideo_effect_layer_style_glassParams {
 // ---- comum aos portes de classe C# do Node (tools/nodepassesc/comum.glsl, colado pelo montar.py) ----
 // Os RTs do Node: cor PRÉ-multiplicada em luz LINEAR, sRGB de 8 bits, de pé (a linha 0 é a base). O Nova guarda a
 // camada reta, em gama; no buffer de camada (`eng.acEntradaDePe` = 0) a linha 0 é o topo.
-float3 nvLinear(float3 c) {
+static float3 nvLinear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 nvSrgb(float3 l) {
+static float3 nvSrgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 // O UV do Node (Y para cima) do pixel que este passe escreve na saída do Nova.
-float2 nvUvDePe() {
+static float2 nvUvDePe() {
     return eng.acEntradaDePe == 1 ? in.acScreenNorm : float2(in.acScreenNorm.x, 1.0 - in.acScreenNorm.y);
 }
 // O texel da camada em `uv` do Node (de pé), como o RT do Node o guarda: linear × alfa.
-float4 nvFonte(float2 uv) {
+static float4 nvFonte(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 p = int2(clamp(floor(uv * float2(T)), float2(0.0), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
@@ -48,7 +48,7 @@ float4 nvFonte(float2 uv) {
 }
 // A camada lida com filtro linear em `uv` do Node, como o `_SourceTex.sample(__nv_smp, uv)` dele (o filtro em luz linear, a
 // borda presa).
-float4 nvFonteFiltrada(float2 uv) {
+static float4 nvFonteFiltrada(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 q = uv * float2(T) - 0.5;
     float2 f = fract(q);
@@ -60,7 +60,7 @@ float4 nvFonteFiltrada(float2 uv) {
     return mix(mix(a00, a10, f.x), mix(a01, a11, f.x), f.y);
 }
 // O RT de saída do Node (pré-multiplicado, linear, preso em 0..1 pelo ARGB32) de volta à cor reta em gama do Nova.
-float4 nvVolta(float4 o) {
+static float4 nvVolta(float4 o) {
     o = clamp(o, 0.0, 1.0);
     if (o.a <= 0.0) return float4(0.0);
     return float4(nvSrgb(o.rgb / o.a), o.a);
@@ -70,10 +70,10 @@ float4 nvVolta(float4 o) {
 #define _resolution float2(int2(int(pre.get_width()), int(pre.get_height())))
 
 // A cor de um controle como o Unity a entrega num projeto linear.
-float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
+static float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
 
 // O fundo como o RT da composição no Node (linear × alfa), no pixel de `uv` do Node.
-float4 nvFundo(float2 uv) {
+static float4 nvFundo(float2 uv) {
     int2 T = int2(int(fundo.get_width()), int(fundo.get_height()));
     int2 p = int2(clamp(floor(uv * float2(T)), float2(0.0), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
@@ -81,12 +81,12 @@ float4 nvFundo(float2 uv) {
     return float4(nvLinear(c.rgb) * c.a, c.a);
 }
 
-float4 lerPre(float2 uv) { return pre.sample(__nv_smp, uv); }
-float4 lerComp(float2 uv) { return compNode.sample(__nv_smp, uv); }
-float4 lerDistVidro(float2 uv) { return distVidro.sample(__nv_smp, uv); }
+static float4 lerPre(float2 uv) { return pre.sample(__nv_smp, uv); }
+static float4 lerComp(float2 uv) { return compNode.sample(__nv_smp, uv); }
+static float4 lerDistVidro(float2 uv) { return distVidro.sample(__nv_smp, uv); }
 
 // O programa 0 do shader NodeVideo/Effect/layer_style_glass do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 distanciaVidro(float2 in.vs_TEXCOORD0)
+static float4 distanciaVidro(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float3 u_xlat0;
@@ -149,7 +149,7 @@ float4 distanciaVidro(float2 in.vs_TEXCOORD0)
 }
 
 // O programa 1 do shader NodeVideo/Effect/layer_style_glass do Node, conta por conta (tools/nodepassesc/montar.py).
-float4 vidro(float2 in.vs_TEXCOORD0)
+static float4 vidro(float2 in.vs_TEXCOORD0)
 {
     float4 SV_Target0 = float4(0.0);
     float4 u_xlat0;

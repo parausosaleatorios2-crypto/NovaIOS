@@ -18,7 +18,7 @@ struct nv_um_scanline_glitchParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float x) { return fract(sin(x * 91.3458) * 47453.5453); }
+static float hash(float x) { return fract(sin(x * 91.3458) * 47453.5453); }
 
 fragment float4 fx_nv_um_scanline_glitch(
     NovaVertexOut       in   [[stage_in]],

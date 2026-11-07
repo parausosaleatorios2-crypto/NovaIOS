@@ -21,11 +21,11 @@ struct paint_strokesParams {
 const int MAXIMO_DE_AMOSTRAS = 16;
 
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
-float hash1(float2 c) {
+static float hash1(float2 c) {
     return fract(sin(dot(c, float2(127.1, 311.7))) * 43758.5453);
 }
 

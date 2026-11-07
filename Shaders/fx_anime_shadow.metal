@@ -44,20 +44,20 @@ struct anime_shadowParams {
 };
 
 // --- funcoes auxiliares do efeito
-float luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+static float luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 
-float4 empacotar(float h) {
+static float4 empacotar(float h) {
     float s = clamp(h, 0.0, 1.0) * 255.0;
     float alto = floor(s);
     return float4(alto / 255.0, s - alto, 0.0, 1.0);
 }
-float desempacotar(float4 v) { return v.r + v.g / 255.0; }
+static float desempacotar(float4 v) { return v.r + v.g / 255.0; }
 
 /** Há mapa NESTE pixel? (camada não escolhida chega transparente) */
-bool temMapa(float2 uv) { return mapa.sample(__nv_smp, uv).a > 0.01; }
+static bool temMapa(float2 uv) { return mapa.sample(__nv_smp, uv).a > 0.01; }
 
 /** A fonte de altura: o mapa de profundidade, ou a silhueta da própria arte. */
-float fonteDeAltura(float2 uv) {
+static float fonteDeAltura(float2 uv) {
     if (u.tipoDoMapa == 1) {
         float4 m = mapa.sample(__nv_smp, uv);
         if (m.a > 0.01) {
@@ -73,7 +73,7 @@ float fonteDeAltura(float2 uv) {
  * quatro texels e só então misturar. Ler por texel mais perto fazia degraus (os
  * riscos do primeiro teste); deixar o filtro da GPU misturar os bytes daria lixo.
  */
-float bilinear(sampler2D buf, float2 uv) {
+static float bilinear(sampler2D buf, float2 uv) {
     int2 t = int2(int(buf.get_width()), int(buf.get_height()));
     float2 p = uv * float2(t) - 0.5;
     int2 i = int2(floor(p));
@@ -87,7 +87,7 @@ float bilinear(sampler2D buf, float2 uv) {
 }
 
 /** O raio do borrão da altura, em UV (da altura da camada). */
-float raioDaAltura() {
+static float raioDaAltura() {
     return u.tipoDoMapa == 1 ? u.volume * 0.12 : u.volume;
 }
 
@@ -96,7 +96,7 @@ float raioDaAltura() {
  * entre amostras passava do u.detalhe da fonte e a soma ondulava (uma grade fraca
  * que o corte do cel transformava em degraus).
  */
-float borrar(float2 uv, float2 eixo, bool primeiro) {
+static float borrar(float2 uv, float2 eixo, bool primeiro) {
     float raio = raioDaAltura();
     float soma = 0.0;
     float peso = 0.0;
@@ -112,14 +112,14 @@ float borrar(float2 uv, float2 eixo, bool primeiro) {
 }
 
 /** A altura borrada em qualquer UV: bilinear feito à mão sobre o empacotado. */
-float alturaEm(float2 uv) { return bilinear(alturaV, uv); }
+static float alturaEm(float2 uv) { return bilinear(alturaV, uv); }
 
 /**
  * A normal no espaço da camada (x para a direita, y PARA BAIXO, z para fora da
  * tela). Do mapa de normais quando há, senão da inclinação da altura — mais o
  * traço da arte como u.relevo fino.
  */
-float3 normalEm(float2 uv) {
+static float3 normalEm(float2 uv) {
     if (u.tipoDoMapa >= 2) {
         float4 m = mapa.sample(__nv_smp, uv);
         if (m.a > 0.01) {
@@ -154,7 +154,7 @@ float3 normalEm(float2 uv) {
 }
 
 /** O vetor que vai do pixel até a luz (normalizado) e quanto a luz chega (u.alcance). */
-float4 vetorDaLuz(float2 uv) {
+static float4 vetorDaLuz(float2 uv) {
     if (u.tipoDeLuz == 1) {
         float az = radians(u.direcao);
         float el = radians(u.elevacao);

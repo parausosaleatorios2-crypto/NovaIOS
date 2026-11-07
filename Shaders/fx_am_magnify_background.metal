@@ -17,11 +17,11 @@ struct am_magnify_backgroundParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O filtro linear da GPU, à mão, sobre o fundo PRÉ-multiplicado (a textura do AM é assim): os 4 pixels em
 // volta, presos à borda como o CLAMP_TO_EDGE.
-float4 fundoNoPonto(float2 uv) {
+static float4 fundoNoPonto(float2 uv) {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     float2 p = uv * float2(T) - 0.5;
     float2 i = floor(p);
@@ -36,14 +36,14 @@ float4 fundoNoPonto(float2 uv) {
 }
 
 // A volta do `eng.acTela`: UV da tela → UV do buffer da camada (a homografia inversa).
-float2 daTela(float2 t) {
+static float2 daTela(float2 t) {
     float3 c = __nv_inverse(eng.acParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // O alfa da camada num pixel da TELA, como o compositor o pinta: o buffer lido no meio do pixel; fora do
 // buffer, nada. O pixel fora da tela vira o da borda (o CLAMP_TO_EDGE da textura do AM).
-float alfaDoPixel(int2 px, int2 T) {
+static float alfaDoPixel(int2 px, int2 T) {
     px = clamp(px, int2(0), T - 1);
     float2 uv = daTela((float2(px) + 0.5) / float2(T));
     if (any(lessThan(uv, float2(0.0))) || any(greaterThan(uv, float2(1.0)))) return 0.0;
@@ -51,7 +51,7 @@ float alfaDoPixel(int2 px, int2 T) {
 }
 
 // A camada já na tela, filtrada de novo no ponto ampliado: a leitura do `inputImg` do AM com Camada ampliada.
-float alfaNoPonto(float2 uv) {
+static float alfaNoPonto(float2 uv) {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     float2 p = uv * float2(T) - 0.5;
     float2 i = floor(p);

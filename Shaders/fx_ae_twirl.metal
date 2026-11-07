@@ -30,7 +30,7 @@ const float QUEDA[65] = float[65](
     0.000000);
 
 /** f(u) pela tabela, com Catmull-Rom; antes de 0 a curva é espelhada, depois de 1 vale 0. */
-float queda(float u) {
+static float queda(float u) {
     if (u >= 1.0) return 0.0;
     float x = max(u, 0.0) * 64.0;
     int i = min(int(floor(x)), 63);
@@ -42,7 +42,7 @@ float queda(float u) {
 }
 
 /** A distância como o plugin a calcula: 1/16 de px, maior · hipotenusa(1, índice/256), com o índice cortado. */
-float distancia(float2 dd) {
+static float distancia(float2 dd) {
     int a = abs(int(floor(dd.x * 16.0)));
     int b = abs(int(floor(dd.y * 16.0)));
     int maior = max(a, b), menor = min(a, b);
@@ -54,14 +54,14 @@ float distancia(float2 dd) {
 }
 
 /** Um texel da imagem, pré-multiplicado; fora dela, transparente. */
-float4 texel(int2 p, int2 tamanho) {
+static float4 texel(int2 p, int2 tamanho) {
     if (p.x < 0 || p.y < 0 || p.x >= tamanho.x || p.y >= tamanho.y) return float4(0.0);
     float4 c = inputImg.read(uint2(p), uint(0));
     return float4(c.rgb * c.a, c.a);
 }
 
 /** A média (pré-multiplicada) do retângulo [a, b] da imagem, em texels: exata até 12 texels de lado. */
-float4 media(float2 a, float2 b, int2 tamanho) {
+static float4 media(float2 a, float2 b, int2 tamanho) {
     int2 de = int2(floor(a));
     int2 n = int2(floor(b)) - de + 1;
     float4 soma = float4(0.0);

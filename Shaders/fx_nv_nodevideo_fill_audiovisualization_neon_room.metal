@@ -36,15 +36,15 @@ struct nv_nodevideo_fill_audiovisualization_neon_roomParams {
 #define Mask inputImg
 
 // ---- a ponte Nova <-> Node (a mesma de tools/nodeluzes/gerar.py) ----
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
-float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
+static float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 // SetGlobalColor: num projeto linear o Unity manda a cor já em luz linear.
-float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
+static float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
 // O RT da camada no Node: pré-multiplicada, em luz linear.
-float4 nvEntrada(float2 uv) { float4 c = inputImg.sample(__nv_smp, uv); return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvEntrada(float2 uv) { float4 c = inputImg.sample(__nv_smp, uv); return float4(nvLinear(c.rgb) * c.a, c.a); }
 // A saída do Node (pré-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz acima do
 // alfa vira alfa; NaN (o log2 de 0 na conta do Node) vira 0, como no RT dele.
-float4 nvSaida(float4 p) {
+static float4 nvSaida(float4 p) {
     p = mix(float4(0.0), min(p, float4(1.0)), greaterThanEqual(p, float4(0.0)));
     float a = max(p.a, max(p.r, max(p.g, p.b)));
     return a > 0.0 ? float4(nvGama(p.rgb / a), a) : float4(0.0);
@@ -58,13 +58,13 @@ float4 nvSaida(float4 p) {
 // Aqui: |X| ≈ altura do src="spectrum" × 465,1. A conta dá 404,5 (Blackman ÷ Hamming em tom puro); o ×1,15 vem de duas
 // músicas contra a conta do Node em Python: acesas (luz > 0,8) 1,56% × 1,49% e 6,03% × 5,94%, erro médio 1,5–3%.
 const int LARGURA_ESP = 256;
-float alturaDaFaixa(int j) {
+static float alturaDaFaixa(int j) {
     int t = 1 + 3 * j;
     float4 c = floor(faixasImg.read(uint2(int2(t % LARGURA_ESP, t / LARGURA_ESP)), uint(0)) * 255.0 + 0.5);
     return (c.r * 65536.0 + c.g * 256.0 + c.b) / 16777215.0;
 }
 // O ponto k (de 2 a 1023) do espectro do Node.
-float pontoDoNode(int k) {
+static float pontoDoNode(int k) {
     float p = float(k - 2) / 4.0;
     int a = int(p);
     float h = mix(alturaDaFaixa(a), alturaDaFaixa(min(a + 1, 255)), p - float(a));
@@ -73,17 +73,17 @@ float pontoDoNode(int k) {
     return h * 465.1 * resto;
 }
 // AEAudioVisualizer.freqToIndex(f, 1024, taxa).
-int indiceDaFreq(float f) {
+static int indiceDaFreq(float f) {
     if (f < 21.533203) return 0;
     if (f > 22028.467) return 511;
     return int(floor(f / 44100.0 * 1024.0 + 0.5));
 }
-int limiteDaBanda(float falta) {
+static int limiteDaBanda(float falta) {
     return indiceDaFreq(floor(22050.0 / pow(1.035, falta)) - 1.0);
 }
 // A banda i do UpdateBandsNew: a média dos pontos da divisão logarítmica, nunca abaixo do ponto i + 2 (com 600 ou 1024
 // bandas é sempre só esse ponto). × 0,01; o ponto 1024 em diante não existe.
-float bandaDoNode(int i, int N) {
+static float bandaDoNode(int i, int N) {
     int zero = limiteDaBanda(float(N));
     int de = max(limiteDaBanda(float(N - i)) - zero, i + 2);
     int ate = max(limiteDaBanda(float(N - 1 - i)) - zero - 1, i + 2);
@@ -98,7 +98,7 @@ float bandaDoNode(int i, int N) {
     return soma / float(quantos) * 0.01;
 }
 // O passe 0 escreve em luz linear; o buffer sRGB guarda o byte da Texture2D do Node e devolve linear ao ler.
-float4 texelDoSom(int i) {
+static float4 texelDoSom(int i) {
     int N = clamp(int(u._bands_count), 1, 1024);
     if (i >= N) return float4(0.0, 0.0, 0.0, 1.0);
     float k = 1.0 - clamp(u._intensity, 0.0, 1.0);
@@ -107,7 +107,7 @@ float4 texelDoSom(int i) {
     return float4(nvLinear(float3(v)), 1.0);
 }
 // O Repeat + Bilinear do Node, à mão: só as Quantidade de bandas primeiras colunas do buffer valem.
-float amostraDoSom(float u) {
+static float amostraDoSom(float u) {
     int N = clamp(int(u._bands_count), 1, 1024);
     float x = fract(u) * float(N) - 0.5;
     float f0 = floor(x);
@@ -147,7 +147,7 @@ float u_xlat33;
 float u_xlat34;
 float u_xlat36;
 float u_xlat37;
-void desenhoDoNode()
+static void desenhoDoNode()
 {
     u_xlat0.xy = in.acScreenNorm.xy * _resolution.xy;
     u_xlat0.xy = u_xlat0.xy * float2(2.0, 2.0) + (-_resolution.xy);

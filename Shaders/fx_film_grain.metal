@@ -21,7 +21,7 @@ struct film_grainParams {
 // --- funcoes auxiliares do efeito
 // Hash clássico de shader: barato, sem textura, e "aleatório o bastante".
 // Não serve para criptografia; serve perfeitamente para grão de filme.
-float hash(float2 p) {
+static float hash(float2 p) {
     return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
 }
 

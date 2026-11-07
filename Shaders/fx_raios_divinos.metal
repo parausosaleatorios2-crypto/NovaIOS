@@ -35,11 +35,11 @@ struct raios_divinosParams {
 const int N = 64;
 
 // Buffers de 8 bits: a raiz quadrada dá precisão ao escuro (a ponta do raio).
-float4 guardar(float4 v) { return float4(sqrt(clamp(v.rgb, 0.0, 1.0)), clamp(v.a, 0.0, 1.0)); }
-float4 abrir(float4 g) { return float4(g.rgb * g.rgb, g.a); }
+static float4 guardar(float4 v) { return float4(sqrt(clamp(v.rgb, 0.0, 1.0)), clamp(v.a, 0.0, 1.0)); }
+static float4 abrir(float4 g) { return float4(g.rgb * g.rgb, g.a); }
 
 /** A fonte de um pixel da camada: limiar, tinta, oclusão, pré-multiplicada; alfa 1 dentro do quadro. */
-float4 fonteEm(float2 uv) {
+static float4 fonteEm(float2 uv) {
     float4 c = inputImg.sample(__nv_smp, uv);
     float t = u.threshold * 0.01;
     if (t > 0.0) {
@@ -58,14 +58,14 @@ float4 fonteEm(float2 uv) {
 }
 
 /** A fonte (passe 0) lida em qualquer uv: espelhada além da borda, ou nada (Repeat Edges). */
-float4 fonteLida(float2 uv) {
+static float4 fonteLida(float2 uv) {
     if (u.repeatEdges) return abrir(a.sample(__nv_smp, 1.0 - abs(__nv_mod(uv, 2.0) - 1.0)));
     if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return float4(0.0);
     return abrir(a.sample(__nv_smp, uv));
 }
 
 /** O raio Zoom de um canal: densidade `d`, os sentidos pela Direction. */
-float4 zoom(float2 uv, float2 pos, float d, float jit) {
+static float4 zoom(float2 uv, float2 pos, float d, float jit) {
     float2 passo = (uv - pos) * d / float(N);
     float queda = 1.0 - 2.0 * u.decay / float(N);
     float4 soma = float4(0.0);
@@ -84,7 +84,7 @@ float4 zoom(float2 uv, float2 pos, float d, float jit) {
 }
 
 /** O giro em volta da Position (x corrigido por altura/largura, como o Crate's). */
-float2 girar(float2 uv, float2 pos, float ang) {
+static float2 girar(float2 uv, float2 pos, float ang) {
     float asp = eng.acResolution.y / eng.acResolution.x;
     float2 r = uv - pos;
     r.x /= asp;
@@ -95,7 +95,7 @@ float2 girar(float2 uv, float2 pos, float ang) {
     return r + pos;
 }
 
-float4 spin(float2 uv, float2 pos, float incr) {
+static float4 spin(float2 uv, float2 pos, float incr) {
     float queda = 1.0 - 0.5 * u.decay / float(N);
     float w = u.exposure / float(N);
     float ang = 0.0;
@@ -108,7 +108,7 @@ float4 spin(float2 uv, float2 pos, float incr) {
     return soma;
 }
 
-float4 oRaio() {
+static float4 oRaio() {
     float2 uv = in.acScreenNorm;
     // Ruído intercalado: desloca o começo de cada pixel numa fração do passo (some na tenda).
     float jit = fract(52.9829189 * fract(dot(__nv_fragCoord.xy, float2(0.06711056, 0.00583715))));
@@ -136,7 +136,7 @@ float4 oRaio() {
 }
 
 /** O raio pronto, lido com uma tenda de quatro leituras (sobe de 1/2 sem degrau). */
-float4 raioPronto(float2 uv) {
+static float4 raioPronto(float2 uv) {
     float2 t = 0.5 / float2(int2(int(b.get_width()), int(b.get_height())));
     return 0.25 * (abrir(b.sample(__nv_smp, uv + float2(-t.x, -t.y))) + abrir(b.sample(__nv_smp, uv + float2(t.x, -t.y)))
         + abrir(b.sample(__nv_smp, uv + float2(-t.x, t.y))) + abrir(b.sample(__nv_smp, uv + float2(t.x, t.y))));

@@ -27,7 +27,7 @@ struct toji_AwiggleParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
+static float4 sampleTex(sampler2D t, float2 uv){ return t.sample(__nv_smp, uv); }
 
     // Hash and value noise
     float hash(float n){ return fract(sin(n)*43758.5453123); }

@@ -23,7 +23,7 @@ struct am_motion_blur2_legacyParams {
 // O `(float4(uv, 0, 1) * eng.acLayerToScreen).xy` do AM: a coordenada da camada (Y para cima) levada ao buffer (o Y volta
 // para baixo) e, na tela, pela `eng.acCamadaParaTela` (sem a divisão da perspectiva quando ela é afim, como a matriz do
 // AM); no filho de grupo, a própria UV do buffer.
-float2 camadaParaTelaDoAm(float2 uv) {
+static float2 camadaParaTelaDoAm(float2 uv) {
     float2 conteudo = max(eng.acTamanhoDaCamada, float2(1e-6));
     float2 b = 0.5 + (float2(uv.x, 1.0 - uv.y) - 0.5) * conteudo / eng.acTamanhoDaTela;
     if (eng.acParaTela != float3x3(1.0)) return b;
@@ -34,7 +34,7 @@ float2 camadaParaTelaDoAm(float2 uv) {
 
 // O `in.acLayerNorm` do AM: o pixel na tela levado à coordenada da camada (o retângulo do conteúdo de 0 a 1), com o Y
 // para CIMA.
-float2 camadaDoPixelAm() {
+static float2 camadaDoPixelAm() {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(__nv_acTela(in.acScreenNorm), 1.0);
     float2 conteudo = max(eng.acTamanhoDaCamada, float2(1e-6));
     float2 st = 0.5 + (c.xy / c.z - 0.5) * eng.acTamanhoDaTela / conteudo;
@@ -44,17 +44,17 @@ float2 camadaDoPixelAm() {
 // ------------------------------------------------------------------ o script do AM (`animate`)
 
 // Cada passe só roda quando o movimento dele passa de 0,0001 (e a chave dele está ligada).
-bool giroLigado() { return u.useAngle && abs(eng.acGiroPorQuadroDoAm) > 0.0001; }
-bool escalaLigada() { return u.useScale && abs(eng.acEscalaPorQuadroDoAm) > 0.0001; }
-bool posicaoLigada() { return u.usePos && (abs(eng.acVelocidadeDoAm.x) > 0.0001 || abs(eng.acVelocidadeDoAm.y) > 0.0001); }
+static bool giroLigado() { return u.useAngle && abs(eng.acGiroPorQuadroDoAm) > 0.0001; }
+static bool escalaLigada() { return u.useScale && abs(eng.acEscalaPorQuadroDoAm) > 0.0001; }
+static bool posicaoLigada() { return u.usePos && (abs(eng.acVelocidadeDoAm.x) > 0.0001 || abs(eng.acVelocidadeDoAm.y) > 0.0001); }
 
 // Um buffer do mesmo tamanho, pixel por pixel (no meio do texel o filtro linear devolve o próprio texel).
-float4 copia(sampler2D img) { return img.sample(__nv_smp, in.acScreenNorm); }
+static float4 copia(sampler2D img) { return img.sample(__nv_smp, in.acScreenNorm); }
 
 // ------------------------------------------------------------------ os três grupos do AM, na ordem dele
 
 // Grupo 0: o GIRO.
-float4 passeDoGiro(sampler2D img) {
+static float4 passeDoGiro(sampler2D img) {
     float angle = abs(eng.acGiroPorQuadroDoAm*u.tune);
     float cx = 0.5 + eng.acPivoDoAm.x/eng.acTamanhoDaCamada.x;
     float cy = 0.5 - eng.acPivoDoAm.y/eng.acTamanhoDaCamada.y;
@@ -84,7 +84,7 @@ float4 passeDoGiro(sampler2D img) {
 }
 
 // Grupo 1: a ESCALA.
-float4 passeDaEscala(sampler2D img) {
+static float4 passeDaEscala(sampler2D img) {
     float2 image_size = float2(int2(int(img.get_width()), int(img.get_height())));
     float2 texelSize = 1.0 / image_size;
     float cx = 0.5 + eng.acPivoDoAm.x/eng.acTamanhoDaCamada.x;
@@ -107,7 +107,7 @@ float4 passeDaEscala(sampler2D img) {
 }
 
 // Grupo 2: a POSIÇÃO.
-float4 passeDaPosicao(sampler2D img) {
+static float4 passeDaPosicao(sampler2D img) {
     float2 texelSize = 1.0 / float2(int2(int(img.get_width()), int(img.get_height())));
     float2 velocity = eng.acVelocidadeDoAm*u.tune / eng.acTamanhoDaTela;
     float speed = length(velocity / texelSize);

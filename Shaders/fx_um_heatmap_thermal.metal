@@ -19,7 +19,7 @@ struct um_heatmap_thermalParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float3 termico(float t) {
+static float3 termico(float t) {
     t = clamp(t, 0.0, 1.0);
     float3 preto = float3(0.0, 0.0, 0.05);
     float3 roxo  = float3(0.25, 0.0, 0.5);

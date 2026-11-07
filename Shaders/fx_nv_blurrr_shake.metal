@@ -19,11 +19,11 @@ struct nv_blurrr_shakeParams {
 };
 
 // --- funcoes auxiliares do efeito
-float ruido(float2 p) {
+static float ruido(float2 p) {
     return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
 }
 
-float2 jitter(float t) {
+static float2 jitter(float t) {
     float a = ruido(float2(t * u.frequency, u.seed)) * 6.28318;
     float r = ruido(float2(u.seed, t * u.frequency)) * u.amplitude;
     return float2(cos(a), sin(a)) * r;

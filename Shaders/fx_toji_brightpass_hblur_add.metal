@@ -22,12 +22,12 @@ struct toji_brightpass_hblur_addParams {
 // --- funcoes auxiliares do efeito
 // Bright-pass + Horizontal Blur (SCurve weights) + Add
 
-float SCurve(float x){
+static float SCurve(float x){
     x = x * 2.0 - 1.0;
     return -x * abs(x) * 0.5 + x + 0.5;
 }
 
-float4 BlurH(sampler2D source, float2 uv, float radius, float sizeX){
+static float4 BlurH(sampler2D source, float2 uv, float radius, float sizeX){
     if (radius < 1.0) return source.sample(__nv_smp, uv);
     float width = 1.0 / max(sizeX, 1.0);
     float3 C = float3(0.0);

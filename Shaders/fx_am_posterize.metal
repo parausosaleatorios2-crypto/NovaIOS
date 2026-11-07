@@ -19,7 +19,7 @@ struct am_posterizeParams {
 // k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve (o AM lê a camada assim). A
 // divisão do shader vai pelo recíproco e erra o último bit em metade dos k, e o último bit decide o degrau quando
 // cor × Passos + d cai em cima de um inteiro. Aqui: n·2^e ÷ 255 pelo mais perto, em 24 bits, montado nos bits do float.
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;

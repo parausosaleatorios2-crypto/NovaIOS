@@ -28,7 +28,7 @@ struct compound_blurParams {
 const int MAX_LEITURAS = 49;
 
 /** O quanto borrar neste ponto, de 0 a 1, lido do mapa. */
-float valorDoMapa(float2 uv) {
+static float valorDoMapa(float2 uv) {
     float4 m = blurMap.sample(__nv_smp, uv);
 
     // Pré-multiplicado: o que é transparente no mapa vale preto, e preto não
@@ -47,7 +47,7 @@ float valorDoMapa(float2 uv) {
     return u.invertBlur ? (1.0 - v) : v;
 }
 
-float4 lerFonte(float2 uv) {
+static float4 lerFonte(float2 uv) {
     return (eng.acPass == 0) ? inputImg.sample(__nv_smp, uv) : hblur.sample(__nv_smp, uv);
 }
 

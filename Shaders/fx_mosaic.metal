@@ -18,12 +18,12 @@ struct mosaicParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 preMultiplicar(float4 c) {
+static float4 preMultiplicar(float4 c) {
     return float4(c.rgb * c.a, c.a);
 }
 
 /** A primeira descida: a média de 2×2 pixels da imagem, texel a texel. */
-float4 descerDaImagem() {
+static float4 descerDaImagem() {
     int2 tam = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 base = int2(floor(in.acScreenNorm * float2(tam) - 0.5));
     float4 s = float4(0.0);
@@ -37,11 +37,11 @@ float4 descerDaImagem() {
 }
 
 /** As outras: uma leitura bilinear no canto entre quatro texels é a média deles. */
-float4 descer(sampler2D origem) {
+static float4 descer(sampler2D origem) {
     return origem.sample(__nv_smp, in.acScreenNorm);
 }
 
-float2 contagem() {
+static float2 contagem() {
     float h = max(floor(u.horizontalBlocks + 0.5), 1.0);
     float v = u.squareBlocks
         ? max(floor(h / max(eng.acAspect, 0.0001) + 0.5), 1.0)
@@ -49,7 +49,7 @@ float2 contagem() {
     return float2(h, v);
 }
 
-float4 lerNivel(int n, float2 uv) {
+static float4 lerNivel(int n, float2 uv) {
     if (n <= 0) return preMultiplicar(inputImg.sample(__nv_smp, uv));
     if (n == 1) return p1.sample(__nv_smp, uv);
     if (n == 2) return p2.sample(__nv_smp, uv);
@@ -61,7 +61,7 @@ float4 lerNivel(int n, float2 uv) {
 }
 
 /** A cor (pré-multiplicada) do bloco de índice `bloco`. */
-float4 corDoBloco(float2 bloco, float2 blocos) {
+static float4 corDoBloco(float2 bloco, float2 blocos) {
     float2 lado = 1.0 / blocos;
     float2 inicio = bloco * lado;
     if (u.sharpColors) {

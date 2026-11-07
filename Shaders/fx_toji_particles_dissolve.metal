@@ -19,7 +19,7 @@ struct toji_particles_dissolveParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 hash3(float2 p) {
+static float3 hash3(float2 p) {
       float3 q = float3(
         dot(p, float2(127.1, 311.7)),
         dot(p, float2(269.5, 183.3)),

@@ -41,7 +41,7 @@ const float PI = 3.141592653589793;
 // ---------- a rampa (FUN_180003520 do plugin) ----------
 
 /** (int)u % 512 − 256 do hash do plugin: o resto com sinal do C, então o ruído pende para baixo. */
-float ruido(int2 p, int semente) {
+static float ruido(int2 p, int semente) {
     uint u = uint(p.y) * uint(p.y) + uint(semente) + uint(p.x);   // em uint: o estouro dá a volta, como no int do C
     u = ((u >> 16u) ^ u) * 0x45d9f3bu;
     u = ((u >> 16u) ^ u) * 0x45d9f3bu;
@@ -52,7 +52,7 @@ float ruido(int2 p, int semente) {
 }
 
 /** O t do pixel (canto em p, px da composição), antes da curva. */
-float parametro(float2 d, float2 v, float l2, int forma) {
+static float parametro(float2 d, float2 v, float l2, int forma) {
     if (forma == 1) return sqrt(dot(d, d) / l2);
     if (forma == 2) {
         if (d.x == 0.0 && d.y == 0.0) return 1.0;
@@ -65,19 +65,19 @@ float parametro(float2 d, float2 v, float l2, int forma) {
 
 // ---------- os modos (os de camada do AE, como no cc-composite.xml; b = a camada, s = a rampa) ----------
 
-float dodge(float b, float s) { return b <= 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
-float burn(float b, float s)  { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
-float dodgeC(float b, float s) { return s >= 1.0 ? 1.0 : (b <= 0.0 ? 0.0 : min(1.0, b / (1.0 - s))); }
-float burnC(float b, float s)  { return s <= 0.0 ? 0.0 : (b >= 1.0 ? 1.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+static float dodge(float b, float s) { return b <= 0.0 ? 0.0 : (s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s))); }
+static float burn(float b, float s)  { return b >= 1.0 ? 1.0 : (s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
+static float dodgeC(float b, float s) { return s >= 1.0 ? 1.0 : (b <= 0.0 ? 0.0 : min(1.0, b / (1.0 - s))); }
+static float burnC(float b, float s)  { return s <= 0.0 ? 0.0 : (b >= 1.0 ? 1.0 : 1.0 - min(1.0, (1.0 - b) / s)); }
 
-float macia(float b, float s) {
+static float macia(float b, float s) {
     if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
     float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
     return b + (2.0 * s - 1.0) * (d - b);
 }
 
 /** Os separáveis, nas cores retas. */
-float canal(int m, float b, float s) {
+static float canal(int m, float b, float s) {
     if (m == MULTIPLY) return b * s;
     if (m == SCREEN) return 1.0 - (1.0 - b) * (1.0 - s);
     if (m == OVERLAY) return b <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
@@ -99,22 +99,22 @@ float canal(int m, float b, float s) {
     return s;
 }
 
-float3 cortarCor(float3 c) {
+static float3 cortarCor(float3 c) {
     float l = dot(c, LUMA), n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
     if (n < 0.0) c = l + (c - l) * l / max(l - n, 1e-12);
     if (x > 1.0) c = l + (c - l) * (1.0 - l) / max(x - l, 1e-12);
     return c;
 }
-float3 comLuma(float3 c, float l) { return cortarCor(c + (l - dot(c, LUMA))); }
-float satDe(float3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
-float3 comSat(float3 c, float s) {
+static float3 comLuma(float3 c, float l) { return cortarCor(c + (l - dot(c, LUMA))); }
+static float satDe(float3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+static float3 comSat(float3 c, float s) {
     float n = min(c.r, min(c.g, c.b)), x = max(c.r, max(c.g, c.b));
     return x > n ? (c - n) * s / (x - n) : float3(0.0);
 }
 /** Lighter/Darker Color: medido, a luminância ARREDONDADA a 8 bits. */
-float luma8(float3 c) { return floor(dot(c, LUMA) * 255.0 + 0.5); }
+static float luma8(float3 c) { return floor(dot(c, LUMA) * 255.0 + 0.5); }
 
-float3 componente(int m, float3 b, float3 s) {
+static float3 componente(int m, float3 b, float3 s) {
     if (m == HUE) return comLuma(comSat(s, satDe(b)), dot(b, LUMA));
     if (m == SATURATION) return comLuma(comSat(b, satDe(s)), dot(b, LUMA));
     if (m == COLOR) return comLuma(s, dot(b, LUMA));
@@ -124,7 +124,7 @@ float3 componente(int m, float3 b, float3 s) {
 }
 
 /** A rampa (cs, as_) sobre a camada (cb, ab) no modo m; devolve a cor RETA e o alfa. */
-float4 compor(int m, float3 cs, float as_, float3 cb, float ab) {
+static float4 compor(int m, float3 cs, float as_, float3 cb, float ab) {
     if (m == NONE) return float4(cs, as_);
     float3 pb = cb * ab, ps = cs * as_;
     float uni = ab + as_ - ab * as_;

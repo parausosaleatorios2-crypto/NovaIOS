@@ -18,7 +18,7 @@ struct um_glitch_rgb_blocksParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash21(float2 p) {
+static float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);

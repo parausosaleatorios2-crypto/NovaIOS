@@ -32,12 +32,12 @@ struct noiseParams {
 //  entre si. É estável em qualquer escala (não tem `sin`, não depende de
 //  precisão de argumento grande) e devolve valores bem decorrelacionados —
 //  inclusive entre canais, o que conserta também o ruído colorido.
-float hash13(float3 p3) {
+static float hash13(float3 p3) {
     p3 = fract(p3 * 0.1031);
     p3 += dot(p3, p3.zyx + 31.32);
     return fract((p3.x + p3.y) * p3.z);
 }
-float3 hash33(float3 p3) {
+static float3 hash33(float3 p3) {
     p3 = fract(p3 * float3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yxz + 33.33);
     return fract((p3.xxy + p3.yxx) * p3.zyx);
@@ -50,7 +50,7 @@ float3 hash33(float3 p3) {
  * bem separados dão, por canal, uma normal de desvio padrão 1. Sem `cos`, sem o
  * padrão diagonal que a combinação Box-Muller + hash de seno produzia.
  */
-float3 gaussiano3(float3 seed) {
+static float3 gaussiano3(float3 seed) {
     float3 s = hash33(seed)
         + hash33(seed + float3(37.0, 91.0, 13.0))
         + hash33(seed + float3(113.0, 29.0, 197.0))
@@ -60,7 +60,7 @@ float3 gaussiano3(float3 seed) {
     return (s - 2.0) / 0.5773502692;
 }
 
-float3 ruidoEm(float3 seed) {
+static float3 ruidoEm(float3 seed) {
     if (u.noiseType == 0) {
         // Uniforme, recentrado em [-1, 1]. Colorido = três canais independentes
         // de uma só chamada; mono = um canal repetido.
@@ -78,7 +78,7 @@ float3 ruidoEm(float3 seed) {
 // flecos de preto/branco puro nas pontas de brilho e sombra. `tanh` centrado
 // comprime esse excesso continuamente em vez de cortar — assintótico, nunca
 // chega a bater 0 ou 1 de verdade.
-float3 semRecorte(float3 x) {
+static float3 semRecorte(float3 x) {
     float3 centro = x - 0.5;
     return tanh(centro) * 0.5 + 0.5;
 }

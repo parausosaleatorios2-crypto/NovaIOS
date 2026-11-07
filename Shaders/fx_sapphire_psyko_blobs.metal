@@ -43,10 +43,10 @@ const float LARGURA_MAX = 720.0;
 
 // Os sliders do Sapphire chegam em ponto fixo 16.16: os do `noise` truncados (medido no S_TexturePlasma), os outros
 // arredondados (medido no S_PsykoStripes).
-float q16(float v) { return floor(v * 65536.0) / 65536.0; }
-float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+static float q16(float v) { return floor(v * 65536.0) / 65536.0; }
+static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
 // 2^k exato (o exp2 da GPU não garante).
-float pot2(int k) { return as_type<float>((127 + k) << 23); }
+static float pot2(int k) { return as_type<float>((127 + k) << 23); }
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
 int2 gT;          // o buffer
@@ -54,32 +54,32 @@ int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (o Source Blur é em px da composição)
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
     gEscala = eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0;
 }
 
-bool naCamada(int2 q) { return q.x >= 0 && q.y >= 0 && q.x < gN.x && q.y < gN.y; }
+static bool naCamada(int2 q) { return q.x >= 0 && q.y >= 0 && q.x < gN.x && q.y < gN.y; }
 
 // ---------------------------------------------------------------------------------------------------------
 // O hash do Sapphire (a tabela de assets/filmdamage/tabelas.png, linha 6: cada número de 32 bits em dois texels
 // da mesma coluna, bytes 0-2 em RGB e o byte 3 no R da linha de baixo).
 // ---------------------------------------------------------------------------------------------------------
-uint ler32(int x, int linha) {
+static uint ler32(int x, int linha) {
     uint3 a = uint3(floor(tabelas.read(uint2(int2(x, linha)), uint(0)).rgb * 255.0 + 0.5));
     uint b = uint(floor(tabelas.read(uint2(int2(x, linha + 1)), uint(0)).r * 255.0 + 0.5));
     return a.x | (a.y << 8) | (a.z << 16) | (b << 24);
 }
 
-uint rodadas(uint c) {
+static uint rodadas(uint c) {
     for (int i = 0; i < 4; i++) c = (c >> 8) + ler32(int(c & 255u), 6);
     return c;
 }
 
 // O valor da grade: ((hash & 0x1fff) − 4096) / 4096, com a linha negada (o y do código cresce para baixo).
-float valorDaLinha(uint linha, int coluna) {
+static float valorDaLinha(uint linha, int coluna) {
     uint h = rodadas(linha + uint(coluna));
     return float(int(h & 0x1fffu) - 4096) * (1.0 / 4096.0);
 }
@@ -88,9 +88,9 @@ float valorDaLinha(uint linha, int coluna) {
 // O núcleo de k subdivisões da B-spline cúbica: K_k(d) = B4_n(d + 2(n − 1)) / n³, n = 2^k, B4_n(m) = de quantos
 // jeitos m é a soma de 4 inteiros em 0..n−1 (simétrico em 2(n − 1); na metade de baixo, C(m+3, 3) − 4·C(m−n+3, 3)).
 // ---------------------------------------------------------------------------------------------------------
-float c3(float x) { return x >= 3.0 ? x * (x - 1.0) * (x - 2.0) * (1.0 / 6.0) : 0.0; }
+static float c3(float x) { return x >= 3.0 ? x * (x - 1.0) * (x - 2.0) * (1.0 / 6.0) : 0.0; }
 
-float nucleo(int d, int k) {
+static float nucleo(int d, int k) {
     int n = 1 << k;
     int m = d + 2 * (n - 1);
     int topo = 4 * (n - 1);
@@ -102,7 +102,7 @@ float nucleo(int d, int k) {
 // O laço do código num eixo: quantas subdivisões cabem (enquanto 2n − 3 ≤ lado) e o lo/hi/X0 do último nível.
 struct Eixo { int L; float lo; float hi; int X0; };
 
-Eixo eixo(int lado, float lo, float hi) {
+static Eixo eixo(int lado, float lo, float hi) {
     int X0 = int(floor(lo)) - 1;
     int X1 = int(ceil(hi)) + 1;
     if (X1 - X0 + 1 > lado) X1 = X0 + lado - 1;
@@ -124,7 +124,7 @@ Eixo eixo(int lado, float lo, float hi) {
  * (no empate de meio ulp, o primeiro passo vai ao par e os outros ficam iguais), então dá para pular a faixa
  * inteira de uma vez. Devolve o ponto da grade (c) e a fração.
  */
-void posicao(int i, int n, Eixo e, out int c, out float f) {
+static void posicao(int i, int n, Eixo e, out int c, out float f) {
     int r = 2 * e.X0 + 1;
     float ini = (e.lo + e.lo) - float(r);
     float fim = (e.hi + e.hi) - float(r);
@@ -162,7 +162,7 @@ void posicao(int i, int n, Eixo e, out int c, out float f) {
 }
 
 // Os 5 pesos (já interpolados entre c e c + 1) da grade do nível F − k, a partir do índice i0.
-void pesos(int c, float f, int k, out int i0, out float w[5]) {
+static void pesos(int c, float f, int k, out int i0, out float w[5]) {
     int n = 1 << k;
     i0 = -((2 * (n - 1) - c) >> k);         // ceil((c − 2(n − 1)) / n)
     for (int u = 0; u < 5; u++) {
@@ -173,7 +173,7 @@ void pesos(int c, float f, int k, out int i0, out float w[5]) {
 
 // O viés de um eixo: os 2⁻¹⁴ postos nos vértices (pontos pares) de cada nível, levados até o fim; os de antes do
 // 0,5·v + 0,5 valem a metade.
-float vies(int c, float f, int L) {
+static float vies(int c, float f, int L) {
     int F = L + 1;
     float tot = 0.0;
     for (int l = 1; l <= F; l++) {
@@ -193,7 +193,7 @@ float vies(int c, float f, int L) {
 }
 
 /** O `noise` do Sapphire (0..1) no pixel p (do canto de cima, na camada de W × H). */
-float ruidoDoSapphire(int2 p, int W, int H) {
+static float ruidoDoSapphire(int2 p, int W, int H) {
     float a = float(H) / float(W);
     float fx = (q16(u.noiseFrequency) * q16(u.noiseFreqRelX)) * 2.0;
     float fy = q16(u.noiseFrequency) * 2.0;
@@ -236,12 +236,12 @@ float ruidoDoSapphire(int2 p, int W, int H) {
 
 // ---- números em buffers de 8 bits ----------------------------------------------------------
 // O float inteiro (os 4 bytes): a ida e a volta pelo RGBA8 são exatas.
-float4 gravarFloat(float v) {
+static float4 gravarFloat(float v) {
     uint u = as_type<uint>(v);
     return float4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
 }
 
-float lerFloat(float4 c) {
+static float lerFloat(float4 c) {
     uint4 b = uint4(floor(c * 255.0 + 0.5));
     return as_type<float>(b.x | (b.y << 8) | (b.z << 16) | (b.w << 24));
 }
@@ -250,7 +250,7 @@ float lerFloat(float4 c) {
 // O que muda o `noise`: se tudo isto é igual ao do quadro anterior, ele é copiado.
 const int N_ASSINATURA = 10;
 
-float assinado(int k) {
+static float assinado(int k) {
     if (k == 0) return u.noiseFrequency;
     if (k == 1) return u.noiseFreqRelX;
     if (k == 2) return u.noiseOctaves;
@@ -265,7 +265,7 @@ float assinado(int k) {
 
 // Sem olhar o eng.acStateFresh: os dois estados são `memory="cache"` (o motor entrega o último escrito, com o tempo
 // parado, andando ou pulando), e o estado que nunca foi escrito vem zerado — o 9 da assinatura não bate.
-bool mesmaAssinatura() {
+static bool mesmaAssinatura() {
     for (int k = 0; k < N_ASSINATURA; k++) {
         if (lerFloat(assinatura.read(uint2(int2(k & 7, k >> 3)), uint(0))) != assinado(k)) return false;
     }
@@ -273,28 +273,28 @@ bool mesmaAssinatura() {
 }
 
 // ---- o desfoque da fonte (o do S_PsykoStripes) ----------------------------------------------
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
     i = i - (i / p) * p; if (i < 0) i += p;
     return i < n ? i : p - 1 - i;
 }
 
-int2 espelhado(int2 q) { return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
+static int2 espelhado(int2 q) { return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
 
 // Input Opacity (medido): Normal (1) usa a cor pré-multiplicada; All Opaque (0) e As Premult (2), a reta.
-float3 entrada(int2 p) {
+static float3 entrada(int2 p) {
     float4 s = inputImg.read(uint2(p), uint(0));
     return u.inputOpacity == 1 ? s.rgb * s.a : s.rgb;
 }
 
-float monochrome(float3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
+static float monochrome(float3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
 
 // Medido: o Source Blur do AE já é a largura em px (subpixel ligado de fábrica no plugin).
-float larguraPx() { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
+static float larguraPx() { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
 
 /** Uma das três caixas de um eixo (a conta do S_GlowAura): a que cresce leva as pontas com a fração. */
-float caixa(int2 q, bool emX, int qual, bool deA) {
+static float caixa(int2 q, bool emX, int qual, bool deA) {
     float w = larguraPx();
     int a = int(floor(w));
     float f = w - float(a);

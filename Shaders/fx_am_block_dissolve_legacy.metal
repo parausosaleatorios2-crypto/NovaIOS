@@ -21,7 +21,7 @@ struct am_block_dissolve_legacyParams {
 
 // --- funcoes auxiliares do efeito
 // O `rand` do AM, letra por letra.
-float rand(float2 co)
+static float rand(float2 co)
 {
     float a = 719.310;
     float b = 178.233;
@@ -32,7 +32,7 @@ float rand(float2 co)
 }
 
 // Ver `am-block-dissolve.xml`.
-float2 naTela(float2 uv) {
+static float2 naTela(float2 uv) {
     float2 t = eng.acEntradaDePe == 1 ? uv : __nv_acTela(uv);
     return float2(t.x, 1.0 - t.y);
 }

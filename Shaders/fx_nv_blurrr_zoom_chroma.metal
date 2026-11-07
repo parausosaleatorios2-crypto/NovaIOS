@@ -18,7 +18,7 @@ struct nv_blurrr_zoom_chromaParams {
 };
 
 // --- funcoes auxiliares do efeito
-float amostraCanal(float2 uv, float2 c, float esc, int canal, int n) {
+static float amostraCanal(float2 uv, float2 c, float esc, int canal, int n) {
     float soma = 0.0;
     for (int i = 0; i <= 48; i++) {
         if (i > n) break;

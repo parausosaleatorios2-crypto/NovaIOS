@@ -17,7 +17,7 @@ struct am_sharpenParams {
 
 // --- funcoes auxiliares do efeito
 // O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -29,7 +29,7 @@ float3 fundoNoPixel() {
 // o pixel leva junto o fundo dele: com o menor alfa `a` em que a cor reta `s = fundo + (q − fundo·alfa)/a` cabe entre 0
 // e 1, a composição Normal do Nova, `s·a·op + fundo·(1 − a·op)`, dá o mesmo do AM com QUALQUER opacidade da camada. Não
 // cabe só quando a soma passa de 1: com a opacidade cheia ela vira 1 lá e aqui; com menos, aqui sai um pouco mais escuro.
-float4 paraReta(float4 q) {
+static float4 paraReta(float4 q) {
     if (all(lessThanEqual(q.rgb, float3(q.a)))) return q.a > 0.0 ? float4(q.rgb / q.a, q.a) : float4(0.0);
     float3 d = fundoNoPixel();
     float3 sobra = q.rgb - d * q.a;
@@ -45,7 +45,7 @@ float4 paraReta(float4 q) {
 
 // O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
 // num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;

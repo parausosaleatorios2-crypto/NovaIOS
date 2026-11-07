@@ -34,22 +34,22 @@ struct voxelsorterParams {
 const float FOCO = 1.3889;          // o zoom da câmera padrão do AE, em larguras do quadro
 const float ALTURA = 0.5;      // a coluna de brilho 1, em larguras do quadro
 
-float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
+static float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
 
-float brilho(float4 c) {
+static float brilho(float4 c) {
     float v = u.depthSource == 1 ? c.a : (c.r + c.g + c.b) / 3.0 * c.a;    // medido: a média dos três canais
     return u.invertDepth ? 1.0 - v : v;
 }
 
 /** A cor da célula (i, j) da grade. */
-float4 celula(float2 ij, float2 celulas) { return grade.sample(__nv_smp, (ij + 0.5) / celulas); }
+static float4 celula(float2 ij, float2 celulas) { return grade.sample(__nv_smp, (ij + 0.5) / celulas); }
 
 /**
  * A altura da coluna de brilho 1, em larguras do quadro. Medido: com Grid Size 512 (16:9) as colunas
  * param em 112 cubos, não em 256 — bate com um teto de 2^24 voxels na grade inteira (512 × 288 × 113),
  * arredondado para baixo de 16 em 16. Com 256 o teto não é alcançado (128 cubos, a metade da largura).
  */
-float alturaMaxima() {
+static float alturaMaxima() {
     float2 R = tamanho();
     float linhas = ceil(R.y * u.gridSize / R.x - 0.001);
     float teto = max(floor(16777216.0 / (u.gridSize * linhas) / 16.0) * 16.0, 16.0);
@@ -57,12 +57,12 @@ float alturaMaxima() {
 }
 
 /** Quantos cubos de profundidade a célula tem. */
-float cubosDe(float4 c, float G) {
+static float cubosDe(float4 c, float G) {
     return max(floor(brilho(c) * alturaMaxima() * G + 0.5), 1.0);
 }
 
 /** A altura (px) da coluna vizinha (0 fora da grade). */
-float altDaVizinha(float2 ij, float2 celulas, float G, float lado, float propria) {
+static float altDaVizinha(float2 ij, float2 celulas, float G, float lado, float propria) {
     if (ij.x < 0.0) return propria;
     // medido (e só isto): na borda DIREITA, a coluna de brilho máximo (branco puro) ganha parede até o fundo
     if (ij.x >= celulas.x) return propria >= alturaMaxima() * G * lado - 0.5 ? 0.0 : propria;
@@ -71,7 +71,7 @@ float altDaVizinha(float2 ij, float2 celulas, float G, float lado, float propria
     return c.a > 0.01 ? cubosDe(c, G) * lado : propria;
 }
 
-float3x3 giro() {
+static float3x3 giro() {
     float3 a = radians(float3(u.rotationX, u.rotationY, u.rotationZ));
     float3 s = sin(a), c = cos(a);
     float3x3 rx = float3x3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);

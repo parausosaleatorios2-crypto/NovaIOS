@@ -20,7 +20,7 @@ struct toji_radialwipeParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 project(float2 a, float2 b) {
+static float2 project(float2 a, float2 b) {
             return (dot(a,b)/dot(b,b)) * b;
         }
 

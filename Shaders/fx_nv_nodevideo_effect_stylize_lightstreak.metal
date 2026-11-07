@@ -21,15 +21,15 @@ struct nv_nodevideo_effect_stylize_lightstreakParams {
 // --- funcoes auxiliares do efeito
 // ---- a ponte Nova <-> Node (tools/nodeluzes/gerar.py)
 float2 nvUV;   // o in.vs_TEXCOORD0 dos programas do Node: o in.acScreenNorm, ou outro ponto que o passe escolhe
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
-float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
+static float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 // O passe 0: a camada como o Node a guarda (pre-multiplicada, luz linear; o buffer `pre` e sRGB de 8 bits).
-float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
-float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
+static float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
 // A saída do Node (pre-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz que
 // o Node soma acima do alfa (o brilho fora do recorte) vira alfa: a = max(alfa, r, g, b). NaN (0 x infinito na
 // conta do Node) vira 0, como no RT de 8 bits dele; a escolha pelo bvec não faz conta com o NaN.
-float4 nvSaida(float4 p) {
+static float4 nvSaida(float4 p) {
     p = mix(float4(0.0), min(p, float4(1.0)), greaterThanEqual(p, float4(0.0)));
     float a = max(p.a, max(p.r, max(p.g, p.b)));
     return a > 0.0 ? float4(nvGama(p.rgb / a), a) : float4(0.0);
@@ -41,7 +41,7 @@ float4 nvSaida(float4 p) {
 // O RenderCommand.DoGaussianBlur do Node (node-gaussian-blur.xml): na METADE da composição, meio-lado = quantidade x
 // 0,0475 x a diagonal da composição (em px da metade), sigma = meio-lado x 0,4660. Aqui a mesma gaussiana em UV,
 // separável, com no máximo 32 leituras de cada lado (o passo cresce com o sigma; o filtro linear cobre o meio).
-float4 nvGauss(sampler2D t, float2 eixo, float quant) {
+static float4 nvGauss(sampler2D t, float2 eixo, float quant) {
     float2 metade = 0.5 * eng.acTamanhoDaTela;
     float meio = quant * 0.0475 * length(eng.acTamanhoDaTela) * 0.4660;
     float sigmaUv = dot(eixo, float2(meio) / metade);
@@ -62,7 +62,7 @@ float4 nvGauss(sampler2D t, float2 eixo, float quant) {
 // A StreakPyramid do C# (Allocate(1)): o nível 0 = W x H (o pré-filtro); o nível i = (W >> i) x H enquanto
 // W >> (i-1) >= 8 — a altura nunca cai. W = a largura em que o efeito roda (a do Node na exportação).
 #define nvTela float2(int2(int(pre.get_width()), int(pre.get_height())))
-int nvL() {
+static int nvL() {
     int w = int2(int(pre.get_width()), int(pre.get_height())).x, l = 0;
     for (int i = 1; i < 16; i++) if ((w >> (i - 1)) >= 8) l = i;
     return min(l, 9);
@@ -70,8 +70,8 @@ int nvL() {
 // Os programas do Node andam 1/_ScreenSize por leitura em TODO nível: o rastro vem da largura baixa de cada nível
 // (o filtro linear entre texels de 2^i px). O motor só reduz a largura até 1/4 (`pack`), então cada nível guarda, num
 // buffer mais largo, a reta entre os centros dos texels do nível de verdade: o que o filtro linear do Node leria.
-float nvLarg(int i) { return float(int2(int(pre.get_width()), int(pre.get_height())).x >> i); }
-float2 nvCentros(int i, out float f) {
+static float nvLarg(int i) { return float(int2(int(pre.get_width()), int(pre.get_height())).x >> i); }
+static float2 nvCentros(int i, out float f) {
     float w = nvLarg(i);
     float p = in.acScreenNorm.x * w - 0.5, k = floor(p);
     f = p - k;
@@ -84,7 +84,7 @@ uint2 p0_xu0;
 float3 p0_x1;
 uint2 p0_xu4;
 float p0_x6;
-void p0_main(sampler2D _SourceTexture)
+static void p0_main(sampler2D _SourceTexture)
 {
     p0_x0.xy = nvUV.xy * nvTela.xy;
     p0_xu0.xy = uint2(p0_x0.xy);
@@ -113,7 +113,7 @@ float3 p1_x0;
 float4 p1_x1;
 float3 p1_x2;
 float p1_x9;
-void p1_main(sampler2D _InputTexture)
+static void p1_main(sampler2D _InputTexture)
 {
     p1_x0.z = nvUV.y;
     p1_x9 = float(1.0) / nvTela.x;
@@ -144,7 +144,7 @@ float3 p2_x0;
 float4 p2_x1;
 float3 p2_x2;
 float p2_x9;
-void p2_main(sampler2D _InputTexture, sampler2D _HighTexture)
+static void p2_main(sampler2D _InputTexture, sampler2D _HighTexture)
 {
     p2_x0.xyz = _InputTexture.sample(__nv_smp, nvUV.xy).xyz;
     p2_x0.xyz = p2_x0.xyz * float3(0.5, 0.5, 0.5);
@@ -172,7 +172,7 @@ float4 p3_x3;
 float4 p3_x4;
 float4 p3_x5;
 float p3_x18;
-void p3_main(sampler2D _InputTexture)
+static void p3_main(sampler2D _InputTexture)
 {
     p3_x0.x = 1.5 / nvTela.x;
     p3_x1.x = (-p3_x0.x) + nvUV.x;

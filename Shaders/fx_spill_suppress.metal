@@ -20,7 +20,7 @@ struct spill_suppressParams {
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
 /** A cor sem o brilho: é neste espaço que "direção da cor" faz sentido. */
-float3 croma(float3 c) {
+static float3 croma(float3 c) {
     return c - dot(c, LUMA);
 }
 

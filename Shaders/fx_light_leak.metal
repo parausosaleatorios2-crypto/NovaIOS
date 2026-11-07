@@ -21,12 +21,12 @@ struct light_leakParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash1(float x) {
+static float hash1(float x) {
     return fract(sin(x * 127.1 + float(u.seed) * 13.7) * 43758.5453);
 }
 
 /** Ruído suave 1D (interpolação smoothstep entre hashes). */
-float ruido1(float x) {
+static float ruido1(float x) {
     float i = floor(x);
     float f = fract(x);
     float s = f * f * (3.0 - 2.0 * f);

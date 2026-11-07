@@ -178,7 +178,7 @@ const float PI = 3.14159265;
 
 // O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
 // num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -191,7 +191,7 @@ float oitoBits(float k) {
 
 // A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
 // do `am-gaussian-blur.xml` e do `am-unsharp-mask.xml`).
-float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
+static float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
     if (u.strength <= 0.0) return float4(0.0);
     float sigma = lado / 2.14596602;
     float3 g;
@@ -222,31 +222,31 @@ float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
 }
 
 // O meio-lado: Tamanho da Borda ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `eng.acPreviewSize` do AM).
-float ladoDoDesfoque() {
+static float ladoDoDesfoque() {
     return u.strength / 2.0 * 1.14 / 4.0 / 3.0 * length(float2(int2(int(pre.get_width()), int(pre.get_height()))));
 }
 
 // A volta da `eng.acCamadaParaTela`: UV da tela → UV do buffer da camada.
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // ---------------------------------------------------------------- daqui até o `main`, as funções do AM, linha por linha
 
-float saturate(float v) { return clamp(v, 0., 1.); }
+static float saturate(float v) { return clamp(v, 0., 1.); }
 
-float2x2 rot2(float a) {
+static float2x2 rot2(float a) {
     float c = cos(a);
     float s = sin(a);
     return float2x2(c,s,-s,c);
 }
 
-float4 composite( float4 a, float4 b) {
+static float4 composite( float4 a, float4 b) {
     return a * (1. - b.a) + b;
 }
 
-float sampleGrain(float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert) {
+static float sampleGrain(float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert) {
 
     uv -= 0.5;
     uv *= rot2(angle*0.0174533);
@@ -325,7 +325,7 @@ float sampleGrain(float2 uv, int grainType, float gamma, float contrast, float s
 
 }
 
-float2 applyDisplace(float2 displace, float4 blurColor, float2 offset, bool fromCtr, int region, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 texOffset) {
+static float2 applyDisplace(float2 displace, float4 blurColor, float2 offset, bool fromCtr, int region, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 texOffset) {
 
     float p;
     if( region == 1) {  // Edge
@@ -347,7 +347,7 @@ float2 applyDisplace(float2 displace, float4 blurColor, float2 offset, bool from
     return displace + (offset * float2(1.,-1.) / 2000.) * g * p;
 }
 
-float4 blendGrain(float4 baseColor, float4 originalColor, float4 blurColor, float4 color, float alpha, int blendMode, int region, float spread, float rawChoke, float burn, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert, bool light, float lightAngle) {
+static float4 blendGrain(float4 baseColor, float4 originalColor, float4 blurColor, float4 color, float alpha, int blendMode, int region, float spread, float rawChoke, float burn, float2 uv, int grainType, float gamma, float contrast, float scale, float angle, float2 offset, bool invert, bool light, float lightAngle) {
 
     float choke = clamp(rawChoke,0.,0.999);
 

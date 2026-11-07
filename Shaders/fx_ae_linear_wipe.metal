@@ -35,7 +35,7 @@ int2 gTam;   // a camada do AE no buffer
 int2 gIni;   // o canto dela
 bool gDePe;   // a linha 0 do buffer é a BASE da imagem (cena de pé)
 
-void preparar() {
+static void preparar() {
     int2 buf = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gTam = clamp(int2(floor(eng.acCamada * float2(buf) + 0.5)), int2(1), buf);
     gIni = (buf - gTam) / 2;
@@ -43,7 +43,7 @@ void preparar() {
 }
 
 // O LinearWipeKernel no pixel b do buffer (dentro da camada): 1, 0 ou a fração da subamostragem.
-float mascara(int2 b) {
+static float mascara(int2 b) {
     int x = b.x - gIni.x;
     int y = gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y;
     int t = y * lwDy + x * lwDx;
@@ -68,29 +68,29 @@ float mascara(int2 b) {
 }
 
 // 24 bits fixos no RGB de um RGBA8 (o valor fica em [0, 1]).
-float4 guardar(float v) {
+static float4 guardar(float v) {
     uint q = min(uint(clamp(v, 0.0, 1.0) * 16777216.0), 16777215u);
     return float4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
 }
-uint abrirQ(sampler2D b, int2 c) {
+static uint abrirQ(sampler2D b, int2 c) {
     uint3 k = uint3(floor(b.read(uint2(c + MARGEM), uint(0)).rgb * 255.0 + 0.5));
     return (k.x << 16u) | (k.y << 8u) | k.z;
 }
-float abrir(sampler2D b, int2 c) { return float(abrirQ(b, c)) / 16777216.0; }
+static float abrir(sampler2D b, int2 c) { return float(abrirQ(b, c)) / 16777216.0; }
 
 // O quadro que existe na entrada da passada p (1..6), em px do buffer, de gLo até gHi (fora): a camada, crescida n
 // por passada já feita (as horizontais crescem na largura; as verticais, na altura, sobre o quadro já 3n mais
 // largo), cortada na moldura.
 int2 gLo;
 int2 gHi;
-void quadro(int p) {
+static void quadro(int p) {
     int h = min(p - 1, 3);
     int v = max(p - 4, 0);
     gLo = max(gIni - int2(h, v) * lwN, int2(-MARGEM));
     gHi = min(gIni + gTam + int2(h, v) * lwN, int2(int(inputImg.get_width()), int(inputImg.get_height())) + MARGEM);
 }
 
-uint anterior(int p, int2 c) { return (p % 2 == 1) ? abrirQ(lwA, c) : abrirQ(lwB, c); }
+static uint anterior(int p, int2 c) { return (p % 2 == 1) ? abrirQ(lwA, c) : abrirQ(lwB, c); }
 
 fragment float4 fx_ae_linear_wipe(
     NovaVertexOut       in   [[stage_in]],

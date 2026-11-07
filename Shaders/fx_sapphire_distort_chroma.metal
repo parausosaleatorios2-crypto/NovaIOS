@@ -34,16 +34,16 @@ const int NIVEIS = 4;
 const int VOLTAS_MAX = 760;           // teto do laço de uma caixa (raio até 333 perto da borda)
 
 /** Um número de 0 a 1 em quatro bytes (o gradiente do brilho é ampliado milhares de vezes: 8 bits não bastam). */
-float4 empacotar(float v) {
+static float4 empacotar(float v) {
     v = clamp(v, 0.0, 0.99999994);
     float4 e = fract(v * float4(1.0, 255.0, 65025.0, 16581375.0));
     e -= e.yzww * float4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
     return e;
 }
 
-float desempacotar(float4 c) { return dot(c, float4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
+static float desempacotar(float4 c) { return dot(c, float4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
 
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
@@ -51,12 +51,12 @@ int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-float larguraDoBorrao() { return max(u.blurLens, 0.0) * eng.acEscalaDePixel; }
+static float larguraDoBorrao() { return max(u.blurLens, 0.0) * eng.acEscalaDePixel; }
 
 /** Os números de uma das três caixas de um eixo (`qual` = 0, 1, 2) para a largura `w`: raio, peso de dentro e da ponta.
  *  O desfoque do Sapphire, medido no S_Glow: largura inteira W -> raios que somam W; de W para W + 1 só a caixa
  *  (W mod 3) cresce, e a largura quebrada mistura as duas. */
-float3 numerosDaCaixa(int qual, float w) {
+static float3 numerosDaCaixa(int qual, float w) {
     float a = floor(w), f = w - a;
     float r = floor((a + float(2 - qual)) / 3.0 + 1e-4);
     if (abs(a - 3.0 * floor(a / 3.0 + 1e-4) - float(qual)) > 0.5) f = 0.0;
@@ -64,20 +64,20 @@ float3 numerosDaCaixa(int qual, float w) {
 }
 
 /** O brilho da lente num ponto da fonte: (5 R + 8 G + 3 B) / 16 da cor pré-multiplicada (medido). */
-float brilhoDaFonte(int2 p, int2 T) {
+static float brilhoDaFonte(int2 p, int2 T) {
     float4 c = inputImg.read(uint2(int2(espelhar(p.x, T.x), espelhar(p.y, T.y))), uint(0));
     return dot(c.rgb * c.a, float3(0.3125, 0.5, 0.1875));
 }
 
 /** O brilho num dos dois buffers do vai e vem, com a borda espelhada. */
-float lerBrilho(bool doA, int2 p, int2 T) {
+static float lerBrilho(bool doA, int2 p, int2 T) {
     p = int2(espelhar(p.x, T.x), espelhar(p.y, T.y));
     if (doA) return desempacotar(la.read(uint2(p), uint(0)));
     return desempacotar(lb.read(uint2(p), uint(0)));
 }
 
 /** O brilho borrado num ponto qualquer (pontos do buffer), bilinear; o resultado das seis caixas fica em `la`. */
-float brilhoBorrado(float2 pos, int2 T) {
+static float brilhoBorrado(float2 pos, int2 T) {
     float2 c = pos - 0.5;
     int2 b = int2(floor(c));
     float2 t = c - float2(b);
@@ -86,7 +86,7 @@ float brilhoBorrado(float2 pos, int2 T) {
 }
 
 /** O deslocamento em pontos do buffer (medido): 0,4 · L · (Blur Lens + L / 80) · Amount · gradiente, depois Rel e giro. */
-float2 campo(float2 pos, int2 T) {
+static float2 campo(float2 pos, int2 T) {
     float L = float(T.x);
     float k = 0.4 * L * (larguraDoBorrao() + L / 80.0) * u.amount;
     float2 g = 0.5 * float2(brilhoBorrado(pos + float2(1.0, 0.0), T) - brilhoBorrado(pos - float2(1.0, 0.0), T),
@@ -96,7 +96,7 @@ float2 campo(float2 pos, int2 T) {
     return float2(d.x * cos(a) - d.y * sin(a), d.x * sin(a) + d.y * cos(a));
 }
 
-int2 tamanhoDoNivel(int n) {
+static int2 tamanhoDoNivel(int n) {
     if (n == 0) return int2(int(inputImg.get_width()), int(inputImg.get_height()));
     if (n == 1) return int2(int(m1.get_width()), int(m1.get_height()));
     if (n == 2) return int2(int(m2.get_width()), int(m2.get_height()));
@@ -105,7 +105,7 @@ int2 tamanhoDoNivel(int n) {
 }
 
 /** Um ponto do nível `n` da pirâmide da fonte, pré-multiplicado, com o Wrap. */
-float4 pontoDoNivel(int n, int2 p, int2 Tn) {
+static float4 pontoDoNivel(int n, int2 p, int2 Tn) {
     bool fora = false;
     if (u.wrapX == 1) { p.x = p.x - (p.x / Tn.x) * Tn.x; if (p.x < 0) p.x += Tn.x; }
     else if (u.wrapX == 2) p.x = espelhar(p.x, Tn.x);
@@ -122,7 +122,7 @@ float4 pontoDoNivel(int n, int2 p, int2 Tn) {
 }
 
 /** A fonte lida em `pos` (pontos do buffer cheio) no nível `n`, bilinear. */
-float4 lerNivel(int n, float2 pos, int2 T) {
+static float4 lerNivel(int n, float2 pos, int2 T) {
     int2 Tn = tamanhoDoNivel(n);
     float2 c = pos * float2(Tn) / float2(T) - 0.5;
     int2 b = int2(floor(c));
@@ -131,14 +131,14 @@ float4 lerNivel(int n, float2 pos, int2 T) {
                mix(pontoDoNivel(n, b + int2(0, 1), Tn), pontoDoNivel(n, b + int2(1, 1), Tn), t.x), t.y);
 }
 
-float4 lerFonte(float2 pos, float nivel, int2 T) {
+static float4 lerFonte(float2 pos, float nivel, int2 T) {
     if (nivel <= 0.001) return lerNivel(0, pos, T);
     float n0 = min(floor(nivel), float(NIVEIS - 1));
     return mix(lerNivel(int(n0), pos, T), lerNivel(int(n0) + 1, pos, T), clamp(nivel - n0, 0.0, 1.0));
 }
 
 /** As três tendas do espectro em `s` (0 = ponta do Warp Blue, 1 = ponta do Warp Red): (Color1, Color2, Color3). */
-float3 tendas(float s) {
+static float3 tendas(float s) {
     float b = clamp(1.0 - 2.0 * s, 0.0, 1.0), r = clamp(2.0 * s - 1.0, 0.0, 1.0);
     float3 e = float3(r, 0.5 * (1.0 - b - r), b);          // medido: a do meio vale metade
     return sqrt(e / (e.x + e.y + e.z));

@@ -25,15 +25,15 @@ struct ae_displacement_mapParams {
 // `um` vale 1, mas o compilador não sabe (vem de `eng.acIterationCount`, que é 1 neste efeito). (a·b)·um não se funde
 // com a soma seguinte num fma: cada produto arredonda sozinho, como na SSE do AE.
 float um;
-float fixa(float x) { return x * um; }
-float3 fixa3(float3 x) { return x * um; }
-float4 fixa4(float4 x) { return x * um; }
-float mul(float a, float b) { return (a * b) * um; }
-float3 mul3(float a, float3 b) { return (a * b) * um; }
-float4 mul4(float4 a, float b) { return (a * b) * um; }
+static float fixa(float x) { return x * um; }
+static float3 fixa3(float3 x) { return x * um; }
+static float4 fixa4(float4 x) { return x * um; }
+static float mul(float a, float b) { return (a * b) * um; }
+static float3 mul3(float a, float3 b) { return (a * b) * um; }
+static float4 mul4(float4 a, float b) { return (a * b) * um; }
 
 /** a·b = p + e, exato (Dekker). */
-float2 produtoExato(float a, float b) {
+static float2 produtoExato(float a, float b) {
     float p = mul(a, b);
     float t = mul(4097.0, a);
     float ah = t - fixa(t - a);
@@ -45,13 +45,13 @@ float2 produtoExato(float a, float b) {
     return float2(p, e);
 }
 
-float restoDaDivisao(float a, float b, float q) {
+static float restoDaDivisao(float a, float b, float q) {
     float2 p = produtoExato(q, b);
     return fixa(a - p.x) - p.y;
 }
 
 /** a / b arredondado como no IEEE (b > 0): a divisão da GPU pode errar o último bit. */
-float divisao(float a, float b) {
+static float divisao(float a, float b) {
     if (a == 0.0) return 0.0;
     float s = a < 0.0 ? -1.0 : 1.0;
     a = abs(a);
@@ -67,7 +67,7 @@ float divisao(float a, float b) {
 
 /** O valor do controle em 16.16, como o AE o entrega ao plugin (arredondado). Chega em float (13,7 vira
  *  13,69999981): volta ao decimal (até 4 casas) antes do 16.16. */
-int fixo(float v) {
+static int fixo(float v) {
     float m = abs(v);
     float i = floor(m);
     float f = m - i;
@@ -90,13 +90,13 @@ bool mapaProprio;         // sem camada escolhida: o mapa é a própria camada (
 int4 janela;             // o pedaço do mapa que chega ao efeito: [x0, x1) × [y0, y1), em px do mapa
 
 /** Um pixel da camada (RGBA 0..255, cor reta) na orientação da IMAGEM (a linha 0 é o topo); fora, transparente. */
-int4 daCamada(int x, int y) {
+static int4 daCamada(int x, int y) {
     if (x < 0 || y < 0 || x >= W || y >= H) return int4(0);
     int2 b = inicio + int2(x, dePe ? H - 1 - y : y);
     return int4(inputImg.read(uint2(b), uint(0)) * 255.0 + 0.5);
 }
 
-int4 doMapa(int x, int y) {
+static int4 doMapa(int x, int y) {
     if (x < janela.x || y < janela.y || x >= janela.z || y >= janela.w) return int4(0);
     if (mapaProprio) return daCamada(x, y);
     // o mapa de outra camada: a cena no tamanho do buffer, na mesma grade e orientação da entrada
@@ -105,17 +105,17 @@ int4 doMapa(int x, int y) {
     return int4(mapImg.read(uint2(int2(x, dePe ? tm.y - 1 - y : y)), uint(0)) * 255.0 + 0.5);
 }
 
-int4 pixel(bool doMapa_, int x, int y) { return doMapa_ ? doMapa(x, y) : daCamada(x, y); }
+static int4 pixel(bool doMapa_, int x, int y) { return doMapa_ ? doMapa(x, y) : daCamada(x, y); }
 
 /** O índice inteiro de uma posição 16.16 como o AE: (short)(X >> 16). */
-int indice(int X) { return int(uint(X >> 16) << 16) >> 16; }
+static int indice(int X) { return int(uint(X >> 16) << 16) >> 16; }
 
 /**
  * O subpixel_sample de 8 bits do AE (PF_SubpixelSample_Straight, PF.dll), na ordem da SSE dele. Sem fração: o pixel.
  * Os quatro iguais: o pixel. Alfas iguais: cada canal (p3·w3 + p2·w2) + (p1·w1 + p0·w0) + 0,5. Senão: a cor pesada
  * pelo alfa, vezes 1/S, + 0,5; o alfa S + 0,5. Fora da imagem conta como zero.
  */
-int4 amostraDoAe(bool doMapa_, int X, int Y) {
+static int4 amostraDoAe(bool doMapa_, int X, int Y) {
     int ix = indice(X), iy = indice(Y);
     int fx = X & 0xFFFF, fy = Y & 0xFFFF;
     int4 p0 = pixel(doMapa_, ix, iy);
@@ -148,7 +148,7 @@ int4 amostraDoAe(bool doMapa_, int X, int Y) {
 }
 
 /** A volta inteira (o resultado em [0, n)), sem o % do GLSL ES com negativo. */
-int volta(int v, int n) {
+static int volta(int v, int n) {
     if (v < 0) v += n * ((n - 1 - v) / n);
     return v - n * (v / n);
 }
@@ -157,7 +157,7 @@ int volta(int v, int n) {
  * O bilinear do PRÓPRIO plugin, o do Wrap Pixels Around (Displacement.aex, 0x180002400): os índices dão a volta na
  * camada; pesos 16.16 cortados (o 00 é o resto); alfa = (Σ a·w + 0x8000) >> 16; cor = (Σ c·a·w + Σ a·w / 2) / Σ a·w.
  */
-int4 amostraComVolta(int X, int Y) {
+static int4 amostraComVolta(int X, int Y) {
     int ix = volta(indice(X), W), iy = volta(indice(Y), H);
     int ix1 = ix + 1 == W ? 0 : ix + 1;
     int iy1 = iy + 1 == H ? 0 : iy + 1;
@@ -181,10 +181,10 @@ int4 amostraComVolta(int X, int Y) {
 
 // ============================================================ o valor do mapa
 
-int div255(int v) { int t = v + 128; return ((t >> 8) + t) >> 8; }
+static int div255(int v) { int t = v + 128; return ((t >> 8) + t) >> 8; }
 
 /** A cor do mapa puxada para 128 pelo alfa (com alfa < 255), como o plugin. */
-int4 para128(int4 p) {
+static int4 para128(int4 p) {
     if (p.a == 255) return p;
     int4 q = p;
     for (int i = 0; i < 3; i++) {
@@ -195,7 +195,7 @@ int4 para128(int4 p) {
 }
 
 /** O Hue do AE (PF_Hue_Straight, PF.dll) em float32, passo a passo, ainda sem arredondar; −1 no cinza (dá 0). */
-float matiz(int3 c) {
+static float matiz(int3 c) {
     float k = as_type<float>(0x3B808081u);            // (float)(1/255)
     float R = mul(float(c.r), k), G = mul(float(c.g), k), B = mul(float(c.b), k);
     float mx, mn;
@@ -214,14 +214,14 @@ float matiz(int3 c) {
 
 /** O M_RoundDouble do U.dll do AE para x ≥ 0: trunc(x + 0,5) (sem somar em float, que arredondaria antes). Fica
  *  numa função à parte do matiz(): juntas, o compilador da AMD errou o resultado (conferido no PC). */
-int arredonda(float x) {
+static int arredonda(float x) {
     int i = int(x);
     if (x - float(i) >= 0.5) i++;
     return i;
 }
 
 /** O valor (0..255) que o canal escolhido dá; o Half é 127 no horizontal e 128 no vertical (é o plugin). */
-int valorDoCanal(int4 q, int canal, bool horizontal) {
+static int valorDoCanal(int4 q, int canal, bool horizontal) {
     int mx = max(max(q.r, q.g), q.b), mn = min(min(q.r, q.g), q.b);
     if (canal == 0) return q.r;
     if (canal == 1) return q.g;
@@ -237,10 +237,10 @@ int valorDoCanal(int4 q, int canal, bool horizontal) {
 }
 
 /** O máximo de 8 bpc: (f + (f < 0 ? 127 : 0)) >> 7. */
-int corte128(int f) { return f < 0 ? (f + 127) >> 7 : f >> 7; }
+static int corte128(int f) { return f < 0 ? (f + 127) >> 7 : f >> 7; }
 
 /** trunc(a·b / 65536) para o zero, com o produto em 64 bits (o sinal à parte; o resultado cabe em 32 bits). */
-int mulDiv16(int a, int b) {
+static int mulDiv16(int a, int b) {
     bool neg = (a < 0) != (b < 0);
     uint x = uint(abs(a)), y = uint(abs(b));
     uint xl = x & 0xFFFFu, xh = x >> 16, yl = y & 0xFFFFu, yh = y >> 16;
@@ -250,8 +250,8 @@ int mulDiv16(int a, int b) {
 }
 
 /** ⌊n / d⌋ com d > 0 (o / do GLSL ES com negativo é indefinido). */
-int piso(int n, int d) { return n >= 0 ? n / d : -((-n + d - 1) / d); }
-int teto(int n, int d) { return -piso(-n, d); }
+static int piso(int n, int d) { return n >= 0 ? n / d : -((-n + d - 1) / d); }
+static int teto(int n, int d) { return -piso(-n, d); }
 
 fragment float4 fx_ae_displacement_map(
     NovaVertexOut       in   [[stage_in]],

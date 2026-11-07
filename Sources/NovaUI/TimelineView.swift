@@ -7,7 +7,6 @@
 //
 
 import SwiftUI
-import NovaEngine
 
 public struct TimelineView: View {
     let composition: Composition

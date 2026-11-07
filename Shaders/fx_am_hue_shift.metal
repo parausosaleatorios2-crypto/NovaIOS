@@ -19,7 +19,7 @@ struct am_hue_shiftParams {
 // divisão do shader vai pelo recíproco e erra o último bit em metade dos k — e o giro leva esse bit até o meio nível
 // da saída (300 pixels opacos com 1 nível de diferença, medidos). n·2^e ÷ 255 pelo mais perto, em 24 bits, montado
 // direto nos bits do float (o mesmo do Equilíbrio de cor).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;

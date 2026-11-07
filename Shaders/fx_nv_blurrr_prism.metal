@@ -21,12 +21,12 @@ struct nv_blurrr_prismParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float2 dir(float graus) {
+static float2 dir(float graus) {
     float a = graus * PI / 180.0;
     return float2(cos(a), sin(a));
 }
 
-float3 amostraCanal(float2 origem, float2 direcao, float raio, int canal, int n) {
+static float3 amostraCanal(float2 origem, float2 direcao, float raio, int canal, int n) {
     float soma = 0.0;
     float peso = 0.0;
     for (int i = 0; i <= 48; i++) {

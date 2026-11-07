@@ -35,7 +35,7 @@ struct toji_scanlinesParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash12(float2 p) {
+static float hash12(float2 p) {
             return fract(sin(dot(p, float2(12.9898,78.233))) * 43758.5453);
         }
 

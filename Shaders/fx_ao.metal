@@ -31,36 +31,36 @@ struct aoParams {
 const float PI = 3.14159265359;
 
 /** O mapa naquele ponto, 0 (longe) a 1 (perto). */
-float lerMapa(float2 uv) {
+static float lerMapa(float2 uv) {
     float v = dot(depthMap.sample(__nv_smp, uv).rgb, float3(0.299, 0.587, 0.114));
     return u.invertDepth ? 1.0 - v : v;
 }
 
 // ------------------------------------------------ a superfície reconstruída
 
-int2 tamanhoCheio() {
+static int2 tamanhoCheio() {
     return int2(int(dispBuf.get_width()), int(dispBuf.get_height()));
 }
 
 /** A disparidade refinada (passe 0), desempacotada. Sempre por texel inteiro. */
-float disparidadeEm(int2 p) {
+static float disparidadeEm(int2 p) {
     int2 t = tamanhoCheio();
     float4 v = dispBuf.read(uint2(clamp(p, int2(0), t - 1)), uint(0));
     return v.r + v.g / 255.0;
 }
 
 /** Disparidade -> distância. Ver o cabeçalho. */
-float distanciaEm(int2 p) {
+static float distanciaEm(int2 p) {
     float r = max(u.sceneDepth, 1.0001);
     return 1.0 / (1.0 / r + disparidadeEm(p) * (1.0 - 1.0 / r));
 }
 
-float tangenteDoCampo() {
+static float tangenteDoCampo() {
     return tan(radians(clamp(u.fieldOfView, 1.0, 170.0)) * 0.5);
 }
 
 /** O ponto 3D atrás do pixel p. Câmera na origem, olhando para +z. */
-float3 posicaoEm(int2 p) {
+static float3 posicaoEm(int2 p) {
     float2 t = float2(tamanhoCheio());
     float2 uv = (float2(p) + 0.5) / t;
     float z = distanciaEm(p);
@@ -69,13 +69,13 @@ float3 posicaoEm(int2 p) {
 }
 
 /** Onde, na tela (0..1), cai um ponto 3D. */
-float2 projetar(float3 q) {
+static float2 projetar(float3 q) {
     float2 t = float2(tamanhoCheio());
     float th = tangenteDoCampo();
     return float2(q.x / (q.z * th * (t.x / t.y)), q.y / (q.z * th)) * 0.5 + 0.5;
 }
 
-int2 texelCheio(float2 uv) {
+static int2 texelCheio(float2 uv) {
     return int2(uv * float2(tamanhoCheio()));
 }
 
@@ -84,7 +84,7 @@ int2 texelCheio(float2 uv) {
  * profundidade. A diferença central atravessa dois objetos na borda e entorta a
  * normal: é daí que vem o contorno escuro.
  */
-float3 normalEm(int2 p) {
+static float3 normalEm(int2 p) {
     float3 c = posicaoEm(p);
     float3 xm = posicaoEm(p - int2(1, 0));
     float3 xp = posicaoEm(p + int2(1, 0));
@@ -98,7 +98,7 @@ float3 normalEm(int2 p) {
 }
 
 /** O salto relativo de profundidade em volta de p: grande = borda de objeto. */
-float saltoEm(int2 p) {
+static float saltoEm(int2 p) {
     float z = distanciaEm(p);
     float m = max(
         max(abs(distanciaEm(p + int2(1, 0)) - z), abs(distanciaEm(p - int2(1, 0)) - z)),
@@ -109,7 +109,7 @@ float saltoEm(int2 p) {
 
 // --------------------------------------------------------------- o estimador
 
-float bayer4(int2 p) {
+static float bayer4(int2 p) {
     int i = (p.y & 3) * 4 + (p.x & 3);
     const float M[16] = float[16](
          0.0,  8.0,  2.0, 10.0,
@@ -125,7 +125,7 @@ float bayer4(int2 p) {
  * centro (escala de 0,1 a 1 pelo quadrado do índice). Espiral dourada com peso
  * de cosseno: determinística, sem tabela.
  */
-float3 amostraDoKernel(int i, int n, float semente) {
+static float3 amostraDoKernel(int i, int n, float semente) {
     float t = (float(i) + 0.5) / float(n);
     float fi = float(i) * 2.39996323 + semente;
     float cosT = sqrt(1.0 - t * 0.95);
@@ -134,13 +134,13 @@ float3 amostraDoKernel(int i, int n, float semente) {
     return float3(cos(fi) * sinT, sin(fi) * sinT, cosT) * escala;
 }
 
-float pesoDaQueda(float t) {
+static float pesoDaQueda(float t) {
     if (u.aoFalloff == 0) return 1.0 - 0.75 * t;
     if (u.aoFalloff == 2) return exp(-2.5 * t);
     return 1.0 - 0.75 * t * t * (3.0 - 2.0 * t);
 }
 
-float ocluir(float3 P, float3x3 tbn, float raio, int n, float semente) {
+static float ocluir(float3 P, float3x3 tbn, float raio, int n, float semente) {
     float occ = 0.0;
     float total = 0.0;
     for (int i = 0; i < 32; i++) {
@@ -163,32 +163,32 @@ float ocluir(float3 P, float3x3 tbn, float raio, int n, float semente) {
     return total > 0.0 ? occ / total : 0.0;
 }
 
-int amostrasDaQualidade() {
+static int amostrasDaQualidade() {
     if (u.aoQuality == 0) return 8;
     if (u.aoQuality == 2) return 16;
     if (u.aoQuality == 3) return 24;
     return 12;
 }
 
-int amostrasDeContato() {
+static int amostrasDeContato() {
     if (!u.contactAo || u.contactStrength <= 0.0 || u.aoQuality == 0) return 0;
     return u.aoQuality == 3 ? 8 : 4;
 }
 
 // ------------------------------------------------------------------ limpeza
 
-float aoEm(sampler2D fonte, int2 q) {
+static float aoEm(sampler2D fonte, int2 q) {
     int2 t = int2(int(fonte.get_width()), int(fonte.get_height()));
     return fonte.read(uint2(clamp(q, int2(0), t - 1)), uint(0)).r;
 }
 
 /** A distância na superfície embaixo do texel q de um buffer de meia resolução. */
-float distanciaDoTexelReduzido(int2 q, int2 tamanhoReduzido) {
+static float distanciaDoTexelReduzido(int2 q, int2 tamanhoReduzido) {
     float2 uv = (float2(q) + 0.5) / float2(tamanhoReduzido);
     return distanciaEm(texelCheio(uv));
 }
 
-float limpar(sampler2D fonte, int2 direcao) {
+static float limpar(sampler2D fonte, int2 direcao) {
     int2 t = int2(int(fonte.get_width()), int(fonte.get_height()));
     int2 q0 = int2(in.acScreenNorm * float2(t));
     float z0 = distanciaDoTexelReduzido(q0, t);
@@ -207,7 +207,7 @@ float limpar(sampler2D fonte, int2 direcao) {
 }
 
 /** A ampliação ao tamanho cheio, pesando os 4 texels reduzidos pela profundidade. */
-float ampliar(sampler2D fonte) {
+static float ampliar(sampler2D fonte) {
     int2 t = int2(int(fonte.get_width()), int(fonte.get_height()));
     float2 base = in.acScreenNorm * float2(t) - 0.5;
     int2 q0 = int2(floor(base));

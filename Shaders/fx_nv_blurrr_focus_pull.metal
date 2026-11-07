@@ -22,7 +22,7 @@ const int N = 9;
 const float OFF[9] = float[9](-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0);
 const float WT[9]  = float[9](0.028,0.065,0.121,0.175,0.198,0.175,0.121,0.065,0.028);
 
-float fora(float2 uv) {
+static float fora(float2 uv) {
     float2 p = uv - u.center; p.x *= eng.acAspect;
     float r = length(p);
     return smoothstep(u.sharpArea, u.sharpArea + u.falloff, r);

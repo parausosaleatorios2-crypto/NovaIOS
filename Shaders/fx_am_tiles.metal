@@ -19,11 +19,11 @@ struct am_tilesParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
 // presos à borda como o CLAMP_TO_EDGE.
-float4 camadaNoPonto(sampler2D img, float2 uv) {
+static float4 camadaNoPonto(sampler2D img, float2 uv) {
     int2 T = int2(int(img.get_width()), int(img.get_height()));
     float2 p = uv * float2(T) - 0.5;
     float2 i = floor(p);
@@ -40,11 +40,11 @@ float4 camadaNoPonto(sampler2D img, float2 uv) {
 // O mesmo filtro no buffer da camada inteira, mas fora dele é NADA (transparente), e não a borda esticada. Fora do
 // buffer a camada não tem pixel: com Recortar abaixo de 1 numa camada do tamanho da tela, a busca passava da borda e
 // as fileiras de cima e de baixo viravam listras (relato do Discord, 25/10/2026).
-float4 texelOuNada(sampler2D img, int2 a, int2 m) {
+static float4 texelOuNada(sampler2D img, int2 a, int2 m) {
     if (any(lessThan(a, int2(0))) || any(greaterThan(a, m))) return float4(0.0);
     return preMultiplicada(img.read(uint2(a), uint(0)));
 }
-float4 camadaSemBorda(sampler2D img, float2 uv) {
+static float4 camadaSemBorda(sampler2D img, float2 uv) {
     int2 T = int2(int(img.get_width()), int(img.get_height()));
     float2 p = uv * float2(T) - 0.5;
     float2 i = floor(p);
@@ -59,7 +59,7 @@ float4 camadaSemBorda(sampler2D img, float2 uv) {
 }
 
 // A volta da `eng.acCamadaParaTela`: UV da tela → UV do buffer da camada.
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }

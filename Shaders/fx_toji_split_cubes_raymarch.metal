@@ -24,35 +24,35 @@ struct toji_split_cubes_raymarchParams {
 #define PI 3.14159265359
 #define HALFPI (PI*0.5)
 
-float2 rot2(float2 a, float b){
+static float2 rot2(float2 a, float b){
     float c = cos(b), s = sin(b);
     return float2(a.x*c - a.y*s, a.x*s + a.y*c);
 }
 
-float sdBox(float3 p, float3 r){
+static float sdBox(float3 p, float3 r){
     float3 d = abs(p) - r;
     return min(max(d.x, max(d.y, d.z)), 0.0) + length(max(d, 0.0));
 }
 
-float sdRoundBox(float3 p, float3 r, float rr){
+static float sdRoundBox(float3 p, float3 r, float rr){
     return sdBox(p, r - float3(rr)) - rr;
 }
 
-float tick(float t){
+static float tick(float t){
     t = smoothstep(0.0, 1.0, t);
     t = smoothstep(0.0, 1.0, t);
     return t;
 }
 
-float noise1(float a){
+static float noise1(float a){
     return fract(a * 123.4762831);
 }
 
-float hash2(float2 a){
+static float hash2(float2 a){
     return fract(sin(dot(a, float2(4.43243, 12.4762)) * 13.43762));
 }
 
-float2 splitScene(float3 p, float spinScale, float SPEED){
+static float2 splitScene(float3 p, float spinScale, float SPEED){
     float time = eng.acTime * SPEED;
     float t = tick(fract(time));
     float mode = noise1(floor(time)) * 3.0;
@@ -102,13 +102,13 @@ float2 splitScene(float3 p, float spinScale, float SPEED){
     return float2(distCubes, (distStickers < 0.0) ? (1.0 + color) : 0.0);
 }
 
-float2 sceneSDF(float3 p, float SPEED){
+static float2 sceneSDF(float3 p, float SPEED){
     float2 a = splitScene(p, 0.0, SPEED);
     float2 b = splitScene(p, u.SPIN_SCALE, SPEED);
     return (a.x < b.x) ? float2(a.x, a.y) : float2(b.x, b.y);
 }
 
-float3 colorForIndex(int idx){
+static float3 colorForIndex(int idx){
     // Map 0..5 to fixed palette without dynamic array indexing
     if (idx == 0) return float3(1.0, 0.0, 0.0);
     if (idx == 1) return float3(1.0, 1.0, 0.0);

@@ -27,7 +27,7 @@ const float TAU = 6.2831853;
  * círculo pequeno vira a semente de uma distância ao ponto mais próximo —
  * acumulando por camada e normalizando pelo número delas.
  */
-float causticas(float2 uv, float t, int camadas) {
+static float causticas(float2 uv, float t, int camadas) {
     float2 p = uv;
     float soma = 0.0;
     float amplitude = 1.0;

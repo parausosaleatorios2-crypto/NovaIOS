@@ -30,7 +30,7 @@ struct toji_lightningParams {
 };
 
 // --- funcoes auxiliares do efeito
-float sdLine( in float2 p, in float2 a, in float2 b )
+static float sdLine( in float2 p, in float2 a, in float2 b )
         {
             float2 pa = p-a, ba = b-a;
             float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 );

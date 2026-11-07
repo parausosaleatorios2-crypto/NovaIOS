@@ -26,12 +26,12 @@ struct am_fractal_ridges_legacyParams {
 // --- funcoes auxiliares do efeito
 // O simplex 3D do webgl-noise (Ashima Arts / Ian McEwan, licença MIT), como o AM o escreve: as mesmas constantes e
 // a mesma ordem de operações (o ruído dá salto na divisa das células; a mesma ordem dá o mesmo float).
-float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-float4 mod289(float4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-float4 permute(float4 x) { return mod289(((x * 34.0) + 1.0) * x); }
-float4 taylorInvSqrt(float4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+static float4 mod289(float4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+static float4 permute(float4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+static float4 taylorInvSqrt(float4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
 
-float snoise(float3 v) {
+static float snoise(float3 v) {
     const float2 C = float2(1.0 / 6.0, 1.0 / 3.0);
     const float4 D = float4(0.0, 0.5, 1.0, 2.0);
     float3 i = floor(v + dot(v, C.yyy));
@@ -78,7 +78,7 @@ float snoise(float3 v) {
 }
 
 // A crista do AM: |n| vira dobra, invertida para a dobra ficar em cima, e afinada ao quadrado.
-float ridge(float h, float offset) {
+static float ridge(float h, float offset) {
     h = abs(h);
     h = offset - h;
     h = h * h;
@@ -86,7 +86,7 @@ float ridge(float h, float offset) {
 }
 
 // O ridged multifractal do AM, linha por linha (cada oitava pesa também pela crista da anterior).
-float ridgedMF(float2 p, int OCTAVES, float2 parallax, float evo) {
+static float ridgedMF(float2 p, int OCTAVES, float2 parallax, float evo) {
     float lacunarity = 2.0;
     float gain = 0.5;
     float offset = 0.9;
@@ -105,10 +105,10 @@ float ridgedMF(float2 p, int OCTAVES, float2 parallax, float evo) {
     return sum;
 }
 
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -121,7 +121,7 @@ float3 fundoNoPixel() {
 // a cor reta `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1, a composição Normal do Nova, `s·a·op +
 // fundo·(1 − a·op)`, dá o mesmo `op·p + fundo·(1 − op·alfa)` do AM com qualquer opacidade. Não cabe só quando a
 // soma passa de 1 com a opacidade abaixo da cheia.
-float4 paraReta(float4 p) {
+static float4 paraReta(float4 p) {
     // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
     float4 q = floor(p * 255.0 + 0.5) / 255.0;
     if (all(lessThanEqual(q.rgb, float3(q.a)))) return p.a > 0.0 ? float4(min(p.rgb / p.a, float3(1.0)), p.a) : float4(0.0);
@@ -138,7 +138,7 @@ float4 paraReta(float4 p) {
 }
 
 // A volta da `eng.acCamadaParaTela`: UV da tela → UV do buffer da camada.
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }

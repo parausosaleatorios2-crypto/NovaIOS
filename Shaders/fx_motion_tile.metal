@@ -23,10 +23,10 @@ struct motion_tileParams {
 
 // --- funcoes auxiliares do efeito
 // O índice inteiro para baixo (o `/` de int arredonda para o zero, e à esquerda os índices são negativos).
-int divBaixo(int a, int b) { return a >= 0 ? a / b : -((-a - 1) / b) - 1; }
+static int divBaixo(int a, int b) { return a >= 0 ? a / b : -((-a - 1) / b) - 1; }
 
 // Índice GLOBAL de pixel da camada (pode ser de um ladrilho vizinho) -> o pixel dentro dela, com o espelho.
-int dobrar(int g, int n, out int ladrilho) {
+static int dobrar(int g, int n, out int ladrilho) {
     ladrilho = divBaixo(g, n);
     int q = g - ladrilho * n;
     if (u.mirrorEdges && (ladrilho & 1) != 0) q = n - 1 - q;
@@ -34,7 +34,7 @@ int dobrar(int g, int n, out int ladrilho) {
 }
 
 int2 inicioDaCamada;
-float4 texel(int qx, int qy) {
+static float4 texel(int qx, int qy) {
     float4 c = inputImg.read(uint2(inicioDaCamada + int2(qx, qy)), uint(0));
     return float4(c.rgb * c.a, c.a);
 }

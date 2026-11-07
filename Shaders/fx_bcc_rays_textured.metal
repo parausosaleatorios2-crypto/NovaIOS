@@ -54,7 +54,7 @@ int W, H;
 bool dePe;
 float Lx, Ly;                               // a luz em px da camada, na orientação da imagem (linha 0 = topo)
 
-void preparar() {
+static void preparar() {
     gBuf = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 tam = clamp(int2(floor(eng.acCamada * float2(gBuf) + 0.5)), int2(1), gBuf);
     gInicio = (gBuf - tam) / 2;
@@ -64,14 +64,14 @@ void preparar() {
     if (dePe) cb.y = float(H) - cb.y;
     Lx = cb.x; Ly = cb.y;
 }
-int2 noBuffer(int x, int y) { return gInicio + int2(x, dePe ? H - 1 - y : y); }
+static int2 noBuffer(int x, int y) { return gInicio + int2(x, dePe ? H - 1 - y : y); }
 
 // ---- ruído de gradiente 3D (o Shimmer, aproximado) ----------------------------------------------
-float3 hash3(float3 p) {
+static float3 hash3(float3 p) {
     p = float3(dot(p, float3(127.1, 311.7, 74.7)), dot(p, float3(269.5, 183.3, 246.1)), dot(p, float3(113.5, 271.9, 124.6)));
     return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
 }
-float perlin3(float3 p) {
+static float perlin3(float3 p) {
     float3 i = floor(p), f = fract(p);
     float3 u = f * f * (3.0 - 2.0 * f);
     float n000 = dot(hash3(i + float3(0, 0, 0)), f - float3(0, 0, 0));
@@ -94,7 +94,7 @@ float perlin3(float3 p) {
 // do PC (1 s sem elas). A tabela sai do passe 0 (permBuf, 514×1): cada ponto refaz o LCG de trás para frente (o
 // estado final 0x1EF6C426 e o inverso do multiplicador 0xEEB9EB65) seguindo onde o seu valor estava; P[256+i] =
 // P[i mod 256], como a cópia do plugin (que sobrescreve o 256). Os gradientes são as 12 arestas + 4 repetidas.
-int permDoPasse(int i) {
+static int permDoPasse(int i) {
     int pos = i & 255;
     uint s = 0x1EF6C426u;
     for (int k = 129; k >= 1; k--) {
@@ -104,23 +104,23 @@ int permDoPasse(int i) {
     }
     return pos;
 }
-int PERM(int i) {
+static int PERM(int i) {
     int2 b = int2(floor(permBuf.read(uint2(int2(i, 0)), uint(0)).rg * 255.0 + 0.5));
     return b.x + (b.y << 8);
 }
 const float G7 = 0.70710677;               // 0x3F3504F3
-float3 gradBcc(int h) {
+static float3 gradBcc(int h) {
     if (h >= 12) return h == 12 ? float3(G7, G7, 0.0) : h == 13 ? float3(-G7, G7, 0.0) : h == 14 ? float3(0.0, -G7, G7) : float3(0.0, -G7, -G7);
     float s1 = (h & 1) != 0 ? -G7 : G7, s2 = (h & 2) != 0 ? -G7 : G7;
     return h < 4 ? float3(s1, s2, 0.0) : h < 8 ? float3(s1, 0.0, s2) : float3(0.0, s1, s2);
 }
-int pisoBcc(float v) { return int(v >= 0.0 ? v : v - 1.0); }    // cvttss2si de (v < 0 ? v − 1 : v)
-float curvaBcc(float t) { return ((((t * 6.0) - 15.0) * t + 10.0) * t) * (t * t); }
-float cantoBcc(int h, int c, float gx, float gy, float gz) {
+static int pisoBcc(float v) { return int(v >= 0.0 ? v : v - 1.0); }    // cvttss2si de (v < 0 ? v − 1 : v)
+static float curvaBcc(float t) { return ((((t * 6.0) - 15.0) * t + 10.0) * t) * (t * t); }
+static float cantoBcc(int h, int c, float gx, float gy, float gz) {
     float3 g = gradBcc((h + c) & 15);
     return (gy * g.y + gx * g.x) + gz * g.z;
 }
-float ruidoBcc(float x, float y, float z) {
+static float ruidoBcc(float x, float y, float z) {
     int ix = pisoBcc(x), iy = pisoBcc(y), iz = pisoBcc(z);
     int X0 = (ix + 32) & 255, X1 = (X0 + 1) & 255, Y0 = (iy + 32) & 255, Y1 = (Y0 + 1) & 255;
     float fx = x - float(ix), fy = y - float(iy), fz = z - float(iz);
@@ -146,7 +146,7 @@ float ruidoBcc(float x, float y, float z) {
 // (θ = 180° − Direction; ∫ em segundos — com os controles parados, taxa·t). Conferido 100% igual ao View do AE nos quadros
 // 0 e 15. Valor = |ruído| preso em 1.
 float gTb0, gTpx, gTpy, gTy0, gTo24, gTo28, gTz;
-void prepararTextura() {
+static void prepararTextura() {
     float S = max(u.textureScale, 1.0);
     float Wl = float(W + 1), Hl = float(H + 1);
     gTb0 = 1000.0 / S;                                  // 0xb0
@@ -158,18 +158,18 @@ void prepararTextura() {
     gTo24 = m * cos(a); gTo28 = -m * sin(a);
     gTz = u.morphStart + 0.1 * u.morphRate * eng.acTime;
 }
-float texturaBcc(int r, int c) {
+static float texturaBcc(int r, int c) {
     float n = ruidoBcc((gTb0 * -0.5 + float(c) * gTpx) + gTo28, (float(r) * gTpy + gTy0) - gTo24, gTz);
     return min(n <= 0.0 ? n * -1.0 : n, 1.0);
 }
 // o ponto (r, c) da imagem: do texBuf (os bits do float em RGBA8); a linha e a coluna a mais, na hora
-float pontoDaTextura(int r, int c) {
+static float pontoDaTextura(int r, int c) {
     if (r >= H || c >= W) return texturaBcc(r, c);
     uint4 b = uint4(floor(texBuf.read(uint2(noBuffer(c, r)), uint(0)) * 255.0 + 0.5));
     return as_type<float>(b.r | (b.g << 8) | (b.b << 16) | (b.a << 24));
 }
 // FUN_18069d160: bilinear em float; py, px em 24.8; fora da imagem os vizinhos viram a borda (0 ou H/W)
-float amostraTextura(int py, int px) {
+static float amostraTextura(int py, int px) {
     int r0 = py >> 8, c0 = px >> 8, r1 = r0 + 1, c1 = c0 + 1;
     if (r0 < 0 || r0 >= H) { r0 = r0 < 0 ? 0 : H; r1 = r0; }
     if (c0 < 0 || c0 >= W) { c0 = c0 < 0 ? 0 : W; c1 = c0; }
@@ -181,13 +181,13 @@ float amostraTextura(int py, int px) {
 // a textura no k do raio (FUN_180e1d340): Amount·0,025, Bias·0,005, Radius e Falloff em % da largura
 bool gTexOn;
 float gTA, gTB, gTr1q, gTr2q, gTdif;
-void prepararTexturaNoRaio() {
+static void prepararTexturaNoRaio() {
     gTexOn = u.textureMode == 0 && u.textureAmount != 0.0;
     gTA = u.textureAmount * 0.025; gTB = u.textureBias * 0.005;
     float r1 = u.textureRadius * float(W) * 0.01, r2 = u.textureFalloff * float(W) * 0.01 + r1;
     gTr1q = r1 * r1; gTr2q = r2 * r2; gTdif = gTr2q - gTr1q;
 }
-float texturaNoK(float k, float r2, int py, int px) {
+static float texturaNoK(float k, float r2, int py, int px) {
     if (!gTexOn || r2 >= gTr2q) return k;
     float t = amostraTextura(py, px) - gTB;
     if (r2 > gTr1q) t *= (gTr2q - r2) / gTdif;
@@ -197,13 +197,13 @@ float texturaNoK(float k, float r2, int py, int px) {
 }
 
 // ---- a luz em 16 bits -----------------------------------------------------------------------------
-uint luz(int y, int x) {
+static uint luz(int y, int x) {
     if (x < 0 || y < 0 || x >= W || y >= H) return 0u;
     float4 t = luzBuf.read(uint2(noBuffer(x, y)), uint(0));
     return uint(floor(t.r * 255.0 + 0.5)) * 256u + uint(floor(t.g * 255.0 + 0.5));
 }
 // FUN_180e1f280: bilinear de 8 bits; py, px em 24.8
-uint amostra(int py, int px) {
+static uint amostra(int py, int px) {
     int y0 = py >> 8, x0 = px >> 8;
     uint fy = uint(py & 255), fx = uint(px & 255);
     uint i6 = luz(y0, x0), i5 = luz(y0, x0 + 1), i7 = luz(y0 + 1, x0), i8 = luz(y0 + 1, x0 + 1);
@@ -211,21 +211,21 @@ uint amostra(int py, int px) {
 }
 
 // ---- o atan2 inteiro do BCC (FUN_1803693a0, tabela de FUN_180369e70, divisão de FUN_180369330) -----
-int divA(int a, int b) {
+static int divA(int a, int b) {
     if (b < 0x4000) return (a << 16) / max(b, 1);
     if (b < 0x10000) return (a << 14) / ((b + 3) >> 2);
     if (b < 0x40000) return (a << 12) / ((b + 15) >> 4);
     return int(float(a) * 65536.0 / float(b));
 }
-int tab(int i) { return int(__nv_atan(min(float(i) * 0.00390625, 1.0)) * 57.29578 * 65536.0 + 0.5); }
-int interp(int q, out bool ok) {
+static int tab(int i) { return int(__nv_atan(min(float(i) * 0.00390625, 1.0)) * 57.29578 * 65536.0 + 0.5); }
+static int interp(int q, out bool ok) {
     int i = q >> 8, f = q & 255;
     ok = i >= 0 && i < 256;
     int i0 = clamp(i, 0, 255);
     int t0 = tab(i0);
     return (((tab(i0 + 1) - t0) * f) >> 8) + t0;
 }
-int atan2Fixo(int p1, int p2) {
+static int atan2Fixo(int p1, int p2) {
     int a1 = abs(p1), a2 = abs(p2);
     bool menor = a1 <= a2, ok;
     int t = menor ? interp(divA(a1, a2 + 1), ok) : interp(divA(a2, max(a1, 1)), ok);
@@ -234,7 +234,7 @@ int atan2Fixo(int p1, int p2) {
     if (p2 >= 0) return menor ? (ok ? -t : 0) : (ok ? t - 0x5a0000 : -0x5a0000);
     return menor ? (ok ? t - 0xb40000 : -0xb40000) : (ok ? -0x5a0000 - t : -0x5a0000);
 }
-uint isqrtU(uint n) {
+static uint isqrtU(uint n) {
     uint s = uint(sqrt(float(n)));
     while (s > 0u && s * s > n) s--;
     while (s < 65535u && (s + 1u) * (s + 1u) <= n) s++;
@@ -244,7 +244,7 @@ uint isqrtU(uint n) {
 // ---- o Look (FUN_180d21ad0) e o coeficiente do raio -----------------------------------------------
 float gExt, gHold, gP0, gP1, gRL2, gW2;
 int gPot;
-void prepararLook() {
+static void prepararLook() {
     float rl = max(u.rayLength, 0.0), e = 15.0, c = 0.0, h = 1.0;
     if (u.look == 1) { e = u.extendRays; c = u.contractRays; h = u.holdoutRadius; }
     else if (u.look == 2) { e = 100.0; c = 0.0; h = 1.0; }
@@ -268,7 +268,7 @@ void prepararLook() {
 }
 // FUN_180e1b8d0 (atenuação 0, holdout pela raiz: 0x5e006c = 1) e FUN_180e1d340 (0x5e006b = 1); py, px = o ponto
 // do raio em 24.8 (onde a textura é lida)
-int coeficiente(int i, int v, int acc, int passo, int py, int px) {
+static int coeficiente(int i, int v, int acc, int passo, int py, int px) {
     float r = float(i);
     float d = r - gHold;
     float f = (gHold != 0.0) ? (d >= 0.0 ? d * d : 0.0) : r * r;
@@ -286,7 +286,7 @@ int coeficiente(int i, int v, int acc, int passo, int py, int px) {
 }
 // Um raio do mapa polar (FUN_180e1da20), da linha i0 (com o acumulado acc0 nela) até r1: o acumulado nas linhas r0
 // e r1. Na linha i a posição é a da luz + i·passo, a mesma de marchar do centro.
-int2 raio(float ang, int i0, int acc0, int r0, int r1) {
+static int2 raio(float ang, int i0, int acc0, int r0, int r1) {
     float s = sin(ang), c = cos(ang);
     int dy = int(s * 65536.0 + 0.5), dx = int(c * 65536.0 + 0.5);   // (int) trunca para o zero
     int y = int(Ly * 65536.0 + 0.5) + i0 * dy, x = int(Lx * 65536.0 + 0.5) + i0 * dx;
@@ -301,10 +301,10 @@ int2 raio(float ang, int i0, int acc0, int r0, int r1) {
     }
     return res;
 }
-int accDoCentro() {
+static int accDoCentro() {
     return min(int(amostra(int(Ly * 65536.0 + 0.5) >> 8, int(Lx * 65536.0 + 0.5) >> 8) >> 1), 0x8000);
 }
-int numeroDeAngulos(int w) {                        // (uint)((double)W · 1,4): o 1,4 em double é um pouco menos
+static int numeroDeAngulos(int w) {                        // (uint)((double)W · 1,4): o 1,4 em double é um pouco menos
     int t = 14 * w, n = t / 10, p2 = 1;
     while (p2 <= n / 2) p2 *= 2;                    // a maior potência de 2 até n (findMSB é do ES 3.1)
     if (t % 10 == 0 && 4 * w > 5 * p2) n -= 1;
@@ -315,7 +315,7 @@ int numeroDeAngulos(int w) {                        // (uint)((double)W · 1,4):
 const int LADO_DOS_PONTOS = 1024;          // o pontosBuf (o passe que o escreve não pergunta o tamanho dele)
 int gNa, gNr, gNc, gK;
 float gPassoAng, gComeco;
-void prepararMapa() {
+static void prepararMapa() {
     gNa = numeroDeAngulos(W);
     gPassoAng = 360.0 / float(gNa); gComeco = gPassoAng * 0.5;
     float dmax = max(max(length(float2(Lx, Ly)), length(float2(Lx - float(W), Ly))),
@@ -324,31 +324,31 @@ void prepararMapa() {
     gNc = max(min((gNr + 31) / 32, LADO_DOS_PONTOS * LADO_DOS_PONTOS / gNa), 1);   // pontos por ângulo
     gK = (gNr + gNc - 1) / gNc;                                                    // linhas entre eles
 }
-float anguloDaColuna(int c) { return (float(c) * gPassoAng + gComeco) * GRAU; }
+static float anguloDaColuna(int c) { return (float(c) * gPassoAng + gComeco) * GRAU; }
 // O acumulado do ângulo c na linha j·K (j ≥ 1), guardado pelo passe 1 em 16 bits (R e G).
-int ponto(int c, int j) {
+static int ponto(int c, int j) {
     int i = c * gNc + j - 1;
     float4 t = pontosBuf.read(uint2(int2(i % LADO_DOS_PONTOS, i / LADO_DOS_PONTOS)), uint(0));
     return int(floor(t.r * 255.0 + 0.5)) * 256 + int(floor(t.g * 255.0 + 0.5));
 }
 // O raio do ângulo c nas linhas r0 e r1, a partir do ponto de controle de baixo.
-int2 raioDaColuna(int c, int r0, int r1) {
+static int2 raioDaColuna(int c, int r0, int r1) {
     int j = r0 / gK;
     return raio(anguloDaColuna(c), j * gK, j == 0 ? accDoCentro() : ponto(c, j), r0, r1);
 }
 
 // ---- o RGBMix do BCC (copiado do bcc-light-wrap.xml, medido 0 px lá) ---------------------------------------------------------------
-int div255(int t) { t += 128; return (t + (t >> 8)) >> 8; }          // m·a/255 arredondado
-int truncDiv(int a, int b) { int q = abs(a) / b; return a < 0 ? -q : q; }   // divisão truncada (b > 0)
-int luma(int3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
+static int div255(int t) { t += 128; return (t + (t >> 8)) >> 8; }          // m·a/255 arredondado
+static int truncDiv(int a, int b) { int q = abs(a) / b; return a < 0 ? -q : q; }   // divisão truncada (b > 0)
+static int luma(int3 c) { return (c.r * 77 + c.g * 150 + c.b * 29) >> 8; }
 
-int3 ajustaLuma(int3 d, int lq) {
+static int3 ajustaLuma(int3 d, int lq) {
     int l2 = (d.r * 77 + d.g * 150 + d.b * 29) >> 8;
     return clamp(d + int3(lq - l2), int3(0), int3(255));
 }
 
 // 0x180425fe0: o croma de P com a luma de Q.
-int3 setLum(int3 P, int3 Q) {
+static int3 setLum(int3 P, int3 Q) {
     int lp = luma(P), lq = luma(Q);
     int3 d = P - int3(lp);
     float s = 1.0;
@@ -362,10 +362,10 @@ int3 setLum(int3 P, int3 Q) {
     return ajustaLuma(d, lq);
 }
 
-int amplitude(int3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
+static int amplitude(int3 c) { return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)); }
 
 // Hue e Saturation: o croma D escalado pela razão (limitada com 256 − luma) e a luma lq.
-int3 setSat(int3 D, int lq, float razao) {
+static int3 setSat(int3 D, int lq, float razao) {
     float r = razao;
     if (r > 1.0) {
         for (int i = 0; i < 3; i++) {
@@ -378,19 +378,19 @@ int3 setSat(int3 D, int lq, float razao) {
     return ajustaLuma(int3(trunc(float3(D) * r)), lq);
 }
 
-int3 matiz(int3 P, int3 Q) {           // 0x1804261c0: P = o wrap, Q = a camada
+static int3 matiz(int3 P, int3 Q) {           // 0x1804261c0: P = o wrap, Q = a camada
     int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
     if (sp == 0) return int3(lq);
     return setSat(P - int3(luma(P)), lq, float(sq) / float(sp));
 }
 
-int3 saturacao(int3 P, int3 Q) {       // 0x180426450: P = o wrap, Q = a camada
+static int3 saturacao(int3 P, int3 Q) {       // 0x180426450: P = o wrap, Q = a camada
     int lq = luma(Q), sp = amplitude(P), sq = amplitude(Q);
     if (sq == 0) return Q;
     return setSat(Q - int3(lq), lq, float(sp) / float(sq));
 }
 
-int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wrap
+static int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wrap
     if (A > 128) {
         int s = 255 - ((((255 - B) * (255 - A)) * 0x8081) >> 23);
         return truncDiv((s - B) * (A - 128), 127) + B;
@@ -400,7 +400,7 @@ int luzDura(int B, int A) {               // 0x1804273f0: B = a camada, A = o wr
 }
 
 // 0x18042a480: a = o wrap, b = a camada (os dois em bytes). Devolve a cor e se a camada inteira foi escolhida.
-int3 modo(int m, int3 a, int3 b, out bool pegaB) {
+static int3 modo(int m, int3 a, int3 b, out bool pegaB) {
     pegaB = false;
     if (m == 0) return max(a, b);                                          // Lighten
     if (m == 1) return min(a, b);                                          // Darken
@@ -443,7 +443,7 @@ int3 modo(int m, int3 a, int3 b, out bool pegaB) {
 }
 
 // 0x180426d00: Y sobre X em 8 bits.
-int4 sobre(int4 X, int4 Y) {
+static int4 sobre(int4 X, int4 Y) {
     if (Y.a == 0) return X;
     if (Y.a == 255 || X.a == 0) return Y;
     if (X.a == 255) return int4(X.rgb + (((Y.rgb - X.rgb) * Y.a) >> 8), 255);
@@ -454,7 +454,7 @@ int4 sobre(int4 X, int4 Y) {
 }
 
 // 0x1804283b0: M = o resultado do modo, X = o wrap, Y = a camada. Só a cor (o alfa sai o da camada).
-int3 compor(int4 M, int4 X, int4 Y) {
+static int3 compor(int4 M, int4 X, int4 Y) {
     if (X.a == 0) return Y.rgb;
     if (Y.a == 0) return X.rgb;
     if (Y.a == 255) return X.a == 255 ? M.rgb : (Y.rgb + (((M.rgb - Y.rgb) * X.a) >> 8)) & 255;
@@ -468,7 +468,7 @@ int3 compor(int4 M, int4 X, int4 Y) {
 }
 
 
-float3 colorir(float g) {
+static float3 colorir(float g) {
     float x = clamp(g, 0.0, 1.0) * 5.0;
     int i = int(min(floor(x), 4.0));
     float f = x - float(i);
@@ -476,7 +476,7 @@ float3 colorir(float g) {
     float3 c1 = i == 0 ? u.color2.rgb : i == 1 ? u.color3.rgb : i == 2 ? u.color4.rgb : i == 3 ? u.color5.rgb : u.color6.rgb;
     return mix(c0, c1, f);
 }
-int4 bytes4(float4 c) { return int4(floor(c * 255.0 + 0.5)); }
+static int4 bytes4(float4 c) { return int4(floor(c * 255.0 + 0.5)); }
 
 fragment float4 fx_bcc_rays_textured(
     NovaVertexOut       in   [[stage_in]],

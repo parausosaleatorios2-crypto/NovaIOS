@@ -18,7 +18,7 @@ struct gm_mosaicParams {
 };
 
 // --- funcoes auxiliares do efeito
-float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
+static float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
 
 fragment float4 fx_gm_mosaic(
     NovaVertexOut       in   [[stage_in]],

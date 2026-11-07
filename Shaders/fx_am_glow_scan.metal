@@ -27,7 +27,7 @@ const float3 luminanceWeighting = float3(0.2126, 0.7152, 0.0722);
 
 // O float que a textura de 8 bits devolve para o nível k (k/255 arredondado como o hardware), montado pelos bits: gravado
 // num alvo de 8 bits volta a ser k em qualquer GPU (o `oitoBits` do Equilíbrio de cor).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -40,7 +40,7 @@ float oitoBits(float k) {
 
 // A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do Gaussian do AM (a
 // do `am-gaussian-blur.xml`): os pesos tirados um do outro por multiplicação e duas amostras juntas numa leitura.
-float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
+static float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
     if (u.strength <= 0.0) return float4(0.0);
     float sigma = lado / 2.14596602;
     float3 g;
@@ -71,13 +71,13 @@ float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
 }
 
 // O meio-lado: Suavização ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `eng.acPreviewSize` do AM).
-float ladoDoDesfoque() {
+static float ladoDoDesfoque() {
     return u.strength / 2.0 * 1.14 / 4.0 / 3.0 * length(float2(int2(int(pre.get_width()), int(pre.get_height()))));
 }
 
 // O corte que o alvo de 8 bits do AM faz ao gravar: 0..1, e NaN vira 0. Escrito para o projeto de 32 bits sair igual e
 // para o NaN não depender do `clamp` (indefinido com NaN): a comparação com NaN é falsa e cai no 0.
-float4 corteDoAlvo(float4 c) {
+static float4 corteDoAlvo(float4 c) {
     float4 r;
     for (int i = 0; i < 4; i++) r[i] = c[i] > 0.0 ? min(c[i], 1.0) : 0.0;
     return r;

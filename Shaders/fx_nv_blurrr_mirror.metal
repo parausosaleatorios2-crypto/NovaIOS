@@ -22,7 +22,7 @@ const int N = 7;
 const float OFF[7] = float[7](-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0);
 const float WT[7]  = float[7](0.071, 0.131, 0.190, 0.216, 0.190, 0.131, 0.071);
 
-float2 espelhar(float2 uv) {
+static float2 espelhar(float2 uv) {
     int a = int(u.axis);
     if (a == 0) return float2(2.0 * u.center - uv.x, uv.y);
     if (a == 1) return float2(uv.x, 2.0 * u.center - uv.y);

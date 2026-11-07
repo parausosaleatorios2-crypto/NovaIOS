@@ -37,7 +37,7 @@ const float PI = 3.14159265359;
 const int MEIA_MAX = 16;          // a íris é somada numa grade de até 33 x 33 pontos; maior que isso, num buffer reduzido
 
 /** A distância do centro à borda da íris na direção `th` (sem a rotação), para raio 1. */
-float raioDaBorda(float th, int lados, float curva) {
+static float raioDaBorda(float th, int lados, float curva) {
     if (lados < 3) return 1.0;
     float setor = 2.0 * PI / float(lados);
     // um vértice aponta para a esquerda (180 graus); `a` é o ângulo medido do meio do lado mais próximo
@@ -53,7 +53,7 @@ float raioDaBorda(float th, int lados, float curva) {
 }
 
 /** O peso (sem normalizar) da íris no deslocamento `d`, em pixels do quadro. `maciez` = meia largura da borda. */
-float pesoDaIris(float2 d, float R, float maciez) {
+static float pesoDaIris(float2 d, float R, float maciez) {
     float2 q = d / (float2(u.scaleX, u.scaleY) * 0.01);
     float r = length(q);
     float th = __nv_atan(q.y, q.x) - radians(u.irisRotation);
@@ -74,14 +74,14 @@ float pesoDaIris(float2 d, float R, float maciez) {
 }
 
 /** Espelha o índice na borda (medido: o BCC espelha o quadro, repetindo o pixel da borda). */
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     int p = 2 * n;
     i = i - (i / p) * p; if (i < 0) i += p;
     return i < n ? i : p - 1 - i;
 }
 
 /** Em que buffer a íris cabe na grade: 0 = o quadro inteiro, 1 = metade, 2 = um quarto... */
-int nivelDaIris(float meiaLargura) {
+static int nivelDaIris(float meiaLargura) {
     int t = 0;
     float m = meiaLargura;
     // Na prévia em movimento, a íris numa grade de até 17 x 17 pontos: um nível abaixo, um quarto das somas.
@@ -90,7 +90,7 @@ int nivelDaIris(float meiaLargura) {
     return t;
 }
 
-float4 lerNivel(int nivel, int2 p) {
+static float4 lerNivel(int nivel, int2 p) {
     if (nivel == 0) return inputImg.read(uint2(p), uint(0));
     if (nivel == 1) return d1.read(uint2(p), uint(0));
     if (nivel == 2) return d2.read(uint2(p), uint(0));
@@ -98,7 +98,7 @@ float4 lerNivel(int nivel, int2 p) {
     return d4.read(uint2(p), uint(0));
 }
 
-int2 tamanhoDoNivel(int nivel) {
+static int2 tamanhoDoNivel(int nivel) {
     if (nivel == 0) return int2(int(inputImg.get_width()), int(inputImg.get_height()));
     if (nivel == 1) return int2(int(d1.get_width()), int(d1.get_height()));
     if (nivel == 2) return int2(int(d2.get_width()), int(d2.get_height()));
@@ -107,7 +107,7 @@ int2 tamanhoDoNivel(int nivel) {
 }
 
 /** A média de um bloco do nível de cima, feita na luz do Gamma (é nela que a íris soma). */
-float4 reduzir(int deCima, float2 uv, float g) {
+static float4 reduzir(int deCima, float2 uv, float g) {
     int2 tam = tamanhoDoNivel(deCima);
     float2 c = uv * float2(tam);
     int2 base = int2(floor(c - 0.5));
@@ -124,7 +124,7 @@ float4 reduzir(int deCima, float2 uv, float g) {
 const int MEIA_GRADE = MEIA_MAX + 8;
 
 /** Quantos pontos de cada lado a soma da íris anda no nível de `passo` px do quadro por pixel. */
-int meiaGrade(float meiaLargura, float passo) {
+static int meiaGrade(float meiaLargura, float passo) {
     int n = int(ceil(meiaLargura / passo));
     return n > MEIA_GRADE ? MEIA_GRADE : n;
 }
@@ -134,7 +134,7 @@ int meiaGrade(float meiaLargura, float passo) {
  * ÁREA. Numa íris de poucos pontos (ou achatada pelo Scale) cada ponto da grade é dividido em até 8 x 8; de 8
  * pontos de raio em diante, um só basta.
  */
-float pesoDoPonto(int i, int j, float passo, float R, float maciez) {
+static float pesoDoPonto(int i, int j, float passo, float R, float maciez) {
     float2 emPontos = R * float2(u.scaleX, u.scaleY) * 0.01 / passo;
     int2 sub = int2(clamp(ceil(8.0 / max(emPontos, float2(1.0))), float2(1.0), float2(8.0)));
     float m = max(maciez, 0.5 * passo / float(max(sub.x, sub.y)) * min(min(u.scaleX, u.scaleY), 100.0) * 0.01 + 1e-3);
@@ -155,18 +155,18 @@ float pesoDoPonto(int i, int j, float passo, float R, float maciez) {
  * o passe 4 o calcula uma vez por quadro, num buffer de 64 x 64 (o ponto (i, j) no texel (i, j) + MEIA_GRADE), e
  * guarda o FLOAT inteiro nos quatro bytes do texel: volta bit a bit, e a soma sai igual à de antes.
  */
-float4 bytesDoFloat(float x) {
+static float4 bytesDoFloat(float x) {
     uint b = as_type<uint>(x);
     return float4(uint4(b & 255u, (b >> 8) & 255u, (b >> 16) & 255u, b >> 24)) / 255.0;
 }
 
-float floatDosBytes(float4 c) {
+static float floatDosBytes(float4 c) {
     uint4 o = uint4(floor(c * 255.0 + 0.5));
     return as_type<float>(o.x | (o.y << 8) | (o.z << 16) | (o.w << 24));
 }
 
 /** A soma da íris em volta do pixel `p` do nível `nivel` (cada pixel dele vale `passo` pixels do quadro). */
-float4 somarIris(int nivel, int2 p, float R, float meiaLargura, float maciez, float g) {
+static float4 somarIris(int nivel, int2 p, float R, float meiaLargura, float maciez, float g) {
     int2 tam = tamanhoDoNivel(nivel);
     float passo = float(int2(int(inputImg.get_width()), int(inputImg.get_height())).x) / float(tam.x);
     int n = meiaGrade(meiaLargura, passo);
@@ -188,7 +188,7 @@ float4 somarIris(int nivel, int2 p, float R, float meiaLargura, float maciez, fl
 }
 
 /** Um buffer reduzido lido com interpolação bilinear feita à mão (não depende do filtro da textura). */
-float4 ampliar(int nivel, float2 uv) {
+static float4 ampliar(int nivel, float2 uv) {
     int2 tam = nivel == 1 ? int2(int(g1.get_width()), int(g1.get_height())) : nivel == 2 ? int2(int(g2.get_width()), int(g2.get_height())) : nivel == 3 ? int2(int(g3.get_width()), int(g3.get_height())) : int2(int(g4.get_width()), int(g4.get_height()));
     float2 c = uv * float2(tam) - 0.5;
     int2 b = int2(floor(c));

@@ -20,9 +20,9 @@ struct um_electric_arcParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+static float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 
-float distReta(float2 p, float2 a, float2 b) {
+static float distReta(float2 p, float2 a, float2 b) {
     float2 pa = p - a, ba = b - a;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
     return length(pa - ba * h);

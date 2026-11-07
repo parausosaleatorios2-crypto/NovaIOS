@@ -9,7 +9,6 @@
 
 import SwiftUI
 import Combine
-import NovaEngine
 import os
 
 @MainActor

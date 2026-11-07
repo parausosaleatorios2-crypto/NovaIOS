@@ -52,10 +52,10 @@ struct blob_tracker_v2Params {
 // ===========================================================================
 //  A máscara: exatamente a mesma lógica da v1 (blob-tracker.xml)
 // ===========================================================================
-float lumaOf(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+static float lumaOf(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
 
 // RGB -> HSV clássico (Sam Hocevar). Usado por saturação e faixa de matiz.
-float3 rgb2hsv(float3 c) {
+static float3 rgb2hsv(float3 c) {
     float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
     float4 pp = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
     float4 qq = mix(float4(pp.xyw, c.r), float4(c.r, pp.yzx), step(pp.x, c.r));
@@ -64,7 +64,7 @@ float3 rgb2hsv(float3 c) {
     return float3(abs(qq.z + (qq.w - qq.y) / (6.0 * dd + ee)), dd / (qq.x + ee), qq.x);
 }
 
-float4 probeAt(int2 px) {
+static float4 probeAt(int2 px) {
     int2 res = int2(eng.acResolution);
     int2 lo = int2(0);
     int2 hi = res - 1;
@@ -78,7 +78,7 @@ float4 probeAt(int2 px) {
     return acc / 6.0;
 }
 
-float matizNaFaixa(float h, float ini, float fim, float soft) {
+static float matizNaFaixa(float h, float ini, float fim, float soft) {
     float dh = fract(h - ini);
     float largura = fract(fim - ini);
     if (largura <= 0.0) largura = 1.0;
@@ -86,7 +86,7 @@ float matizNaFaixa(float h, float ini, float fim, float soft) {
     return 1.0 - smoothstep(largura - edge, largura, dh);
 }
 
-float mascaraEm(int2 px) {
+static float mascaraEm(int2 px) {
     int2 res = int2(eng.acResolution);
     int2 lo = int2(0);
     int2 hi = res - 1;
@@ -126,7 +126,7 @@ float mascaraEm(int2 px) {
 //  Passe 0 — a máscara inteira, um valor por pixel (nada de pirâmide aqui:
 //  quem reduz é a CPU, via ConnectedComponents, não este shader)
 // ===========================================================================
-float4 passeMascara(int2 t, int2 tam) {
+static float4 passeMascara(int2 t, int2 tam) {
     if (t.x >= tam.x || t.y >= tam.y) return float4(0.0);
     float m = mascaraEm(t);
     return float4(m, m, m, m); // os 4 canais iguais: BlobDetectionEngine lê 1 só.
@@ -135,23 +135,23 @@ float4 passeMascara(int2 t, int2 tam) {
 // ===========================================================================
 //  Desenho — primitivas (idênticas à v1: já testadas ali)
 // ===========================================================================
-float2 paraAltura(float2 uv) { return float2(uv.x * eng.acAspect, uv.y); }
+static float2 paraAltura(float2 uv) { return float2(uv.x * eng.acAspect, uv.y); }
 
-float ruido(float x) { return fract(sin(x * 127.1 + 311.7) * 43758.5453); }
+static float ruido(float x) { return fract(sin(x * 127.1 + 311.7) * 43758.5453); }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     float3 rgb = (cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a;
     return float4(rgb, a);
 }
 
-float caixaSdf(float2 p, float2 meio) {
+static float caixaSdf(float2 p, float2 meio) {
     float2 d = abs(p) - meio;
     return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
 }
 
-float segmentoSdf(float2 p, float2 a, float2 b) {
+static float segmentoSdf(float2 p, float2 a, float2 b) {
     float2 pa = p - a;
     float2 ba = b - a;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
@@ -159,7 +159,7 @@ float segmentoSdf(float2 p, float2 a, float2 b) {
 }
 
 // ---------------------------------------------------------------- dígitos
-int segMask(int d) {
+static int segMask(int d) {
     if (d == 0) return 63;
     if (d == 1) return 6;
     if (d == 2) return 91;
@@ -172,11 +172,11 @@ int segMask(int d) {
     return 111; // 9
 }
 
-float umSeg(float2 uv, float2 c, float2 meio, float aa) {
+static float umSeg(float2 uv, float2 c, float2 meio, float aa) {
     return 1.0 - smoothstep(-aa, aa, caixaSdf(uv - c, meio));
 }
 
-float digito(float2 uv, int m, float aa) {
+static float digito(float2 uv, int m, float aa) {
     float t = 0.12;
     float cov = 0.0;
     if ((m & 1) != 0)  cov = max(cov, umSeg(uv, float2(0.5, 0.10), float2(0.30, t), aa)); // a
@@ -189,20 +189,20 @@ float digito(float2 uv, int m, float aa) {
     return cov;
 }
 
-int contaDigitos(int v) {
+static int contaDigitos(int v) {
     int n = 1;
     int x = v;
     for (int i = 0; i < 5; i++) { if (x >= 10) { x /= 10; n++; } }
     return n;
 }
 
-int pot10(int n) {
+static int pot10(int n) {
     int r = 1;
     for (int i = 0; i < 5; i++) { if (i < n) r *= 10; }
     return r;
 }
 
-void desenhaNumero(inout float4 hud, float2 org, float h, int valor, int maxD, float4 col, float2 p, float aa) {
+static void desenhaNumero(inout float4 hud, float2 org, float h, int valor, int maxD, float4 col, float2 p, float aa) {
     int nd = min(contaDigitos(valor), maxD);
     float dw = h * 0.60;
     float gap = h * 0.22;
@@ -227,11 +227,11 @@ void desenhaNumero(inout float4 hud, float2 org, float h, int valor, int maxD, f
 // A fonte de 7 segmentos não tem diagonal — não dá pra fazer um "x". Estas letras
 // são traçadas com segmentos de reta na mesma célula 0..1 dos dígitos, então
 // alinham com eles. `tipo`: 0='x', 1='y', 2=':'.
-float traco(float2 uv, float2 a, float2 b, float w, float aa) {
+static float traco(float2 uv, float2 a, float2 b, float w, float aa) {
     return 1.0 - smoothstep(w - aa, w + aa, segmentoSdf(uv, a, b));
 }
 
-void desenhaGlifo(inout float4 hud, float2 org, float largura, float h, int tipo, float4 col, float2 p, float aa) {
+static void desenhaGlifo(inout float4 hud, float2 org, float largura, float h, int tipo, float4 col, float2 p, float aa) {
     if (p.x < org.x - aa || p.x > org.x + largura + aa) return;
     if (p.y < org.y - aa || p.y > org.y + h + aa) return;
     float2 uv = float2((p.x - org.x) / largura, (p.y - org.y) / h);
@@ -252,7 +252,7 @@ void desenhaGlifo(inout float4 hud, float2 org, float largura, float h, int tipo
     hud = sobre(hud, float4(col.rgb, cov * col.a));
 }
 
-float larguraNumero(int valor, float dw, float gap, int maxD) {
+static float larguraNumero(int valor, float dw, float gap, int maxD) {
     int nd = min(contaDigitos(valor), maxD);
     return float(nd) * dw + float(nd - 1) * gap;
 }
@@ -280,7 +280,7 @@ struct BlobLido {
     float2 trilha[PONTOS_DE_TRILHA]; // espaço-altura, mais antigo primeiro
 };
 
-bool lerBlob(int slot, out BlobLido b) {
+static bool lerBlob(int slot, out BlobLido b) {
     int base = slot * TEXELS_POR_BLOB;
     int4 t0 = int4(blobBuf.read(uint2(int2(base + 0, 0)), uint(0)) * 255.0 + 0.5);
     int id = (t0.r << 8) | t0.g;
@@ -316,7 +316,7 @@ bool lerBlob(int slot, out BlobLido b) {
 }
 
 // ---------------------------------------------------------------- desenho de um blob
-void desenhaBlob(inout float4 hud, BlobLido b, float2 p) {
+static void desenhaBlob(inout float4 hud, BlobLido b, float2 p) {
     float aa = 1.5 / max(eng.acResolution.y, 1.0);
     float esp = u.boxWidth * 0.01;
 
@@ -402,7 +402,7 @@ void desenhaBlob(inout float4 hud, BlobLido b, float2 p) {
 // de segmentos por blob, e o custo por pixel já é o maior risco não medido
 // desta versão (ver o cabeçalho do arquivo). A cauda desbota: o segmento
 // mais antigo é o mais transparente.
-void desenhaTrilha(inout float4 hud, BlobLido b, float2 p) {
+static void desenhaTrilha(inout float4 hud, BlobLido b, float2 p) {
     float aa = 1.5 / max(eng.acResolution.y, 1.0);
     float w = u.trailWidth * 0.01;
     for (int i = 0; i < PONTOS_DE_TRILHA - 1; i++) {
@@ -421,7 +421,7 @@ void desenhaTrilha(inout float4 hud, BlobLido b, float2 p) {
 // aresta.
 const int MAX_ARESTAS = MAX_BLOBS;
 
-void desenhaArestasMst(inout float4 hud, BlobLido blobs[MAX_BLOBS], int contagem, float2 p) {
+static void desenhaArestasMst(inout float4 hud, BlobLido blobs[MAX_BLOBS], int contagem, float2 p) {
     float aa = 1.5 / max(eng.acResolution.y, 1.0);
     float w = u.connWidth * 0.01;
     int base = (contagem + 1) * TEXELS_POR_BLOB; // +1: o bloco vazio de separação (ver o cabeçalho).
@@ -444,7 +444,7 @@ void desenhaArestasMst(inout float4 hud, BlobLido blobs[MAX_BLOBS], int contagem
 // keypoints" das referências. Cada pixel olha só a PRÓPRIA célula: é UMA leitura
 // de máscara a mais por pixel (ver o aviso de custo no cabeçalho), e a cruz é
 // presa ao tamanho da célula para não recortar na borda dela.
-void desenhaKeypoints(inout float4 hud, float2 p, float aa) {
+static void desenhaKeypoints(inout float4 hud, float2 p, float aa) {
     float2 uvn = in.acScreenNorm;
     float cols = mix(14.0, 90.0, clamp(u.kpDensity, 0.0, 1.0));
     float2 grade = float2(cols, max(cols / eng.acAspect, 1.0));

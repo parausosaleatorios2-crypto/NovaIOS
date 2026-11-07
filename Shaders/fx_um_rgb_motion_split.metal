@@ -18,7 +18,7 @@ struct um_rgb_motion_splitParams {
 };
 
 // --- funcoes auxiliares do efeito
-float canalDir(float2 uv, float ang, float l, int n, int ch) {
+static float canalDir(float2 uv, float ang, float l, int n, int ch) {
     float2 dir = float2(cos(ang), sin(ang));
     dir.x /= eng.acAspect;
     float soma = 0.0;

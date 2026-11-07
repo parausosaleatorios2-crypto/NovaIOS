@@ -19,8 +19,8 @@ struct gm_voronoiParams {
 };
 
 // --- funcoes auxiliares do efeito
-float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
-float2 gmCell(float2 g){
+static float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
+static float2 gmCell(float2 g){
   return float2(gmHash(g + floor(eng.acTime * u.speed)), gmHash(g + floor(eng.acTime * u.speed) + 3.7));
 }
 

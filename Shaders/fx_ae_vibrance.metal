@@ -23,7 +23,7 @@ const float VALORES[23] = float[23](-100.0, -90.0, -80.0, -70.0, -60.0, -50.0, -
                                     10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0);
 
 // A LUT 33³ do atlas: 33 ladrilhos 33×33 lado a lado (x = b·33 + r, y = linha0 + g).
-float3 lut(float3 c, float linha0) {
+static float3 lut(float3 c, float linha0) {
     float2 tam = float2(int2(int(atlas.get_width()), int(atlas.get_height())));
     float3 p = clamp(c, 0.0, 1.0) * 32.0;
     float b0 = floor(p.b);
@@ -36,13 +36,13 @@ float3 lut(float3 c, float linha0) {
 }
 
 /** A resposta medida no valor de índice `i` da lista. */
-float3 medido(float3 c, int i) {
+static float3 medido(float3 c, int i) {
     if (i == INDICE_DO_ZERO) return c;
     return lut(c, 33.0 * float(i < INDICE_DO_ZERO ? i : i - 1));
 }
 
-float3 paraLuz(float3 c) { return mix(pow((c + 0.055) / 1.055, float3(2.4)), c / 12.92, float3(lessThanEqual(c, float3(0.04045)))); }
-float3 paraTela(float3 l) { return mix(1.055 * pow(max(l, float3(0.0)), float3(1.0 / 2.4)) - 0.055, l * 12.92, float3(lessThanEqual(l, float3(0.0031308)))); }
+static float3 paraLuz(float3 c) { return mix(pow((c + 0.055) / 1.055, float3(2.4)), c / 12.92, float3(lessThanEqual(c, float3(0.04045)))); }
+static float3 paraTela(float3 l) { return mix(1.055 * pow(max(l, float3(0.0)), float3(1.0 / 2.4)) - 0.055, l * 12.92, float3(lessThanEqual(l, float3(0.0031308)))); }
 
 fragment float4 fx_ae_vibrance(
     NovaVertexOut       in   [[stage_in]],

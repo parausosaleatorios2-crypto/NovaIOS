@@ -29,15 +29,15 @@ const int P_ORDEM = 9;     // 9: blocos de 8; 10..18: intercala 8+8 ... 2048+204
 const int P_VOLTA = 19;    // lê giroRt
 const int BLOCO = 8;
 
-float3 linear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
-float3 srgb(float3 l) {
+static float3 linear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c)); }
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 
-int2 tamCamada() { return int2(int(inputImg.get_width()), int(inputImg.get_height())); }
+static int2 tamCamada() { return int2(int(inputImg.get_width()), int(inputImg.get_height())); }
 // O pixel do RT do Node na posição (x, y) da camada de pé, em bytes (0..255).
-float4 bytesDaCamada(int2 p) {
+static float4 bytesDaCamada(int2 p) {
     int2 T = tamCamada();
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
     float4 c = inputImg.read(uint2(p), uint(0));
@@ -52,7 +52,7 @@ float2 centroG;           // o meio dela
 bool deLado;            // a linha do Node corre na vertical do buffer
 int2 L;                // elementos usados: (ao longo, através)
 float2 f;                 // quanto o buffer encolhe a caixa (1 = pixel a pixel)
-void montarGiro() {
+static void montarGiro() {
     int2 T = tamCamada();
     // O Node: sincos em double de ângulo × 0,017453291681077746 (o grau→radiano arredondado), então o cos de 270°
     // é −2,3e−7 e não zero — e o corte para baixo do bilinear perde um nível onde a conta cai logo abaixo do inteiro.
@@ -84,17 +84,17 @@ void montarGiro() {
     L = min(caixa, cap);
     f = float2(caixa) / float2(L);
 }
-int2 texelDe(int a, int c) { return deLado ? int2(c, a) : int2(a, c); }
-void elementoDoTexel(int2 b, out int a, out int c) { a = deLado ? b.y : b.x; c = deLado ? b.x : b.y; }
+static int2 texelDe(int a, int c) { return deLado ? int2(c, a) : int2(a, c); }
+static void elementoDoTexel(int2 b, out int a, out int c) { a = deLado ? b.y : b.x; c = deLado ? b.x : b.y; }
 // elemento (ao longo, através) → ponto da caixa girada do Node
-float2 pontoGirado(int a, int c) {
+static float2 pontoGirado(int a, int c) {
     return float2(L.x == caixa.x ? float(a) : (float(a) + 0.5) * f.x - 0.5,
                 L.y == caixa.y ? float(c) : (float(c) + 0.5) * f.y - 0.5);
 }
 
 // ---- As chaves (pixelSortRow e os comparadores), nos bytes ÷ 255 ----
-float fmodC(float x, float y) { return x - y * trunc(x / y); }
-float chave(float3 c) {
+static float fmodC(float x, float y) { return x - y * trunc(x / y); }
+static float chave(float3 c) {
     int t = int(u.tipo);
     if (t == 0) return (c.r + c.g + c.b) / 3.0;
     float mx = max(max(c.r, c.g), c.b), mn = min(min(c.r, c.g), c.b), d = mx - mn;
@@ -109,31 +109,31 @@ float chave(float3 c) {
     if (h < 0.0) h += 360.0;
     return h / 360.0;
 }
-bool entra(float4 bytes) { return bytes.a / 255.0 > 0.001 && chave(bytes.rgb / 255.0) >= u.limiar; }
+static bool entra(float4 bytes) { return bytes.a / 255.0 > 0.001 && chave(bytes.rgb / 255.0) >= u.limiar; }
 
 // ---- Os ponteiros: dois índices de 16 bits por texel ----
-float4 guardar(int p, int q) { return float4(float(p / 256), float(p % 256), float(q / 256), float(q % 256)) / 255.0; }
-int2 ler(sampler2D s, int a, int c) {
+static float4 guardar(int p, int q) { return float4(float(p / 256), float(p % 256), float(q / 256), float(q % 256)) / 255.0; }
+static int2 ler(sampler2D s, int a, int c) {
     int4 v = int4(s.read(uint2(texelDe(a, c)), uint(0)) * 255.0 + 0.5);
     return int2(v.x * 256 + v.y, v.z * 256 + v.w);
 }
 
 // Os sorteios (o rand() do Node): hash da linha, do índice e do quadro.
-uint hash3(uint3 v) {
+static uint hash3(uint3 v) {
     v = v * 1664525u + 1013904223u;
     v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
     v ^= v >> 16u;
     v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
     return v.x ^ v.y ^ v.z;
 }
-float sorteio(int linha, int i, int qual, float a, float b) {
+static float sorteio(int linha, int i, int qual, float a, float b) {
     uint quadro = uint(int(floor(eng.acTime * 1000.0 + 0.5)));
     float u = float(hash3(uint3(uint(linha), uint(i) * 4u + uint(qual), quadro)) >> 8u) / 16777216.0;
     return a + u * (b - a);
 }
-bool continua(int linha, int i) { return u.continuo * 100.0 >= sorteio(linha, i, 2, 0.0, 100.0); }
+static bool continua(int linha, int i) { return u.continuo * 100.0 >= sorteio(linha, i, 2, 0.0, 100.0); }
 
-float4 passeGiro(int2 b) {
+static float4 passeGiro(int2 b) {
     int a, c;
     elementoDoTexel(b, a, c);
     if (a >= L.x || c >= L.y) return float4(0.0);
@@ -148,9 +148,9 @@ float4 passeGiro(int2 b) {
     return clamp(floor(v + 1e-4), 0.0, 255.0) / 255.0;
 }
 
-bool entraEm(int a, int c) { return entra(floor(giroRt.read(uint2(texelDe(a, c)), uint(0)) * 255.0 + 0.5)); }
+static bool entraEm(int a, int c) { return entra(floor(giroRt.read(uint2(texelDe(a, c)), uint(0)) * 255.0 + 0.5)); }
 
-float4 passePonteiros(int2 b) {
+static float4 passePonteiros(int2 b) {
     int a, c;
     elementoDoTexel(b, a, c);
     if (a >= L.x || c >= L.y) return guardar(a, a);
@@ -163,7 +163,7 @@ float4 passePonteiros(int2 b) {
 }
 
 // p ← p(p(p(p))): o alcance vezes 4 a cada passe
-float4 passeSalto(int2 b, sampler2D de) {
+static float4 passeSalto(int2 b, sampler2D de) {
     int a, c;
     elementoDoTexel(b, a, c);
     if (a >= L.x || c >= L.y) return guardar(a, a);
@@ -172,7 +172,7 @@ float4 passeSalto(int2 b, sampler2D de) {
     return guardar(p.x, p.y);
 }
 
-float4 passeFaixas(int2 b) {
+static float4 passeFaixas(int2 b) {
     int a, c;
     elementoDoTexel(b, a, c);
     if (a >= L.x || c >= L.y) return guardar(a, a);
@@ -199,10 +199,10 @@ float4 passeFaixas(int2 b) {
 }
 
 // ---- A ordenação de cada faixa, no lugar: blocos de 8 e intercalações (estável; empate fica na ordem) ----
-float chaveEm(sampler2D de, int ini, int i, int c) {
+static float chaveEm(sampler2D de, int ini, int i, int c) {
     return chave(floor(de.read(uint2(texelDe(ini + i, c)), uint(0)).rgb * 255.0 + 0.5) / 255.0);
 }
-float4 passeBloco(int2 b, sampler2D de) {
+static float4 passeBloco(int2 b, sampler2D de) {
     int a, c;
     elementoDoTexel(b, a, c);
     float4 meu = de.read(uint2(b), uint(0));
@@ -223,7 +223,7 @@ float4 passeBloco(int2 b, sampler2D de) {
     return meu;
 }
 // intercala as metades ordenadas de cada bloco de 2m: a posição k sai da busca binária (merge path)
-float4 passeJuntar(int2 b, int m, sampler2D de) {
+static float4 passeJuntar(int2 b, int m, sampler2D de) {
     int a, c;
     elementoDoTexel(b, a, c);
     float4 meu = de.read(uint2(b), uint(0));
@@ -246,8 +246,8 @@ float4 passeJuntar(int2 b, int m, sampler2D de) {
     return float4(de.read(uint2(texelDe(daA ? A + ia : B + ib, c)), uint(0)).rgb, meu.a);  // só o RGB anda
 }
 
-float4 bytesGirados(int a, int c) { return floor(giroRt.read(uint2(texelDe(a, c)), uint(0)) * 255.0 + 0.5); }
-float4 passeVolta() {
+static float4 bytesGirados(int a, int c) { return floor(giroRt.read(uint2(texelDe(a, c)), uint(0)) * 255.0 + 0.5); }
+static float4 passeVolta() {
     int2 T = tamCamada();
     float2 q = eng.acEntradaDePe == 1 ? in.acScreenNorm : float2(in.acScreenNorm.x, 1.0 - in.acScreenNorm.y);
     int2 p = int2(min(floor(q * float2(T)), float2(T) - 1.0));

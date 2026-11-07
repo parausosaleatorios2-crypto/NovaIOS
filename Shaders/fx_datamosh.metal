@@ -28,11 +28,11 @@ const float PI_16 = 3.14159265359 / 16.0;
 // alpha(0) = 1/sqrt(2), alpha(u>0) = 1 — a normalização padrão da DCT-II
 // ortonormal (é o que faz a matriz de base ser ORTOGONAL, e por isso a
 // inversa ser só a transposta escalada por 0,25 — ver a nota da direção 3.4).
-float alphaDct(int u) {
+static float alphaDct(int u) {
     return u == 0 ? 0.70710678118 : 1.0;
 }
 
-float baseDct(int u, int x) {
+static float baseDct(int u, int x) {
     return cos((2.0 * float(x) + 1.0) * float(u) * PI_16);
 }
 
@@ -41,7 +41,7 @@ float baseDct(int u, int x) {
 //  mesma que todo decodificador de vídeo do mundo usa), conferida numericamente
 //  como inversa uma da outra (RGB->YCbCr->RGB recupera o original a 1e-6).
 // ===========================================================================
-float3 paraEspaco(float3 rgb) {
+static float3 paraEspaco(float3 rgb) {
     if (u.colorspace == 0) return rgb;
     float y  =  0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
     float cb = -0.168736 * rgb.r - 0.331264 * rgb.g + 0.5 * rgb.b + 0.5;
@@ -49,7 +49,7 @@ float3 paraEspaco(float3 rgb) {
     return float3(y, cb, cr);
 }
 
-float3 deEspaco(float3 v) {
+static float3 deEspaco(float3 v) {
     if (u.colorspace == 0) return v;
     float r = v.x + 1.402 * (v.z - 0.5);
     float g = v.x - 0.344136 * (v.y - 0.5) - 0.714136 * (v.z - 0.5);
@@ -67,17 +67,17 @@ const float ESCALA_DCT2   = 128.0;  // DCT 2D completa: pico real 32, com folga 
 const float ESCALA_IDCT1  = 24.0;   // simétrico ao ESCALA_DCT1, com a mesma folga de ganho
 const float ESCALA_FINAL  = 4.0;    // erro espacial reconstruído: pico real 1,0, com a mesma folga
 
-float3 codificar(float3 real, float escala) {
+static float3 codificar(float3 real, float escala) {
     return clamp(real / escala, -1.0, 1.0) * 0.5 + 0.5;
 }
-float3 decodificar(float3 armazenado, float escala) {
+static float3 decodificar(float3 armazenado, float escala) {
     return (armazenado - 0.5) * 2.0 * escala;
 }
 
 // ===========================================================================
 //  Passe 0 — diferença: quadro atual menos a previsão temporal
 // ===========================================================================
-float4 passeDiferenca(int2 px) {
+static float4 passeDiferenca(int2 px) {
     float4 atualBruto = inputImg.read(uint2(px), uint(0));
     float4 h1 = hist1.read(uint2(px), uint(0));
     float4 h2 = hist2.read(uint2(px), uint(0));
@@ -99,7 +99,7 @@ float4 passeDiferenca(int2 px) {
 // ===========================================================================
 //  Passe 1 — DCT direta ao longo de X, dentro de blocos de 8 px
 // ===========================================================================
-float4 passeDctX(int2 px, int2 tam) {
+static float4 passeDctX(int2 px, int2 tam) {
     int baseX = (px.x / 8) * 8;
     int u = px.x - baseX;
 
@@ -117,7 +117,7 @@ float4 passeDctX(int2 px, int2 tam) {
 // ===========================================================================
 //  Passe 2 — DCT direta ao longo de Y (fecha a 2D) + processamento do erro
 // ===========================================================================
-float4 passeDctYEProcessa(int2 px, int2 tam) {
+static float4 passeDctYEProcessa(int2 px, int2 tam) {
     int baseY = (px.y / 8) * 8;
     int v = px.y - baseY;
 
@@ -188,7 +188,7 @@ float4 passeDctYEProcessa(int2 px, int2 tam) {
 //  Passe 3 — DCT inversa ao longo de Y (desfaz o SEGUNDO passe direto primeiro
 //  — inverter uma transformada separável exige a ordem contrária da direta)
 // ===========================================================================
-float4 passeIdctY(int2 px, int2 tam) {
+static float4 passeIdctY(int2 px, int2 tam) {
     int baseY = (px.y / 8) * 8;
     int y = px.y - baseY; // posição espacial de SAÍDA dentro do bloco, eixo Y
 
@@ -206,7 +206,7 @@ float4 passeIdctY(int2 px, int2 tam) {
 // ===========================================================================
 //  Passe 4 — DCT inversa ao longo de X (fecha a reconstrução espacial)
 // ===========================================================================
-float4 passeIdctX(int2 px, int2 tam) {
+static float4 passeIdctX(int2 px, int2 tam) {
     int baseX = (px.x / 8) * 8;
     int x = px.x - baseX;
 
@@ -225,7 +225,7 @@ float4 passeIdctX(int2 px, int2 tam) {
 // ===========================================================================
 //  Passe 5 — desenha: desfoque leve do erro + composição sobre o original
 // ===========================================================================
-float3 erroEm(int2 px, int2 tam) {
+static float3 erroEm(int2 px, int2 tam) {
     int2 c = clamp(px, int2(0), tam - 1);
     return decodificar(idctBuf.read(uint2(c), uint(0)).rgb, ESCALA_FINAL);
 }

@@ -22,13 +22,13 @@ struct fireParams {
 // --- funcoes auxiliares do efeito
 const int MAXIMO_DE_OITAVAS = 7;
 
-float hash2(float2 c) {
+static float hash2(float2 c) {
     c += float2(float(u.seed) * 13.7);
     return fract(sin(dot(c, float2(127.1, 311.7))) * 43758.5453);
 }
 
 /** Ruído suave 2D (valor nos cantos + smoothstep nos dois eixos). */
-float ruido2(float2 p) {
+static float ruido2(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     float2 s = f * f * (3.0 - 2.0 * f);
@@ -40,7 +40,7 @@ float ruido2(float2 p) {
 }
 
 /** FBM: soma de oitavas, amplitude cai pela metade, frequência dobra. */
-float fbm(float2 p, int oitavas) {
+static float fbm(float2 p, int oitavas) {
     float soma = 0.0;
     float amp = 0.5;
     float peso = 0.0;
@@ -55,7 +55,7 @@ float fbm(float2 p, int oitavas) {
 }
 
 /** Rampa de cor do fogo: do vermelho escuro à ponta branca. */
-float3 rampa(float x) {
+static float3 rampa(float x) {
     x = clamp(x, 0.0, 1.0);
     float3 c;
     if (x < 0.25)      c = mix(float3(0.0), float3(0.6, 0.0, 0.0), x / 0.25);

@@ -17,7 +17,7 @@ struct node_gaussian_blurParams {
 // --- funcoes auxiliares do efeito
 // k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve (ver
 // `node-fill-color.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -28,28 +28,28 @@ float oitoBits(float k) {
     return as_type<float>((uint(150 - e) << 23) + (q - 0x800000u));
 }
 
-float3 oitoBits3(float3 k) {
+static float3 oitoBits3(float3 k) {
     return float3(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b));
 }
 
-float3 linear(float3 c) {
+static float3 linear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
 
-float3 srgb(float3 l) {
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 
 // Os bytes que um RT sRGB de 8 bits guarda para esta cor linear.
-float3 bytesSrgb(float3 l) {
+static float3 bytesSrgb(float3 l) {
     return floor(srgb(l) * 255.0 + 0.5);
 }
 
 // O texel exato de uma imagem do tamanho da tela no pixel de pé (a linha 0 é a base, como nos RTs do Node): no
 // buffer de camada (`eng.acEntradaDePe` = 0, a linha 0 é o topo) a linha é espelhada. Lê a entrada para o RT de pé e o RT
 // de pé para a saída — os dois espelhos se desfazem, e os programas do Node rodam como na tela.
-float4 texelDePe(sampler2D img) {
+static float4 texelDePe(sampler2D img) {
     int2 T = int2(int(img.get_width()), int(img.get_height()));
     int2 p = int2(min(floor(in.acScreenNorm * float2(T)), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
@@ -57,7 +57,7 @@ float4 texelDePe(sampler2D img) {
 }
 
 // O programa 1 do Node (`_hblur`), conta por conta: a gaussiana na horizontal, na metade. `res` = `_resolution`.
-float4 passeHorizontal(float2 uv, float2 res) {
+static float4 passeHorizontal(float2 uv, float2 res) {
     float u_xlat0;
     float3 u_xlat1;
     float4 u_xlat2;
@@ -124,7 +124,7 @@ float4 passeHorizontal(float2 uv, float2 res) {
 }
 
 // O programa 2 do Node (`_vblur`), conta por conta: a gaussiana na vertical (o `hblur` está de pé, como no Node).
-float4 passeVertical(float2 uv, float2 res) {
+static float4 passeVertical(float2 uv, float2 res) {
     float4 u_xlat0;
     float2 u_xlat1;
     float4 u_xlat2;

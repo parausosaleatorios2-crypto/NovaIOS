@@ -30,7 +30,7 @@ const int MAX_PASSOS = 512;      // lá, 1000
 const int PASSOS_DO_RASCUNHO = 96;  // na prévia em movimento (`eng.acRascunho`, play/arraste); parado e na exportação, MAX_PASSOS
 
 /** A borda de um índice de pixel: 0 nada, 1 ladrilho, 2 espelho em volta do índice 0 e do índice n (medido). */
-int dobrar(int i, int n, int modo) {
+static int dobrar(int i, int n, int modo) {
     // Dentro do quadro, ladrilho e espelho devolvem o próprio índice: sem a divisão inteira (0.569.0)
     if (i >= 0 && i < n) return i;
     if (modo == 1) { i = i - (i / n) * n; return i < 0 ? i + n : i; }
@@ -44,7 +44,7 @@ int dobrar(int i, int n, int modo) {
     return i;
 }
 
-float4 pixel(int2 i) {
+static float4 pixel(int2 i) {
     // a conta é com a linha 0 no TOPO, como no plugin; numa cena de pé (camada de ajuste) ela é a base do buffer
     if (eng.acEntradaDePe == 1) i.y = int2(int(inputImg.get_width()), int(inputImg.get_height())).y - 1 - i.y;
     float4 c = inputImg.read(uint2(i), uint(0));
@@ -52,7 +52,7 @@ float4 pixel(int2 i) {
 }
 
 /** A fonte no ponto `p` (índices de pixel), bilinear — é o que o efeito faz quando nada se mexe. */
-float4 parado(float2 p, int2 T) {
+static float4 parado(float2 p, int2 T) {
     float2 b = floor(p), f = p - b;
     float4 soma = float4(0.0);
     for (int k = 0; k < 4; k++) {
@@ -65,7 +65,7 @@ float4 parado(float2 p, int2 T) {
 }
 
 /** Um ponto da reta: `iu` no eixo maior, `it` no menor (já escolhida a linha `tf` ou `tf + 1`). */
-float4 ponto(bool emx, int iu, int it, int tf, int2 T) {
+static float4 ponto(bool emx, int iu, int it, int tf, int2 T) {
     int nu = emx ? T.x : T.y, nt = emx ? T.y : T.x;
     int mu = emx ? u.wrapX : u.wrapY, mt = emx ? u.wrapY : u.wrapX;
     // a borda sem Wrap: no eixo maior o ponto tem de cair dentro; no menor, vale de −1 a n − 1, repetindo a borda
@@ -80,7 +80,7 @@ float4 ponto(bool emx, int iu, int it, int tf, int2 T) {
  * O `blur_warp` do Sapphire com Subpixel (lido do código): a reta de `p0` a `p1` percorrida em passos
  * inteiros do eixo em que ela anda mais, com interpolação linear no outro.
  */
-float4 reta(float2 p0, float2 p1, int2 T) {
+static float4 reta(float2 p0, float2 p1, int2 T) {
     float2 d = p1 - p0;
     if (d.x == 0.0 && d.y == 0.0) return parado(p0, T);
     bool emx = abs(d.x) >= abs(d.y);
@@ -116,7 +116,7 @@ float4 reta(float2 p0, float2 p1, int2 T) {
 }
 
 /** A coordenada dobrada para dentro do quadro: 1 ladrilho, 2 espelho (os ladrilhos ímpares, virados). */
-float antes(float c, float n, int modo) {
+static float antes(float c, float n, int modo) {
     if (modo == 1) return c - floor(c / n) * n;
     if (modo == 2) {
         float q = floor(c / n), r = c - q * n;
@@ -126,13 +126,13 @@ float antes(float c, float n, int modo) {
 }
 
 /** `u.rotate v (graus / −360)` da definição: o giro que o AE mostra como horário. */
-float2 girar(float2 v, float graus) {
+static float2 girar(float2 v, float graus) {
     float a = radians(graus), c = cos(a), s = sin(a);
     return float2(c * v.x + s * v.y, -s * v.x + c * v.y);
 }
 
 /** Da tela para a fonte (índices de pixel). */
-float2 paraAFonte(float2 p, float2 c, float z, float giro, float2 desloc) {
+static float2 paraAFonte(float2 p, float2 c, float z, float giro, float2 desloc) {
     return girar(p - c, giro) * z + c - desloc;
 }
 

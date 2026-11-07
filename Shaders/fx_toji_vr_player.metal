@@ -19,7 +19,7 @@ struct toji_vr_playerParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4x4 rotationAxisAngle( float3 v, float angle )
+static float4x4 rotationAxisAngle( float3 v, float angle )
         {
             float s = sin( angle );
             float c = cos( angle );

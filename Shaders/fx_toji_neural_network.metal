@@ -22,7 +22,7 @@ struct toji_neural_networkParams {
 };
 
 // --- funcoes auxiliares do efeito
-float dfLine(float2 start, float2 end, float2 uv) {
+static float dfLine(float2 start, float2 end, float2 uv) {
             float2 line = end - start;
             float frac = dot(uv - start, line) / dot(line, line);
             return distance(start + line * clamp(frac, 0.0, 1.0), uv);

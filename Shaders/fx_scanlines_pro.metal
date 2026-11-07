@@ -122,21 +122,21 @@ const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
 // Hash sem seno: estável nas GPUs de celular, onde `sin` de número grande
 // perde precisão e o ruído vira faixas. Técnica pública conhecida.
-float hash11(float p) {
+static float hash11(float p) {
     p = fract(p * 0.1031);
     p *= p + 33.33;
     p *= p + p;
     return fract(p);
 }
 
-float hash21(float2 p) {
+static float hash21(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
 /** Ruído de valor, contínuo, de 0 a 1. */
-float ruidoSuave(float2 p) {
+static float ruidoSuave(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     float2 u = f * f * (3.0 - 2.0 * f);
@@ -147,15 +147,15 @@ float ruidoSuave(float2 p) {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-float luma(float3 c) { return dot(c, LUMA); }
+static float luma(float3 c) { return dot(c, LUMA); }
 
 /** A imagem, pré-multiplicada: a cor dos transparentes nunca vaza. */
-float4 amostraP(float2 uv) {
+static float4 amostraP(float2 uv) {
     float4 c = inputImg.sample(__nv_smp, clamp(uv, 0.0, 1.0));
     return float4(c.rgb * c.a, c.a);
 }
 
-float3 semPreMultiplicar(float4 c) {
+static float3 semPreMultiplicar(float4 c) {
     return c.a > 0.0001 ? clamp(c.rgb / c.a, 0.0, 4.0) : float3(0.0);
 }
 
@@ -170,7 +170,7 @@ float3 semPreMultiplicar(float4 c) {
  * bumbo e o baixo — é o que marca a batida num edit. O motor já dá ataque
  * imediato e queda suave; aqui é só média e sensibilidade.
  */
-float nivelDoSom() {
+static float nivelDoSom() {
     float s = somImg.sample(__nv_smp, float2(0.04, 0.5)).r
             + somImg.sample(__nv_smp, float2(0.10, 0.5)).r
             + somImg.sample(__nv_smp, float2(0.17, 0.5)).r;
@@ -178,7 +178,7 @@ float nivelDoSom() {
 }
 
 /** Quanto a música empurra o alvo `alvo` agora. 5 = "Everything". */
-float reage(int alvo) {
+static float reage(int alvo) {
     if (u.audioAmount <= 0.0) return 0.0;
     if (u.audioTarget != alvo && u.audioTarget != 5) return 0.0;
     return nivelDoSom() * u.audioAmount;
@@ -188,12 +188,12 @@ float reage(int alvo) {
 //  A GEOMETRIA DA TELA
 // ============================================================================
 
-bool foraDaTela(float2 uv) {
+static bool foraDaTela(float2 uv) {
     return uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0;
 }
 
 /** A proporção do tubo: a da camada, ou uma das clássicas. */
-float proporcaoDaTela() {
+static float proporcaoDaTela() {
     if (u.screenAspect == 1) return 4.0 / 3.0;
     if (u.screenAspect == 2) return 16.0 / 9.0;
     if (u.screenAspect == 3) return 1.0;
@@ -202,12 +202,12 @@ float proporcaoDaTela() {
 }
 
 /** O tamanho da tela dentro da camada (0..1 em cada eixo), centrada. */
-float2 tamanhoDaTela() {
+static float2 tamanhoDaTela() {
     float a = proporcaoDaTela();
     return a < eng.acAspect ? float2(a / max(eng.acAspect, 0.0001), 1.0) : float2(1.0, eng.acAspect / max(a, 0.0001));
 }
 
-float3x3 girar(float ax, float ay) {
+static float3x3 girar(float ax, float ay) {
     float cx = cos(ax);
     float sx = sin(ax);
     float cy = cos(ay);
@@ -238,7 +238,7 @@ float3x3 girar(float ax, float ay) {
  * A inclinação vale nos três: no Barrel, o raio bate primeiro num plano
  * inclinado e o estufamento vem depois.
  */
-float4 geometria(float2 uvDaCamada) {
+static float4 geometria(float2 uvDaCamada) {
     float2 tamanho = tamanhoDaTela();
     float a = proporcaoDaTela();
     float2 q = ((uvDaCamada - 0.5) / tamanho) * 2.0;   // -1..1 dentro da tela
@@ -306,7 +306,7 @@ float4 geometria(float2 uvDaCamada) {
 }
 
 /** Da superfície da tela para a imagem — o mesmo caminho do fim de [geometria]. */
-float2 conteudoDoLocal(float2 local) {
+static float2 conteudoDoLocal(float2 local) {
     float2 naCamada = (local - 0.5) * tamanhoDaTela() + 0.5;
     return (naCamada - 0.5) / (1.0 + u.overscan) + 0.5;
 }
@@ -316,7 +316,7 @@ float2 conteudoDoLocal(float2 local) {
  * proporção (item 6) e o conjunto é girado. É nela que as linhas nascem — e,
  * como ela vem da UV JÁ curvada, as linhas acompanham o vidro (item 34).
  */
-float2 coordDoPadrao(float2 uv) {
+static float2 coordDoPadrao(float2 uv) {
     float2 p = uv - 0.5;
     p.x *= proporcaoDaTela();
     float a = radians(u.angle);
@@ -326,7 +326,7 @@ float2 coordDoPadrao(float2 uv) {
 }
 
 /** O caminho de volta, para amostrar o centro de uma célula no modo Squares. */
-float2 uvDoPadrao(float2 p) {
+static float2 uvDoPadrao(float2 p) {
     float a = radians(u.angle);
     float s = sin(a);
     float c = cos(a);
@@ -352,7 +352,7 @@ float2 uvDoPadrao(float2 p) {
  * moiré e cintila em movimento. Nesse ponto o padrão é trocado pela MÉDIA dele
  * (a fração acesa do período), que é o que o olho veria de longe.
  */
-float perfil(float y, float meia, float fw) {
+static float perfil(float y, float meia, float fw) {
     float d = abs(fract(y) - 0.5);
     float m;
     if (u.beamModel == 0) {
@@ -377,7 +377,7 @@ float perfil(float y, float meia, float fw) {
 }
 
 /** O perfil, supersampleado nos modos de qualidade alta (item 60). */
-float perfilAA(float y, float meia, float dx, float dy, float fw) {
+static float perfilAA(float y, float meia, float dx, float dy, float fw) {
     if (u.quality < 2) return perfil(y, meia, fw);
     float soma = perfil(y + dx * 0.25 + dy * 0.25, meia, fw)
                + perfil(y - dx * 0.25 + dy * 0.25, meia, fw)
@@ -394,7 +394,7 @@ float perfilAA(float y, float meia, float dx, float dy, float fw) {
  * O ruído DA LINHA (itens 18 e 19): a linha falha em trechos, e não a imagem.
  * Ao longo de X, por fileira, trocando com o tempo.
  */
-float ruidoDaLinha(float x, float fileira, float quadro) {
+static float ruidoDaLinha(float x, float fileira, float quadro) {
     if (u.noiseType == 1) {
         float bloco = floor(x * 40.0 / max(u.noiseScale, 0.1));
         return hash21(float2(bloco, fileira * 1.7 + quadro));
@@ -413,7 +413,7 @@ float ruidoDaLinha(float x, float fileira, float quadro) {
  * da luz, e a imagem inteira escurece — o "coloquei uma grade por cima". A
  * divisão pela média faz a máscara REDISTRIBUIR a luz, e não apagá-la.
  */
-float3 fosforo(float2 px, int tipo, float forca) {
+static float3 fosforo(float2 px, int tipo, float forca) {
     if (tipo == 0 || forca <= 0.0) return float3(1.0);
     float lado = max(u.maskSize, 1.0);
     float apagado = 1.0 - forca;
@@ -490,14 +490,14 @@ float3 fosforo(float2 px, int tipo, float forca) {
  * Cinco amostras em tenda, na horizontal, cobrindo uma tríade inteira
  * (`lado` é a largura de UMA tira, em px). Pesos 1-2-3-2-1.
  */
-float4 tenda(float2 uv, float lado) {
+static float4 tenda(float2 uv, float lado) {
     float2 h = float2(lado * 0.6 * eng.acTexelSize.x, 0.0);
     return (amostraP(uv) * 3.0
           + (amostraP(uv - h) + amostraP(uv + h)) * 2.0
           + (amostraP(uv - h * 2.0) + amostraP(uv + h * 2.0))) / 9.0;
 }
 
-float4 passeDaTela() {
+static float4 passeDaTela() {
     float2 uvOriginal = in.acScreenNorm;
     float4 geo = geometria(uvOriginal);
     float2 uv = geo.xy;
@@ -827,14 +827,14 @@ float4 passeDaTela() {
 // ============================================================================
 
 /** O que passa do limiar, já linearizado (o quadrado é o gama 2 aproximado). */
-float3 brilhante(float2 uv) {
+static float3 brilhante(float2 uv) {
     float4 t = tela.sample(__nv_smp, uv);
     float3 cor = t.rgb;
     float w = smoothstep(u.glowThreshold, u.glowThreshold + 0.3, luma(cor));
     return cor * cor * w;
 }
 
-float3 desfocar(sampler2D fonteDoDesfoque, float2 uv, float raio) {
+static float3 desfocar(sampler2D fonteDoDesfoque, float2 uv, float raio) {
     float2 o = eng.acTexelSize * raio;
     float3 soma = fonteDoDesfoque.sample(__nv_smp, uv).rgb * 0.25;
     soma += (fonteDoDesfoque.sample(__nv_smp, uv + float2(o.x, 0.0)).rgb
@@ -853,7 +853,7 @@ float3 desfocar(sampler2D fonteDoDesfoque, float2 uv, float raio) {
 // ============================================================================
 
 /** Onde o efeito age (item 49), de 0 a 1. */
-float ondeAplicar(float2 uv, float4 original) {
+static float ondeAplicar(float2 uv, float4 original) {
     float m = 1.0;
     float f = max(u.maskFeather, 0.001);
     if (u.maskSource == 1) {
@@ -877,7 +877,7 @@ float ondeAplicar(float2 uv, float4 original) {
     return u.maskInvert ? 1.0 - m : m;
 }
 
-float4 juntar() {
+static float4 juntar() {
     float2 uv = in.acScreenNorm;
     float4 base = tela.sample(__nv_smp, uv);
 

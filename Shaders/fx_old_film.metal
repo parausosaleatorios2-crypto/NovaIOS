@@ -22,16 +22,16 @@ struct old_filmParams {
 // --- funcoes auxiliares do efeito
 const int MAXIMO_DE_ARRANHOES = 12;
 
-float hash1(float x) {
+static float hash1(float x) {
     return fract(sin(x * 127.1 + float(u.seed) * 13.7) * 43758.5453);
 }
 
-float hash2(float2 c) {
+static float hash2(float2 c) {
     return fract(sin(dot(c, float2(127.1, 311.7)) + float(u.seed) * 13.7) * 43758.5453);
 }
 
 /** A matriz clássica de sépia (Microsoft Office / IE "sepia" filter). */
-float3 sepia(float3 c) {
+static float3 sepia(float3 c) {
     float r = dot(c, float3(0.393, 0.769, 0.189));
     float g = dot(c, float3(0.349, 0.686, 0.168));
     float b = dot(c, float3(0.272, 0.534, 0.131));

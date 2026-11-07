@@ -15,7 +15,7 @@ struct toji_spill_cleanerParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 sampleTex(float2 uv) {
+static float4 sampleTex(float2 uv) {
             if( eng.acPass==1 ) {
                 return blurImg.sample(__nv_smp, uv);
             } else {

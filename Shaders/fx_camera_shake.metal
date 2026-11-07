@@ -24,7 +24,7 @@ struct camera_shakeParams {
  * Tremor em 1D: soma de 3 senos de frequências irracionalmente relacionadas,
  * mais uma componente rápida pra aspereza. Média zero, amplitude ~1.
  */
-float tremor1D(float t, float faseInicial) {
+static float tremor1D(float t, float faseInicial) {
     float s = float(u.seed) * 0.37 + faseInicial;
     float a = sin(t * 1.0 + s * 1.7);
     float b = sin(t * 1.618 + s * 3.1) * 0.6;

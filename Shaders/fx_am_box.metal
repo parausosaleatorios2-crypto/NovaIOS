@@ -39,11 +39,11 @@ struct am_boxParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
 // presos à borda como o CLAMP_TO_EDGE.
-float4 camadaNoPonto(float2 uv) {
+static float4 camadaNoPonto(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 q = uv * float2(T) - 0.5;
     float2 i = floor(q);
@@ -58,7 +58,7 @@ float4 camadaNoPonto(float2 uv) {
 }
 
 // O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -72,7 +72,7 @@ float3 fundoNoPixel() {
 // `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1, a composição Normal do Nova, `s·a·op + fundo·(1 − a·op)`, dá o
 // mesmo `op·p + fundo·(1 − op·alfa)` do AM com QUALQUER opacidade da camada. Não cabe só quando a soma passa de 1
 // (`fundo + p − fundo·alfa`): com a opacidade cheia ela vira 1 lá e aqui; com menos, aqui sai um pouco mais escuro.
-float4 paraReta(float4 p) {
+static float4 paraReta(float4 p) {
     // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
     float4 q = floor(p * 255.0 + 0.5) / 255.0;
     if (all(lessThanEqual(q.rgb, float3(q.a)))) return p.a > 0.0 ? float4(min(p.rgb / p.a, float3(1.0)), p.a) : float4(0.0);
@@ -89,7 +89,7 @@ float4 paraReta(float4 p) {
 }
 
 // A volta da `eng.acCamadaParaTela`: UV da tela → UV do buffer da camada.
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
@@ -101,7 +101,7 @@ float2 naCamada(float2 t) {
 // O `varying float4x4 invOrient` do AM (calculado no vértice): aqui, no começo do main.
 float4x4 invOrient;
 
-float4x4 rotationAxisAngle( float3 v, float angle )
+static float4x4 rotationAxisAngle( float3 v, float angle )
 {
     float s = sin( angle );
     float c = cos( angle );
@@ -114,7 +114,7 @@ float4x4 rotationAxisAngle( float3 v, float angle )
 }
 
 // O `main` do shader de vértice do AM.
-float4x4 orientacaoDoVertice() {
+static float4x4 orientacaoDoVertice() {
     float3 r = u.rotate * 0.0174533;
     float4x4 rx = rotationAxisAngle(float3(1.,0.,0.),r.x);
     float4x4 ry = rotationAxisAngle(float3(0.,1.,0.),r.y);
@@ -122,14 +122,14 @@ float4x4 orientacaoDoVertice() {
     return u.orient * rz * rx * ry;
 }
 
-float sdBox( float3 p, float3 b )
+static float sdBox( float3 p, float3 b )
 {
   float3 d = abs(p) - b;
   return length(max(d,0.0))
          + min(max(d.x,max(d.y,d.z)),0.0);
 }
 
-float dist(float3 p) {
+static float dist(float3 p) {
     float d = 100000000.0;
 
     p = p-OBJECT_CENTER;
@@ -139,7 +139,7 @@ float dist(float3 p) {
     return d;
 }
 
-float march(float3 ro, float3 rd) {
+static float march(float3 ro, float3 rd) {
     float d = 0.0;
     for( int i=0; i<int(u.MAX_ITER); i++ ) {
         float3 p = ro + rd*d;
@@ -150,14 +150,14 @@ float march(float3 ro, float3 rd) {
     return d;
 }
 
-float4x4 vecToVec( float3 from, float3 to ) {
+static float4x4 vecToVec( float3 from, float3 to ) {
     float3 w = cross(normalize(from),normalize(to));
     float3 axis = normalize(w);
     float angle = asin(length(w));
     return rotationAxisAngle(axis,angle);
 }
 
-float3 calcNormal(float3 p) {
+static float3 calcNormal(float3 p) {
     float d = dist(p);
     float2 e = float2(.01,0.);
     return normalize(d - float3(
@@ -166,19 +166,19 @@ float3 calcNormal(float3 p) {
         dist(p-e.yyx)));
 }
 
-float lighting(float3 p, float3 n) {
+static float lighting(float3 p, float3 n) {
     float3 lightPos = float3(u.lightDir.x/2.0, -u.lightDir.y/2.0, -u.lightDepth*2.0);
     float3 l = normalize(lightPos-p);
     return dot(n,l);
 }
 
-float directionalLighting(float3 p, float3 n) {
+static float directionalLighting(float3 p, float3 n) {
     float3 lightPos = float3(u.lightDir.x/2.0, -u.lightDir.y/2.0, -u.lightDepth*2.0);
     float3 l = normalize(lightPos);
     return dot(n,l);
 }
 
-float4 applyShading(float4 texColor, float3 p, float3 n, float d ) {
+static float4 applyShading(float4 texColor, float3 p, float3 n, float d ) {
     float4 result = float4(0.);
     float a = smoothstep(30.0,9.,d);
     a *= smoothstep(0.3,0.2,n.z);
@@ -215,7 +215,7 @@ float4 applyShading(float4 texColor, float3 p, float3 n, float d ) {
     return result;
 }
 
-float2 mapTexture( float2 texCoord ) {
+static float2 mapTexture( float2 texCoord ) {
     float texRad = u.texAngle * 0.0174533;
     float texCos = cos(texRad);
     float texSin = sin(texRad);

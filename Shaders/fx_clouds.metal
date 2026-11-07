@@ -27,14 +27,14 @@ struct cloudsParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float hash(float2 p) {
+static float hash(float2 p) {
     // Primos grandes e um seno: o gerador de ruído mais usado em shader. O que
     // importa dele é embaralhar bem pixels vizinhos, e isso ele faz.
     return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453);
 }
 
 /** Ruído de valor com interpolação suave — a base de tudo aqui. */
-float ruido(float2 p) {
+static float ruido(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     float2 s = f * f * (3.0 - 2.0 * f);
@@ -53,7 +53,7 @@ float ruido(float2 p) {
  * Cada camada anda numa velocidade própria (`float(i) * 0.37`), e é isso que
  * faz a nuvem se DEFORMAR enquanto anda em vez de deslizar inteira.
  */
-float nuvem(float2 p, float2 vento, int quantas) {
+static float nuvem(float2 p, float2 vento, int quantas) {
     float soma = 0.0;
     float peso = 0.0;
     float amplitude = 1.0;

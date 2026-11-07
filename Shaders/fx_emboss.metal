@@ -18,7 +18,7 @@ struct embossParams {
 };
 
 // --- funcoes auxiliares do efeito
-float lumaAt(float2 uv) {
+static float lumaAt(float2 uv) {
     return dot(inputImg.sample(__nv_smp, clamp(uv, 0.0, 1.0)).rgb, float3(0.299, 0.587, 0.114));
 }
 

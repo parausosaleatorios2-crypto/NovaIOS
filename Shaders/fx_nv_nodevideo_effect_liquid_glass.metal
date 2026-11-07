@@ -43,22 +43,22 @@ struct nv_nodevideo_effect_liquid_glassParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 linear(float3 c) {
+static float3 linear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 srgb(float3 l) {
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 // O texel de pé (a linha 0 é a base, como nos RTs do Node): no buffer de camada a linha é espelhada.
-float4 texelDePe(sampler2D img) {
+static float4 texelDePe(sampler2D img) {
     int2 T = int2(int(img.get_width()), int(img.get_height()));
     int2 p = int2(min(floor(in.acScreenNorm * float2(T)), float2(T) - 1.0));
     if (eng.acEntradaDePe != 1) p.y = T.y - 1 - p.y;
     return img.read(uint2(p), uint(0));
 }
 // O DoGaussianBlur do Node na metade do u.tamanho: sigma = |Desfoque| × 0,0475 × diagonal × 0,4660 (px da metade).
-float4 gaussiana(sampler2D t, float2 eixo) {
+static float4 gaussiana(sampler2D t, float2 eixo) {
     float sigma = abs(u.desfoque) * 0.0475 * length(eng.acTamanhoDaTela) * 0.4660 * eng.acEscalaDePixel;
     if (abs(u.desfoque) < 0.0001 || sigma < 0.05) return t.sample(__nv_smp, in.acScreenNorm);
     float2 T = float2(int2(int(t.get_width()), int(t.get_height())));
@@ -108,7 +108,7 @@ int _enable_edge_glint;
 int _blur_invert;
 
 // AELiquidGlass.GetRefractiveIndexRatios
-float3 razoes(float n, float D) {
+static float3 razoes(float n, float D) {
     n = n < 1.0 ? 1.0 : n;
     D = D < 0.0 ? 0.0 : D;
     if (D == 0.0) return float3(1.0 / n);
@@ -118,7 +118,7 @@ float3 razoes(float n, float D) {
     return 1.0 / (A + B * invL2);
 }
 
-void ligar() {
+static void ligar() {
     _center = eng.acEntradaDePe == 1 ? u.centro : float2(u.centro.x, 1.0 - u.centro.y);
     _BoxSize = float4(max(u.tamanho, 0.0) * 0.5, 0.0, 0.0);
     if (int(u.modoDoCanto) == 1) _Radii = float4(max(u.topo.y, 0.0), max(u.inferior.y, 0.0), max(u.topo.x, 0.0), max(u.inferior.x, 0.0)) * 0.5;
@@ -186,7 +186,7 @@ bool u_xlatb19;
 bool u_xlatb20;
 float u_xlat21;
 bool u_xlatb21;
-void programaDoNode()
+static void programaDoNode()
 {
     u_xlat0.xy = vs_TEXCOORD0.xy + (-_center.xy);
     u_xlat0.xy = u_xlat0.xy * float2(_viewport_ratio.x, _viewport_ratio.y);

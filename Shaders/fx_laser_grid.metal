@@ -22,7 +22,7 @@ struct laser_gridParams {
 
 // --- funcoes auxiliares do efeito
 /** Desenha uma linha fina em `t = fract(x)`: 1 na linha, 0 fora dela. */
-float linha(float x, float largura) {
+static float linha(float x, float largura) {
     float f = abs(fract(x) - 0.5) * 2.0;    // 0 no meio da célula, 1 na borda
     return smoothstep(1.0 - largura, 1.0, f);
 }

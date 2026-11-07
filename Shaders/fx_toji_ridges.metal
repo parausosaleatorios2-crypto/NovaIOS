@@ -24,7 +24,7 @@ struct toji_ridgesParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         float2 mod289(float2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         float4 mod289(float4 x) {
           return x - floor(x * (1.0 / 289.0)) * 289.0;

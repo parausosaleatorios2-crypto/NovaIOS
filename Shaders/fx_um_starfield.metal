@@ -20,9 +20,9 @@ struct um_starfieldParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+static float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 
-float camada(float2 uv, float d, float velo) {
+static float camada(float2 uv, float d, float velo) {
     float2 g = uv * d + float2(eng.acTime * velo, 0.0);
     float2 cell = floor(g);
     float2 f = fract(g) - 0.5;

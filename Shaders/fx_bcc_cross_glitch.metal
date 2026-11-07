@@ -23,16 +23,16 @@ struct bcc_cross_glitchParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash1(float n) {
+static float hash1(float n) {
     return fract(sin(n * 12.9898 + u.seed * 7.1) * 43758.5453);
 }
 
-float hash2(float2 p) {
+static float hash2(float2 p) {
     return fract(sin(dot(p, float2(12.9898, 78.233)) + u.seed * 7.1) * 43758.5453);
 }
 
 /** O tempo quantizado dá o "degrau" do glitch: cada tick, uma nova composição de saltos. */
-float tickDoGlitch() {
+static float tickDoGlitch() {
     return floor(eng.acTime * max(u.speed, 0.01));
 }
 

@@ -27,12 +27,12 @@ struct am_turbulent_displace_legacyParams {
 // --- funcoes auxiliares do efeito
 // O simplex 3D do webgl-noise (Ashima Arts / Ian McEwan, licença MIT), como o AM o escreve: as mesmas constantes e
 // a mesma ordem de operações (o ruído é contínuo, mas a mesma ordem dá o mesmo float no mesmo celular).
-float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-float4 mod289(float4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-float4 permute(float4 x) { return mod289(((x * 34.0) + 1.0) * x); }
-float4 taylorInvSqrt(float4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+static float3 mod289(float3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+static float4 mod289(float4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+static float4 permute(float4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+static float4 taylorInvSqrt(float4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
 
-float snoise(float3 v) {
+static float snoise(float3 v) {
     const float2 C = float2(1.0 / 6.0, 1.0 / 3.0);
     const float4 D = float4(0.0, 0.5, 1.0, 2.0);
     float3 i = floor(v + dot(v, C.yyy));
@@ -79,7 +79,7 @@ float snoise(float3 v) {
 }
 
 // A turbulência do AM: |ruído| somado em oitavas, a coordenada dobrada e somada à paralaxe a cada uma.
-float turbulence(float2 st, int OCTAVES, float2 parallax, float u.evolution) {
+static float turbulence(float2 st, int OCTAVES, float2 parallax, float u.evolution) {
     float value = 0.0;
     float amplitude = .5;
     for (int i = 0; i < OCTAVES; i++) {
@@ -91,11 +91,11 @@ float turbulence(float2 st, int OCTAVES, float2 parallax, float u.evolution) {
     return value;
 }
 
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
 // presos à borda como o CLAMP_TO_EDGE.
-float4 camadaNoPonto(float2 uv) {
+static float4 camadaNoPonto(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 p = uv * float2(T) - 0.5;
     float2 i = floor(p);
@@ -110,7 +110,7 @@ float4 camadaNoPonto(float2 uv) {
 }
 
 // A volta da `eng.acCamadaParaTela`: UV da tela → UV do buffer da camada.
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }

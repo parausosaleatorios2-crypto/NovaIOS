@@ -38,22 +38,22 @@ struct ae_audio_spectrumParams {
 const int LARGURA = 256;
 const int VIZINHOS = 48;
 
-float4 texel(int i) { return floor(faixasImg.read(uint2(int2(i % LARGURA, i / LARGURA)), uint(0)) * 255.0 + 0.5); }
+static float4 texel(int i) { return floor(faixasImg.read(uint2(int2(i % LARGURA, i / LARGURA)), uint(0)) * 255.0 + 0.5); }
 
 /** A altura da faixa em px: 24 bits de 0 a 1, vezes Maximum Height. */
-float alturaDa(int b) {
+static float alturaDa(int b) {
     float4 t = texel(1 + 3 * b);
     return (t.r * 65536.0 + t.g * 256.0 + t.b) / 16777215.0 * u.maxHeight;
 }
 
-float aoSegmento(float2 p, float2 a, float2 b) {
+static float aoSegmento(float2 p, float2 a, float2 b) {
     float2 v = b - a;
     float l2 = dot(v, v);
     float t = l2 > 0.0 ? clamp(dot(p - a, v) / l2, 0.0, 1.0) : 0.0;
     return length(p - a - t * v);
 }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     return float4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
@@ -65,7 +65,7 @@ float jaAlfa = 0.0, jaDistancia = 1.0e9;
 float3 jaCor = float3(0.0);
 
 /** Junta ao pixel o traço da faixa `b`, que passa a `d` px dele. */
-void traco(float d, int b) {
+static void traco(float d, int b) {
     float a = clamp(0.5 + (0.5 * T - d) / macio, 0.0, 1.0) * min(u.thickness, 1.0);
     if (a <= 0.0) return;
     float3 c = mix(texel(2 + 3 * b).rgb, texel(3 + 3 * b).rgb, min(m0 + d / meia, 1.0 - m0)) / 255.0;
@@ -81,7 +81,7 @@ void traco(float d, int b) {
 }
 
 /** Para que lado vai a faixa `b` nos modos Analog: A sobe (−1), B desce (+1); com os dois, alternam. */
-float lado(int b) { return u.side == 0 ? -1.0 : (u.side == 1 ? 1.0 : ((b & 1) == 1 ? 1.0 : -1.0)); }
+static float lado(int b) { return u.side == 0 ? -1.0 : (u.side == 1 ? 1.0 : ((b & 1) == 1 ? 1.0 : -1.0)); }
 
 fragment float4 fx_ae_audio_spectrum(
     NovaVertexOut       in   [[stage_in]],

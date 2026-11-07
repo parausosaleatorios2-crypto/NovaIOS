@@ -23,7 +23,7 @@ struct snowParams {
 // --- funcoes auxiliares do efeito
 const int MAXIMO_DE_CAMADAS = 5;
 
-float hash2(float2 c) {
+static float hash2(float2 c) {
     c += float2(float(u.seed) * 13.7);
     return fract(sin(dot(c, float2(127.1, 311.7))) * 43758.5453);
 }
@@ -33,7 +33,7 @@ float hash2(float2 c) {
  * Cada célula tem UM floco, cujo lugar na célula é fixo (hash) e cujo Y
  * cai com o tempo, voltando ao topo ao sair.
  */
-float neveDaCamada(float2 uv, float t, float densidadeDaCamada, float velocidadeDaCamada, float tamanhoDaCamada) {
+static float neveDaCamada(float2 uv, float t, float densidadeDaCamada, float velocidadeDaCamada, float tamanhoDaCamada) {
     float2 grade = float2(densidadeDaCamada, densidadeDaCamada);
     float2 escalado = uv * grade;
     float2 i = floor(escalado);

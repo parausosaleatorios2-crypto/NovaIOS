@@ -39,12 +39,12 @@ struct sglintParams {
 // --- funcoes auxiliares do efeito
 const int TOQUES = 16;                       // amostras do pente de cada caixa
 
-float4 pre(float4 c) { return float4(c.rgb * c.a, c.a); }
-float4 fonte(float2 uv) { return pre(inputImg.sample(__nv_smp, uv)); }
+static float4 pre(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 fonte(float2 uv) { return pre(inputImg.sample(__nv_smp, uv)); }
 
 /** Gaussiano de um eixo. `de`: 0 = a fonte, 1 = bh, 2 = gl. */
-float4 ler(int de, float2 q) { return de == 0 ? fonte(q) : de == 1 ? bh.sample(__nv_smp, q) : gl.sample(__nv_smp, q); }
-float4 gauss(int de, float2 eixo, float sigma) {
+static float4 ler(int de, float2 q) { return de == 0 ? fonte(q) : de == 1 ? bh.sample(__nv_smp, q) : gl.sample(__nv_smp, q); }
+static float4 gauss(int de, float2 eixo, float sigma) {
     float2 uv = in.acScreenNorm;
     if (sigma < 0.05) return ler(de, uv);
     float passo = max(1.0, ceil(3.0 * sigma / 20.0));
@@ -60,14 +60,14 @@ float4 gauss(int de, float2 eixo, float sigma) {
     return soma / max(pesos, 1e-6);
 }
 
-float sigmaDoLimiar() { return 0.42 * u.thresholdBlur * eng.acEscalaDePixel; }
-float sigmaDoGlint() { return 0.4 * u.blurGlint * eng.acEscalaDePixel; }
+static float sigmaDoLimiar() { return 0.42 * u.thresholdBlur * eng.acEscalaDePixel; }
+static float sigmaDoGlint() { return 0.4 * u.blurGlint * eng.acEscalaDePixel; }
 
 /**
  * Hue Shift (medido num raio branco com 0,25 e 0,5): gira o matiz como no HSV e devolve o brilho
  * que a cor tinha — o brilho da Sapphire, 5/16·R + 8/16·G + 3/16·B.
  */
-float3 girarMatiz(float3 c, float voltas) {
+static float3 girarMatiz(float3 c, float voltas) {
     if (voltas == 0.0) return c;
     float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
     float d = mx - mn;
@@ -85,7 +85,7 @@ float3 girarMatiz(float3 c, float voltas) {
  * limiar daquele canal: medido), devolvido com a COR da fonte — a soma dos três vezes a cor
  * dividida pela soma dela (medido na cartela, com Size 0).
  */
-float3 limiar(float4 c) {
+static float3 limiar(float4 c) {
     float3 v = u.glintFromAlpha ? float3(c.a) : c.rgb;
     float3 t = max(v - u.threshold - u.thresholdAddColor.rgb, 0.0) / max(1.0 - u.threshold, 1e-4);
     float soma = v.r + v.g + v.b;
@@ -108,16 +108,16 @@ float3 limiar(float4 c) {
  * fraco — o pico fica onde estava e a energia cresce com o Size X / Y / Diag (as diagonais contam
  * a partir dos 0,75 de fábrica).
  */
-float brilhoDe(int i) {
+static float brilhoDe(int i) {
     float b = u.brightness * (i == 0 ? u.brightnessX : i == 1 ? u.brightnessY : i == 2 ? u.brightnessDiag1 : u.brightnessDiag2);
     return b * (i == 0 ? u.sizeX : i == 1 ? u.sizeY : i == 2 ? u.sizeDiag1 / 0.75 : u.sizeDiag2 / 0.75);
 }
 /** Pixels deste buffer por pixel da composição (os raios podem rodar em resolução reduzida). */
-float escalaDoBuffer() { return eng.acEscalaDePixel * eng.acResolution.x / float(int2(int(inputImg.get_width()), int(inputImg.get_height())).x); }
-int2 tamanho() { return int2(eng.acResolution + 0.5); }
-int2 passoDe(int i) { return i == 0 ? int2(1, 0) : i == 1 ? int2(0, 1) : i == 2 ? int2(1, 1) : int2(1, -1); }
+static float escalaDoBuffer() { return eng.acEscalaDePixel * eng.acResolution.x / float(int2(int(inputImg.get_width()), int(inputImg.get_height())).x); }
+static int2 tamanho() { return int2(eng.acResolution + 0.5); }
+static int2 passoDe(int i) { return i == 0 ? int2(1, 0) : i == 1 ? int2(0, 1) : i == 2 ? int2(1, 1) : int2(1, -1); }
 /** O espaçamento do pente, por canal, em PASSOS da direção (na diagonal um passo é √2 pixel: medido). */
-float3 espacamento(int i) {
+static float3 espacamento(int i) {
     float alcance = u.size * escalaDoBuffer() * (i == 0 ? u.sizeX : i == 1 ? u.sizeY : i == 2 ? u.sizeDiag1 : u.sizeDiag2);
     float teto = i == 0 ? eng.acResolution.x : eng.acResolution.y;
     return min(alcance * float3(u.sizeRed, u.sizeGreen, u.sizeBlue) * (2.0 / 3.0), teto) / float(TOQUES);
@@ -128,12 +128,12 @@ float3 espacamento(int i) {
  * ele perderia 10% (medido). Aqui os três canais vão com 10 bits cada (em raiz quadrada) nos 32
  * bits do pixel — por isso estes buffers são lidos com `texelFetch`, sem filtro.
  */
-float4 empacotar(float3 v) {
+static float4 empacotar(float3 v) {
     uint3 q = uint3(sqrt(clamp(v, 0.0, 1.0)) * 1023.0 + 0.5);
     uint bits = q.r | (q.g << 10) | (q.b << 20);
     return float4(float(bits & 255u), float((bits >> 8) & 255u), float((bits >> 16) & 255u), float((bits >> 24) & 255u)) / 255.0;
 }
-float3 desempacotar(float4 c) {
+static float3 desempacotar(float4 c) {
     uint4 b = uint4(c * 255.0 + 0.5);
     uint bits = b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
     float3 q = float3(float(bits & 1023u), float((bits >> 10) & 1023u), float((bits >> 20) & 1023u)) / 1023.0;
@@ -144,7 +144,7 @@ float3 desempacotar(float4 c) {
  * O estágio anterior na posição `p` (em pixels da imagem; a margem livre fica logo depois dela:
  * à direita na Diag1, embaixo na Diag2). Fora disso não há nada.
  */
-float3 lerEstagio(int i, int estagio, int2 p) {
+static float3 lerEstagio(int i, int estagio, int2 p) {
     int2 t = tamanho();
     bool dentro = p.x >= 0 && p.y >= 0 && p.x < t.x && p.y < t.y;
     if (estagio == 0) return dentro ? lim.read(uint2(p), uint(0)).rgb : float3(0.0);
@@ -161,7 +161,7 @@ float3 lerEstagio(int i, int estagio, int2 p) {
  * até ½·maior + 1, o pente até 7,5·maior + ½ (o toque mais longe), somados estágio a estágio. Na margem livre, o
  * pixel mais longe da imagem do que isso só soma zeros — o passe grava o zero direto, sem andar.
  */
-int alcanceAte(int estagio, float3 s) {
+static int alcanceAte(int estagio, float3 s) {
     float maior = max(s.r, max(s.g, s.b));
     int caixas = estagio / 2 + 1;
     int pentes = (estagio + 1) / 2;
@@ -170,7 +170,7 @@ int alcanceAte(int estagio, float3 s) {
 }
 
 /** Um dos seis passes de um raio: par = a caixa pequena; ímpar = o pente. `margem` = este buffer é o da margem livre. */
-float3 passeDoRaio(int i, bool margem, int estagio) {
+static float3 passeDoRaio(int i, bool margem, int estagio) {
     int2 d = passoDe(i);
     int2 aqui = int2(floor(in.acScreenNorm * eng.acResolution));
     float3 s = espacamento(i);
@@ -202,13 +202,13 @@ float3 passeDoRaio(int i, bool margem, int estagio) {
 }
 
 /** O raio `i` pronto no pixel `p`. */
-float3 raioPronto(int i, int2 p, int2 t) {
+static float3 raioPronto(int i, int2 p, int2 t) {
     float4 c = i == 0 ? rx.read(uint2(p), uint(0)) : i == 1 ? ry.read(uint2(p), uint(0)) : i == 2 ? rd1.read(uint2(p), uint(0)) : rd2.read(uint2(p), uint(0));
     return 4.0 * brilhoDe(i) * desempacotar(c);
 }
 
 /** Os quatro raios juntos em SCREEN (medido com Size 0: 1 − (1 − 4T)^4), no pixel `p` dos buffers dos raios. */
-float3 glintEmTam(int2 p, int2 t) {
+static float3 glintEmTam(int2 p, int2 t) {
     p = clamp(p, int2(0), t - 1);
     float3 resto = float3(1.0);
     for (int i = 0; i < 4; i++) resto *= 1.0 - clamp(raioPronto(i, p, t), 0.0, 1.0);

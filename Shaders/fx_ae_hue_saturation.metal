@@ -66,14 +66,14 @@ struct ae_hue_saturationParams {
 // ---- o fator da saturação para cada valor inteiro de −100 a 100, em 1/256 (medido; tools/huesat/benchmark/tabela.py) ----
 const float FATOR[201] = float[201](0.0, 3.0, 6.0, 8.0, 11.0, 13.0, 16.0, 18.0, 21.0, 24.0, 26.0, 29.0, 31.0, 34.0, 36.0, 39.0, 41.0, 44.0, 47.0, 49.0, 52.0, 54.0, 57.0, 59.0, 62.0, 64.0, 67.0, 70.0, 72.0, 75.0, 77.0, 80.0, 82.0, 85.0, 88.0, 90.0, 93.0, 95.0, 98.0, 100.0, 103.0, 105.0, 108.0, 111.0, 113.0, 116.0, 118.0, 121.0, 123.0, 126.0, 128.0, 131.0, 134.0, 136.0, 139.0, 141.0, 144.0, 146.0, 149.0, 152.0, 154.0, 157.0, 159.0, 162.0, 164.0, 167.0, 169.0, 172.0, 175.0, 177.0, 180.0, 182.0, 185.0, 187.0, 190.0, 192.0, 195.0, 198.0, 200.0, 203.0, 205.0, 208.0, 210.0, 213.0, 216.0, 218.0, 221.0, 223.0, 226.0, 228.0, 231.0, 233.0, 236.0, 239.0, 241.0, 244.0, 246.0, 249.0, 251.0, 254.0, 256.0, 258.0, 261.0, 263.0, 266.0, 268.0, 272.0, 274.0, 277.0, 280.0, 283.0, 286.0, 290.0, 294.0, 296.0, 300.0, 303.0, 307.0, 310.0, 315.0, 318.0, 323.0, 326.0, 331.0, 334.0, 340.0, 345.0, 349.0, 354.0, 358.0, 364.0, 368.0, 375.0, 379.0, 386.0, 390.0, 398.0, 402.0, 410.0, 418.0, 423.0, 432.0, 438.0, 447.0, 453.0, 462.0, 469.0, 480.0, 487.0, 498.0, 510.0, 518.0, 530.0, 539.0, 553.0, 562.0, 577.0, 588.0, 604.0, 615.0, 633.0, 646.0, 666.0, 687.0, 701.0, 725.0, 741.0, 768.0, 786.0, 816.0, 836.0, 870.0, 894.0, 932.0, 960.0, 1004.0, 1052.0, 1088.0, 1145.0, 1186.0, 1255.0, 1305.0, 1388.0, 1450.0, 1554.0, 1632.0, 1764.0, 1865.0, 2040.0, 2251.0, 2417.0, 2720.0, 2967.0, 3435.0, 3840.0, 4662.0, 5440.0, 7253.0, 9325.0, 16320.0, 65280.0);
 
-float fator(float v) {
+static float fator(float v) {
     float x = clamp(v + 100.0, 0.0, 200.0);
     int i = min(int(floor(x)), 199);
     return mix(FATOR[i], FATOR[i + 1], x - float(i)) / 256.0;
 }
 
 /** RGB -> (matiz em voltas, saturação, luminosidade), HSL. */
-float3 paraHsl(float3 c) {
+static float3 paraHsl(float3 c) {
     float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), d = mx - mn;
     float l = 0.5 * (mx + mn);
     if (d <= 0.0) return float3(0.0, 0.0, l);
@@ -82,7 +82,7 @@ float3 paraHsl(float3 c) {
     return float3(h / 6.0, s, l);
 }
 
-float canalDoHsl(float p, float q, float t) {
+static float canalDoHsl(float p, float q, float t) {
     t = fract(t);
     if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
     if (t < 0.5) return q;
@@ -90,24 +90,24 @@ float canalDoHsl(float p, float q, float t) {
     return p;
 }
 
-float3 deHsl(float3 hsl) {
+static float3 deHsl(float3 hsl) {
     float q = hsl.z <= 0.5 ? hsl.z * (1.0 + hsl.y) : hsl.z + hsl.y - hsl.z * hsl.y;
     float p = 2.0 * hsl.z - q;
     return float3(canalDoHsl(p, q, hsl.x + 1.0 / 3.0), canalDoHsl(p, q, hsl.x), canalDoHsl(p, q, hsl.x - 1.0 / 3.0));
 }
 
 /** Lightness (medido): para cima mistura com branco; para baixo, com preto. `v` em −1..1. */
-float3 clarear(float3 c, float v) {
+static float3 clarear(float3 c, float v) {
     return v >= 0.0 ? c + (1.0 - c) * v : c * (1.0 + v);
 }
 
 /** Um ponto da faixa em graus de verdade: no matiz inteiro de lá (1536 por volta) ele cai em round(g · 1540 / 360). */
-float ponto(float g) {
+static float ponto(float g) {
     return floor(g * 1540.0 / 360.0 + 0.5) * 360.0 / 1536.0;
 }
 
 /** O peso da faixa (início da rampa, início do miolo, fim do miolo, fim da rampa) no matiz `hg`, em graus. */
-float peso(float hg, float4 faixa) {
+static float peso(float hg, float4 faixa) {
     float a = ponto(faixa.x);
     float x = __nv_mod(hg - a, 360.0);
     float b = __nv_mod(ponto(faixa.y) - a, 360.0), c = __nv_mod(ponto(faixa.z) - a, 360.0), d = __nv_mod(ponto(faixa.w) - a, 360.0);
@@ -118,7 +118,7 @@ float peso(float hg, float4 faixa) {
 }
 
 /** Soma o ajuste de uma cor: (matiz em voltas, luminosidade em −1..1, saturação em fator − 1). */
-void somar(float hg, float4 faixa, float3 hsl, inout float3 soma) {
+static void somar(float hg, float4 faixa, float3 hsl, inout float3 soma) {
     if (hsl == float3(0.0)) return;
     float w = peso(hg, faixa);
     soma += w * float3(hsl.x / 360.0, hsl.z / 100.0, fator(hsl.y) - 1.0);

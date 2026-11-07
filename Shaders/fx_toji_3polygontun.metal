@@ -34,13 +34,13 @@ struct toji_3polygontunParams {
 #define PI 3.141592653589793
 #define TAU 6.283185307179586
 
-float polygon(float2 p, float vertices, float size){
+static float polygon(float2 p, float vertices, float size){
     float a = __nv_atan(p.x, p.y) + 0.2;
     float b = TAU / max(vertices, 1.0);
     return cos(floor(0.5 + a / b) * b - a) * length(p) - size;
 }
 
-float2x2 rot2(float r){ return float2x2(cos(r), sin(r), -sin(r), cos(r)); }
+static float2x2 rot2(float r){ return float2x2(cos(r), sin(r), -sin(r), cos(r)); }
 
 fragment float4 fx_toji_3polygontun(
     NovaVertexOut       in   [[stage_in]],

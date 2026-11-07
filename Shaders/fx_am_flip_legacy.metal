@@ -23,10 +23,10 @@ struct am_flip_legacyParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim).
-float4 camadaNoPonto(float2 uv) {
+static float4 camadaNoPonto(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 q = uv * float2(T) - 0.5;
     float2 i = floor(q);
@@ -40,13 +40,13 @@ float4 camadaNoPonto(float2 uv) {
     return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
 }
 
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // O `inputImg.sample(__nv_smp, (float4(uv, 0, 1) * eng.acLayerToScreen).xy)` do AM (ver `am-flip-layer.xml`).
-float4 camadaDoAm(float2 uv) {
+static float4 camadaDoAm(float2 uv) {
     float2 conteudo = max(eng.acTamanhoDaCamada, float2(1e-6));
     float2 b = 0.5 + (float2(uv.x, 1.0 - uv.y) - 0.5) * conteudo / eng.acTamanhoDaTela;
     float2 naTela = b;
@@ -61,7 +61,7 @@ float4 camadaDoAm(float2 uv) {
 
 // ------------------------------------------------------------------ a conta do AM, na ordem dele
 
-float4 raioNaCaixa(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad) {
+static float4 raioNaCaixa(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad) {
     float3 rdd = (txx*float4(rd,0.0)).xyz;
     float3 roo = (txx*float4(ro,1.0)).xyz;
 
@@ -82,7 +82,7 @@ float4 raioNaCaixa(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad)
     return float4( tN, nor );
 }
 
-float sombraNaCaixa(float3 ro, float3 rd, float4x4 txx, float3 rad) {
+static float sombraNaCaixa(float3 ro, float3 rd, float4x4 txx, float3 rad) {
     float3 rdd = (txx*float4(rd,0.0)).xyz;
     float3 roo = (txx*float4(ro,1.0)).xyz;
 
@@ -100,7 +100,7 @@ float sombraNaCaixa(float3 ro, float3 rd, float4x4 txx, float3 rad) {
     return tN;
 }
 
-float4x4 rotationAxisAngle( float3 v, float u.angle )
+static float4x4 rotationAxisAngle( float3 v, float u.angle )
 {
     float s = sin( u.angle );
     float c = cos( u.angle );
@@ -112,7 +112,7 @@ float4x4 rotationAxisAngle( float3 v, float u.angle )
                  0.0,                0.0,                0.0,                1.0 );
 }
 
-float4x4 transladar( float3 v )
+static float4x4 transladar( float3 v )
 {
     return float4x4( 1.0, 0.0, 0.0, 0.0,
                  0.0, 1.0, 0.0, 0.0,
@@ -121,7 +121,7 @@ float4x4 transladar( float3 v )
 }
 
 // A `inverse` do AM: a de um giro + translação (o giro transposto, a translação por −dot).
-float4x4 inversaRigida( float4x4 m )
+static float4x4 inversaRigida( float4x4 m )
 {
     return float4x4(
         m[0][0], m[1][0], m[2][0], 0.0,

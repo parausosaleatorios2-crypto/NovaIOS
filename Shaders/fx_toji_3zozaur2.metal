@@ -25,7 +25,7 @@ struct toji_3zozaur2Params {
 // --- funcoes auxiliares do efeito
 // Cosine Web (Zozuar 2) - AM single pass, GLES-safe loops
 
-float2x2 rotate2D(float r){ return float2x2(cos(r), sin(r), -sin(r), cos(r)); }
+static float2x2 rotate2D(float r){ return float2x2(cos(r), sin(r), -sin(r), cos(r)); }
 
 fragment float4 fx_toji_3zozaur2(
     NovaVertexOut       in   [[stage_in]],

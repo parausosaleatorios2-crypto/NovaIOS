@@ -27,22 +27,22 @@ struct bleedParams {
 const float PI = 3.14159265358979;
 
 // Tudo no template é em pixels de uma comp 1920×1080: `K` é quantos pixels da imagem valem um desses.
-float2 tamanhoCheio() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
-float K() { float2 r = tamanhoCheio(); return min(r.x / 1920.0, r.y / 1080.0); }
+static float2 tamanhoCheio() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
+static float K() { float2 r = tamanhoCheio(); return min(r.x / 1920.0, r.y / 1080.0); }
 /** Um pixel de referência, em UV. */
-float2 px() { return K() / tamanhoCheio(); }
-bool dentro(float2 uv) { return uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0; }
+static float2 px() { return K() / tamanhoCheio(); }
+static bool dentro(float2 uv) { return uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0; }
 /** O alfa da forma (0 fora do quadro). */
-float forma(float2 uv) { return dentro(uv) ? inputImg.sample(__nv_smp, uv).a : 0.0; }
-float media(float3 c) { return (c.r + c.g + c.b) / 3.0; }
+static float forma(float2 uv) { return dentro(uv) ? inputImg.sample(__nv_smp, uv).a : 0.0; }
+static float media(float3 c) { return (c.r + c.g + c.b) / 3.0; }
 
-float h1(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
-float3 h3(float3 p) { p = fract(p * float3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+static float h1(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+static float3 h3(float3 p) { p = fract(p * float3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
 
 // ------------------------------------------------------------------ 0: o estêncil
 // Medido: Minimax (máximo vertical, raio 500) + Offset de 500 para baixo = o máximo do alfa nos
 // 1000 px ACIMA do pixel. As gotas só existem nas colunas da forma, dela para baixo.
-float estencil() {
+static float estencil() {
     float2 p = px();
     float m = 0.0;
     for (int i = 0; i <= 125; i++) m = max(m, forma(in.acScreenNorm - float2(0.0, float(i) * 8.0 * p.y)));
@@ -55,7 +55,7 @@ float estencil() {
 // −40 px/s; cada uma é um risco de ~25 × 205 px (× 0,5 a 1,5) com a ponta redonda embaixo, que
 // clareia para cima e aparece aos poucos (opacidade 0,62 → 1 em 0,75 s). O tempo do mapa anda a
 // Pressure/25. O sorteio do plugin não é público: batem a quantidade, o tamanho, a forma e a queda.
-float gota(float2 d, float larg, float alt) {
+static float gota(float2 d, float larg, float alt) {
     // d: do centro da ponta redonda, em px de referência (y para baixo)
     float u = d.x / larg;
     float v = 0.94 + d.y / alt;
@@ -65,7 +65,7 @@ float gota(float2 d, float larg, float alt) {
     return max(cauda, ponta);
 }
 
-float gotasQueCaem() {
+static float gotasQueCaem() {
     float k = K();
     float2 P = in.acScreenNorm * tamanhoCheio() / k;          // px de referência
     float a = 576.0 * max(u.pressure, 0.0) / 25.0;
@@ -102,10 +102,10 @@ float gotasQueCaem() {
 // ------------------------------------------------------------------ borrões gaussianos
 // Medido no AE: Gaussian Blur com Blurriness B = gaussiana de σ = 0,283·B px; o Map Softness dos
 // efeitos CC (Vector Blur, Glass) = σ de 0,4 × Softness; o Size do Satin (14) = σ 6.
-float peso(float i, float n) { float x = 3.0 * i / n; return exp(-0.5 * x * x); }
+static float peso(float i, float n) { float x = 3.0 * i / n; return exp(-0.5 * x * x); }
 
 /** Borrão de um canal de `t` ao longo de `eixo` (UV por px de referência), σ em px de referência. */
-float4 borrar(sampler2D t, float2 eixo, float4 sigma) {
+static float4 borrar(sampler2D t, float2 eixo, float4 sigma) {
     const float N = 20.0;
     float4 soma = float4(0.0); float total = 0.0;
     for (float i = -N; i <= N; i += 1.0) {
@@ -126,10 +126,10 @@ float4 borrar(sampler2D t, float2 eixo, float4 sigma) {
 // pixel — a média (R+G+B)/3 da cor premultiplicada, borrada pelo Map Softness — virado em ângulo
 // (0 = para cima, 1 = uma volta, horário). Fora da forma o brilho é 0 e a reta sobe: a forma
 // "escorre" para baixo. Dentro, a cor do sangue decide para que lado: por isso a cor muda o desenho.
-float2 direcao(float brilho) { float th = 2.0 * PI * brilho; return float2(sin(th), -cos(th)); }
+static float2 direcao(float brilho) { float th = 2.0 * PI * brilho; return float2(sin(th), -cos(th)); }
 
 /** O alfa da camada Drops antes do segundo Vector Blur: 50% do borrão 500 sobre forma × borrão(1 − forma). */
-float2 antesDoSegundo(float2 uv) {
+static float2 antesDoSegundo(float2 uv) {
     if (!dentro(uv)) return float2(0.0);
     float v = 0.5 * v1.sample(__nv_smp, uv).r;
     float d3 = inputImg.sample(__nv_smp, uv).a * b1.sample(__nv_smp, uv).r;
@@ -139,7 +139,7 @@ float2 antesDoSegundo(float2 uv) {
 // ------------------------------------------------------------------ Linear Wipe
 // Medido: a transição fica a `u.completion`% do caminho entre o primeiro e o último canto do quadro na
 // direção do ângulo, e a faixa suave tem 4/3 do Feather.
-float wipe(float2 uv) {
+static float wipe(float2 uv) {
     float k = K();
     float2 q = tamanhoCheio() / k;                     // o quadro, em px de referência
     float a = radians(u.angle);
@@ -155,7 +155,7 @@ float wipe(float2 uv) {
 // Medido: Calculations 1 = a forma na Object Color a 50%; Calculations 2 junta a camada Drops com a
 // opacidade do Bevel Opacity e o modo do Bevel Type (Copy, Lighten, Darken, Stencil Alpha, Stencil
 // Luma); fora da forma a cor reta da camada é BRANCA (é o que o Lighten e o Darken enxergam).
-float4 camadaBevel(float2 uv) {
+static float4 camadaBevel(float2 uv) {
     float s = forma(uv);
     float4 g = dentro(uv) ? gotas.sample(__nv_smp, uv) : float4(0.0);
     float op = clamp(u.bevelOpacity / 100.0, 0.0, 1.0);
@@ -172,7 +172,7 @@ float4 camadaBevel(float2 uv) {
 }
 
 /** O Satin dos estilos de camada: 1 − |borrão(alfa)(p + d) − borrão(alfa)(p − d)|, d = 11 px no ângulo. */
-float satin(float graus, int canal) {
+static float satin(float graus, int canal) {
     float a = radians(graus);
     float2 d = 11.0 * float2(cos(a), -sin(a)) * px();
     float4 m = e1.sample(__nv_smp, clamp(in.acScreenNorm + d, 0.0, 1.0)), n = e1.sample(__nv_smp, clamp(in.acScreenNorm - d, 0.0, 1.0));

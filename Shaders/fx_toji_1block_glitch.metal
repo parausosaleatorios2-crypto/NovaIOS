@@ -21,7 +21,7 @@ struct toji_1block_glitchParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 getResolution(){ float2 s=__nv_getTexSize(comp_info.size); if(s.x<=0.0||s.y<=0.0) s=__nv_getTexSize(inputImg_info.size); if(s.x<=0.0||s.y<=0.0) s=float2(1920.0,1080.0); return s; }
+static float2 getResolution(){ float2 s=__nv_getTexSize(comp_info.size); if(s.x<=0.0||s.y<=0.0) s=__nv_getTexSize(inputImg_info.size); if(s.x<=0.0||s.y<=0.0) s=float2(1920.0,1080.0); return s; }
     float fractf(float x){ return fract(x); }
     float3 hash33(float3 p3){ p3=fract(p3*float3(.1031,.1030,.0973)); p3+=dot(p3,p3.yxz+33.33); return fract((p3.xxy+p3.yxx)*p3.zyx); }
     float2 hash21(float p){ float3 p3=fract(float3(p)*float3(.1031,.1030,.0973)); p3+=dot(p3,p3.yzx+33.33); return fract((p3.xx+p3.yz)*p3.zy); }

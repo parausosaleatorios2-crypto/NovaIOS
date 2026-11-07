@@ -21,7 +21,7 @@ struct um_light_particleParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float hash21(float2 p) {
+static float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);

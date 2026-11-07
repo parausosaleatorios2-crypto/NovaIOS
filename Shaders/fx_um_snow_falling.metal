@@ -19,9 +19,9 @@ struct um_snow_fallingParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+static float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 
-float camadaDeNeve(float2 uv, float d, float s) {
+static float camadaDeNeve(float2 uv, float d, float s) {
     float2 g = uv * d;
     g.x += eng.acTime * u.wind * d * 0.5;
     g.y += eng.acTime * u.speed * d * 0.3;

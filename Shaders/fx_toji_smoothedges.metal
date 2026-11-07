@@ -16,7 +16,7 @@ struct toji_smoothedgesParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 xstreak() {
+static float4 xstreak() {
             float texelSize = 1.0 / eng.acScreenSize.x;
             float dist = u.strength * 0.05;
             int nSamples = int(clamp(dist/texelSize,1.01,100.01));

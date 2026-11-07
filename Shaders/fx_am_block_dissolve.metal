@@ -21,7 +21,7 @@ struct am_block_dissolveParams {
 
 // --- funcoes auxiliares do efeito
 // O `rand` do AM, letra por letra (as constantes em variáveis, como lá).
-float rand(float2 co)
+static float rand(float2 co)
 {
     float a = 719.310;
     float b = 178.233;
@@ -34,7 +34,7 @@ float rand(float2 co)
 // UV → UV da tela com Y para baixo (o do AM). Na tela (`stage="screen"`) a entrada já é a tela, de pé (t = 0
 // EMBAIXO); no filho de grupo, o `eng.acTela` leva o buffer à tela do grupo. Nos dois casos, inverter o t — a mesma
 // operação do AM (`1.0 - in.acScreenNorm.y`).
-float2 naTela(float2 uv) {
+static float2 naTela(float2 uv) {
     float2 t = eng.acEntradaDePe == 1 ? uv : __nv_acTela(uv);
     return float2(t.x, 1.0 - t.y);
 }

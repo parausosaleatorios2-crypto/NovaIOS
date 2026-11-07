@@ -37,11 +37,11 @@ const int TAMANHO = 32769;                  // amostras de cada trecho
 // a linha onde começa cada trecho: brilho, e a cor de cada canal (R, G, B)
 // Em FUNÇÕES, não em arrays constantes: índice variável num array constante é o que driver de celular erra
 // (como no S_Shake que "não funcionam em alguns celulares", 30/10/2026).
-int linhaDoTrecho(int t) { if (t == 0) return 0; if (t == 1) return 33; if (t == 2) return 66; if (t == 3) return 99; return 0; }
+static int linhaDoTrecho(int t) { if (t == 0) return 0; if (t == 1) return 33; if (t == 2) return 66; if (t == 3) return 99; return 0; }
 const float PI2 = 6.28318530718;
 
 /** Uma amostra da tabela: 16 bits em dois canais (R alto, G baixo). */
-float amostra(int trecho, int i) {
+static float amostra(int trecho, int i) {
     // fora da tabela o pisca continua: ela é percorrida de volta, e de novo de ida (sem salto)
     int volta = 2 * (TAMANHO - 1);
     // o vaivém é simétrico em volta do 0: o índice negativo vale o positivo (e dividir inteiro negativo é
@@ -54,7 +54,7 @@ float amostra(int trecho, int i) {
 }
 
 /** O ruído do trecho (0 = brilho, 1 a 3 = a cor de R, G e B) no ponto `u`. */
-float ruido(int trecho, float u) {
+static float ruido(int trecho, float u) {
     // A semente medida no After Effects dá o MESMO pisca de lá; qualquer outra lê a mesma tabela a
     // partir de um ponto que depende da semente — outro pisca, do mesmo jeito.
     float desvio = abs(u.seed - SEMENTE) < 0.0006 ? 0.0 : fract(u.seed * 0.61803 + 0.137) * 1500.0 + 37.0;

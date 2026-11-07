@@ -29,7 +29,7 @@ struct extrudeParams {
 const int MAX_STEPS = 128;
 
 // Pixels de uma composição de 1080 de lado curto. Ver o cabeçalho.
-float escalaDePixel() {
+static float escalaDePixel() {
     return min(eng.acResolution.x, eng.acResolution.y) / 1080.0;
 }
 
@@ -41,12 +41,12 @@ float escalaDePixel() {
 // Perspectiva: a cópia do fundo está ENCOLHIDA em direção ao ponto de fuga, e o
 // pedaço que cai em `uv` vem de mais longe dele. A divisão é a inversa do
 // encolhimento — e o piso de 0,05 impede o fundo de fugir para o infinito.
-float2 origemNoFundo(float2 uv, float t, float2 deslocamento, float afunilamento) {
+static float2 origemNoFundo(float2 uv, float t, float2 deslocamento, float afunilamento) {
     if (u.mode == 0) return uv - deslocamento * t;
     return u.vanish + (uv - u.vanish) / max(1.0 - afunilamento * t, 0.05);
 }
 
-float3 corDoLado(float3 daCamada, float t) {
+static float3 corDoLado(float3 daCamada, float t) {
     if (u.sideMode == 1) return u.sideColor.rgb;
     if (u.sideMode == 2) return mix(u.sideColor.rgb, u.sideColor2.rgb, t);
     return daCamada;
@@ -55,7 +55,7 @@ float3 corDoLado(float3 daCamada, float t) {
 // Para onde a borda aponta, em `uv`: o gradiente do alfa, virado do avesso.
 // O alfa CRESCE para dentro da peça, então o gradiente aponta para dentro e a
 // normal de fora é o oposto dele. Sem borda ali, não há normal.
-float2 normalDaBorda(float2 uv) {
+static float2 normalDaBorda(float2 uv) {
     float raio = max(1.5 * escalaDePixel(), 1.0);
     float2 ex = float2(raio * eng.acTexelSize.x, 0.0);
     float2 ey = float2(0.0, raio * eng.acTexelSize.y);

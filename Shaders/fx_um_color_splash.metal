@@ -19,7 +19,7 @@ struct um_color_splashParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float3 rgb2hsv(float3 c) {
+static float3 rgb2hsv(float3 c) {
     float4 K = float4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
     float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
     float4 q = mix(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));

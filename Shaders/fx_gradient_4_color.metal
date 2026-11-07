@@ -24,7 +24,7 @@ struct gradient_4_colorParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash21(float2 p) {
+static float hash21(float2 p) {
     p = fract(p * float2(127.1, 311.7));
     p += dot(p, p + 34.23);
     return fract(p.x * p.y);

@@ -19,7 +19,7 @@ struct toji_bcc_blur_hParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 clampMirror(float2 uv){
+static float2 clampMirror(float2 uv){
       if(u.mirrorEdge){
         uv = float2(1.0,1.0) - abs(__nv_mod(uv, float2(2.0,2.0)) - float2(1.0,1.0));
       } else {

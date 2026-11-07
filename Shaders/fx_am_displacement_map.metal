@@ -22,7 +22,7 @@ struct am_displacement_mapParams {
 // --- funcoes auxiliares do efeito
 // k/255 pelo mais perto, montado nos bits do float: o valor exato que a textura de 8 bits devolve ao AM (o
 // `floor(..)/255.0` vai pelo recíproco e erra o último bit — ver `am-color-balance.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -34,7 +34,7 @@ float oitoBits(float k) {
 }
 
 // Um pixel do fundo como a textura `comp` do AM o guarda: pré-multiplicado, em 8 bits.
-float4 fundoPre(int2 px) {
+static float4 fundoPre(int2 px) {
     float4 c = comp.read(uint2(px), uint(0));
     if (c.a >= 1.0) return c;
     float3 k = floor(c.rgb * c.a * 255.0 + 0.5);
@@ -43,7 +43,7 @@ float4 fundoPre(int2 px) {
 
 // O `comp.sample(__nv_smp, uv)` do AM: o filtro linear da GPU no fundo pré-multiplicado, CLAMP_TO_EDGE. Com os
 // 4 pixels opacos é o filtro da própria GPU; senão, à mão nos 4 pixels pré-multiplicados.
-float4 fundoNoPonto(float2 uv) {
+static float4 fundoNoPonto(float2 uv) {
     float4 g = comp.sample(__nv_smp, uv);
     if (g.a >= 1.0) return g;
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));

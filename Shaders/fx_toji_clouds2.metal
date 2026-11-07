@@ -23,7 +23,7 @@ struct toji_clouds2Params {
 };
 
 // --- funcoes auxiliares do efeito
-float random (in float2 st) {
+static float random (in float2 st) {
             return fract(sin(dot(st.xy,
                                  float2(12.9898,78.233)))*
                 43758.5453123);

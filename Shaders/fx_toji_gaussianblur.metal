@@ -15,7 +15,7 @@ struct toji_gaussianblurParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 blurInternal(sampler2D texture, float2 texOffset, float2 st, float numBlurPixelsPerSide)
+static float4 blurInternal(sampler2D texture, float2 texOffset, float2 st, float numBlurPixelsPerSide)
         {
             if(u.strength <= 0.0)
                 return float4(0,0,0,0);

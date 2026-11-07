@@ -29,7 +29,7 @@ struct ae_warpParams {
 #define HALF_PI 1.57079632679489661923
 
 // O quanto o meio de uma linha de corda 2·half_chord sobe num arco circular de meio-ângulo |t|·π/2, em u ∈ [0, 1].
-float arcDy(float u, float abs_t, float half_chord) {
+static float arcDy(float u, float abs_t, float half_chord) {
     if (abs_t < 0.001) return abs_t * 4.0 * u * (1.0 - u) * half_chord;   // parábola no ângulo pequeno
     float theta = abs_t * HALF_PI;
     float R = half_chord / sin(theta);

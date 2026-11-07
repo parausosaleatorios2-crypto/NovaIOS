@@ -20,7 +20,7 @@ struct nv_blurrr_spin_chromaParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float canal(float2 uv, float2 c, float ang, int k, int n) {
+static float canal(float2 uv, float2 c, float ang, int k, int n) {
     float2 p = uv - c; p.x *= eng.acAspect;
     float r = length(p);
     float a0 = __nv_atan(p.y, p.x);

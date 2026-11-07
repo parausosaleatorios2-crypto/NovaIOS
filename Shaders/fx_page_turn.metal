@@ -28,7 +28,7 @@ const float PI = 3.14159265;
  * imagem sem sair da faixa em que o pixel de tela já está. Usado para o
  * verso espelhado do papel (ver o cabeçalho do arquivo).
  */
-float2 uvEm(float posAlvo, float2 centred, float2 axis, float2 perp, float perpComp, float support) {
+static float2 uvEm(float posAlvo, float2 centred, float2 axis, float2 perp, float perpComp, float support) {
     float along2 = posAlvo * 2.0 * support - support;
     float2 centred2 = along2 * axis + perpComp * perp;
     return clamp(centred2 / float2(eng.acAspect, 1.0) + 0.5, 0.0, 1.0);

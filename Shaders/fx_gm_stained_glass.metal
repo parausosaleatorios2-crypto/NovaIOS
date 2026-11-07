@@ -19,8 +19,8 @@ struct gm_stained_glassParams {
 };
 
 // --- funcoes auxiliares do efeito
-float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
-float2 gmCell(float2 g){
+static float gmHash(float2 p){ return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453123); }
+static float2 gmCell(float2 g){
   return float2(gmHash(g), gmHash(g + 3.7));
 }
 

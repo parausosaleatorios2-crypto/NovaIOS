@@ -20,7 +20,7 @@ struct color_isolationParams {
 
 // --- funcoes auxiliares do efeito
 /** RGB → H em [0, 360). Retorna 0 para cinza (não aparece). */
-float matiz(float3 c) {
+static float matiz(float3 c) {
     float mx = max(c.r, max(c.g, c.b));
     float mn = min(c.r, min(c.g, c.b));
     float delta = mx - mn;
@@ -33,19 +33,19 @@ float matiz(float3 c) {
 }
 
 /** RGB → S (do HSV): 0 = cinza, 1 = saturado. */
-float saturacao(float3 c) {
+static float saturacao(float3 c) {
     float mx = max(c.r, max(c.g, c.b));
     float mn = min(c.r, min(c.g, c.b));
     return mx < 1e-5 ? 0.0 : (mx - mn) / mx;
 }
 
 /** Luminância ITU-R BT.709 — o cinza perceptual. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** Distância angular na roda de matiz: 170°→190° é 20°, não 340°. */
-float distanciaDeMatiz(float a, float b) {
+static float distanciaDeMatiz(float a, float b) {
     float d = abs(a - b);
     return min(d, 360.0 - d);
 }

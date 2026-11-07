@@ -30,16 +30,16 @@ struct am_radial_raysParams {
 // --- funcoes auxiliares do efeito
 #define PI 3.1415926536
 
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // A volta da `eng.acCamadaParaTela`: UV da tela → UV do buffer da camada.
-float2 naCamada(float2 t) {
+static float2 naCamada(float2 t) {
     float3 c = __nv_inverse(eng.acCamadaParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // A função do AM, linha por linha.
-float rays(float2 st, float pixelSize, float u.feather, float width, float count, float u.innerRadius, float u.outerRadius,
+static float rays(float2 st, float pixelSize, float u.feather, float width, float count, float u.innerRadius, float u.outerRadius,
            float u.radialFeather, float u.bendStrength, float u.bendFrequency, float u.bendPhase, float u.angle) {
     float r = length(st);
     float theta = (__nv_atan(st.x, st.y) + u.angle) / (2.0 * PI);

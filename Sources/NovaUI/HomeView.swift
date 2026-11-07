@@ -12,7 +12,6 @@
 //
 
 import SwiftUI
-import NovaEngine
 
 public enum HomeTab: String, CaseIterable, Identifiable {
     case inicio, projetos, marketplace, perfil

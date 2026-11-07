@@ -39,12 +39,12 @@ struct oceanoParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265358979;
 
-float h12(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
-float ruido(float2 p) {
+static float h12(float2 p) { float3 q = fract(float3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+static float ruido(float2 p) {
     float2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
     return mix(mix(h12(i), h12(i + float2(1.0, 0.0)), u.x), mix(h12(i + float2(0.0, 1.0)), h12(i + float2(1.0, 1.0)), u.x), u.y);
 }
-float fbm(float2 p, int oitavas) {
+static float fbm(float2 p, int oitavas) {
     float s = 0.0, a = 0.5;
     for (int i = 0; i < 6; i++) {
         if (i >= oitavas) break;
@@ -55,7 +55,7 @@ float fbm(float2 p, int oitavas) {
     return s;
 }
 
-float3 direcaoDoSol() {
+static float3 direcaoDoSol() {
     float az = radians(u.sol), el = radians(u.alturaDoSol);
     return normalize(float3(sin(az) * cos(el), sin(el), -cos(az) * cos(el)));
 }
@@ -68,7 +68,7 @@ float3 direcaoDoSol() {
  * seguinte é empurrada pela inclinação desta — as cristas se juntam e o mar fica
  * "picado" em vez de parecer uma soma de senos.
  */
-float alturaDoMar(float2 p, int oitavas) {
+static float alturaDoMar(float2 p, int oitavas) {
     float t = eng.acTime * u.velocidade;
     p /= u.tamanhoDasOndas;
     float freq = 0.42, peso = 1.0, soma = 0.0, total = 0.0;
@@ -90,10 +90,10 @@ float alturaDoMar(float2 p, int oitavas) {
     return soma / max(total, 1e-4);
 }
 
-float fundoDoMar() { return 1.4 * u.alturaDasOndas * u.tamanhoDasOndas; }
+static float fundoDoMar() { return 1.4 * u.alturaDasOndas * u.tamanhoDasOndas; }
 
 /** Onde o raio cruza a água; devolve a distância (ou −1 para o céu). */
-float cruzarOMar(float3 origem, float3 dir, int passos, int oitavas) {
+static float cruzarOMar(float3 origem, float3 dir, int passos, int oitavas) {
     if (dir.y >= -1e-4) return -1.0;
     float fundo = fundoDoMar();
     float tTopo = -origem.y / dir.y;                 // o plano das cristas é y = 0
@@ -111,7 +111,7 @@ float cruzarOMar(float3 origem, float3 dir, int passos, int oitavas) {
     return t;
 }
 
-float3 normalDoMar(float2 p, float e, int oitavas) {
+static float3 normalDoMar(float2 p, float e, int oitavas) {
     float fundo = fundoDoMar();
     float h = alturaDoMar(p, oitavas) * fundo;
     float hx = alturaDoMar(p + float2(e, 0.0), oitavas) * fundo;
@@ -121,7 +121,7 @@ float3 normalDoMar(float2 p, float e, int oitavas) {
 
 // ------------------------------------------------------------------ o céu
 /** `suave` = as u.nuvens desfocadas, para o reflexo na água (nuvem nítida no espelho ondulado vira anel). */
-float3 ceu(float3 dir, float3 sd, bool comNuvens, bool suave) {
+static float3 ceu(float3 dir, float3 sd, bool comNuvens, bool suave) {
     float y = max(dir.y, 0.0);
     float mu = max(dot(dir, sd), 0.0);
     float3 horizonte = mix(float3(0.72, 0.84, 0.95), float3(1.0, 0.86, 0.68), 0.35 * exp(-3.0 * sd.y));
@@ -148,9 +148,9 @@ float3 ceu(float3 dir, float3 sd, bool comNuvens, bool suave) {
     return c;
 }
 
-float ggx(float nh, float r) { float a = r * r; float d = nh * nh * (a * a - 1.0) + 1.0; return a * a / (PI * d * d); }
+static float ggx(float nh, float r) { float a = r * r; float d = nh * nh * (a * a - 1.0) + 1.0; return a * a / (PI * d * d); }
 
-float3 aces(float3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+static float3 aces(float3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 
 fragment float4 fx_oceano(
     NovaVertexOut       in   [[stage_in]],

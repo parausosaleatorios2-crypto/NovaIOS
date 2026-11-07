@@ -33,22 +33,22 @@ const int LARGURA = 256;
 const int VIZINHOS = 64;
 
 /** O texel `i` da textura de pontos, desempacotado: dois números de 16 bits. */
-float2 par(int i) {
+static float2 par(int i) {
     float4 b = floor(ondaImg.read(uint2(int2(i % LARGURA, i / LARGURA)), uint(0)) * 255.0 + 0.5);
     return float2(b.r * 256.0 + b.g, b.b * 256.0 + b.a);
 }
 
 /** Quantos px o ponto fica do caminho: o valor de 16 bits vezes a altura, cortado para o zero. */
-float altura(float bruto) { return trunc((bruto - 32768.0) / 65535.0 * u.maxHeight); }
+static float altura(float bruto) { return trunc((bruto - 32768.0) / 65535.0 * u.maxHeight); }
 
-float aoSegmento(float2 p, float2 a, float2 b) {
+static float aoSegmento(float2 p, float2 a, float2 b) {
     float2 v = b - a;
     float l2 = dot(v, v);
     float t = l2 > 0.0 ? clamp(dot(p - a, v) / l2, 0.0, 1.0) : 0.0;
     return length(p - a - t * v);
 }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     return float4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);

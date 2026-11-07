@@ -19,7 +19,7 @@ const float PI = 3.14159265;
 
 // A gaussiana de meio-lado `lado` (em pixels de `img`) no eixo `passo`, na mesma ordem de contas do AM: os pesos
 // tirados um do outro por multiplicação e duas amostras juntas numa leitura (a posição entre elas pelo peso).
-float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
+static float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
     if (u.strength <= 0.0) return float4(0.0);
     float sigma = lado / 2.14596602;
     float3 g;
@@ -50,7 +50,7 @@ float4 desfocar(sampler2D img, float2 passo, float2 st, float lado) {
 }
 
 // O meio-lado: Intensidade ÷ 2 × 1,14 ÷ 4 ÷ 3 da diagonal da imagem CHEIA (o `eng.acPreviewSize` do AM).
-float ladoDoDesfoque() {
+static float ladoDoDesfoque() {
     return u.strength / 2.0 * 1.14 / 4.0 / 3.0 * length(float2(int2(int(pre.get_width()), int(pre.get_height()))));
 }
 

@@ -28,7 +28,7 @@ struct channel_mixerParams {
 // Normaliza uma linha da matriz para somar 1. Soma zero (ou negativa) não tem
 // normalização possível — nesse caso a linha passa como está, e o resultado
 // escuro é o que a pessoa pediu.
-float3 normalizar(float3 linha, bool ligado) {
+static float3 normalizar(float3 linha, bool ligado) {
     if (!ligado) return linha;
     float soma = linha.r + linha.g + linha.b;
     return soma > 0.001 ? linha / soma : linha;

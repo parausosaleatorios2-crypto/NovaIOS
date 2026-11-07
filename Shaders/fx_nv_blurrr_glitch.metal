@@ -20,11 +20,11 @@ struct nv_blurrr_glitchParams {
 };
 
 // --- funcoes auxiliares do efeito
-float ruido(float2 p) {
+static float ruido(float2 p) {
     return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
 }
 
-float canalComRastro(float2 uv, float2 dir, float raio, int canal, int n) {
+static float canalComRastro(float2 uv, float2 dir, float raio, int canal, int n) {
     float soma = 0.0;
     for (int i = 0; i <= 24; i++) {
         if (i > n) break;

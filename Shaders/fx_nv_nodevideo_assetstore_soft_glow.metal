@@ -27,7 +27,7 @@ struct nv_nodevideo_assetstore_soft_glowParams {
 // como _bluredTex. A gaussiana do Node (node-gaussian-blur.xml): meio-lado = quantidade x 0,0475 x a diagonal da
 // composicao em px da METADE, sigma = meio-lado x 0,4660. Aqui na resolucao cheia, separavel, em cor pre-multiplicada;
 // o passe 1 devolve a cor reta, como a camada chega aos outros efeitos do Node portados.
-float4 desfoqueDoNode(sampler2D t, float2 eixo, bool entrada) {
+static float4 desfoqueDoNode(sampler2D t, float2 eixo, bool entrada) {
     float sigma = 2.0 * (u._spread) * 0.0475 * length(eng.acTamanhoDaTela) * 0.4660 * eng.acEscalaDePixel;
     float2 passo = eixo / float2(int2(int(t.get_width()), int(t.get_height())));
     int raio = sigma < 0.05 ? 0 : min(int(ceil(sigma * 3.0)), 64);

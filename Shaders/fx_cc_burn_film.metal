@@ -21,11 +21,11 @@ struct cc_burn_filmParams {
 // `um` vale 1, mas o compilador não sabe (vem de `eng.acIterationCount`, que é 1 neste efeito). (a·b)·um não se funde
 // com a soma seguinte num fma: cada produto arredonda sozinho, como no plugin.
 float um;
-float fixa(float x) { return x * um; }
-float mul(float a, float b) { return (a * b) * um; }
+static float fixa(float x) { return x * um; }
+static float mul(float a, float b) { return (a * b) * um; }
 
 /** a·b = p + e, exato (Dekker). */
-float2 produtoExato(float a, float b) {
+static float2 produtoExato(float a, float b) {
     float p = mul(a, b);
     float t = mul(4097.0, a);
     float ah = t - fixa(t - a);
@@ -37,13 +37,13 @@ float2 produtoExato(float a, float b) {
     return float2(p, e);
 }
 
-float restoDaDivisao(float a, float b, float q) {
+static float restoDaDivisao(float a, float b, float q) {
     float2 p = produtoExato(q, b);
     return fixa(a - p.x) - p.y;
 }
 
 /** a / b arredondado como no IEEE (a ≥ 0, b > 0): a divisão da GPU pode errar o último bit. */
-float divisao(float a, float b) {
+static float divisao(float a, float b) {
     if (a == 0.0) return 0.0;
     float q = a / b;
     float e = restoDaDivisao(a, b, q);
@@ -56,7 +56,7 @@ float divisao(float a, float b) {
 }
 
 /** O valor do controle em 16.16, como o AE o entrega ao plugin: o float32 · 65536, meio para longe do zero. */
-int fixo(float v) {
+static int fixo(float v) {
     float m = abs(v) * 65536.0;
     float i = floor(m);
     int r = int(i) + (m - i >= 0.5 ? 1 : 0);
@@ -65,29 +65,29 @@ int fixo(float v) {
 
 // ============================================================ dois floats (~48 bits)
 // v = hi + lo, |lo| ≤ meio ulp de hi. As somas e produtos exatos (Knuth, Dekker) com o `um` entre cada conta.
-float2 somaExata(float a, float b) {
+static float2 somaExata(float a, float b) {
     float s = fixa(a + b);
     float bb = fixa(s - a);
     return float2(s, fixa(fixa(a - fixa(s - bb)) + fixa(b - bb)));
 }
-float2 somaRapida(float a, float b) {
+static float2 somaRapida(float a, float b) {
     float s = fixa(a + b);
     return float2(s, fixa(b - fixa(s - a)));
 }
-float2 dfSoma(float2 a, float2 b) {
+static float2 dfSoma(float2 a, float2 b) {
     float2 s = somaExata(a.x, b.x);
     float2 t = somaExata(a.y, b.y);
     s = somaRapida(s.x, fixa(s.y + t.x));
     return somaRapida(s.x, fixa(s.y + t.y));
 }
-float2 dfNeg(float2 a) { return -a; }
-float2 dfMul(float2 a, float2 b) {
+static float2 dfNeg(float2 a) { return -a; }
+static float2 dfMul(float2 a, float2 b) {
     float2 p = produtoExato(a.x, b.x);
     return somaRapida(p.x, fixa(p.y + fixa(mul(a.x, b.y) + mul(a.y, b.x))));
 }
 
 /** √a em dois floats (~2⁻⁴⁴): a primeira aproximação em float, um passo de correção exato. */
-float2 dfRaiz(float2 a) {
+static float2 dfRaiz(float2 a) {
     if (!(a.x > 0.0)) return float2(0.0);
     float h = sqrt(a.x);
     float2 r = dfSoma(a, dfNeg(produtoExato(h, h)));
@@ -100,36 +100,36 @@ float2 dfRaiz(float2 a) {
 const uint2 D_UM = uint2(0x3FF00000u, 0u);
 const uint2 D_MEIO = uint2(0x3FE00000u, 0u);
 
-bool dZero(uint2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
-uint dSinal(uint2 a) { return a.x >> 31; }
-int dExpo(uint2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
-uint2 dMant(uint2 a) { return uint2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
-uint2 dNeg(uint2 a) { return dZero(a) ? a : uint2(a.x ^ 0x80000000u, a.y); }
-uint2 dAbs(uint2 a) { return uint2(a.x & 0x7FFFFFFFu, a.y); }
-uint2 dEscala2(uint2 a, int k) { return dZero(a) ? a : uint2(a.x + uint(k << 20), a.y); }
+static bool dZero(uint2 a) { return (a.x & 0x7FFFFFFFu) == 0u && a.y == 0u; }
+static uint dSinal(uint2 a) { return a.x >> 31; }
+static int dExpo(uint2 a) { return int((a.x >> 20) & 0x7FFu) - 1023; }
+static uint2 dMant(uint2 a) { return uint2((a.x & 0xFFFFFu) | 0x100000u, a.y); }
+static uint2 dNeg(uint2 a) { return dZero(a) ? a : uint2(a.x ^ 0x80000000u, a.y); }
+static uint2 dAbs(uint2 a) { return uint2(a.x & 0x7FFFFFFFu, a.y); }
+static uint2 dEscala2(uint2 a, int k) { return dZero(a) ? a : uint2(a.x + uint(k << 20), a.y); }
 
-uint2 soma64(uint2 a, uint2 b) { uint lo = a.y + b.y; return uint2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
-uint2 sub64(uint2 a, uint2 b) { return uint2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
-bool menor64(uint2 a, uint2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
-uint2 shl64(uint2 a, int n) {
+static uint2 soma64(uint2 a, uint2 b) { uint lo = a.y + b.y; return uint2(a.x + b.x + (lo < a.y ? 1u : 0u), lo); }
+static uint2 sub64(uint2 a, uint2 b) { return uint2(a.x - b.x - (a.y < b.y ? 1u : 0u), a.y - b.y); }
+static bool menor64(uint2 a, uint2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
+static uint2 shl64(uint2 a, int n) {
     if (n == 0) return a;
     if (n >= 64) return uint2(0u);
     if (n >= 32) return uint2(a.y << (n - 32), 0u);
     return uint2((a.x << n) | (a.y >> (32 - n)), a.y << n);
 }
-uint2 shr64(uint2 a, int n) {
+static uint2 shr64(uint2 a, int n) {
     if (n == 0) return a;
     if (n >= 64) return uint2(0u);
     if (n >= 32) return uint2(0u, a.x >> (n - 32));
     return uint2(a.x >> n, (a.y >> n) | (a.x << (32 - n)));
 }
 
-uint2 dMontar(uint s, int e, uint2 m) {
+static uint2 dMontar(uint s, int e, uint2 m) {
     return uint2((s << 31) | (uint(e + 1023) << 20) | (m.x & 0xFFFFFu), m.y);
 }
 
 /** m56 em [2^55, 2^56): 53 bits + guarda + 2 de resto (o último já com o que saiu); ao par. */
-uint2 dArredondar(uint s, int e, uint2 m56) {
+static uint2 dArredondar(uint s, int e, uint2 m56) {
     uint extra = m56.y & 7u;
     uint2 m = shr64(m56, 3);
     if (extra > 4u || (extra == 4u && (m.y & 1u) == 1u)) m = soma64(m, uint2(0u, 1u));
@@ -138,7 +138,7 @@ uint2 dArredondar(uint s, int e, uint2 m56) {
 }
 
 /** O produto das mantissas em dígitos de 16 bits (laços de limite fixo: o compilador desenrola). */
-uint2 dMul(uint2 a, uint2 b) {
+static uint2 dMul(uint2 a, uint2 b) {
     if (dZero(a) || dZero(b)) return uint2((dSinal(a) ^ dSinal(b)) << 31, 0u);
     uint2 ma = dMant(a), mb = dMant(b);
     uint A[4];
@@ -166,7 +166,7 @@ uint2 dMul(uint2 a, uint2 b) {
     return dArredondar(dSinal(a) ^ dSinal(b), e, m);
 }
 
-uint2 dSoma(uint2 a, uint2 b) {
+static uint2 dSoma(uint2 a, uint2 b) {
     if (dZero(a)) return dZero(b) ? uint2((dSinal(a) & dSinal(b)) << 31, 0u) : b;
     if (dZero(b)) return a;
     if (menor64(uint2(a.x & 0x7FFFFFFFu, a.y), uint2(b.x & 0x7FFFFFFFu, b.y))) { uint2 t = a; a = b; b = t; }
@@ -197,10 +197,10 @@ uint2 dSoma(uint2 a, uint2 b) {
     return dArredondar(dSinal(a), e, m);
 }
 
-uint2 dSub(uint2 a, uint2 b) { return dSoma(a, dNeg(b)); }
+static uint2 dSub(uint2 a, uint2 b) { return dSoma(a, dNeg(b)); }
 
 /** trunc (para o zero), para |a| < 2^31. */
-int dTrunc(uint2 a) {
+static int dTrunc(uint2 a) {
     if (dZero(a)) return 0;
     int e = dExpo(a);
     if (e < 0) return 0;
@@ -209,7 +209,7 @@ int dTrunc(uint2 a) {
     return dSinal(a) == 1u ? -v : v;
 }
 
-uint2 dDeInt(int i) {
+static uint2 dDeInt(int i) {
     if (i == 0) return uint2(0u);
     uint u = uint(abs(i));
     int e = 31;
@@ -217,7 +217,7 @@ uint2 dDeInt(int i) {
     return dMontar(i < 0 ? 1u : 0u, e, shl64(uint2(0u, u), 21));
 }
 
-uint2 dDeFloat(float f) {
+static uint2 dDeFloat(float f) {
     uint b = as_type<uint>(f);
     uint E = (b >> 23) & 0xFFu;
     if (E == 0u) return uint2(b & 0x80000000u, 0u);
@@ -226,7 +226,7 @@ uint2 dDeFloat(float f) {
 }
 
 /** O double para float32, ao par. */
-float dParaFloat(uint2 d) {
+static float dParaFloat(uint2 d) {
     if (dZero(d)) return as_type<float>(d.x & 0x80000000u);
     uint2 m = dMant(d);
     int e = dExpo(d);
@@ -238,13 +238,13 @@ float dParaFloat(uint2 d) {
 }
 
 /** O double em dois floats: hi = o float mais perto, lo = o resto (perde só os 5 últimos bits). */
-float2 dfDeD(uint2 d) {
+static float2 dfDeD(uint2 d) {
     float hi = dParaFloat(d);
     return float2(hi, dParaFloat(dSub(d, dDeFloat(hi))));
 }
 
 /** a < b */
-bool dMenor(uint2 a, uint2 b) {
+static bool dMenor(uint2 a, uint2 b) {
     bool za = dZero(a), zb = dZero(b);
     if (za && zb) return false;
     if (za) return dSinal(b) == 0u;
@@ -255,7 +255,7 @@ bool dMenor(uint2 a, uint2 b) {
 }
 
 /** round(fração · lado · 65536), meio para longe do zero — a conta é exata em double (24 + 13 + 16 bits). */
-int pontoFixo(float fracao, int lado) {
+static int pontoFixo(float fracao, int lado) {
     uint2 v = dEscala2(dMul(dDeFloat(abs(fracao)), dDeInt(lado)), 16);
     int r = dTrunc(dSoma(v, D_MEIO));
     return fracao < 0.0 ? -r : r;
@@ -268,21 +268,21 @@ bool dePe;
 float sx, sy, isx, isy;   // a escala da resolução no plugin (1 na exportação) e 1/escala, em float32
 
 /** Um pixel da camada (RGBA 0..255, cor reta) na orientação da IMAGEM (a linha 0 é o topo); fora, transparente. */
-int4 daCamada(int x, int y) {
+static int4 daCamada(int x, int y) {
     if (x < 0 || y < 0 || x >= W || y >= H) return int4(0);
     int2 b = inicio + int2(x, dePe ? H - 1 - y : y);
     return int4(inputImg.read(uint2(b), uint(0)) * 255.0 + 0.5);
 }
 
 // Um uint inteiro nos 4 bytes de um texel RGBA8 (o buffer do motor é de 8 bits).
-float4 guardar(uint b) {
+static float4 guardar(uint b) {
     return float4(float(b & 255u), float((b >> 8) & 255u), float((b >> 16) & 255u), float(b >> 24)) / 255.0;
 }
-uint lerUint(sampler2D t, int2 p) {
+static uint lerUint(sampler2D t, int2 p) {
     uint4 c = uint4(t.read(uint2(p), uint(0)) * 255.0 + 0.5);
     return c.x | (c.y << 8) | (c.z << 16) | (c.w << 24);
 }
-float lerFloat(sampler2D t, int2 p) { return as_type<float>(lerUint(t, p)); }
+static float lerFloat(sampler2D t, int2 p) { return as_type<float>(lerUint(t, p)); }
 
 // ============================================================ a linha da mancha (0x1800045c0)
 /**
@@ -291,7 +291,7 @@ float lerFloat(sampler2D t, int2 p) { return as_type<float>(lerUint(t, p)); }
  * dentro de uma mesma potência de 2 a soma de d é exata — só arredonda quando |fx| cruza para a potência de cima (um
  * passo por potência). Conferida contra o passo a passo em 20 mil sorteios (`modelo.py cadeia`).
  */
-float cadeia(float fx0, int k, float d) {
+static float cadeia(float fx0, int k, float d) {
     float v = fx0;
     int n = k;
     if (n <= 0) return v;
@@ -326,7 +326,7 @@ float mXs[NM], mYs[NM], mR2[NM], mInv[NM], mAmp[NM];
 int mX0[NM], mX1[NM], mY0[NM], mY1[NM];
 
 /** A mancha i: o centro em px do buffer, R², 1/R², amp e a caixa (x0..x1, y0..y1). Fora da camada, caixa vazia. */
-void mancha(int i, float x, float y, float raio, float amp) {
+static void mancha(int i, float x, float y, float raio, float amp) {
     mX0[i] = 0; mX1[i] = 0; mY0[i] = 0; mY1[i] = 0;
     if (1.0 > raio) raio = 1.0;
     float xs = mul(sx, x), ys = mul(y, sy);
@@ -343,7 +343,7 @@ void mancha(int i, float x, float y, float raio, float amp) {
 }
 
 /** O que a mancha m soma ao pixel (x, y) do buffer que vale `acc`. */
-float somaMancha(int m, int x, int y, float acc) {
+static float somaMancha(int m, int x, int y, float acc) {
     if (x < mX0[m] || x >= mX1[m] || y < mY0[m] || y >= mY1[m]) return acc;
     float fx = cadeia(mul(fixa(mXs[m] - float(mX0[m])), isx), x - mX0[m], isx);
     float fy = mul(fixa(mYs[m] - float(y)), isy);
@@ -353,8 +353,8 @@ float somaMancha(int m, int x, int y, float acc) {
     return fixa(mul(mul(t, mAmp[m]), t) + acc);
 }
 
-uint lcg(uint r) { return r * 0x41C64E6Du + 0x3039u; }
-int g15(uint r) { return int((r >> 16) & 0x7FFFu); }
+static uint lcg(uint r) { return r * 0x41C64E6Du + 0x3039u; }
+static int g15(uint r) { return int((r >> 16) & 0x7FFFu); }
 
 // ============================================================ as constantes do quadro
 const uint2 D_0_01 = uint2(0x3F847AE1u, 0x47AE147Bu);
@@ -365,7 +365,7 @@ float fundo, R0, kRaio, xc, yc;
 uint2 WD, HD;
 uint semente;
 
-void constantes(float2 fr) {
+static void constantes(float2 fr) {
     int bF = fixo(u.burn);
     modo = bF <= 0 ? 1 : (bF >= 6553600 ? 2 : 0);
     if (modo != 0) return;
@@ -392,7 +392,7 @@ void constantes(float2 fr) {
 }
 
 /** As manchas 0..alvo, em ordem: a 0 no centro; cada uma das outras lê o buffer no ponto sorteado dela. */
-void calcularManchas(int alvo) {
+static void calcularManchas(int alvo) {
     mancha(0, xc, yc, R0, 1.0);
     uint st = semente;
     for (int j = 1; j < NM; j++) {
@@ -418,7 +418,7 @@ void calcularManchas(int alvo) {
 }
 
 /** A máscara das manchas cuja caixa passa pela coluna (ou linha) `pos`: 64 bits, a mancha m no bit m. */
-uint2 mascara(int pos, bool linha) {
+static uint2 mascara(int pos, bool linha) {
     int k = (linha ? 16384 : 0) + 2 * pos;
     int2 p = int2(k & 1023, 512 + (k >> 10));
     return uint2(lerUint(colunas, p), lerUint(colunas, p + int2(1, 0)));

@@ -19,7 +19,7 @@ struct thresholdParams {
 
 // --- funcoes auxiliares do efeito
 // A luminância do Threshold do After Effects em 8 bits: 0,299 / 0,587 / 0,114 em ponto fixo de 15 bits.
-int luminanciaDoAe(int3 n) {
+static int luminanciaDoAe(int3 n) {
     return (9798 * n.r + 19235 * n.g + 3735 * n.b + 16384) >> 15;
 }
 

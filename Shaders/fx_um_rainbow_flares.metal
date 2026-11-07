@@ -20,7 +20,7 @@ struct um_rainbow_flaresParams {
 // --- funcoes auxiliares do efeito
 const int N_FLARES = 7;
 
-float3 corDoDisco(int i) {
+static float3 corDoDisco(int i) {
     if (i == 0) return float3(1.0, 0.0, 0.0);
     if (i == 1) return float3(1.0, 0.5, 0.0);
     if (i == 2) return float3(1.0, 1.0, 0.0);

@@ -24,7 +24,7 @@ struct toji_polarParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 getSample( float a, float r ) {
+static float4 getSample( float a, float r ) {
             a *= 1. - (0.5/eng.acLayerSize.x);
             a += 0.5/eng.acLayerSize.x;
             float2 sampleCoord = float2(a,r);

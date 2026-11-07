@@ -22,7 +22,7 @@ const int N = 11;
 const float OFF[11] = float[11](-5.0,-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0,5.0);
 const float WT[11]  = float[11](0.027,0.065,0.121,0.175,0.198,0.198,0.198,0.175,0.121,0.065,0.027);
 
-float4 gaussCanal(float2 uv, float2 d, float raio) {
+static float4 gaussCanal(float2 uv, float2 d, float raio) {
     if (raio <= 0.0) {
         return (eng.acPass == 0) ? inputImg.sample(__nv_smp, uv) : hblur.sample(__nv_smp, uv);
     }

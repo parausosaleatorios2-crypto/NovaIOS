@@ -28,7 +28,7 @@ const int AMOSTRAS = 64;
 const int ALISAMENTO = 16;
 
 /** Pixels da camada por unidade de UV, nos dois eixos: é neles que o Raio é medido. */
-float2 tamanhoDaCamada() {
+static float2 tamanhoDaCamada() {
     return float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
 }
 
@@ -36,7 +36,7 @@ float2 tamanhoDaCamada() {
  * A distância do ponto ao Centro, em pixels da camada — redonda ou quadrada.
  * No quadrado, o `Direction` gira o quadrado (só aparece com Shape = Square).
  */
-float distanciaDaFonte(float2 uv) {
+static float distanciaDaFonte(float2 uv) {
     float2 v = (uv - u.center) * tamanhoDaCamada();
     if (u.shape == 1) {
         float a = radians(u.direction);
@@ -47,13 +47,13 @@ float distanciaDaFonte(float2 uv) {
 }
 
 /** 1 dentro da fonte, caindo até 0 na largura da Warp Softness. */
-float mascaraDaFonte(float2 uv) {
+static float mascaraDaFonte(float2 uv) {
     float r = max(u.radius * eng.acEscalaDePixel, 0.5);
     float borda = max(r * (0.05 + 1.95 * u.warpSoftness / 100.0), 1.0);
     return 1.0 - smoothstep(r, r + borda, distanciaDaFonte(uv));
 }
 
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 

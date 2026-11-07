@@ -53,9 +53,9 @@ const uint LCG_A = 0x41C64E6Du;
 const uint LCG_C = 0x3039u;
 const int QUARTO = 5898240;          // 90° em 16.16
 
-float sorteio(uint s) { return float((s >> 16u) & 0x7FFFu) / 16384.0 - 1.0; }
+static float sorteio(uint s) { return float((s >> 16u) & 0x7FFFu) / 16384.0 - 1.0; }
 
-float bspline(float p0, float p1, float p2, float p3, float t) {
+static float bspline(float p0, float p1, float p2, float p3, float t) {
     float t2 = t * t;
     float t3 = t2 * t;
     float u = 1.0 - t;
@@ -64,14 +64,14 @@ float bspline(float p0, float p1, float p2, float p3, float t) {
 }
 
 /** A u.semente de um quarto de volta: a chave reduzida pelo período, como o plugin (C, com sinal). */
-uint sementeDaChave(uint chave, uint periodo) {
+static uint sementeDaChave(uint chave, uint periodo) {
     int k = int(chave);
     uint m = k >= 0 ? uint(k) % periodo : (periodo - (0u - chave) % periodo) % periodo;
     return 0x0DAA96F5u - m * 0x145EB7C3u;
 }
 
 /** O valor n da grade (0..4095): a B-spline no tempo entre 4 sorteios. */
-float valorDaGrade(int n) {
+static float valorDaGrade(int n) {
     // A Evolution em 16.16, partida em quartos de volta inteiros + a fração.
     int e = int(round(u.evolucao * 65536.0));
     int q = int(floor(float(e) / float(QUARTO)));
@@ -106,7 +106,7 @@ float valorDaGrade(int n) {
 }
 
 // A grade no buffer: 24 bits por valor (RGB), na faixa ±1,25.
-float4 codifica(float v) {
+static float4 codifica(float v) {
     uint q = uint(clamp((v + 1.25) / 2.5, 0.0, 1.0) * 16777215.0 + 0.5);
     return float4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
 }
@@ -115,33 +115,33 @@ float4 codifica(float v) {
 const int B_UA = 0; const int B_VA = 1; const int B_UB = 2; const int B_VB = 3; const int B_UC = 4; const int B_VC = 5;
 const int B_UD = 6; const int B_VD = 7; const int B_XA = 8; const int B_XB = 9; const int B_XC = 10; const int B_YA = 11;
 const int B_YB = 12; const int B_YC = 13;
-int centesimosDaBase(int b) {
+static int centesimosDaBase(int b) {
     int bases[14] = int[14](U_A, V_A, U_B, V_B, U_C, V_C, U_D, V_D, X_A, X_B, X_C, Y_A, Y_B, Y_C);
     return bases[b];
 }
 
-float G(int n) {
+static float G(int n) {
     float3 c = floor(grade.read(uint2(int2(n & 63, n >> 6)), uint(0)).rgb * 255.0 + 0.5);
     return (c.r * 65536.0 + c.g * 256.0 + c.b) / 16777215.0 * 2.5 - 1.25;
 }
 
 /** A grade em (a, b): o índice embaralhado do plugin, periódico em 4096 nos dois eixos. */
-float L(int a, int b) {
+static float L(int a, int b) {
     a &= 4095;
     b &= 4095;
     return G(((((b >> 6) ^ a) & 63) << 6) + (((a >> 6) ^ b) & 63));
 }
 
-float L1(int i) {
+static float L1(int i) {
     i &= 4095;
     return G(((i & 63) << 6) + (((i ^ 0x440) >> 6) & 63));
 }
 
-float suaviza(float f) { return clamp(f, 0.0, 1.0) * clamp(f, 0.0, 1.0) * (3.0 - 2.0 * clamp(f, 0.0, 1.0)); }
+static float suaviza(float f) { return clamp(f, 0.0, 1.0) * clamp(f, 0.0, 1.0) * (3.0 - 2.0 * clamp(f, 0.0, 1.0)); }
 
 // m / 100 para m >= 0, SEM divisão inteira (cara na GPU, e era por oitava, por pixel):
 // a estimativa em float erra no máximo ±2 (m < 2·10⁹), e o resto corrige para o exato.
-int div100(int m) {
+static int div100(int m) {
     int q = int(float(m) * 0.01);
     int r = m - q * 100;
     if (r < 0) { q -= 1; r += 100; }
@@ -152,7 +152,7 @@ int div100(int m) {
 }
 
 // A parte constante de uma coordenada: inteiro (não reduzido; L() reduz) + fração em 0..1.
-void comecar(int centesimos, out int i, out float f) {
+static void comecar(int centesimos, out int i, out float f) {
     int q = centesimos >= 0 ? div100(centesimos) : -div100(99 - centesimos);   // piso
     i = q;
     f = float(centesimos - q * 100) / 100.0;
@@ -161,7 +161,7 @@ void comecar(int centesimos, out int i, out float f) {
 // × 1,77 = × 177/100: o inteiro em aritmética inteira (cabe: |i| < 1,2·10⁷), a fração em
 // float. Inteiros negativos (as bases U_*) vão pelo módulo, sem divisão de negativo
 // (que o GLSL ES deixa por conta do driver).
-void avancar(inout int i, inout float f) {
+static void avancar(inout int i, inout float f) {
     if (i >= 0) {
         int m = i * 177;
         int q = div100(m);
@@ -181,12 +181,12 @@ void avancar(inout int i, inout float f) {
 
 // A parte constante da base `b` na oitava `k`: o inteiro (mod 4096: a grade é periódica) em 12 bits e a fração
 // em 20, nas linhas 64 a 66 da grade. Iguais em todo pixel: calculadas UMA vez, no passe 0.
-float4 codificaConstante(int i, float f) {
+static float4 codificaConstante(int i, float f) {
     uint ii = uint(i & 4095);
     uint q = min(uint(f * 1048576.0 + 0.5), 1048575u);
     return float4(float(ii >> 4u), float(((ii & 15u) << 4u) | (q >> 16u)), float((q >> 8u) & 255u), float(q & 255u)) / 255.0;
 }
-void constante(int b, int k, out int i, out float f) {
+static void constante(int b, int k, out int i, out float f) {
     int e = b * 11 + k - 1;
     uint4 c = uint4(grade.read(uint2(int2(e & 63, 64 + (e >> 6))), uint(0)) * 255.0 + 0.5);
     i = int((c.r << 4u) | (c.g >> 4u));
@@ -194,14 +194,14 @@ void constante(int b, int k, out int i, out float f) {
 }
 
 // A coordenada da oitava: a parte constante (i, f) mais a que varia com o pixel.
-void coordenada(int I, float F, float variavel, out int inteiro, out float fracao) {
+static void coordenada(int I, float F, float variavel, out int inteiro, out float fracao) {
     float x = F + variavel;
     float fl = floor(x);
     inteiro = I + int(fl);
     fracao = x - fl;
 }
 
-float oitavaLinear(int Iu, float Fu, int Iv, float Fv, float2 var) {
+static float oitavaLinear(int Iu, float Fu, int Iv, float Fv, float2 var) {
     int i, j;
     float fu, fv;
     coordenada(Iu, Fu, var.x, i, fu);
@@ -212,7 +212,7 @@ float oitavaLinear(int Iu, float Fu, int Iv, float Fv, float2 var) {
          + ((1.0 - su) * L(i, j + 1) + su * L(i + 1, j + 1)) * sv;
 }
 
-float oitavaCubica(int Ix, float Fx, int Iy, float Fy, float2 var) {
+static float oitavaCubica(int Ix, float Fx, int Iy, float Fy, float2 var) {
     int a, b;
     float fx, fy;
     coordenada(Ix, Fx, var.x, a, fx);
@@ -225,7 +225,7 @@ float oitavaCubica(int Ix, float Fx, int Iy, float Fy, float2 var) {
     return bspline(l[0], l[1], l[2], l[3], fy);
 }
 
-float oitava1D(int I, float F, float var) {
+static float oitava1D(int I, float F, float var) {
     int i;
     float f;
     coordenada(I, F, var, i, f);
@@ -240,7 +240,7 @@ int K_DE;
 int K_ATE;
 
 /** O ruído fractal. `var` é a parte variável da coordenada SEM o 1,77ᵏ. */
-float fractal(bool cubico, int b1, int b2, float2 var) {
+static float fractal(bool cubico, int b1, int b2, float2 var) {
     float soma = 0.0;
     float amp = 0.25;
     float escala = 1.0;
@@ -264,7 +264,7 @@ float fractal(bool cubico, int b1, int b2, float2 var) {
     return soma;
 }
 
-float fractal1D(int base, float var) {
+static float fractal1D(int base, float var) {
     float soma = 0.0;
     float amp = 0.25;
     float escala = 1.0;
@@ -291,13 +291,13 @@ float ESCALA;       // a frequência: 0,5/Size (×0,3536 nos três primeiros mod
 int MODO;           // o código do AE: 1, 2, 3, 5, 6, 7, 9, 10, 11
 float2 OFF;           // o Offset, px do buffer
 
-float fatorDaBorda(float d, float m) { return suaviza(d / m); }
+static float fatorDaBorda(float d, float m) { return suaviza(d / m); }
 
 int K_CORTE;        // oitavas 1..K_CORTE moram no campo (meia resolução)
 float2 FATOR;         // pixels da camada por texel do campo
 
 /** O u.deslocamento CRU (sem Pinning) das oitavas K_DE..K_ATE no pixel `p` (da camada cheia). */
-float2 ruidoBruto(float2 p) {
+static float2 ruidoBruto(float2 p) {
     float2 d = (p - OFF) / ESC * ESCALA;     // coordenada do ruído menos a constante
     float2 r;
     if (MODO == 1 || MODO == 5) {
@@ -320,17 +320,17 @@ float2 ruidoBruto(float2 p) {
 }
 
 // O campo: dx e dy em 16 bits cada (RGBA8), na faixa ±2.
-float4 empacotaCampo(float2 r) {
+static float4 empacotaCampo(float2 r) {
     float2 q = floor(clamp((r + 2.0) / 4.0, 0.0, 1.0) * 65535.0 + 0.5);
     float2 alto = floor(q / 256.0);
     return float4(alto.x, q.x - alto.x * 256.0, alto.y, q.y - alto.y * 256.0) / 255.0;
 }
-float2 lerCampo(int2 i) {
+static float2 lerCampo(int2 i) {
     float4 c = floor(campo.read(uint2(i), uint(0)) * 255.0 + 0.5);
     return float2(c.r * 256.0 + c.g, c.b * 256.0 + c.a) / 65535.0 * 4.0 - 2.0;
 }
 /** As oitavas grossas no pixel `p`: bilinear à mão (empacotado não se filtra). */
-float2 campoEm(float2 p) {
+static float2 campoEm(float2 p) {
     float2 u = p / FATOR;
     float2 f = fract(u);
     int2 i = int2(floor(u));
@@ -343,7 +343,7 @@ float2 campoEm(float2 p) {
 }
 
 /** O u.deslocamento (dx, dy) do ruído no pixel `p` (índice do buffer), já com o Pinning. */
-float2 ruidoDoPixel(float2 p) {
+static float2 ruidoDoPixel(float2 p) {
     // Tudo no campo (o caso dos padrões): nenhuma oitava sobra para o pixel.
     float2 r = K_DE <= OITAVAS || (K_DE == OITAVAS + 1 && FRACAO > 0.0) ? ruidoBruto(p) : float2(0.0);
     if (K_CORTE > 0) r += campoEm(p);
@@ -382,7 +382,7 @@ float2 ruidoDoPixel(float2 p) {
 // vez e guarda (dx e dy em 16 bits, na faixa da soma das amplitudes); o passe final lê os três. O
 // vizinho que cai fora da camada (a última coluna e a última linha) é calculado direto.
 // ---------------------------------------------------------------------------------------------------
-float alcanceTotal() {
+static float alcanceTotal() {
     float soma = 0.0, amp = 0.25;
     for (int k = 1; k <= 11; k++) {
         if (k > OITAVAS + 1) break;
@@ -391,27 +391,27 @@ float alcanceTotal() {
     }
     return max(soma * 2.5, 1e-6);   // gradiente (Bulge/Twist): até 2 · 1,25 por oitava
 }
-float4 empacotaDesl(float2 r) {
+static float4 empacotaDesl(float2 r) {
     float2 q = floor(clamp((r / alcanceTotal() + 1.0) * 0.5, 0.0, 1.0) * 65535.0 + 0.5);
     float2 alto = floor(q / 256.0);
     return float4(alto.x, q.x - alto.x * 256.0, alto.y, q.y - alto.y * 256.0) / 255.0;
 }
-float2 lerDesl(int2 i) {
+static float2 lerDesl(int2 i) {
     float4 c = floor(desl.read(uint2(i), uint(0)) * 255.0 + 0.5);
     return (float2(c.r * 256.0 + c.g, c.b * 256.0 + c.a) / 65535.0 * 2.0 - 1.0) * alcanceTotal();
 }
 
-float4 texel(int x, int y) {
+static float4 texel(int x, int y) {
     int2 t = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     if (x < 0 || y < 0 || x >= t.x || y >= t.y) return float4(0.0);
     float4 c = inputImg.read(uint2(int2(x, y)), uint(0));
     return float4(c.rgb * c.a, c.a);
 }
 
-float4 reto(float4 pm) { return pm.a > 0.0 ? float4(pm.rgb / pm.a, pm.a) : float4(0.0); }
+static float4 reto(float4 pm) { return pm.a > 0.0 ? float4(pm.rgb / pm.a, pm.a) : float4(0.0); }
 
 /** Bilinear pré-multiplicada; o centro do pixel no inteiro, fora = transparente. */
-float4 bilinear(float2 P) {
+static float4 bilinear(float2 P) {
     float2 f0 = floor(P);
     float2 f = P - f0;
     int x = int(f0.x);
@@ -420,12 +420,12 @@ float4 bilinear(float2 P) {
     return reto(c);
 }
 
-float cobertura(float centro, float raio, float i) {
+static float cobertura(float centro, float raio, float i) {
     return max(min(centro + raio, i + 0.5) - max(centro - raio, i - 0.5), 0.0);
 }
 
 /** Bilinear pré-multiplicada (sem voltar à cor reta), para a caixa grande. */
-float4 bilinearPm(float2 P) {
+static float4 bilinearPm(float2 P) {
     float2 f0 = floor(P);
     float2 f = P - f0;
     int x = int(f0.x);
@@ -439,7 +439,7 @@ float4 bilinearPm(float2 P) {
  * derruba o app), a média de 12 × 12 leituras bilineares espalhadas pela caixa: a mesma média, a menos do
  * detalhe menor que um pixel (09/10/2026).
  */
-float4 caixa(float2 P, float2 raio) {
+static float4 caixa(float2 P, float2 raio) {
     int x0 = int(floor(P.x - raio.x + 0.5));
     int x1 = int(floor(P.x + raio.x + 0.5));
     int y0 = int(floor(P.y - raio.y + 0.5));

@@ -19,7 +19,7 @@ struct um_advanced_shakeParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash11(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+static float hash11(float x) { return fract(sin(x * 127.1) * 43758.5453); }
 
 fragment float4 fx_um_advanced_shake(
     NovaVertexOut       in   [[stage_in]],

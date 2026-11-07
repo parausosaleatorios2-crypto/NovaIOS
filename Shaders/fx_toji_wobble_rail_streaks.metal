@@ -44,7 +44,7 @@ struct toji_wobble_rail_streaksParams {
 // --- funcoes auxiliares do efeito
 // Wobble Rail Streaks - AM single pass, GLES-safe
 
-float rand21(float2 c){ return fract(sin(dot(c, float2(12.9898,78.233))) * 43758.5453); }
+static float rand21(float2 c){ return fract(sin(dot(c, float2(12.9898,78.233))) * 43758.5453); }
 
 fragment float4 fx_toji_wobble_rail_streaks(
     NovaVertexOut       in   [[stage_in]],

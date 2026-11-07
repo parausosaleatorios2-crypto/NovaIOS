@@ -21,7 +21,7 @@ struct plasmaParams {
 const float3 DEFASAGEM = float3(0.0, 2.094395, 4.188790); // 0°, 120°, 240°
 
 /** Arco-íris suave de três cossenos defasados. */
-float3 arcoIris(float fase) {
+static float3 arcoIris(float fase) {
     return 0.5 + 0.5 * cos(6.2831853 * fase + DEFASAGEM);
 }
 

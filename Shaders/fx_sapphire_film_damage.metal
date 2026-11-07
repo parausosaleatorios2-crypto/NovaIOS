@@ -53,30 +53,30 @@ struct sapphire_film_damageParams {
 const float RAIO_MAX = 240.0;
 
 // O AE guarda os controles do Sapphire em passos de 1/65536 (truncados): 0,123 -> 0,1229858.
-float q16(float v) { return floor(v * 65536.0) / 65536.0; }
+static float q16(float v) { return floor(v * 65536.0) / 65536.0; }
 
 // ---------------------------------------------------------------------------------------------------------
 // As tabelas fixas (assets/filmdamage/tabelas.png, gerada por tools/filmdamage/benchmark/gerar.py): cada
 // número de 32 bits em dois texels da mesma coluna (bytes 0-2 em RGB, byte 3 no R da linha de baixo).
 // ---------------------------------------------------------------------------------------------------------
-uint ler32(int x, int linha) {
+static uint ler32(int x, int linha) {
     uint3 a = uint3(floor(tabelas.read(uint2(int2(x, linha)), uint(0)).rgb * 255.0 + 0.5));
     uint b = uint(floor(tabelas.read(uint2(int2(x, linha + 1)), uint(0)).r * 255.0 + 0.5));
     return a.x | (a.y << 8) | (a.z << 16) | (b << 24);
 }
 
 /** O hash do Sapphire: 4 rodadas de c = (c >> 8) + T[c & 255]. */
-uint rodadas(uint c) {
+static uint rodadas(uint c) {
     for (int i = 0; i < 4; i++) c = (c >> 8) + ler32(int(c & 255u), 6);
     return c;
 }
-uint hash2(uint a, uint b) { return rodadas(rodadas(a) + b); }
+static uint hash2(uint a, uint b) { return rodadas(rodadas(a) + b); }
 
 // ---------------------------------------------------------------------------------------------------------
 // warp_noise de uma oitava em (X, 0): 9 células, núcleo radial (t = d/1,5: 1 − 2t² até 0,5, depois 2(1 − t)²,
 // em passos de 1/4096 — o inicializador do plugin), valor ((h & 0x1fff) − 4096)/4096.
 // ---------------------------------------------------------------------------------------------------------
-float nucleo(float d2) {
+static float nucleo(float d2) {
     int i = int(d2 * 4096.0) >> 1;
     float x = float(i) / 4608.0;
     float t = sqrt(x);
@@ -84,7 +84,7 @@ float nucleo(float d2) {
     return floor(v * 4096.0 + 0.5) / 4096.0;
 }
 
-float ruido1(float X, uint semente) {
+static float ruido1(float X, uint semente) {
     float ix = rint(X);
     float fx = X - ix;
     int iix = int(ix);
@@ -104,7 +104,7 @@ float ruido1(float X, uint semente) {
 }
 
 /** warp_noise(t, freq, 1, u.seed) do efeito: x = t · 2 · freq, semente = int(4096 · u.seed). */
-float warpNoise(float t, float freq, float sd) {
+static float warpNoise(float t, float freq, float sd) {
     return ruido1(t * freq * 2.0, uint(int(4096.0 * sd)));
 }
 
@@ -113,7 +113,7 @@ float warpNoise(float t, float freq, float sd) {
 // ---------------------------------------------------------------------------------------------------------
 const float M30F = 9.313226e-10;   // 2^-30
 
-float umLado(int sem, float u, float un, float aleat, float pulo, float morta) {
+static float umLado(int sem, float u, float un, float aleat, float pulo, float morta) {
     int bloco = int(floor(u * 0.0009765625));
     float v = u - float(bloco * 1024);
     int lo = 0, hi = 1024, k = -1;
@@ -151,7 +151,7 @@ float umLado(int sem, float u, float un, float aleat, float pulo, float morta) {
 }
 
 /** film_damage_yshift: (yshift, |yslope|) em unidades do Sapphire (altura = 2 · H/W). */
-float2 tremor(float quadro, float fps, float a) {
+static float2 tremor(float quadro, float fps, float a) {
     float sempre = q16(u.shakeAlways);
     if (!(sempre > 0.0)) return float2(0.0);
     float f = q16(u.shakeFrequency) / 4.0;
@@ -168,11 +168,11 @@ float2 tremor(float quadro, float fps, float a) {
 }
 
 // Um float de 32 bits num texel RGBA8 (o buffer `tempo`).
-float4 guardar(float v) {
+static float4 guardar(float v) {
     uint u = as_type<uint>(v);
     return float4(float(u & 255u), float((u >> 8) & 255u), float((u >> 16) & 255u), float(u >> 24)) / 255.0;
 }
-float lerTempo(int i) {
+static float lerTempo(int i) {
     uint4 b = uint4(floor(tempo.read(uint2(int2(i, 0)), uint(0)) * 255.0 + 0.5));
     return as_type<float>(b.x | (b.y << 8) | (b.z << 16) | (b.w << 24));
 }
@@ -181,7 +181,7 @@ float lerTempo(int i) {
 // O grão (lambda 0x180ad74f0): por canal, contador = int(4096 · (Seed + 0,123)) + 10001 · canal +
 // campo · (W·H + 7) + y · W + (x com os 2 bits de baixo zerados); o byte (x & 3) do hash.
 // ---------------------------------------------------------------------------------------------------------
-int2 campos(int quadro, int modo) {
+static int2 campos(int quadro, int modo) {
     if (modo == 0) return int2(2 * quadro, 2 * quadro + 1);
     if (modo == 1) return int2(2 * quadro);
     int r = 2 * (quadro - (modo - 2)) + 14;
@@ -191,7 +191,7 @@ int2 campos(int quadro, int modo) {
     return int2(b, a);   // medido: no pulldown as linhas pares ficam com o segundo campo
 }
 
-float amplitudeDoGrao(float v, float darks, float brights) {
+static float amplitudeDoGrao(float v, float darks, float brights) {
     int idx = clamp(int(floor(v * 4096.0)) >> 6, 0, 64);
     float i = float(idx) / 32.0;
     float u = min(i, 2.0 - i);
@@ -199,7 +199,7 @@ float amplitudeDoGrao(float v, float darks, float brights) {
     return i <= 1.0 ? darks + (1.0 - darks) * f : brights + (1.0 - brights) * f;
 }
 
-float3 grao(float3 v, int2 p, int2 T, int quadro) {
+static float3 grao(float3 v, int2 p, int2 T, int quadro) {
     float amp = q16(u.grainAmp);
     if (amp <= 0.0) return v;
     int2 cs = campos(quadro, u.grainHold);
@@ -218,7 +218,7 @@ float3 grao(float3 v, int2 p, int2 T, int quadro) {
     return o;
 }
 
-float3 corrigir(float3 c) {
+static float3 corrigir(float3 c) {
     float y = dot(c, float3(5.0, 8.0, 3.0) / 16.0);
     c = y + (c - y) * q16(u.saturation);
     float3 L = floor(clamp(u.tintLights.rgb, 0.0, 1.0) * 255.0 + 0.5) / 255.0 * q16(u.scaleLights);
@@ -229,7 +229,7 @@ float3 corrigir(float3 c) {
 // ---------------------------------------------------------------------------------------------------------
 // O desfoque: três caixas por eixo (a mesma conta do S_Glow), largura em px = quantidade · W/8.
 // ---------------------------------------------------------------------------------------------------------
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     // Dentro do quadro o espelho é o próprio índice: sem a divisão inteira, que em todo tap custava caro (0.569.0)
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
@@ -237,14 +237,14 @@ int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-float4 lerCaixa(int passo, int2 p, int2 T) {
+static float4 lerCaixa(int passo, int2 p, int2 T) {
     p = int2(espelhar(p.x, T.x), espelhar(p.y, T.y));
     if (passo == 3) return q16(u.shakeAmplitude) > 0.0 ? imgB.read(uint2(p), uint(0)) : imgA.read(uint2(p), uint(0));
     if ((passo & 1) == 0) return ga.read(uint2(p), uint(0));
     return gb.read(uint2(p), uint(0));
 }
 
-float4 caixa(int passo, int2 p, int2 T, bool vertical, int qual, float w) {
+static float4 caixa(int passo, int2 p, int2 T, bool vertical, int qual, float w) {
     w = clamp(w, 0.0, 3.0 * RAIO_MAX);
     float a = floor(w);
     float f = w - a;
@@ -266,7 +266,7 @@ float4 caixa(int passo, int2 p, int2 T, bool vertical, int qual, float w) {
 // ---------------------------------------------------------------------------------------------------------
 // A vinheta (simple_vignette) com o `static`: (hash4(y·W + x + quadro·W·H) & 0xfff)/4096.
 // ---------------------------------------------------------------------------------------------------------
-float vinheta(int2 p, int2 T, int quadro) {
+static float vinheta(int2 p, int2 T, int quadro) {
     float dark = q16(u.vignetteDarkness);
     if (dark <= 0.0) return 1.0;
     float W = float(T.x), H = float(T.y), a = H / W;

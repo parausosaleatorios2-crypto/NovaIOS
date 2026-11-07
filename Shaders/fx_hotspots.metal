@@ -52,7 +52,7 @@ struct Ajustes {
 
 // As predefinições do documento de especificação. Personalizado (0) devolve os
 // controles como estão.
-Ajustes ajustes() {
+static Ajustes ajustes() {
     if (u.preset == 1) return Ajustes(0.70, 0.10, 8.0, 1.0, 1.0);   // realces suaves
     if (u.preset == 2) return Ajustes(0.85, 0.05, 3.0, 1.5, 1.1);   // realces fortes
     if (u.preset == 3) return Ajustes(0.65, 0.15, 10.0, 1.2, 1.0);  // fonte de bloom
@@ -61,18 +61,18 @@ Ajustes ajustes() {
 }
 
 // Pixels de uma composição de 1080 de lado curto. Ver o cabeçalho.
-float escalaDePixel() {
+static float escalaDePixel() {
     return min(eng.acResolution.x, eng.acResolution.y) / 1080.0;
 }
 
 // Cor pré-multiplicada -> cor reta. Sem a guarda, alfa 0 dividiria por zero e o
 // NaN viraria pixel preto ou branco aleatório, conforme o driver.
-float3 desmultiplicar(float4 cor) {
+static float3 desmultiplicar(float4 cor) {
     return cor.a > 0.0001 ? cor.rgb / cor.a : float3(0.0);
 }
 
 // sRGB -> luz linear, a curva exata (com o trecho reto perto do preto).
-float3 paraLinear(float3 cor) {
+static float3 paraLinear(float3 cor) {
     float3 baixo = cor / 12.92;
     float3 alto = pow((max(cor, float3(0.0)) + 0.055) / 1.055, float3(2.4));
     return mix(alto, baixo, step(cor, float3(0.04045)));
@@ -83,7 +83,7 @@ float3 paraLinear(float3 cor) {
 // a dos vizinhos. `deEntrada` diz que a textura ainda é cor reta (a camada
 // original) e precisa ser pré-multiplicada na leitura; os buffers intermediários
 // já são.
-float4 borrar(sampler2D tex, float2 direcao, float raioPx, bool deEntrada) {
+static float4 borrar(sampler2D tex, float2 direcao, float raioPx, bool deEntrada) {
     float2 passoUv = direcao * eng.acTexelSize * (raioPx / float(METADE));
     float4 soma = float4(0.0);
     float pesos = 0.0;

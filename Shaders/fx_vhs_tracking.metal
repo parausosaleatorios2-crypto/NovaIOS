@@ -20,7 +20,7 @@ struct vhs_trackingParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash2(float2 c) {
+static float hash2(float2 c) {
     c += float2(float(u.seed) * 13.7);
     return fract(sin(dot(c, float2(127.1, 311.7))) * 43758.5453);
 }

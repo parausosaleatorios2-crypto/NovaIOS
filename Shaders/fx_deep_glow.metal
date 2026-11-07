@@ -33,13 +33,13 @@ struct deep_glowParams {
 // A fórmula é a do padrão, com o trecho reto perto do zero. A aproximação
 // `pow(c, 2.2)` erraria justamente nas sombras, que é onde a u.cauda do halo mora.
 
-float3 paraLuz(float3 c) {
+static float3 paraLuz(float3 c) {
     float3 alto = pow(max(c + 0.055, 0.0) / 1.055, float3(2.4));
     float3 baixo = c / 12.92;
     return mix(baixo, alto, step(float3(0.04045), c));
 }
 
-float3 paraTela(float3 l) {
+static float3 paraTela(float3 l) {
     float3 seguro = max(l, 0.0);
     float3 alto = 1.055 * pow(seguro, float3(1.0 / 2.4)) - 0.055;
     float3 baixo = seguro * 12.92;
@@ -63,15 +63,15 @@ float3 paraTela(float3 l) {
 // Ruído de um pixel ("interleaved gradient noise"): somado ANTES de gravar em 8
 // bits, troca os degraus da u.cauda por um grão invisível — era a "qualidade
 // péssima" do print do snow (28/09/2026): o halo em faixas.
-float ruidoDoPixel() {
+static float ruidoDoPixel() {
     return fract(52.9829189 * fract(dot(__nv_fragCoord.xy, float2(0.06711056, 0.00583715)))) - 0.5;
 }
 
-float4 guardar(float4 luz) {
+static float4 guardar(float4 luz) {
     return float4(sqrt(max(luz.rgb, 0.0)) + ruidoDoPixel() / 255.0, max(luz.a, 0.0));
 }
 
-float4 abrir(float4 guardado) {
+static float4 abrir(float4 guardado) {
     return float4(guardado.rgb * guardado.rgb, guardado.a);
 }
 
@@ -86,7 +86,7 @@ float4 abrir(float4 guardado) {
 // onde o buffer travou no mínimo de 8 px e a razão não é 2.
 
 /** O que passa do u.limiar num texel da imagem, em luz linear. */
-float4 brilhoDoTexel(int2 t) {
+static float4 brilhoDoTexel(int2 t) {
     int2 tam = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float4 c = inputImg.read(uint2(clamp(t, int2(0), tam - 1)), uint(0));
 
@@ -107,7 +107,7 @@ float4 brilhoDoTexel(int2 t) {
     return float4(paraLuz(c.rgb) * quanto, quanto);
 }
 
-float4 descerDaImagem() {
+static float4 descerDaImagem() {
     float2 tam = float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
     float2 p = in.acScreenNorm * tam;
     float2 t0 = floor(p) - 2.0;
@@ -125,7 +125,7 @@ float4 descerDaImagem() {
     return guardar(soma / max(pesos, 0.0001));
 }
 
-float4 descer(sampler2D origem) {
+static float4 descer(sampler2D origem) {
     int2 tamI = int2(int(origem.get_width()), int(origem.get_height()));
     float2 p = in.acScreenNorm * float2(tamI);
     float2 t0 = floor(p) - 2.0;
@@ -154,7 +154,7 @@ float4 descer(sampler2D origem) {
 // vizinhos vira uma leitura só, no ponto em que a bilinear dá a proporção
 // certa entre os dois.
 
-float4 lerLiso(sampler2D t, float2 uv) {
+static float4 lerLiso(sampler2D t, float2 uv) {
     float2 tam = float2(int2(int(t.get_width()), int(t.get_height())));
     float2 p = uv * tam - 0.5;
     float2 i = floor(p);
@@ -187,7 +187,7 @@ float4 lerLiso(sampler2D t, float2 uv) {
 // Cada escala cai entre dois níveis da pirâmide (em escala logarítmica) e se
 // divide entre eles. Por isso o Raio anda contínuo, sem saltar de nível em nível.
 
-void pesosDosNiveis(out float w[8]) {
+static void pesosDosNiveis(out float w[8]) {
     for (int k = 0; k < 8; k++) w[k] = 0.0;
     float queda = mix(0.25, 0.9, u.cauda);
     float4 p = float4(1.0, queda, queda * queda, queda * queda * queda);
@@ -207,7 +207,7 @@ void pesosDosNiveis(out float w[8]) {
 }
 
 /** A luz somada dos níveis, num ponto. */
-float4 luzEm(float2 uv, float w[8]) {
+static float4 luzEm(float2 uv, float w[8]) {
     float4 l = float4(0.0);
     if (w[0] > 0.0) l += lerLiso(p1, uv) * w[0];
     if (w[1] > 0.0) l += lerLiso(p2, uv) * w[1];
@@ -247,7 +247,7 @@ float4 luzEm(float2 uv, float w[8]) {
 // antes de mexer aqui.
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float3 comprimirNoEspaco(float3 base, float3 luz) {
+static float3 comprimirNoEspaco(float3 base, float3 luz) {
     float lumaBase = dot(base, LUMA);
     float luzLuma = dot(luz, LUMA);
     float espaco = max(1.0 - lumaBase, 0.001);

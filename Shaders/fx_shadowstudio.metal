@@ -32,10 +32,10 @@ struct shadowstudioParams {
 // Medidos no plugin (tools/shadowstudio/benchmark):
 const int DIRECOES = 48;      // o máximo de direções da luz (o tamanho dela) que entram na média
 
-float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
+static float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
 
 /** 1 dentro da forma (o alfa passa do Alpha Threshold); com Inner Shadow, quem faz sombra é o lado de FORA. */
-float forma(float2 px) {
+static float forma(float2 px) {
     float2 R = tamanho();
     float a = (px.x < 0.0 || px.y < 0.0 || px.x > R.x || px.y > R.y) ? 0.0 : inputImg.sample(__nv_smp, px / R).a;
     float dentro = step(u.alphaThreshold, a);
@@ -47,7 +47,7 @@ float forma(float2 px) {
  * deixa o raio andar de 24 em 24 px numa sombra de milhares de px sem pular um detalhe fino: só onde o
  * bloco acusa alguma coisa ele desce para o mapa de 8 px, e daí para a imagem.
  */
-float4 blocos(float2 uv, bool daImagem) {
+static float4 blocos(float2 uv, bool daImagem) {
     float2 R = tamanho();
     float temForma = 0.0, temFora = 0.0;
     if (daImagem) {
@@ -69,7 +69,7 @@ float4 blocos(float2 uv, bool daImagem) {
 }
 
 /** O bloco em volta de `px` pode ter o que faz sombra? (filtro linear: acusa também os blocos vizinhos) */
-bool podeTer(sampler2D mapa, float2 px) {
+static bool podeTer(sampler2D mapa, float2 px) {
     float2 R = tamanho();
     if (px.x < 0.0 || px.y < 0.0 || px.x > R.x || px.y > R.y) return u.innerShadow;
     float4 m = mapa.sample(__nv_smp, px / R);
@@ -81,7 +81,7 @@ bool podeTer(sampler2D mapa, float2 px) {
  * Opacity End por x elevado a (100 − Ease Opacity) / Ease Opacity — com 0 não cai nunca, com 100 já
  * começa no fim, com 60 (padrão) cai depressa no começo.
  */
-float opacidade(float x) {
+static float opacidade(float x) {
     float e = clamp(u.easeOpacity, 0.0, 100.0);
     float f = e < 0.01 ? 0.0 : e > 99.99 ? 1.0 : pow(x, (100.0 - e) / e);
     return mix(u.opacityStart, u.opacityEnd, f) / 100.0;
@@ -91,7 +91,7 @@ float opacidade(float x) {
  * A distância (px) do ponto até a forma andando contra a luz (`contra` unitário), até `L`; −1 = não achou.
  * Três andares: o mapa de 32 px (passo de 24 px ou mais), o de 8 px e a imagem.
  */
-float ateAForma(float2 p, float2 contra, float L) {
+static float ateAForma(float2 p, float2 contra, float L) {
     if (forma(p) > 0.5) return 0.0;
     float pa = max(24.0, L / 128.0);
     for (int i = 0; i < 128; i++) {
@@ -130,7 +130,7 @@ float ateAForma(float2 p, float2 contra, float L) {
  * O peso de uma direção: a corda do disco da luz (raio `rho`, visto de uma distância 1) nessa direção.
  * De fora do disco só as direções que o cortam contam; de dentro, todas.
  */
-float corda(float rho, float ang, bool dentroDoDisco) {
+static float corda(float rho, float ang, bool dentroDoDisco) {
     float s = sin(ang), c = cos(ang);
     float raiz = sqrt(max(rho * rho - s * s, 0.0));
     if (dentroDoDisco) return max(c + raiz, 0.0);

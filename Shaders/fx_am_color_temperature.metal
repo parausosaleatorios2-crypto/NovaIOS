@@ -17,7 +17,7 @@ struct am_color_temperatureParams {
 
 // --- funcoes auxiliares do efeito
 // A curva do AM (válida de 1000 a 40000 K, e 0 para o branco puro), em como no AM (o padrão dele).
-float3 colorTemperatureToRGB(const in float u.temperature) {
+static float3 colorTemperatureToRGB(const in float u.temperature) {
     float3x3 m = (u.temperature <= 6500.0) ? float3x3(float3(0.0, -2902.1955373783176, -8257.7997278925690),
                                                     float3(0.0, 1669.5803561666639, 2575.2827530017594),
                                                     float3(1.0, 1.3302673723350029, 1.8993753891711275)) :

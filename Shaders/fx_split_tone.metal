@@ -20,12 +20,12 @@ struct split_toneParams {
 
 // --- funcoes auxiliares do efeito
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** Soft-light (CSS/SVG definition): preserva contraste melhor que mix normal. */
-float3 softLight(float3 baixa, float3 alta) {
+static float3 softLight(float3 baixa, float3 alta) {
     float3 d = mix(sqrt(baixa) * (2.0 * alta - 1.0) + 2.0 * baixa * (1.0 - alta),
                  2.0 * baixa * alta + baixa * baixa * (1.0 - 2.0 * alta),
                  step(alta, float3(0.5)));

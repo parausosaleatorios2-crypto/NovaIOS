@@ -20,7 +20,7 @@ struct tile_rotationParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float2 p, float semente) {
+static float hash(float2 p, float semente) {
     return fract(sin(dot(p, float2(127.1, 311.7)) + semente * 43.71) * 43758.5453);
 }
 

@@ -18,7 +18,7 @@ struct um_barrelParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 distorcer(float2 p, float coef) {
+static float2 distorcer(float2 p, float coef) {
     float r2 = dot(p, p);
     float f = 1.0 + u.k1 * r2 + u.k2 * r2 * r2;
     return p * (f + coef);

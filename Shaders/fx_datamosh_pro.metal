@@ -90,30 +90,30 @@ const float VETOR_MAXIMO = 160.0;
 //  ACASO DETERMINÍSTICO (itens 54, 103, 294): semente + quadro + bloco
 // ============================================================================
 
-float semente() {
+static float semente() {
     return u.seed * 17.13 + 3.7;
 }
 
-float hash11(float p) {
+static float hash11(float p) {
     p = fract(p * 0.1031);
     p *= p + 33.33;
     p *= p + p;
     return fract(p);
 }
 
-float hash21(float2 p) {
+static float hash21(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-float hash31(float3 p) {
+static float hash31(float3 p) {
     float3 p3 = fract(p * 0.1031);
     p3 += dot(p3, p3.zyx + 31.32);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-float2 hash32(float3 p) {
+static float2 hash32(float3 p) {
     float3 p3 = fract(p * float3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy);
@@ -123,38 +123,38 @@ float2 hash32(float3 p) {
 //  TEMPO, TAMANHO, COR
 // ============================================================================
 
-float duracaoDoQuadro() {
+static float duracaoDoQuadro() {
     return eng.acFrameDuration > 0.0 ? eng.acFrameDuration : 1.0 / 30.0;
 }
 
-float indiceDoQuadro() {
+static float indiceDoQuadro() {
     return floor(eng.acTime / duracaoDoQuadro() + 0.5);
 }
 
 /** O tamanho da camada em pixels — qualquer passe, qualquer buffer. */
-float2 camadaPx() {
+static float2 camadaPx() {
     return float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
 }
 
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 
-float3 paraYcc(float3 c) {
+static float3 paraYcc(float3 c) {
     return float3(
         dot(c, float3(0.299, 0.587, 0.114)),
         dot(c, float3(-0.168736, -0.331264, 0.5)),
         dot(c, float3(0.5, -0.418688, -0.081312)));
 }
 
-float3 deYcc(float3 y) {
+static float3 deYcc(float3 y) {
     return float3(
         y.x + 1.402 * y.z,
         y.x - 0.344136 * y.y - 0.714136 * y.z,
         y.x + 1.772 * y.y);
 }
 
-float4 preMultiplicar(float4 c) {
+static float4 preMultiplicar(float4 c) {
     return float4(c.rgb * c.a, c.a);
 }
 
@@ -163,42 +163,42 @@ float4 preMultiplicar(float4 c) {
 // ============================================================================
 
 /** 8 bits: nível 128 = zero, meio pixel por nível (±64 px). Linear: aguenta interpolação. */
-float2 codificarMv(float2 v) {
+static float2 codificarMv(float2 v) {
     return clamp(floor(v * 2.0 + 0.5) + 128.0, 0.0, 255.0) / 255.0;
 }
 
-float2 decodificarMv(float2 e) {
+static float2 decodificarMv(float2 e) {
     return (e * 255.0 - 128.0) * 0.5;
 }
 
 /** 16 bits num par de canais: 1/256 px por nível, ±128 px. */
-float2 codificar16Um(float v) {
+static float2 codificar16Um(float v) {
     float n = clamp(floor(v * 256.0 + 0.5) + 32768.0, 0.0, 65535.0);
     float alto = floor(n / 256.0);
     return float2(alto, n - alto * 256.0) / 255.0;
 }
 
-float decodificar16Um(float2 e) {
+static float decodificar16Um(float2 e) {
     float2 b = floor(e * 255.0 + 0.5);
     return (b.x * 256.0 + b.y - 32768.0) / 256.0;
 }
 
-float4 codificar16(float2 v) {
+static float4 codificar16(float2 v) {
     return float4(codificar16Um(v.x), codificar16Um(v.y));
 }
 
-float2 decodificar16(float4 e) {
+static float2 decodificar16(float4 e) {
     return float2(decodificar16Um(e.rg), decodificar16Um(e.ba));
 }
 
 /** Contador inteiro (0..65535) num par de canais. */
-float2 codificarContador(float n) {
+static float2 codificarContador(float n) {
     float c = clamp(floor(n + 0.5), 0.0, 65535.0);
     float alto = floor(c / 256.0);
     return float2(alto, c - alto * 256.0) / 255.0;
 }
 
-float decodificarContador(float2 e) {
+static float decodificarContador(float2 e) {
     float2 b = floor(e * 255.0 + 0.5);
     return b.x * 256.0 + b.y;
 }
@@ -208,7 +208,7 @@ float decodificarContador(float2 e) {
 // ============================================================================
 
 /** Os pixels que o movimento arrasta: esta camada, ou a escolhida no Swap. */
-float4 atualEm(float2 uv) {
+static float4 atualEm(float2 uv) {
     if (u.pixelsFrom == 1 && int2(int(pixelsLayer.get_width()), int(pixelsLayer.get_height())).x > 1) {
         return preMultiplicar(pixelsLayer.sample(__nv_smp, uv));
     }
@@ -216,7 +216,7 @@ float4 atualEm(float2 uv) {
 }
 
 /** A referência (quadro anterior, já moshado), com o modo de borda (item 109). */
-float4 lerRef(float2 q) {
+static float4 lerRef(float2 q) {
     if (u.edgeMode == 1) {
         q = 1.0 - abs(1.0 - __nv_mod(q, 2.0));
     } else if (u.edgeMode == 2) {
@@ -228,7 +228,7 @@ float4 lerRef(float2 q) {
 }
 
 /** Com o desfoque e o realce da realimentação (itens 93 e 94). */
-float4 lerRefFiltrada(float2 q) {
+static float4 lerRefFiltrada(float2 q) {
     float4 c = lerRef(q);
     if (u.feedbackBlur <= 0.0 && u.feedbackSharpen <= 0.0) return c;
     float2 t = 1.25 / camadaPx();
@@ -245,7 +245,7 @@ float4 lerRefFiltrada(float2 q) {
 //  SOM
 // ============================================================================
 
-float nivelGrave() {
+static float nivelGrave() {
     float s = somImg.sample(__nv_smp, float2(0.04, 0.5)).r
             + somImg.sample(__nv_smp, float2(0.10, 0.5)).r
             + somImg.sample(__nv_smp, float2(0.17, 0.5)).r;
@@ -253,12 +253,12 @@ float nivelGrave() {
 }
 
 /** A intensidade do quadro, com o empurrão do som. */
-float intensidadeAgora() {
+static float intensidadeAgora() {
     return clamp(u.intensity + u.audioAmount * nivelGrave(), 0.0, 1.0);
 }
 
 /** O quanto do movimento a intensidade libera (ver o passe 8). */
-float fatorDeMovimento() {
+static float fatorDeMovimento() {
     return smoothstep(0.0, 0.2, intensidadeAgora());
 }
 
@@ -267,7 +267,7 @@ float fatorDeMovimento() {
 // ============================================================================
 
 /** A média móvel, com interpolação feita à mão (16 bits não se interpolam no hardware). */
-float2 lerMedio(float2 uv) {
+static float2 lerMedio(float2 uv) {
     float2 tam = float2(int2(int(movMedio.get_width()), int(movMedio.get_height())));
     float2 p = uv * tam - 0.5;
     int2 i = int2(floor(p));
@@ -284,7 +284,7 @@ float2 lerMedio(float2 uv) {
  * Este quadro é um corte? O relógio (passe 4) guarda a resposta no texel
  * (1,0), canal B, para todos os passes seguintes.
  */
-bool corteAgora() {
+static bool corteAgora() {
     return tempo.read(uint2(int2(1, 0)), uint(0)).b > 0.5;
 }
 
@@ -298,14 +298,14 @@ bool corteAgora() {
  * vetor é zero (ou a média continua a de antes), e o movimento do plano novo
  * começa a arrastar a imagem velha no quadro seguinte.
  */
-float2 campoBruto(float2 uv) {
+static float2 campoBruto(float2 uv) {
     if (u.motionAverage >= 0.5) return lerMedio(uv);
     if (corteAgora()) return float2(0.0);
     return decodificarMv(campo.sample(__nv_smp, uv).rg);
 }
 
 /** O centro do macrobloco; "Organic" tremula a borda (item 97). */
-float2 centroDoBloco(float2 p, float lado) {
+static float2 centroDoBloco(float2 p, float lado) {
     float2 q = p;
     if (u.blockEdge == 2) {
         float2 celula = floor(p / 4.0);
@@ -318,7 +318,7 @@ float2 centroDoBloco(float2 p, float lado) {
  * O vetor que o decodificador usa neste ponto: o bruto, no macrobloco, com
  * todos os operadores, em pixels da camada. `fator` é o Mosh Map.
  */
-float2 movimentoFinal(float2 uv, float fator) {
+static float2 movimentoFinal(float2 uv, float fator) {
     float2 camada = camadaPx();
     float2 p = uv * camada;
     float lado = max(u.blockSize, 1.0);
@@ -409,7 +409,7 @@ float2 movimentoFinal(float2 uv, float fator) {
 //  O MOSH MAP (itens 5, 29, 30, 81, 101, 127)
 // ============================================================================
 
-float mapaEm(float2 uv, float4 atual, float magnitude) {
+static float mapaEm(float2 uv, float4 atual, float magnitude) {
     float m = 1.0;
     if (u.mapSource == 1) {
         m = smoothstep(0.5, 0.5 + 6.0 * (0.2 + u.mapFeather), magnitude);
@@ -448,7 +448,7 @@ float mapaEm(float2 uv, float4 atual, float magnitude) {
 //  O ENVELOPE DA REFERÊNCIA (itens 32, 89-92, 285)
 // ============================================================================
 
-float envelopeGlobal(float timer, float quadro) {
+static float envelopeGlobal(float timer, float quadro) {
     float fd = duracaoDoQuadro();
     if (u.referenceMode == 1) {
         float periodo = max(floor(u.refreshEvery + 0.5), 1.0);
@@ -473,11 +473,11 @@ float envelopeGlobal(float timer, float quadro) {
  * O que a busca compara: luminância com um piso para o alfa, para um adesivo
  * preto sobre transparente também ter o que seguir.
  */
-float traco(float4 c) {
+static float traco(float4 c) {
     return (0.7 * luma(c.rgb) + 0.3) * c.a;
 }
 
-float4 passeLumas() {
+static float4 passeLumas() {
     float2 d = eng.acTexelSize * 0.25;
     float atual = 0.0;
     float antes = 0.0;
@@ -492,7 +492,7 @@ float4 passeLumas() {
     return float4(atual * 0.25, antes * 0.25, alfaAntes * 0.25, 1.0);
 }
 
-float4 passeLumasB() {
+static float4 passeLumasB() {
     float2 d = eng.acTexelSize * 0.25;
     float4 s = lumas.sample(__nv_smp, in.acScreenNorm + float2(-d.x, -d.y)) + lumas.sample(__nv_smp, in.acScreenNorm + float2(d.x, -d.y))
            + lumas.sample(__nv_smp, in.acScreenNorm + float2(-d.x, d.y)) + lumas.sample(__nv_smp, in.acScreenNorm + float2(d.x, d.y));
@@ -512,7 +512,7 @@ float4 passeLumasB() {
  * Saída: RG = vetor, B = diferença média no melhor encaixe (a base do detector
  * de corte), A = textura do bloco.
  */
-float4 passeGrosso() {
+static float4 passeGrosso() {
     float2 zero = codificarMv(float2(0.0));
     if (eng.acStateFresh == 1) return float4(zero, 0.0, 0.0);
     float2 tx = 1.0 / float2(int2(int(lumasB.get_width()), int(lumasB.get_height())));
@@ -562,7 +562,7 @@ float4 passeGrosso() {
  * `d`, melhor encaixa o anterior no atual — mínimos quadrados sobre a janela,
  * com o gradiente do anterior no ponto já deslocado. Limitado a ±1 texel.
  */
-float2 passoLk(float atual[16], float2 c0, float2 tx, float2 d) {
+static float2 passoLk(float atual[16], float2 c0, float2 tx, float2 d) {
     float gxx = 0.0;
     float gxy = 0.0;
     float gyy = 0.0;
@@ -588,7 +588,7 @@ float2 passoLk(float atual[16], float2 c0, float2 tx, float2 d) {
 }
 
 /** SAD da janela 4×4 do lumas com deslocamento `d` (em texels do lumas). */
-float sadFino(float atual[16], float2 c0, float2 tx, float2 d) {
+static float sadFino(float atual[16], float2 c0, float2 tx, float2 d) {
     float sad = 0.0;
     for (int j = 0; j < 4; j++) {
         for (int i = 0; i < 4; i++) {
@@ -615,7 +615,7 @@ float sadFino(float atual[16], float2 c0, float2 tx, float2 d) {
  * com o grosso pela confiança — o grosso vem de uma janela maior e erra menos
  * em área lisa.
  */
-float4 passeFino() {
+static float4 passeFino() {
     float2 zero = codificarMv(float2(0.0));
     if (eng.acStateFresh == 1) return float4(zero, 0.0, 1.0);
     float2 c0 = in.acScreenNorm;
@@ -680,7 +680,7 @@ float4 passeFino() {
 // ============================================================================
 
 /** Média móvel exponencial: equivale à média dos últimos N quadros (itens 10, 114, 115). */
-float4 passeMedia() {
+static float4 passeMedia() {
     float2 agora = decodificarMv(campo.sample(__nv_smp, in.acScreenNorm).rg);
     if (eng.acStateFresh == 1 || u.motionAverage < 0.5) return codificar16(agora);
     float2 antes = decodificar16(movMedio.read(uint2(int2(__nv_fragCoord.xy)), uint(0)));
@@ -696,7 +696,7 @@ float4 passeMedia() {
  * plano contínuo o encaixe acha o bloco e a razão fica baixa (0,2 a 0,35 na
  * simulação); num corte não há o que achar, e ela salta (0,77).
  */
-float pontuacaoDeCorte() {
+static float pontuacaoDeCorte() {
     float soma = 0.0;
     for (int j = 0; j < 3; j++) {
         for (int i = 0; i < 4; i++) {
@@ -713,7 +713,7 @@ float pontuacaoDeCorte() {
  * contador desde o último gatilho e a idade da referência (16 bits cada), e o
  * (1,0) guarda o grave do quadro anterior (para o gatilho pegar a SUBIDA).
  */
-float4 passeTempo() {
+static float4 passeTempo() {
     bool primeiro = eng.acStateFresh == 1;
     float4 a0 = tempo.read(uint2(int2(0, 0)), uint(0));
     float4 a1 = tempo.read(uint2(int2(1, 0)), uint(0));
@@ -750,7 +750,7 @@ float4 passeTempo() {
  * É o que dá o visual de codec com pouca banda: o bloco novo chega como um
  * gradiente borrado, e o detalhe fino da referência antiga continua por cima.
  */
-float4 passeResiduo() {
+static float4 passeResiduo() {
     if (eng.acStateFresh == 1) return float4(0.5);
     float2 camada = camadaPx();
     float2 bloco = floor(in.acScreenNorm * eng.acResolution);
@@ -779,7 +779,7 @@ float4 passeResiduo() {
     return clamp(k * 0.5 + 0.5, 0.0, 1.0);
 }
 
-float4 passeResiduoCor() {
+static float4 passeResiduoCor() {
     if (eng.acStateFresh == 1) return float4(0.5, 0.5, 0.5, 1.0);
     float2 camada = camadaPx();
     float2 bloco = floor(in.acScreenNorm * eng.acResolution);
@@ -804,7 +804,7 @@ float4 passeResiduoCor() {
 // ============================================================================
 
 /** Um caminho pelo campo, de 1 a 3 passos seguindo o fluxo (item 39). */
-float4 amostrarCaminho(float2 uv, float2 m0, int passos, float sinal, float fator) {
+static float4 amostrarCaminho(float2 uv, float2 m0, int passos, float sinal, float fator) {
     float2 texel = 1.0 / camadaPx();
     float2 q = uv;
     float2 m = m0;
@@ -817,7 +817,7 @@ float4 amostrarCaminho(float2 uv, float2 m0, int passos, float sinal, float fato
 }
 
 /** A previsão: a referência antiga, arrastada pelo movimento novo (itens 35-40). */
-float4 predizer(float2 uv, float2 m, float fator) {
+static float4 predizer(float2 uv, float2 m, float fator) {
     int teto = u.quality == 0 ? 1 : (u.quality == 1 ? 2 : 3);
     int passos = min(int(clamp(u.warpSteps, 1.0, 3.0)), teto);
     passos = min(passos, 1 + int(length(m) / 8.0));
@@ -838,7 +838,7 @@ float4 predizer(float2 uv, float2 m, float fator) {
  * visível JÁ no primeiro quadro e com o vídeo parado. Sem movimento nenhum (foto
  * parada e sem Drift), não há o que derreter, e volta o quadro limpo.
  */
-float4 moshFresco(float2 uv, float4 atual) {
+static float4 moshFresco(float2 uv, float4 atual) {
     float2 camada = camadaPx();
     float fator = mapaEm(uv, atual, length(campoBruto(uv)));
     float2 m = movimentoFinal(uv, fator * fatorDeMovimento());
@@ -861,7 +861,7 @@ float4 moshFresco(float2 uv, float4 atual) {
     return r;
 }
 
-float4 passeMosh() {
+static float4 passeMosh() {
     float2 uv = in.acScreenNorm;
     float4 atual = atualEm(uv);
     // Sem quadro anterior de verdade (primeiro quadro, cursor arrastado, parado):
@@ -1029,18 +1029,18 @@ float4 passeMosh() {
 //  PASSE 9 — A SAÍDA E AS VISTAS DE DEPURAÇÃO (itens 146-149)
 // ============================================================================
 
-float3 corDoVetor(float2 v) {
+static float3 corDoVetor(float2 v) {
     float mag = clamp(length(v) / 16.0, 0.0, 1.0);
     float h = __nv_atan(v.y, v.x) / TAU + 0.5;
     float3 roda = clamp(abs(fract(h + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
     return mix(float3(0.5), roda, mag) * (0.3 + 0.7 * mag);
 }
 
-float4 semPreMultiplicar(float4 c) {
+static float4 semPreMultiplicar(float4 c) {
     return c.a > 0.0001 ? float4(c.rgb / c.a, c.a) : float4(0.0);
 }
 
-float4 passeSaida() {
+static float4 passeSaida() {
     float2 uv = in.acScreenNorm;
     float4 moshado = referencia.sample(__nv_smp, uv);
     if (u.view == 0) return semPreMultiplicar(moshado);

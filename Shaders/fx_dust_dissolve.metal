@@ -32,13 +32,13 @@ struct dust_dissolveParams {
 
 // --- funcoes auxiliares do efeito
 // hash/ruído — mesma técnica de `fractal-noise.xml`.
-float hash21(float2 p) {
+static float hash21(float2 p) {
     p = fract(p * float2(127.1, 311.7));
     p += dot(p, p + 34.23);
     return fract(p.x * p.y);
 }
 
-float valueNoise(float2 p) {
+static float valueNoise(float2 p) {
     float2 cell = floor(p);
     float2 f = fract(p);
     float2 w = f * f * (3.0 - 2.0 * f);
@@ -64,7 +64,7 @@ const float TETO_DO_FBM = 0.875;
 // precisar de resolução de export pra aparecer na prévia.
 const float GRAO_POR_TELA = 340.0;
 
-float fbm(float2 p) {
+static float fbm(float2 p) {
     float soma = 0.0;
     float amplitude = 0.5;
     for (int i = 0; i < OITAVAS; i++) {
@@ -82,7 +82,7 @@ float fbm(float2 p) {
  * quanto o deslocamento distorce; perto de zero o resultado quase não
  * ramifica, alto e vira uma rede de veios cruzados.
  */
-float ruidoOrganico(float2 p, float forca) {
+static float ruidoOrganico(float2 p, float forca) {
     float2 q = float2(fbm(p), fbm(p + float2(5.2, 1.3)));
     float2 r = float2(
         fbm(p + forca * q + float2(1.7, 9.2)),

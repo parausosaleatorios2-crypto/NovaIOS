@@ -26,11 +26,11 @@ const float RAIO_A = 1.6633;       // R = RAIO_B + RAIO_A · Softness (medido: r
 const float RAIO_B = 1.0019;
 const float GRAUS = 0.017453292519943295;
 
-float escala() { return eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0; }
+static float escala() { return eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0; }
 
 // O deslocamento em px do buffer, y para baixo como no AE; com a cena de pé (a linha 0 é a base), o "para baixo" é
 // para cima aqui.
-float2 deslocamento() {
+static float2 deslocamento() {
     float d = u.shadowDistance * escala();
     float t = u.shadowAngle * GRAUS;
     float2 v = float2(sin(t), -cos(t)) * d;
@@ -38,18 +38,18 @@ float2 deslocamento() {
 }
 
 // O alfa da camada; fora do quadro, transparente.
-float alfaDaCamada(int2 c) {
+static float alfaDaCamada(int2 c) {
     int2 t = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     if (any(lessThan(c, int2(0))) || any(greaterThanEqual(c, t))) return 0.0;
     return inputImg.read(uint2(c), uint(0)).a;
 }
 
 // 24 bits fixos no RGB de um RGBA8 (o alfa da passada fica em [0, 1]).
-float4 guardar(float v) {
+static float4 guardar(float v) {
     uint q = min(uint(clamp(v, 0.0, 1.0) * 16777216.0), 16777215u);
     return float4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
 }
-float abrir(sampler2D b, int2 c) {
+static float abrir(sampler2D b, int2 c) {
     int2 p = c + MARGEM;
     int2 n = int2(int(b.get_width()), int(b.get_height()));
     if (any(lessThan(p, int2(0))) || any(greaterThanEqual(p, n))) return 0.0;

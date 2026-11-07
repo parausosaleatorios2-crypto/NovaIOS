@@ -19,7 +19,7 @@ struct nv_blurrr_vhsParams {
 };
 
 // --- funcoes auxiliares do efeito
-float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+static float hash(float2 p) { return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
 
 fragment float4 fx_nv_blurrr_vhs(
     NovaVertexOut       in   [[stage_in]],

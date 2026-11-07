@@ -23,7 +23,7 @@ const float OFF[11] = float[11](-5.0,-4.0,-3.0,-2.0,-1.0,0.0,1.0,2.0,3.0,4.0,5.0
 const float WT[11]  = float[11](0.027,0.065,0.121,0.175,0.198,0.198,0.198,0.175,0.121,0.065,0.027);
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float3 varrer(float2 uv, float2 d, float r, int canal, sampler2D s) {
+static float3 varrer(float2 uv, float2 d, float r, int canal, sampler2D s) {
     float2 passo = d * eng.acTexelSize * (r * eng.acEscalaDePixel);
     float3 soma = float3(0.0);
     float pt = 0.0;

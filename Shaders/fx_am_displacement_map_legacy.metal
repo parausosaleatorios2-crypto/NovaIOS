@@ -20,7 +20,7 @@ struct am_displacement_map_legacyParams {
 
 // --- funcoes auxiliares do efeito
 // O mesmo `oitoBits`, `fundoPre` e `fundoNoPonto` da atual (ver `am-displacement-map.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -31,14 +31,14 @@ float oitoBits(float k) {
     return as_type<float>((uint(150 - e) << 23) + (q - 0x800000u));
 }
 
-float4 fundoPre(int2 px) {
+static float4 fundoPre(int2 px) {
     float4 c = comp.read(uint2(px), uint(0));
     if (c.a >= 1.0) return c;
     float3 k = floor(c.rgb * c.a * 255.0 + 0.5);
     return float4(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b), c.a);
 }
 
-float4 fundoNoPonto(float2 uv) {
+static float4 fundoNoPonto(float2 uv) {
     float4 g = comp.sample(__nv_smp, uv);
     if (g.a >= 1.0) return g;
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));

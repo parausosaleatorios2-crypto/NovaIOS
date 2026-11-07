@@ -58,9 +58,9 @@ struct voxpatternParams {
 const float FOCO = 0.8660254;          // sem câmera na composição: o foco, em alturas do quadro (60° de campo vertical)
 const int PASSOS = 64;        // quantas células da grade o raio atravessa, no máximo
 
-float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
+static float2 tamanho() { return float2(int2(int(inputImg.get_width()), int(inputImg.get_height()))); }
 
-float3x3 giro() {
+static float3x3 giro() {
     float3 a = radians(float3(u.rotationX, u.rotationY, u.rotationZ));
     float3 s = sin(a), c = cos(a);
     float3x3 rx = float3x3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);
@@ -73,7 +73,7 @@ float3x3 giro() {
  * Quanto do pixel o segmento (centro c, eixo e, meio-comprimento L, raio r + `folga` px) cobre; t = a
  * distância no raio. As pontas são retas.
  */
-float segmento(float3 ro, float3 rd, float3 c, float3 e, float L, float r, float ang, float folga, out float t) {
+static float segmento(float3 ro, float3 rd, float3 c, float3 e, float L, float r, float ang, float folga, out float t) {
     float3 w = ro - c;
     float b = dot(rd, e), dd = dot(rd, w), ee = dot(e, w);
     float den = max(1.0 - b * b, 1e-6);
@@ -89,7 +89,7 @@ float segmento(float3 ro, float3 rd, float3 c, float3 e, float L, float r, float
     return lado * ponta;
 }
 
-float esfera(float3 ro, float3 rd, float3 c, float r, float ang, out float t) {
+static float esfera(float3 ro, float3 rd, float3 c, float r, float ang, out float t) {
     float3 oc = c - ro;
     t = dot(oc, rd);
     if (t <= 0.0) return 0.0;
@@ -97,7 +97,7 @@ float esfera(float3 ro, float3 rd, float3 c, float r, float ang, out float t) {
     return clamp((r - sqrt(max(dot(oc, oc) - t * t, 0.0))) / px + 0.5, 0.0, 1.0);
 }
 
-float caixa(float3 ro, float3 rd, float3 c, float3 h, out float t) {
+static float caixa(float3 ro, float3 rd, float3 c, float3 h, out float t) {
     float3 inv = 1.0 / (abs(rd) + 1e-9) * sign(rd + 1e-12);
     float3 a = (c - h - ro) * inv, b = (c + h - ro) * inv;
     float3 mn = min(a, b), mx = max(a, b);
@@ -107,20 +107,20 @@ float caixa(float3 ro, float3 rd, float3 c, float3 h, out float t) {
 }
 
 /** Um sorteio 0..1 por elemento e por canal; a Phase faz ele andar devagar, sem pular. */
-float sorteio(float3 cel, float canal) {
+static float sorteio(float3 cel, float canal) {
     float3 p = fract((cel + float3(u.seed * 0.731, u.seed * 1.377, canal * 7.13)) * float3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     float h = fract((p.x + p.y) * p.z), h2 = fract((p.x + p.z) * p.y);
     return abs(fract(h + u.phase / 360.0 * (0.3 + 0.7 * h2)) * 2.0 - 1.0);
 }
 
-float3x3 giroDe(float3 graus) {
+static float3x3 giroDe(float3 graus) {
     float3 a = radians(graus), s = sin(a), c = cos(a);
     return float3x3(c.z, s.z, 0.0, -s.z, c.z, 0.0, 0.0, 0.0, 1.0) * float3x3(c.y, 0.0, -s.y, 0.0, 1.0, 0.0, s.y, 0.0, c.y) * float3x3(1.0, 0.0, 0.0, 0.0, c.x, s.x, 0.0, -s.x, c.x);
 }
 
 /** Um plano do Crop: 1 dentro, caindo a 0 ao longo de `u.cropFade` para fora. `d` = quanto o ponto está para dentro. */
-float corte(bool ligado, float d) {
+static float corte(bool ligado, float d) {
     if (!ligado) return 1.0;
     return u.cropFade > 0.5 ? clamp(d / u.cropFade + 1.0, 0.0, 1.0) : step(0.0, d);
 }

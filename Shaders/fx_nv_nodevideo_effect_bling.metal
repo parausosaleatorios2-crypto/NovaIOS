@@ -25,15 +25,15 @@ struct nv_nodevideo_effect_blingParams {
 // --- funcoes auxiliares do efeito
 // ---- a ponte Nova <-> Node (tools/nodeluzes/gerar.py)
 float2 nvUV;   // o in.vs_TEXCOORD0 dos programas do Node: o in.acScreenNorm, ou outro ponto que o passe escolhe
-float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
-float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+static float3 nvLinear(float3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(0.04045, c)); }
+static float3 nvGama(float3 c) { return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
 // O passe 0: a camada como o Node a guarda (pre-multiplicada, luz linear; o buffer `pre` e sRGB de 8 bits).
-float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
-float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
+static float4 nvCor(float4 c) { return float4(nvLinear(c.rgb), c.a); }
+static float4 nvEntrada() { float4 c = inputImg.sample(__nv_smp, in.acScreenNorm); return float4(nvLinear(c.rgb) * c.a, c.a); }
 // A saída do Node (pre-multiplicada, linear, presa a 0..1 como o RT de 8 bits) para a cor reta do Nova. A luz que
 // o Node soma acima do alfa (o brilho fora do recorte) vira alfa: a = max(alfa, r, g, b). NaN (0 x infinito na
 // conta do Node) vira 0, como no RT de 8 bits dele; a escolha pelo bvec não faz conta com o NaN.
-float4 nvSaida(float4 p) {
+static float4 nvSaida(float4 p) {
     p = mix(float4(0.0), min(p, float4(1.0)), greaterThanEqual(p, float4(0.0)));
     float a = max(p.a, max(p.r, max(p.g, p.b)));
     return a > 0.0 ? float4(nvGama(p.rgb / a), a) : float4(0.0);
@@ -43,15 +43,15 @@ float4 nvSaida(float4 p) {
 #define _b_clip_mask 0
 #define _show_inner_mask 0
 // A grade do AEBling.InitBuffer: 512 px no lado maior da composição, o outro trunc(proporção x 512).
-int2 nvGrade() {
+static int2 nvGrade() {
     float2 t = eng.acTamanhoDaTela;
     return t.x <= t.y ? int2(max(int(t.x / t.y * 512.0), 2), 512) : int2(512, max(int(t.y / t.x * 512.0), 2));
 }
 // O ponto que a CPU do Node leva: o alfa (a luz do pixel aceso) lido em bytes, a / 255 > 0,05.
-bool nvAceso(int2 c) { return floor(det.read(uint2(c), uint(0)).a * 255.0 + 0.5) > 12.75; }
+static bool nvAceso(int2 c) { return floor(det.read(uint2(c), uint(0)).a * 255.0 + 0.5) > 12.75; }
 // Contagens (até 65535) em dois bytes de um RGBA8.
-float4 nvGuarda(int n) { n = min(n, 65535); return float4(float(n & 255), float(n >> 8), 0.0, 255.0) / 255.0; }
-int nvConta(sampler2D t, int y) { float4 e = t.read(uint2(int2(0, y)), uint(0)); return int(floor(e.r * 255.0 + 0.5)) + 256 * int(floor(e.g * 255.0 + 0.5)); }
+static float4 nvGuarda(int n) { n = min(n, 65535); return float4(float(n & 255), float(n >> 8), 0.0, 255.0) / 255.0; }
+static int nvConta(sampler2D t, int y) { float4 e = t.read(uint2(int2(0, y)), uint(0)); return int(floor(e.r * 255.0 + 0.5)) + 256 * int(floor(e.g * 255.0 + 0.5)); }
 // O _threshold do Node é um Vector2 de faixa (a luz entre o mínimo e o máximo).
 #define _threshold float2(u._threshold_x, u._threshold_y)
 
@@ -68,7 +68,7 @@ bool p0_xb9;
 float2 p0_x10;
 bool p0_xb10;
 float p0_x12;
-void p0_main()
+static void p0_main()
 {
     p0_x0.xyz = pre.sample(__nv_smp, nvUV.xy).xyz;
     p0_x12 = dot(p0_x0.xyz, float3(0.300000012, 0.589999974, 0.109999999));
@@ -118,7 +118,7 @@ bool2 p1_xb3;
 float4 p1_x4;
 float3 p1_x5;
 float3 p1_x6;
-void p1_main()
+static void p1_main()
 {
     p1_x0 = pre.sample(__nv_smp, nvUV.xy);
     p1_x1 = spr.sample(__nv_smp, nvUV.xy);

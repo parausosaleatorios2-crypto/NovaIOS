@@ -40,7 +40,7 @@ const int RAIO_MAXIMO = 3280;
 int2 buf;
 
 /** O alcance da cadeia ANTES do passo `passo` (x) e o salto dele (y), pela regra gulosa do `Morfologia.kt`. */
-int2 cadeia(int raio, int passo) {
+static int2 cadeia(int raio, int passo) {
     int alcance = 0;
     for (int k = 0; k < 8; k++) {
         int salto = max(min(2 * alcance + 1, raio - alcance), 0);
@@ -51,24 +51,24 @@ int2 cadeia(int raio, int passo) {
 }
 
 /** Quanto o mundo de saída de uma fase cresce (+) ou encolhe (−) num eixo, pela regra do plugin (0x1800039e0). */
-int mudanca(int r, bool eMin, bool duas) {
+static int mudanca(int r, bool eMin, bool duas) {
     if (r == 0) return 0;
     if (!eMin) return (duas || u.channel == CANAL_ALFA_E_COR || u.channel == CANAL_ALFA) ? r : 0;
     return (!u.dontShrinkEdges && u.channel == CANAL_ALFA_E_COR) ? -r : 0;
 }
 
 /** O retângulo (x0, y0, x1, y1; o fim fora) crescido de (dx, dy); o vazio continua vazio, como no plugin. */
-int4 cresce(int4 q, int dx, int dy) {
+static int4 cresce(int4 q, int dx, int dy) {
     if (q.x >= q.z || q.y >= q.w) return int4(0);
     int4 n = int4(q.x - dx, q.y - dy, q.z + dx, q.w + dy);
     return (n.x < n.z && n.y < n.w) ? n : int4(0);
 }
 
-bool dentro(int2 p, int4 q) {
+static bool dentro(int2 p, int4 q) {
     return p.x >= q.x && p.x < q.z && p.y >= q.y && p.y < q.w;
 }
 
-float4 ler(int2 q) {
+static float4 ler(int2 q) {
     int2 c = clamp(q, int2(0), buf - 1);
     return (eng.acPass == 0) ? inputImg.read(uint2(c), uint(0)) : morf.read(uint2(c), uint(0));
 }
@@ -78,7 +78,7 @@ float4 ler(int2 q) {
  * mais próxima (a que não encolhe). Na horizontal, a linha fora do mundo também é fora; na vertical a coluna fora
  * só sai no fim da fase (o mundo de saída não a tem).
  */
-float4 lerDaFonte(int2 q, int2 p, int4 fonte, bool horizontal) {
+static float4 lerDaFonte(int2 q, int2 p, int4 fonte, bool horizontal) {
     bool fora = horizontal
         ? (q.x < fonte.x || q.x >= fonte.z || p.y < fonte.y || p.y >= fonte.w)
         : (q.y < fonte.y || q.y >= fonte.w);

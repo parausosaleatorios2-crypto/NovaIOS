@@ -32,23 +32,23 @@ struct bccrainParams {
 // --- funcoes auxiliares do efeito
 const int CAMADAS = 6;
 
-float h2(float2 p) {
+static float h2(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
 /** A largura do quadro, em pixels do buffer: é a régua do plugin. */
-float largura() { return eng.acResolution.x; }
+static float largura() { return eng.acResolution.x; }
 /** A linha da gota tem ~1 px da COMPOSIÇÃO em qualquer resolução (σ 0,46: a energia medida de um risco). */
-float sigmaDaLinha() { return 0.46 * eng.acEscalaDePixel; }
+static float sigmaDaLinha() { return 0.46 * eng.acEscalaDePixel; }
 /** O Blur cresce com a largura, mas devagar (medido em 640, 1280 e 1618: (L/640)^0,72). */
-float sigmaDoBlur() {
+static float sigmaDoBlur() {
     return u.blur * (0.7 + 0.42 * exp(-u.blur / 2.5)) * pow(largura() / (640.0 * eng.acEscalaDePixel), 0.72) * eng.acEscalaDePixel;
 }
 
 /** Uma camada de riscos paralelos: (brilho × opacidade, opacidade) no pixel. */
-float2 camada(float2 px, float n) {
+static float2 camada(float2 px, float n) {
     float L = largura();
     float sem = u.randomSeed * 0.713 + n * 37.0;
     // Direction Variance: ±valor/2,7 graus (desvio medido 3,2° / 8,6° / 16,5° com 15 / 45 / 90), uma fatia por camada.
@@ -97,7 +97,7 @@ float2 camada(float2 px, float n) {
     return soma;
 }
 
-float4 borrar(bool deChuva, float2 eixo) {
+static float4 borrar(bool deChuva, float2 eixo) {
     float sigma = sigmaDoBlur();
     float2 uv = in.acScreenNorm;
     if (sigma < 0.05) return deChuva ? chuva.sample(__nv_smp, uv) : bh.sample(__nv_smp, uv);

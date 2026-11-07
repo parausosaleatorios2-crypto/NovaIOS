@@ -62,35 +62,35 @@ const float TE_B = 0.049;
 // ------------------------------------------------------------- codificação
 // Buffers de 8 bits: valores com sinal guardados com deslocamento; os que precisam de
 // precisão (luma, composto, fase) em 16 bits, dois canais.
-float2 enc16(float v, float lo, float hi) {
+static float2 enc16(float v, float lo, float hi) {
     float q = floor(clamp((v - lo) / (hi - lo), 0.0, 1.0) * 65535.0 + 0.5);
     float a = floor(q / 256.0);
     return float2(a, q - a * 256.0) / 255.0;
 }
-float dec16(float2 c, float lo, float hi) {
+static float dec16(float2 c, float lo, float hi) {
     float2 b = floor(c * 255.0 + 0.5);
     return lo + (b.x * 256.0 + b.y) / 65535.0 * (hi - lo);
 }
-float enc8(float v, float r) { return clamp(v / (2.0 * r) + 0.5, 0.0, 1.0); }
-float dec8(float c, float r) { return (c - 0.5) * 2.0 * r; }
+static float enc8(float v, float r) { return clamp(v / (2.0 * r) + 0.5, 0.0, 1.0); }
+static float dec8(float c, float r) { return (c - 0.5) * 2.0 * r; }
 
 const float CL = 0.75;   // faixa de I e Q
-float3 rgb2yiq(float3 c) {
+static float3 rgb2yiq(float3 c) {
     return float3(dot(c, float3(0.299, 0.587, 0.114)), dot(c, float3(0.596, -0.274, -0.322)), dot(c, float3(0.211, -0.523, 0.312)));
 }
-float3 yiq2rgb(float3 y) {
+static float3 yiq2rgb(float3 y) {
     return float3(y.x + 0.956 * y.y + 0.621 * y.z, y.x - 0.272 * y.y - 0.647 * y.z, y.x - 1.106 * y.y + 1.703 * y.z);
 }
 
 // ------------------------------------------------------------- aleatório
-float hash31(float3 p) {
+static float hash31(float3 p) {
     p = fract(p * float3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yxz + 33.33);
     return fract((p.x + p.y) * p.z);
 }
-float quadro() { return eng.acFrameDuration > 0.0 ? floor(eng.acTime / eng.acFrameDuration + 0.5) : floor(eng.acTime * 30.0 + 0.5); }
+static float quadro() { return eng.acFrameDuration > 0.0 ? floor(eng.acTime / eng.acFrameDuration + 0.5) : floor(eng.acTime * 30.0 + 0.5); }
 /** Ruído de gradiente 1D (Perlin): espectro em banda, com o lóbulo negativo que a distorção do AE tem. */
-float perlin1(float x, float s) {
+static float perlin1(float x, float s) {
     float i = floor(x);
     float f = fract(x);
     float g0 = hash31(float3(i, s, 7.0)) * 2.0 - 1.0;
@@ -98,19 +98,19 @@ float perlin1(float x, float s) {
     float u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     return mix(g0 * f, g1 * (f - 1.0), u);
 }
-int2 px() { return int2(__nv_fragCoord.xy); }
+static int2 px() { return int2(__nv_fragCoord.xy); }
 /** A fase da subportadora em cada linha (em quartos de ciclo): Phase shift por par de linhas,
  *  a partir do Phase shift offset — o padrão do ntscQT (0/90/180/270). Só muda o desenho do
  *  "dot crawl" nas bordas de cor (efeito medido de 0,2–0,3% da imagem). */
-int faseDaLinha(int y) {
+static int faseDaLinha(int y) {
     float par = floor(float(y) / (2.0 * max(eng.acEscalaDePixel, 1e-3)));
     return int(floor((u.phaseShiftOffset + par * u.phaseShift) / 90.0 + 0.5)) & 3;
 }
 // As contas foram medidas num quadro de 540 linhas; a prévia reduzida mantém o mesmo desenho.
-float escala() { return max(eng.acEscalaDePixel, 1e-3); }
+static float escala() { return max(eng.acEscalaDePixel, 1e-3); }
 
 // ------------------------------------------------------------- 0: a fonte
-float4 passeFonte() {
+static float4 passeFonte() {
     float2 res = eng.acResolution;
     float t = eng.acTime;
     float linha = __nv_fragCoord.y;
@@ -134,11 +134,11 @@ float4 passeFonte() {
 }
 
 // ------------------------------------------------------------- 1–13: a fase da FM
-float nuEm(int2 p) {
+static float nuEm(int2 p) {
     float Y = fonte.read(uint2(clamp(p, int2(0), int2(eng.acResolution) - 1)), uint(0)).r;
     return 0.1579 * u.frequency + 0.1395 * u.phase * (Y - 0.3825);
 }
-float4 passeFase(int k) {
+static float4 passeFase(int k) {
     int2 p = px();
     if (k == 0) return float4(enc16(fract(nuEm(p)), 0.0, 1.0), 0.0, 1.0);
     int off = 1 << (k - 1);
@@ -153,7 +153,7 @@ float4 passeFase(int k) {
 // ------------------------------------------------------------- 14: o composto
 const float CLO = -1.5;
 const float CHI = 2.5;
-float4 passeComposto() {
+static float4 passeComposto() {
     int2 p = px();
     float4 f = fonte.read(uint2(p), uint(0));
     float Y = f.r;
@@ -207,21 +207,21 @@ float4 passeComposto() {
     float c = Y + I * u + Q * w;
     return float4(enc16(c, CLO, CHI), f.a, 1.0);
 }
-float compEm(int x, int y) {
+static float compEm(int x, int y) {
     return dec16(comp.read(uint2(int2(clamp(x, 0, int(eng.acResolution.x) - 1), y)), uint(0)).rg, CLO, CHI);
 }
 
 // ------------------------------------------------------------- 15: a pré-ênfase
 /** A faixa do sinal depois da pré-ênfase: cresce com a Signal u.amplification (o AE não corta). */
-float faixaEnfase() { return 1.5 + 0.45 * u.amplification; }
+static float faixaEnfase() { return 1.5 + 0.45 * u.amplification; }
 // Depois da demodulação: luma em 16 bits numa faixa que cresce com a amplificação (e com a
 // nitidez, no VHS); croma em 8 bits comprimida (asinh), fina perto de zero.
-float faixaY() { return 1.5 + 0.17 * u.amplification; }
-float faixaYVhs() { return faixaY() * (1.0 + 0.3 * (u.sharpenOn ? u.sharpen : 0.0)); }
-float faixaC() { return 1.0 + 0.3 * u.amplification + 0.04 * u.chromaNoise; }
-float encC(float v) { return clamp(0.5 + 0.5 * asinh(v * 4.0) / asinh(faixaC() * 4.0), 0.0, 1.0); }
-float decC(float c) { return sinh((c - 0.5) * 2.0 * asinh(faixaC() * 4.0)) * 0.25; }
-float4 passePreEnfase() {
+static float faixaY() { return 1.5 + 0.17 * u.amplification; }
+static float faixaYVhs() { return faixaY() * (1.0 + 0.3 * (u.sharpenOn ? u.sharpen : 0.0)); }
+static float faixaC() { return 1.0 + 0.3 * u.amplification + 0.04 * u.chromaNoise; }
+static float encC(float v) { return clamp(0.5 + 0.5 * asinh(v * 4.0) / asinh(faixaC() * 4.0), 0.0, 1.0); }
+static float decC(float c) { return sinh((c - 0.5) * 2.0 * asinh(faixaC() * 4.0)) * 0.25; }
+static float4 passePreEnfase() {
     int2 p = px();
     float c = compEm(p.x, p.y);
     if (u.amplification > 0.0) {
@@ -257,15 +257,15 @@ float4 passePreEnfase() {
 
     return float4(enc16(c, -faixaEnfase(), faixaEnfase()), comp.read(uint2(p), uint(0)).b, 1.0);
 }
-float comp2Em(int x, int y) {
+static float comp2Em(int x, int y) {
     return dec16(comp2.read(uint2(int2(clamp(x, 0, int(eng.acResolution.x) - 1), y)), uint(0)).rg, -faixaEnfase(), faixaEnfase());
 }
 
 // ------------------------------------------------------------- 16: a demodulação
-float lumaDemod(int x, int y) {
+static float lumaDemod(int x, int y) {
     return 0.25 * (comp2Em(x - 1, y) + comp2Em(x, y) + comp2Em(x + 1, y) + comp2Em(x + 2, y));
 }
-float4 passeDemod() {
+static float4 passeDemod() {
     int2 p = px();
     float Y = lumaDemod(p.x, p.y);
     float I = 0.0;
@@ -302,13 +302,13 @@ float4 passeDemod() {
     }
     return float4(enc16(Y, -faixaY(), faixaY()), encC(I), encC(Q));
 }
-float3 demEm(int x, int y) {
+static float3 demEm(int x, int y) {
     float4 c = dem.read(uint2(int2(clamp(x, 0, int(eng.acResolution.x) - 1), y)), uint(0));
     return float3(dec16(c.rg, -faixaY(), faixaY()), decC(c.b), decC(c.a));
 }
 
 // ------------------------------------------------------------- 17: o VHS
-float4 passeVhs() {
+static float4 passeVhs() {
     int2 p = px();
     float3 c = demEm(p.x, p.y);
     float Y = c.x;
@@ -349,7 +349,7 @@ float4 passeVhs() {
     iq /= max(soma, 1e-6);
     return float4(enc16(Y, -faixaYVhs(), faixaYVhs()), encC(iq.x), encC(iq.y));
 }
-float3 vhsEm(int x, int y) {
+static float3 vhsEm(int x, int y) {
     y = clamp(y, 0, int(eng.acResolution.y) - 1);
     float4 c = vhs.read(uint2(int2(x, y)), uint(0));
     return float3(dec16(c.rg, -faixaYVhs(), faixaYVhs()), decC(c.b), decC(c.a));
@@ -357,11 +357,11 @@ float3 vhsEm(int x, int y) {
 
 /** Chroma loss: a linha perde a cor com probabilidade = valor (depois do Chroma vertical blend,
  *  como no AE: a linha sem cor só se espalha pelo Scanlines blur). */
-float corDaLinha(int y) {
+static float corDaLinha(int y) {
     float linha = floor(float(clamp(y, 0, int(eng.acResolution.y) - 1)) / escala());
     return hash31(float3(linha, quadro(), u.seed + 29.0)) < u.chromaLoss ? 0.0 : 1.0;
 }
-float3 linhaFinal(int x, int y) {
+static float3 linhaFinal(int x, int y) {
     float3 v = vhsEm(x, y);
     if (u.chromaVerticalBlend) v.yz = 0.5 * (v.yz + vhsEm(x, y - 1).yz);
     v.yz *= corDaLinha(y);

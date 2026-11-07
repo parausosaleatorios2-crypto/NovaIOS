@@ -80,10 +80,10 @@ bool u_xlatb24;
 float u_xlat25;
 bool u_xlatb25;
 float u_xlat28;
-int op_not(int value) { return -value - 1; }
-int2 op_not(int2 a) { a.x = op_not(a.x); a.y = op_not(a.y); return a; }
-int3 op_not(int3 a) { a.x = op_not(a.x); a.y = op_not(a.y); a.z = op_not(a.z); return a; }
-int4 op_not(int4 a) { a.x = op_not(a.x); a.y = op_not(a.y); a.z = op_not(a.z); a.w = op_not(a.w); return a; }
+static int op_not(int value) { return -value - 1; }
+static int2 op_not(int2 a) { a.x = op_not(a.x); a.y = op_not(a.y); return a; }
+static int3 op_not(int3 a) { a.x = op_not(a.x); a.y = op_not(a.y); a.z = op_not(a.z); return a; }
+static int4 op_not(int4 a) { a.x = op_not(a.x); a.y = op_not(a.y); a.z = op_not(a.z); a.w = op_not(a.w); return a; }
 
 fragment float4 fx_nv_nodevideo_assetstore_rain_drop_pro(
     NovaVertexOut       in   [[stage_in]],

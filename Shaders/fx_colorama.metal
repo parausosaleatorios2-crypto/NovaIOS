@@ -34,12 +34,12 @@ struct coloramaParams {
 //  OS ATRIBUTOS DE COR
 // ============================================================================
 
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** HSL: matiz 0..1 (0 = vermelho), saturação e luminosidade. */
-float3 paraHsl(float3 c) {
+static float3 paraHsl(float3 c) {
     float maior = max(c.r, max(c.g, c.b));
     float menor = min(c.r, min(c.g, c.b));
     float l = (maior + menor) * 0.5;
@@ -53,7 +53,7 @@ float3 paraHsl(float3 c) {
     return float3(h / 6.0, s, l);
 }
 
-float canalDaMatiz(float p, float q, float t) {
+static float canalDaMatiz(float p, float q, float t) {
     t = t - floor(t);
     if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
     if (t < 0.5) return q;
@@ -61,7 +61,7 @@ float canalDaMatiz(float p, float q, float t) {
     return p;
 }
 
-float3 deHsl(float3 hsl) {
+static float3 deHsl(float3 hsl) {
     if (hsl.y < 1e-5) return float3(hsl.z);
     float q = hsl.z < 0.5 ? hsl.z * (1.0 + hsl.y) : hsl.z + hsl.y - hsl.z * hsl.y;
     float p = 2.0 * hsl.z - q;
@@ -72,7 +72,7 @@ float3 deHsl(float3 hsl) {
 }
 
 /** A fase de um pixel pelo atributo escolhido (a lista do "Get Phase From"). */
-float faseDe(float4 c, int atributo) {
+static float faseDe(float4 c, int atributo) {
     if (atributo == 0) return (c.r + c.g + c.b) / 3.0;   // Intensity: a média simples (o print)
     if (atributo == 1) return c.r;
     if (atributo == 2) return c.g;
@@ -90,7 +90,7 @@ float faseDe(float4 c, int atributo) {
 // ============================================================================
 
 /** A cor da roda em t (0 = topo, começo; 1 = topo, fim). */
-float4 naRoda(float t) {
+static float4 naRoda(float t) {
     float x = clamp(t, 0.0, 1.0) * 256.0;
     int i = min(int(floor(x)), 255);
     float f = x - float(i);

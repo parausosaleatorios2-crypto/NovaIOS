@@ -36,7 +36,7 @@ struct starfieldParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float3 hash3(float2 c) {
+static float3 hash3(float2 c) {
     // Três números de uma célula: onde a estrela fica (x, y) e o quanto ela
     // brilha (z). Um hash só, três usos.
     float3 p = fract(float3(c.xyx) * float3(443.897, 441.423, 437.195));
@@ -51,7 +51,7 @@ float3 hash3(float2 c) {
  * brilho (fraca = vermelha, forte = azul) e todo céu saía com a MESMA
  * variação — bonito uma vez, monótono na segunda.
  */
-float3 corDaEstrela(float t) {
+static float3 corDaEstrela(float t) {
     float3 azul     = float3(0.66, 0.78, 1.00);
     float3 branca   = float3(1.00, 1.00, 1.00);
     float3 amarela  = float3(1.00, 0.92, 0.70);
@@ -76,7 +76,7 @@ float3 corDaEstrela(float t) {
  * quem chama soma as camadas todas e divide pelo brilho total no final, o
  * que dá a média certa nas bordas onde duas estrelas se tocam.
  */
-float camadaDeEstrelas(
+static float camadaDeEstrelas(
     float2 p, float escala, float brilhoMin, float tempo, float peso, inout float3 corAcc,
     // "3D DE VERDADE, NÃO SÓ PARALAXE" (pedido do snow, 26/09/2026, com
     // referência do Alight Motion): as duas contas abaixo são o que faz uma
@@ -145,7 +145,7 @@ float camadaDeEstrelas(
  * (o `if` sai antes de tocar em `corAcc`) — o padrão de fábrica, para quem
  * já tinha o efeito aplicado não ganhar estrelas novas sem pedir.
  */
-float estrelasBrilhantes(
+static float estrelasBrilhantes(
     float2 p, float escala, float tempo, inout float3 corAcc, float perspectiva, float esticar
 ) {
     if (u.heroDensity <= 0.0) return 0.0;
@@ -213,7 +213,7 @@ float estrelasBrilhantes(
 //  O CÉU PROFUNDO — o "Deslizar" no estilo do vídeo de referência (06/10/2026)
 // ============================================================================
 
-float ruidoDeValor(float2 p) {
+static float ruidoDeValor(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     float2 u = f * f * (3.0 - 2.0 * f);
@@ -225,7 +225,7 @@ float ruidoDeValor(float2 p) {
 }
 
 /** Ruído fractal: a poeira tem detalhe em toda escala, como fumaça. */
-float fbm(float2 p) {
+static float fbm(float2 p) {
     float soma = 0.0;
     float amp = 0.5;
     for (int i = 0; i < 5; i++) {
@@ -241,7 +241,7 @@ float fbm(float2 p) {
  * medido na referência, ela só sobe o fundo de ~1 a ~12 níveis. É o que tira o
  * "preto chapado" e dá o fundo de foto de céu de verdade.
  */
-float3 nebulosa(float2 p) {
+static float3 nebulosa(float2 p) {
     if (u.nebula <= 0.0) return float3(0.0);
     float2 q = p * 5.0 / u.nebulaScale;
     // Onde há poeira: manchas de várias escalas, com vãos escuros entre elas.
@@ -256,7 +256,7 @@ float3 nebulosa(float2 p) {
 }
 
 /** A cor de um pontinho comum: quase sempre neutro, de vez em quando com tom. */
-float3 corDoPontinho(float t, float forca) {
+static float3 corDoPontinho(float t, float forca) {
     float3 tom = corDaEstrela(t);
     return mix(float3(1.0), tom, (0.25 + 0.75 * u.colorVariety) * forca);
 }
@@ -268,7 +268,7 @@ float3 corDoPontinho(float t, float forca) {
  * cairia entre os pixels e piscaria ao andar; com o piso, a energia é conservada
  * (o brilho cai na mesma proporção que a área cresce).
  */
-float3 camadaDePontinhos(float2 p, float celulas, float prob, float brilho, float tam, float px, float semente) {
+static float3 camadaDePontinhos(float2 p, float celulas, float prob, float brilho, float tam, float px, float semente) {
     float2 q = p * celulas;
     float2 c = floor(q);
     float3 s = hash3(c + semente);
@@ -287,7 +287,7 @@ float3 camadaDePontinhos(float2 p, float celulas, float prob, float brilho, floa
 }
 
 /** As estrelas fortes: miolo pequeno de cor saturada e um brilho suave em volta. */
-float3 estrelasFortes(float2 p, float px) {
+static float3 estrelasFortes(float2 p, float px) {
     if (u.heroDensity <= 0.0) return float3(0.0);
     float celulas = 5.0;
     float2 q = p * celulas;
@@ -327,7 +327,7 @@ float3 estrelasFortes(float2 p, float px) {
 }
 
 /** Manchinhas difusas: aglomerados e galáxias distantes, cinza-amarronzadas. */
-float3 aglomerados(float2 p) {
+static float3 aglomerados(float2 p) {
     if (u.clusters <= 0.0) return float3(0.0);
     float celulas = 9.0;
     float2 q = p * celulas;
@@ -353,7 +353,7 @@ float3 aglomerados(float2 p) {
  * O céu inteiro do modo Deslizar. `deriva` é o quanto o céu já andou (em alturas);
  * cada camada anda uma fração dela — perto 1, longe ~0,25 —, que é a paralaxe.
  */
-float3 ceuProfundo(float2 centrado, float2 deriva, float px) {
+static float3 ceuProfundo(float2 centrado, float2 deriva, float px) {
     int camadas = clamp(int(u.depthLayers + 0.5), 2, 5);
     float prob = clamp(u.density * 0.95, 0.0, 1.0);
     float3 cor = float3(0.0);

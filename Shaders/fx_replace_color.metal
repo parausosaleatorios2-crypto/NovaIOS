@@ -22,7 +22,7 @@ struct replace_colorParams {
 // --- funcoes auxiliares do efeito
 // RGB → HSV. O `h` volta em voltas (0..1), e é por isso que a diferença de
 // matiz precisa da correção de volta inteira lá embaixo.
-float3 paraHsv(float3 c) {
+static float3 paraHsv(float3 c) {
     float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
     float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
     float4 q = mix(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
@@ -31,7 +31,7 @@ float3 paraHsv(float3 c) {
     return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
 }
 
-float3 paraRgb(float3 c) {
+static float3 paraRgb(float3 c) {
     float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
     float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);

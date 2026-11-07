@@ -24,7 +24,7 @@ struct markrParams {
 // --- funcoes auxiliares do efeito
 // O ease dos dois quadros-chave do MARKr: velocidade 0, influência 80% na saída
 // do primeiro e 33% na entrada do segundo = bezier (0,8; 0) (0,67; 1).
-float easeDoMarkr(float u) {
+static float easeDoMarkr(float u) {
     if (u <= 0.0) return 0.0;
     if (u >= 1.0) return 1.0;
     float lo = 0.0, hi = 1.0, s = u;
@@ -38,16 +38,16 @@ float easeDoMarkr(float u) {
     return 3.0 * r * s * s + s * s * s;
 }
 
-float caixa(float2 p, float2 a, float2 b) {
+static float caixa(float2 p, float2 a, float2 b) {
     // Distância com sinal a um retângulo [a, b] (negativa dentro).
     float2 d = max(a - p, p - b);
     return max(d.x, d.y);
 }
 
-float cobertura(float d) { return clamp(0.5 - d, 0.0, 1.0); }
+static float cobertura(float d) { return clamp(0.5 - d, 0.0, 1.0); }
 
 /** Distância com sinal a um triângulo (Inigo Quilez, sdTriangle). */
-float triangulo(float2 p, float2 p0, float2 p1, float2 p2) {
+static float triangulo(float2 p, float2 p0, float2 p1, float2 p2) {
     float2 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
     float2 v0 = p - p0, v1 = p - p1, v2 = p - p2;
     float2 pq0 = v0 - e0 * clamp(dot(v0, e0) / max(dot(e0, e0), 1e-9), 0.0, 1.0);
@@ -61,14 +61,14 @@ float triangulo(float2 p, float2 p0, float2 p1, float2 p2) {
 }
 
 // A curva do Scribble, em unidades da caixa dele (u·W, v·H).
-float2 bez(float2 a, float2 c1, float2 c2, float2 b, float t) {
+static float2 bez(float2 a, float2 c1, float2 c2, float2 b, float t) {
     float r = 1.0 - t;
     return r * r * r * a + 3.0 * r * r * t * c1 + 3.0 * r * t * t * c2 + t * t * t * b;
 }
 
 const int N_CURVA = 24;
 
-float2 pontoDoRabisco(int i, float2 o, float2 sz) {
+static float2 pontoDoRabisco(int i, float2 o, float2 sz) {
     // 0: P0, 1: P1, 2..(N_CURVA+1): o trecho curvo P1→P2, depois P3.
     float2 q;
     if (i == 0) q = float2(0.0, 0.0);
@@ -81,7 +81,7 @@ float2 pontoDoRabisco(int i, float2 o, float2 sz) {
 }
 
 /** Distância com sinal ao traço do Scribble (com o Trim e o Taper do MARKr). */
-float rabisco(float2 p, float2 o, float2 sz, float th, float prog) {
+static float rabisco(float2 p, float2 o, float2 sz, float th, float prog) {
     const int N = N_CURVA + 3;
     float total = 0.0;
     float2 a = pontoDoRabisco(0, o, sz);

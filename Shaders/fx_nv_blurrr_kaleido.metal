@@ -22,7 +22,7 @@ struct nv_blurrr_kaleidoParams {
 const float PI = 3.14159265;
 const float TAU = 6.28318530;
 
-float4 fatiar(float2 uv, float jitter) {
+static float4 fatiar(float2 uv, float jitter) {
     float2 p = uv - u.center;
     p.x *= eng.acAspect;
     float r = length(p);

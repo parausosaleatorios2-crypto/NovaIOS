@@ -18,15 +18,15 @@ struct nv_nodevideo_effect_distort_perspective_transformParams {
 };
 
 // --- funcoes auxiliares do efeito
-float3 linear(float3 c) {
+static float3 linear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
-float3 srgb(float3 l) {
+static float3 srgb(float3 l) {
     l = clamp(l, 0.0, 1.0);
     return mix(l * 12.92, 1.055 * pow(l, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), l));
 }
 // O filtro linear do RT do Node: os 4 texels em luz linear, pré-multiplicados (Clamp nas bordas).
-float4 lerComoONode(sampler2D t, float2 uv) {
+static float4 lerComoONode(sampler2D t, float2 uv) {
     int2 T = int2(int(t.get_width()), int(t.get_height()));
     float2 p = uv * float2(T) - 0.5;
     int2 i = int2(floor(p));
@@ -41,7 +41,7 @@ float4 lerComoONode(sampler2D t, float2 uv) {
     return s;
 }
 // Ponto do Nova → UV do Node (Y para cima).
-float2 doNode(float2 p) { return eng.acEntradaDePe == 1 ? p : float2(p.x, 1.0 - p.y); }
+static float2 doNode(float2 p) { return eng.acEntradaDePe == 1 ? p : float2(p.x, 1.0 - p.y); }
 
 fragment float4 fx_nv_nodevideo_effect_distort_perspective_transform(
     NovaVertexOut       in   [[stage_in]],

@@ -17,7 +17,7 @@ struct oil_paintParams {
 
 // --- funcoes auxiliares do efeito
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
@@ -25,7 +25,7 @@ float luma(float3 c) {
  * Média e variância (pela luma) de um quadrante 3×3 começando em (ox, oy)
  * do pixel central. Retorna float4(mediaRGB, variancia).
  */
-float4 quadrante(float2 uv, float2 passo, int ox, int oy) {
+static float4 quadrante(float2 uv, float2 passo, int ox, int oy) {
     float3 somaCor = float3(0.0);
     float somaLuma = 0.0;
     float somaLumaQuadrado = 0.0;

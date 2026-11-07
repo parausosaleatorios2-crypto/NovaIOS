@@ -21,22 +21,22 @@ struct unsharp_maskParams {
 const int METADE = 16;                 // 33 amostras por eixo
 
 /** O raio em px do BUFFER (a prévia reduzida encolhe junto). */
-float raioPx() { return max(u.radius, 0.0) * eng.acEscalaDePixel; }
+static float raioPx() { return max(u.radius, 0.0) * eng.acEscalaDePixel; }
 
 /** O σ do gaussiano, em px do buffer. Medido no Unsharp Mask do AE: 0,775 · Radius + 0,4. */
-float sigmaPx() { return (0.775 * max(u.radius, 0.0) + 0.4) * eng.acEscalaDePixel; }
+static float sigmaPx() { return (0.775 * max(u.radius, 0.0) + 0.4) * eng.acEscalaDePixel; }
 
 /** Até onde o desfoque alcança, em px: três σ no gaussiano, a meia-largura na caixa. */
-float alcancePx() { return u.kernel == 1 ? raioPx() + 0.5 : 3.0 * sigmaPx(); }
+static float alcancePx() { return u.kernel == 1 ? raioPx() + 0.5 : 3.0 * sigmaPx(); }
 
 /** Em que degrau o desfoque roda: 0 = resolução inteira, 1 = 1/4, 2 = 1/16. */
-int degrau() {
+static int degrau() {
     float a = alcancePx();
     return a <= 16.0 ? 0 : (a <= 64.0 ? 1 : 2);
 }
 
 /** O peso de uma amostra a `d` px (do buffer) do centro, que cobre `largura` px. */
-float peso(float d, float largura) {
+static float peso(float d, float largura) {
     if (u.kernel == 1) {
         // a parte do intervalo [d − largura/2, d + largura/2] que cai dentro da caixa
         float m = raioPx() + 0.5;
@@ -47,7 +47,7 @@ float peso(float d, float largura) {
 }
 
 /** Um eixo do desfoque: 33 amostras de `fonte`, cujos texels valem `escala` px do buffer. */
-float4 borrar(sampler2D fonte, float2 uv, float2 eixo, float escala) {
+static float4 borrar(sampler2D fonte, float2 uv, float2 eixo, float escala) {
     float2 texel = 1.0 / float2(int2(int(fonte.get_width()), int(fonte.get_height())));
     // um texel por amostra; se o alcance pede mais que 16 texels, as amostras se afastam
     float passo = max(1.0, alcancePx() / escala / float(METADE));
@@ -63,7 +63,7 @@ float4 borrar(sampler2D fonte, float2 uv, float2 eixo, float escala) {
 }
 
 /** Reduz `fonte` a 1/4: a média dos 4 × 4 px que viram um (quatro leituras bilineares). */
-float4 reduzir(sampler2D fonte, float2 uv) {
+static float4 reduzir(sampler2D fonte, float2 uv) {
     float2 t = 1.0 / float2(int2(int(fonte.get_width()), int(fonte.get_height())));
     return 0.25 * (fonte.sample(__nv_smp, uv + t * float2(-1.0, -1.0)) + fonte.sample(__nv_smp, uv + t * float2(1.0, -1.0)) +
                    fonte.sample(__nv_smp, uv + t * float2(-1.0, 1.0)) + fonte.sample(__nv_smp, uv + t * float2(1.0, 1.0)));

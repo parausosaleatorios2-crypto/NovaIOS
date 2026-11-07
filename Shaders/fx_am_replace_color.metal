@@ -24,7 +24,7 @@ struct am_replace_colorParams {
 // divisão do shader vai pelo recíproco e erra o último bit em metade dos k — e a distância à cor procurada decide
 // "troca ou não" num degrau de 0,001. n·2^e ÷ 255 pelo mais perto, em 24 bits, montado direto nos bits do float (o
 // mesmo do Equilíbrio de cor e do Deslocar matiz).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;

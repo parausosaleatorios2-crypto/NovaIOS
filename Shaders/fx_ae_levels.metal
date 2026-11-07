@@ -20,7 +20,7 @@ struct ae_levelsParams {
 };
 
 // --- funcoes auxiliares do efeito
-float nivel(float x) {
+static float nivel(float x) {
     float faixa = u.inputWhite - u.inputBlack;
     float t = faixa != 0.0 ? clamp((x - u.inputBlack) / faixa, 0.0, 1.0) : (x >= u.inputBlack ? 1.0 : 0.0);
     t = u.gamma > 0.0 ? pow(t, 1.0 / u.gamma) : (t >= 1.0 ? 1.0 : 0.0);

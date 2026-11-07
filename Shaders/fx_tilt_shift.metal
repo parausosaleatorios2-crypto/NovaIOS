@@ -23,7 +23,7 @@ struct tilt_shiftParams {
  * A distância ao plano da faixa nítida, projetada no eixo perpendicular à faixa.
  * `u.angleDeg` gira a faixa — 0° deixa horizontal, 90° vertical.
  */
-float distanciaAoFoco(float2 uv) {
+static float distanciaAoFoco(float2 uv) {
     float2 centro = float2(0.5, u.focus);
     float2 d = uv - centro;
     float a = radians(u.angleDeg);
@@ -36,7 +36,7 @@ float distanciaAoFoco(float2 uv) {
  * 9 amostras em cruz (5 horizontais + 5 verticais, o centro conta duas vezes).
  * Dá um box blur aproximado controlado por `raioPx`.
  */
-float4 borrar(float2 uv, float raioPx) {
+static float4 borrar(float2 uv, float raioPx) {
     float2 tam = float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
     float2 passo = raioPx / tam;
 

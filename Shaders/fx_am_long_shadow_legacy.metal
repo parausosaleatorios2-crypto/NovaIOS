@@ -22,11 +22,11 @@ struct am_long_shadow_legacyParams {
 };
 
 // --- funcoes auxiliares do efeito
-float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
+static float4 preMultiplicada(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 // O filtro linear da GPU, à mão, sobre a camada PRÉ-multiplicada (a textura do AM é assim): os 4 pixels em volta,
 // presos à borda como o CLAMP_TO_EDGE.
-float4 camadaNoPonto(float2 uv) {
+static float4 camadaNoPonto(float2 uv) {
     int2 T = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     float2 p = uv * float2(T) - 0.5;
     float2 i = floor(p);
@@ -41,14 +41,14 @@ float4 camadaNoPonto(float2 uv) {
 }
 
 // A volta do `eng.acTela`: UV da tela → UV do buffer (no filho de grupo; na tela, a identidade).
-float2 daTela(float2 t) {
+static float2 daTela(float2 t) {
     float3 c = __nv_inverse(eng.acParaTela) * float3(t, 1.0);
     return c.xy / c.z;
 }
 
 // O alfa da camada num ponto da tela do AM. Na tela o buffer É a tela; no filho de grupo, fora do buffer não há
 // camada (o AM a desenha na tela do grupo).
-float alfaNaTela(float2 t) {
+static float alfaNaTela(float2 t) {
     if (eng.acEntradaDePe == 1) return inputImg.sample(__nv_smp, t).a;
     float2 uv = daTela(t);
     if (any(lessThan(uv, float2(0.0))) || any(greaterThan(uv, float2(1.0)))) return 0.0;
@@ -56,7 +56,7 @@ float alfaNaTela(float2 t) {
 }
 
 // O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado.
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -68,7 +68,7 @@ float3 fundoNoPixel() {
 // SOMA a luz ao fundo (`p + fundo·(1 − op·alfa)`): este pixel leva junto o fundo dele, com o menor alfa `a` em que
 // a cor reta `s = fundo + (p − fundo·alfa)/a` cabe entre 0 e 1 — a composição Normal do Nova dá o mesmo com
 // qualquer opacidade da camada, até a soma passar de 1.
-float4 paraReta(float4 p) {
+static float4 paraReta(float4 p) {
     p = clamp(p, 0.0, 1.0);
     // Quem decide se a cor passou do alfa é o alvo de 8 bits do AM (um resto de conta abaixo de meio nível some lá).
     float4 q = floor(p * 255.0 + 0.5) / 255.0;
@@ -85,7 +85,7 @@ float4 paraReta(float4 p) {
     return a > 0.0 ? float4(clamp(d + sobra / a, 0.0, 1.0), a) : float4(0.0);
 }
 
-float projectAndClampDist(float2 a, float2 b) {
+static float projectAndClampDist(float2 a, float2 b) {
     return clamp(dot(a,b)/dot(b,b),0.0,1.0);
 }
 

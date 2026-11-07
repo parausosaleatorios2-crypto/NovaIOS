@@ -39,7 +39,7 @@ struct nv_nodevideo_raytracing_coinParams {
 // globais do Node ligados ao motor (tools/nodevideo/ligar_globais.py)
 #define _resolution eng.acTamanhoDaTela
 // O Node lê o ambiente num cubemap; aqui ele chega como imagem 2D: a direção vira a UV equirretangular (0.910.0).
-float2 acDirParaUv(float3 d) { d = normalize(d); return float2(__nv_atan(d.x, d.z) * 0.15915494 + 0.5, acos(clamp(d.y, -1.0, 1.0)) * 0.31830989); }
+static float2 acDirParaUv(float3 d) { d = normalize(d); return float2(__nv_atan(d.x, d.z) * 0.15915494 + 0.5, acos(clamp(d.y, -1.0, 1.0)) * 0.31830989); }
 float4 u_xlat0;
 int u_xlati0;
 bool3 u_xlatb0;

@@ -17,7 +17,7 @@ struct am_hot_colorParams {
 
 // --- funcoes auxiliares do efeito
 // O fundo (a cena montada atrás da camada) no pixel da tela, pré-multiplicado (o do Anel).
-float3 fundoNoPixel() {
+static float3 fundoNoPixel() {
     int2 T = int2(int(comp.get_width()), int(comp.get_height()));
     int2 px = clamp(int2(floor(__nv_acTela(in.acScreenNorm) * float2(T))), int2(0), T - 1);
     float4 f = comp.read(uint2(px), uint(0));
@@ -26,7 +26,7 @@ float3 fundoNoPixel() {
 
 // A saída pré-multiplicada do AM (`q`, já em 8 bits) em cor reta — a do `am-sharpen.xml`: onde a cor passa do alfa, o
 // menor alfa em que a cor reta cabe, com o fundo junto, dá na composição Normal o mesmo que a soma do AM.
-float4 paraReta(float4 q) {
+static float4 paraReta(float4 q) {
     if (all(lessThanEqual(q.rgb, float3(q.a)))) return q.a > 0.0 ? float4(q.rgb / q.a, q.a) : float4(0.0);
     float3 d = fundoNoPixel();
     float3 sobra = q.rgb - d * q.a;
@@ -40,7 +40,7 @@ float4 paraReta(float4 q) {
 }
 
 // k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve ao AM (ver `am-u.color-balance.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -52,7 +52,7 @@ float oitoBits(float k) {
 }
 
 // Daqui até o fim do passe 0, o shader do AM com os nomes dele, na mesma ordem e na mesma precisão.
-float3 hsv2rgb(float3 c)
+static float3 hsv2rgb(float3 c)
 {
     float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
     float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);

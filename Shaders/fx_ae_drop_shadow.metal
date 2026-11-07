@@ -30,21 +30,21 @@ uniform float dsOpacidade;  // 0..1
 const int MARGEM = 256;     // = margin dos buffers
 
 // O deslocamento no buffer: com a cena de pé (a linha 0 é a base), o "para baixo" do AE é para cima aqui.
-int2 deslocamento() { return int2(dsDx, eng.acEntradaDePe == 1 ? -dsDy : dsDy); }
+static int2 deslocamento() { return int2(dsDx, eng.acEntradaDePe == 1 ? -dsDy : dsDy); }
 
 // O alfa da camada (k / 255 exato); fora do quadro, transparente.
-float alfaDaCamada(int2 c) {
+static float alfaDaCamada(int2 c) {
     int2 t = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     if (any(lessThan(c, int2(0))) || any(greaterThanEqual(c, t))) return 0.0;
     return floor(inputImg.read(uint2(c), uint(0)).a * 255.0 + 0.5) / 255.0;
 }
 
 // 24 bits fixos no RGB de um RGBA8 (o alfa da passada fica em [0, 1]).
-float4 guardar(float v) {
+static float4 guardar(float v) {
     uint q = min(uint(clamp(v, 0.0, 1.0) * 16777216.0), 16777215u);
     return float4(float(q >> 16u), float((q >> 8u) & 255u), float(q & 255u), 255.0) / 255.0;
 }
-float abrir(sampler2D b, int2 c) {
+static float abrir(sampler2D b, int2 c) {
     int2 p = c + MARGEM;
     int2 n = int2(int(b.get_width()), int(b.get_height()));
     if (any(lessThan(p, int2(0))) || any(greaterThanEqual(p, n))) return 0.0;
@@ -53,7 +53,7 @@ float abrir(sampler2D b, int2 c) {
 }
 
 // O valor que a passada lê: na 1ª, a máscara (o alfa da camada deslocado); nas outras, a passada anterior.
-float anterior(int2 c) {
+static float anterior(int2 c) {
     if (eng.acPass == 0) return alfaDaCamada(c - deslocamento());
     return (eng.acPass % 2 == 1) ? abrir(dsA, c) : abrir(dsB, c);
 }

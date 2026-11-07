@@ -27,7 +27,7 @@ struct lens_flareParams {
 const int MAXIMO_DE_FANTASMAS = 8;
 
 /** A paleta tingida de um fantasma k, rotacionando por hash: cada vidro tinge diferente. */
-float3 corDoFantasma(int k, float3 base) {
+static float3 corDoFantasma(int k, float3 base) {
     float h = fract(sin(float(k) * 12.9898) * 43758.5453);
     float3 roda = float3(
         sin(h * 6.2831 + 0.0),

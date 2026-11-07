@@ -25,7 +25,7 @@ const float WEIGHTS[9] = float[9](
     0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162
 );
 
-float4 blurPass(sampler2D tex, float2 direction) {
+static float4 blurPass(sampler2D tex, float2 direction) {
     // Em pixels da COMPOSIÇÃO: `eng.acEscalaDePixel` converte para o buffer, e a prévia
     // reduzida (o Auto da tela, o play) fica do tamanho da exportação (0.516.0).
     float2 stepUv = direction * eng.acTexelSize * (u.radius * eng.acEscalaDePixel / 4.0);

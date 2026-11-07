@@ -28,7 +28,7 @@ struct audio_spectrumParams {
 const float PI = 3.14159265;
 
 /** O nível de uma faixa, com o ganho aplicado. `t` vai de 0 a 1. */
-float nivel(float t) {
+static float nivel(float t) {
     return clamp(spectrumImg.sample(__nv_smp, float2(clamp(t, 0.0, 1.0), 0.5)).r * u.boost, 0.0, 1.0);
 }
 
@@ -40,13 +40,13 @@ float nivel(float t) {
  * Três amostras com peso 1-2-1, espaçadas de meia faixa, arredondam os vértices —
  * é a mesma ideia de um filtro de suavização, e custa duas leituras a mais.
  */
-float nivelSuave(float t) {
+static float nivelSuave(float t) {
     // Meia faixa na coordenada da textura: ela sempre tem 32 texels.
     const float MEIA_FAIXA = 1.0 / 64.0;
     return (nivel(t - MEIA_FAIXA) + 2.0 * nivel(t) + nivel(t + MEIA_FAIXA)) * 0.25;
 }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     return float4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);

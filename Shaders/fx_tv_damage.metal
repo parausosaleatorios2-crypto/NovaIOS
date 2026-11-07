@@ -95,37 +95,37 @@ const float PI = 3.14159265359;
 //  ACASO — hashes sem seno (o seno perde precisão em GPU de celular)
 // ============================================================================
 
-float semente() {
+static float semente() {
     return u.seed * 1000.0 + 17.0;
 }
 
-float hash11(float p) {
+static float hash11(float p) {
     p = fract(p * 0.1031);
     p *= p + 33.33;
     p *= p + p;
     return fract(p);
 }
 
-float hash21(float2 p) {
+static float hash21(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-float hash31(float3 p) {
+static float hash31(float3 p) {
     float3 p3 = fract(p * 0.1031);
     p3 += dot(p3, p3.zyx + 31.32);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-float3 hash33(float3 p) {
+static float3 hash33(float3 p) {
     float3 p3 = fract(p * float3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yxz + 33.33);
     return fract((p3.xxy + p3.yxx) * p3.zyx);
 }
 
 /** Ruído de valor 1D, -1..1, liso. */
-float ruido1(float x) {
+static float ruido1(float x) {
     float i = floor(x);
     float f = fract(x);
     float u = f * f * (3.0 - 2.0 * f);
@@ -137,18 +137,18 @@ float ruido1(float x) {
 //  COR — a TV pensa em luminância e croma (YIQ, o NTSC)
 // ============================================================================
 
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.299, 0.587, 0.114));
 }
 
-float3 paraYiq(float3 c) {
+static float3 paraYiq(float3 c) {
     return float3(
         dot(c, float3(0.299, 0.587, 0.114)),
         dot(c, float3(0.596, -0.274, -0.322)),
         dot(c, float3(0.211, -0.523, 0.312)));
 }
 
-float3 deYiq(float3 q) {
+static float3 deYiq(float3 q) {
     return float3(
         q.x + 0.956 * q.y + 0.621 * q.z,
         q.x - 0.272 * q.y - 0.647 * q.z,
@@ -156,7 +156,7 @@ float3 deYiq(float3 q) {
 }
 
 /** Gira a fase da croma: é o que um sinal de cor fora de fase faz. */
-float3 girarCroma(float3 c, float angulo) {
+static float3 girarCroma(float3 c, float angulo) {
     float3 q = paraYiq(c);
     float cs = cos(angulo);
     float sn = sin(angulo);
@@ -168,7 +168,7 @@ float3 girarCroma(float3 c, float angulo) {
 //  LEITURA DA IMAGEM (pré-multiplicada; fora da camada é o apagamento: preto)
 // ============================================================================
 
-float4 lerP(float2 uv) {
+static float4 lerP(float2 uv) {
     if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return float4(0.0);
     float4 c = inputImg.sample(__nv_smp, uv);
     return float4(c.rgb * c.a, c.a);
@@ -180,7 +180,7 @@ float4 lerP(float2 uv) {
  * É o "Downsample". Reconstruir em vez de pintar blocos evita o degrau torto
  * quando a conta não dá inteira (720 pixels de TV numa camada de 1080).
  */
-float4 lerNaTv(float2 uv, float2 tvRes) {
+static float4 lerNaTv(float2 uv, float2 tvRes) {
     float2 p = uv * tvRes - 0.5;
     float2 i = floor(p);
     float2 f = fract(p);
@@ -195,7 +195,7 @@ float4 lerNaTv(float2 uv, float2 tvRes) {
 //  PASSES 0 a 2 — o halo do u.orthicon
 // ============================================================================
 
-float4 claroParaOrthicon() {
+static float4 claroParaOrthicon() {
     if (u.orthicon <= 0.0) return float4(0.0);
     float2 d = eng.acTexelSize * 0.25;
     float soma = 0.0;
@@ -207,7 +207,7 @@ float4 claroParaOrthicon() {
     return float4(soma * 0.25, 0.0, 0.0, 1.0);
 }
 
-float4 desfocar(sampler2D t, float2 uv) {
+static float4 desfocar(sampler2D t, float2 uv) {
     if (u.orthicon <= 0.0) return float4(0.0);
     float2 d = eng.acTexelSize * (1.0 + u.darksWidth * 5.0);
     float s = t.sample(__nv_smp, uv).r * 0.25;
@@ -227,7 +227,7 @@ float4 desfocar(sampler2D t, float2 uv) {
  * mostra lá as linhas de serviço — o código de tempo em blocos e a legenda
  * oculta, que é aquela fileira de tracinhos brancos piscando.
  */
-float3 faixaDeServico(float y, float x, float2 tv, float quadro, float2 tvRes) {
+static float3 faixaDeServico(float y, float x, float2 tv, float quadro, float2 tvRes) {
     float s = semente();
     float total = max(floor(u.borderHeight * tvRes.y), 1.0);
     float linha = floor(y * total);
@@ -256,7 +256,7 @@ float3 faixaDeServico(float y, float x, float2 tv, float quadro, float2 tvRes) {
 //  PASSE 3 — A TV
 // ============================================================================
 
-float4 aTv() {
+static float4 aTv() {
     float2 uvTela = in.acScreenNorm;
     float4 naTela = inputImg.sample(__nv_smp, uvTela);   // a área da tela: a camada como está
     float s = semente();

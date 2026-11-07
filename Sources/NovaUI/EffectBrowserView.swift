@@ -7,7 +7,6 @@
 //
 
 import SwiftUI
-import NovaEngine
 
 public struct EffectBrowserView: View {
     @State private var busca = ""

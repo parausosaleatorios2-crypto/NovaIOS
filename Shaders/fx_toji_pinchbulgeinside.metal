@@ -19,7 +19,7 @@ struct toji_pinchbulgeinsideParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 l2s( float2 v ) {
+static float2 l2s( float2 v ) {
             return (float4(v,0.,1.)*eng.acLayerToScreen).xy;
         }
 

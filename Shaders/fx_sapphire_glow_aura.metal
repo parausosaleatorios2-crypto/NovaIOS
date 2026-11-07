@@ -45,7 +45,7 @@ struct sapphire_glow_auraParams {
 const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
 
 // Os sliders do Sapphire chegam em ponto fixo 16.16 (medido no S_Hotspots: o 0,3 é 0,3000031 no AE).
-float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
 int2 gT;          // o buffer
@@ -53,7 +53,7 @@ int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (o Glow Width é em px da composição)
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -61,24 +61,24 @@ void preparar() {
 }
 
 /** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
     i = i - (i / p) * p; if (i < 0) i += p;
     return i < n ? i : p - 1 - i;
 }
 
-int2 naCamada(int2 q) {
+static int2 naCamada(int2 q) {
     return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
 }
 
 // ---- um float inteiro nos 4 bytes do texel ---------------------------------------------------
-float4 guardar(float f) {
+static float4 guardar(float f) {
     uint b = as_type<uint>(f);
     return float4(float(b & 255u), float((b >> 8u) & 255u), float((b >> 16u) & 255u), float(b >> 24u)) / 255.0;
 }
 
-float lido(float4 c) {
+static float lido(float4 c) {
     uint4 b = uint4(floor(c * 255.0 + 0.5));
     return as_type<float>(b.r | (b.g << 8u) | (b.b << 16u) | (b.a << 24u));
 }
@@ -86,24 +86,24 @@ float lido(float4 c) {
 // ---- a fonte --------------------------------------------------------------------------------
 // Opacity (medido no S_Hotspots): Normal (1) trabalha na cor pré-multiplicada; All Opaque (0) e As Premult
 // (2), na cor reta.
-float4 entrada(int2 p) {
+static float4 entrada(int2 p) {
     float4 s = inputImg.read(uint2(p), uint(0));
     return u.opacity == 1 ? float4(s.rgb * s.a, s.a) : s;
 }
 
-bool temMatte() { return int2(int(matteImg.get_width()), int(matteImg.get_height())).x > 1; }
-bool temFundo() { return int2(int(bgImg.get_width()), int(bgImg.get_height())).x > 1; }
+static bool temMatte() { return int2(int(matteImg.get_width()), int(matteImg.get_height())).x > 1; }
+static bool temFundo() { return int2(int(bgImg.get_width()), int(bgImg.get_height())).x > 1; }
 
 // As camadas de entrada no lugar delas na composição, pré-multiplicadas.
-float4 camada(sampler2D t, int2 p) {
+static float4 camada(sampler2D t, int2 p) {
     float4 c = t.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     return float4(c.rgb * c.a, c.a);
 }
 
-float3 limiarTh() { return fixo(u.threshold) + floor(u.thresholdAddColor.rgb * 255.0 + 0.5) / 255.0; }
+static float3 limiarTh() { return fixo(u.threshold) + floor(u.thresholdAddColor.rgb * 255.0 + 0.5) / 255.0; }
 
 // bw = max(0, monochrome(s − th)), na ordem do plugin
-float bw(int2 p) {
+static float bw(int2 p) {
     float4 e = entrada(p);
     float3 s = mix(e.rgb, float3(e.a), fixo(u.glowFromAlpha));
     // a Matte (medido): a cor pré-multiplicada dela, canal a canal, multiplica a fonte antes de tudo
@@ -115,13 +115,13 @@ float bw(int2 p) {
     return max(0.0, (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b);
 }
 
-float escalaK() {
+static float escalaK() {
     float3 th = limiarTh();
     return 4.0 / max(0.01, 1.0 - min(th.r, min(th.g, th.b)));
 }
 
 // A largura do desfoque em px do buffer.
-float larguraPx() {
+static float larguraPx() {
     float w = fixo(u.glowWidth) * gEscala;
     if (!u.subpixel) w = floor(w + 0.5);
     return clamp(w, 0.0, LARGURA_MAX);
@@ -132,7 +132,7 @@ float larguraPx() {
  * (W + 2 − qual) div 3, que somam W; com a largura quebrada só a caixa (⌊W⌋ mod 3) cresce, e ela leva as duas
  * pontas com o peso da fração: (1 − f)·caixa(r) + f·caixa(r + 1).
  */
-float caixa(int2 q, bool emX, int qual, bool deA) {
+static float caixa(int2 q, bool emX, int qual, bool deA) {
     float w = larguraPx();
     int a = int(floor(w));
     float f = w - float(a);
@@ -151,10 +151,10 @@ float caixa(int2 q, bool emX, int qual, bool deA) {
     return soma * ((1.0 - f) / n + f / (n + 2.0)) + pontas * (f / (n + 2.0));
 }
 
-float picEm(int2 q) { return lido(ga.read(uint2(gInicio + q), uint(0))); }
+static float picEm(int2 q) { return lido(ga.read(uint2(gInicio + q), uint(0))); }
 
 // grad_direction (0x180b72be0): diferença central; na borda da camada, um lado só vezes 2.
-float direcao(int2 q, float p0) {
+static float direcao(int2 q, float p0) {
     float gx, gy;
     if (gN.x < 2) gx = 0.0;
     else if (q.x == 0) gx = (picEm(q + int2(1, 0)) - p0) * 2.0;
@@ -173,11 +173,11 @@ float direcao(int2 q, float p0) {
     return t - floor(t);
 }
 
-float4 tela(float4 a, float4 b) { return a + b - a * b; }
-float tela(float a, float b) { return a + b - a * b; }
+static float4 tela(float4 a, float4 b) { return a + b - a * b; }
+static float tela(float a, float b) { return a + b - a * b; }
 
 // Combine (glow_rgba_combine; medido: o Overlay vale nos quatro canais, decidido pela base)
-float4 combinar(float4 g, float4 b) {
+static float4 combinar(float4 g, float4 b) {
     if (u.combine == 4) return mix(2.0 * g * b, 1.0 - 2.0 * (1.0 - g) * (1.0 - b), float4(greaterThanEqual(b, float4(0.5))));
     if (u.combine == 3) return float4(abs(g.rgb - b.rgb), tela(g.a, b.a));
     if (u.combine == 2) return tela(g, b);

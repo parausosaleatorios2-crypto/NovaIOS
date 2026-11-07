@@ -64,7 +64,7 @@ int2 gTam;    // a camada do AE no buffer
 int2 gIni;    // o canto dela
 bool gDePe;    // a linha 0 do buffer é a BASE da imagem
 
-void preparar() {
+static void preparar() {
     int2 buf = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gTam = clamp(int2(floor(eng.acCamada * float2(buf) + 0.5)), int2(1), buf);
     gIni = (buf - gTam) / 2;
@@ -72,21 +72,21 @@ void preparar() {
 }
 
 // (x, y) do AE (y = 0 no topo da camada) <-> buffer
-int2 noBuffer(int2 a) { return int2(gIni.x + a.x, gDePe ? gIni.y + gTam.y - 1 - a.y : gIni.y + a.y); }
-int2 doBuffer(int2 b) { return int2(b.x - gIni.x, gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y); }
+static int2 noBuffer(int2 a) { return int2(gIni.x + a.x, gDePe ? gIni.y + gTam.y - 1 - a.y : gIni.y + a.y); }
+static int2 doBuffer(int2 b) { return int2(b.x - gIni.x, gDePe ? gIni.y + gTam.y - 1 - b.y : b.y - gIni.y); }
 
 // A fonte: a cor reta em k / 255 exato
-float4 fonte(int2 a) { return floor(inputImg.read(uint2(noBuffer(a)), uint(0)) * 255.0 + 0.5) / 255.0; }
+static float4 fonte(int2 a) { return floor(inputImg.read(uint2(noBuffer(a)), uint(0)) * 255.0 + 0.5) / 255.0; }
 
 // O float32 exato em quatro RGBA8: o byte k de cada canal no k-ésimo buffer (do mais baixo ao mais alto)
-uint4 byteDe(sampler2D t, int2 b) { return uint4(floor(t.read(uint2(b), uint(0)) * 255.0 + 0.5)); }
-float4 ler32(sampler2D b0, sampler2D b1, sampler2D b2, sampler2D b3, int2 a) {
+static uint4 byteDe(sampler2D t, int2 b) { return uint4(floor(t.read(uint2(b), uint(0)) * 255.0 + 0.5)); }
+static float4 ler32(sampler2D b0, sampler2D b1, sampler2D b2, sampler2D b3, int2 a) {
     int2 b = noBuffer(a);
     return as_type<float>(byteDe(b0, b) | (byteDe(b1, b) << 8u) | (byteDe(b2, b) << 16u) | (byteDe(b3, b) << 24u));
 }
-float4 kFonte(int2 a) { return ler32(upA, upB, upC, upD, a); }
-float4 doMeio(int2 a) { return ler32(upE, upF, upG, upH, a); }
-void gravar32(float4 v) {
+static float4 kFonte(int2 a) { return ler32(upA, upB, upC, upD, a); }
+static float4 doMeio(int2 a) { return ler32(upE, upF, upG, upH, a); }
+static void gravar32(float4 v) {
     uint4 u = as_type<uint>(v);
     __nv_out = float4(u & 255u) / 255.0;
     fragColor1 = float4((u >> 8u) & 255u) / 255.0;
@@ -94,11 +94,11 @@ void gravar32(float4 v) {
     fragColor3 = float4(u >> 24u) / 255.0;
 }
 
-float pesoK(int d) { int m = abs(d); return m == 0 ? 1.0 : (m == 1 ? K1 : K2); }
+static float pesoK(int d) { int m = abs(d); return m == 0 ? 1.0 : (m == 1 ? K1 : K2); }
 
 // K numa imagem (0 = a fonte, 1 = o resultado do passo 2): horizontal (Σ w·c / Σ w das tomadas dentro), depois
 // vertical, em float
-float4 kDe(int qual, int2 a) {
+static float4 kDe(int qual, int2 a) {
     float4 soma = float4(0.0);
     float pv = 0.0;
     for (int dy = -2; dy <= 2; dy++) {

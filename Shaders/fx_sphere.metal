@@ -27,20 +27,20 @@ struct sphereParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float3 girarY(float3 v, float a) {
+static float3 girarY(float3 v, float a) {
     float c = cos(a);
     float s = sin(a);
     return float3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
 }
 
-float3 girarX(float3 v, float a) {
+static float3 girarX(float3 v, float a) {
     float c = cos(a);
     float s = sin(a);
     return float3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
 }
 
 /** Latitude e longitude viram coordenada de textura equirretangular. */
-float2 paraEquirretangular(float3 dir) {
+static float2 paraEquirretangular(float3 dir) {
     float u = __nv_atan(dir.z, dir.x) / (2.0 * PI) + 0.5;
     float v = acos(clamp(dir.y, -1.0, 1.0)) / PI;
     return float2(u, v);

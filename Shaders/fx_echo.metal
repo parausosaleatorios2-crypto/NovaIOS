@@ -20,9 +20,9 @@ struct echoParams {
 };
 
 // --- funcoes auxiliares do efeito
-float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
+static float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
 
-float4 sobre(float4 baixo, float4 cima) {
+static float4 sobre(float4 baixo, float4 cima) {
     float a = cima.a + baixo.a * (1.0 - cima.a);
     if (a <= 0.0) return float4(0.0);
     return float4((cima.rgb * cima.a + baixo.rgb * baixo.a * (1.0 - cima.a)) / a, a);
@@ -35,7 +35,7 @@ float4 sobre(float4 baixo, float4 cima) {
  * cópias no mesmo lugar não aparecem, e o efeito parece desligado. Um empurrão
  * pequeno por rastro já mostra a escada.
  */
-float4 juntar(float4 acumulado, float4 rastro, float peso) {
+static float4 juntar(float4 acumulado, float4 rastro, float peso) {
     if (rastro.a <= 0.0 || peso <= 0.0) return acumulado;
 
     float3 corRastro = mix(rastro.rgb, u.tint.rgb, u.tint.a);

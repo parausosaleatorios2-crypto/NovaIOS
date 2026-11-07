@@ -26,14 +26,14 @@ struct sapphire_math_opsParams {
 
 // --- funcoes auxiliares do efeito
 // `sat_scale` do Sapphire (legacy luma, 0.3/0.59/0.11 — Rec.601 arredondado). O alfa não é tocado.
-float4 satScale(float4 c, float s) {
+static float4 satScale(float4 c, float s) {
     float y = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b;
     return float4(y + (c.rgb - y) * s, c.a);
 }
 
 // bounce(x, b) = b − |__nv_mod(x, 2b) − b|. Com b = 0 o resultado é 0 (o plugin trata o degenerado
 // quieto; se alguém colocar Round com Dest B = 0, cai aqui também).
-float4 bounce4(float4 x, float4 b) {
+static float4 bounce4(float4 x, float4 b) {
     float4 twoB = 2.0 * b;
     float4 m = __nv_mod(x, max(twoB, float4(1e-30)));
     float4 r = b - abs(m - b);
@@ -41,17 +41,17 @@ float4 bounce4(float4 x, float4 b) {
 }
 
 // Bitwise em 8 bits, canal a canal. O plugin converte para inteiro antes da operação.
-float4 andBits(float4 a, float4 b) {
+static float4 andBits(float4 a, float4 b) {
     int4 ia = int4(clamp(a, 0.0, 1.0) * 255.0 + 0.5);
     int4 ib = int4(clamp(b, 0.0, 1.0) * 255.0 + 0.5);
     return float4(ia & ib) / 255.0;
 }
-float4 orBits(float4 a, float4 b) {
+static float4 orBits(float4 a, float4 b) {
     int4 ia = int4(clamp(a, 0.0, 1.0) * 255.0 + 0.5);
     int4 ib = int4(clamp(b, 0.0, 1.0) * 255.0 + 0.5);
     return float4(ia | ib) / 255.0;
 }
-float4 xorBits(float4 a, float4 b) {
+static float4 xorBits(float4 a, float4 b) {
     int4 ia = int4(clamp(a, 0.0, 1.0) * 255.0 + 0.5);
     int4 ib = int4(clamp(b, 0.0, 1.0) * 255.0 + 0.5);
     return float4(ia ^ ib) / 255.0;
@@ -59,13 +59,13 @@ float4 xorBits(float4 a, float4 b) {
 
 // Round do Sapphire: snap(i1 / i2) · i2. Com i2 = 0 o quociente estoura; o plugin pisa igual
 // (resultado NaN/∞). Devolver 0 ali evita a propagação de NaN sem reaproximar a conta.
-float4 roundOp(float4 a, float4 b) {
+static float4 roundOp(float4 a, float4 b) {
     float4 safeB = mix(b, float4(1e-30), float4(equal(b, float4(0.0))));
     float4 q = floor(a / safeB + 0.5);
     return mix(q * b, float4(0.0), float4(equal(b, float4(0.0))));
 }
 
-float4 aplicarGrading(float4 c, float lights, float darks, float sat) {
+static float4 aplicarGrading(float4 c, float lights, float darks, float sat) {
     float4 g = satScale(c, sat);
     return (lights - darks) * g + darks;
 }

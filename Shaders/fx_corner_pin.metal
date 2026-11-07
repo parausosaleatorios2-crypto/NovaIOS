@@ -22,7 +22,7 @@ struct corner_pinParams {
 const int STEPS = 6;
 
 /** Onde o ponto (u,v) do quadrado unitário cai, depois de pregar os cantos. */
-float2 mapForward(float2 uv) {
+static float2 mapForward(float2 uv) {
     float2 top = mix(u.topLeft, u.topRight, uv.x);
     float2 bottom = mix(u.bottomLeft, u.bottomRight, uv.x);
     return mix(top, bottom, uv.y);

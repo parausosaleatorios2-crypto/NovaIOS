@@ -22,12 +22,12 @@ const int AMOSTRAS = 16;
 const float TAU = 6.2831853;
 
 /** Luminância ITU-R BT.709. */
-float luma(float3 c) {
+static float luma(float3 c) {
     return dot(c, float3(0.2126, 0.7152, 0.0722));
 }
 
 /** Só o que está acima do limiar, suavizado. */
-float3 apenasAsLuzes(float3 c) {
+static float3 apenasAsLuzes(float3 c) {
     float L = luma(c);
     float f = smoothstep(u.threshold, u.threshold + 0.15, L);
     return c * f;

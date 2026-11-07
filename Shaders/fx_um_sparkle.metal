@@ -21,9 +21,9 @@ struct um_sparkleParams {
 // --- funcoes auxiliares do efeito
 const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
-float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+static float hash21(float2 p) { p = fract(p * float2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 
-float cruz(float2 p, float r) {
+static float cruz(float2 p, float r) {
     float h = smoothstep(r, 0.0, abs(p.y)) * smoothstep(r * 3.0, 0.0, abs(p.x));
     float v = smoothstep(r, 0.0, abs(p.x)) * smoothstep(r * 3.0, 0.0, abs(p.y));
     return max(h, v);

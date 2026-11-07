@@ -57,11 +57,11 @@ const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
 // ---------------------------------------------------------------- cor e luz
 
-float3 aLinear(float3 c) {
+static float3 aLinear(float3 c) {
     return mix(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4)), step(float3(0.04045), c));
 }
 
-float3 deLinear(float3 c) {
+static float3 deLinear(float3 c) {
     c = max(c, float3(0.0));
     return mix(c * 12.92, 1.055 * pow(c, float3(1.0 / 2.4)) - 0.055, step(float3(0.0031308), c));
 }
@@ -71,18 +71,18 @@ float3 deLinear(float3 c) {
  * `x/(1+x)` comprime a faixa inteira em 0..1; o gama por cima dá mais degraus
  * para os valores baixos, onde a cauda escura de um halo mora.
  */
-float3 empacotar(float3 x) {
+static float3 empacotar(float3 x) {
     x = clamp(x, float3(0.0), float3(HDR_MAX));
     return pow(x / (1.0 + x), float3(1.0 / 2.2));
 }
 
-float3 desempacotar(float3 e) {
+static float3 desempacotar(float3 e) {
     float3 y = pow(e, float3(2.2));
     return y / max(float3(1.0) - y, float3(0.002));
 }
 
 /** A cor da luz: a cor escolhida, esquentada ou esfriada, e com a saturação. */
-float3 corDaLuz(float4 c) {
+static float3 corDaLuz(float4 c) {
     float3 rgb = aLinear(c.rgb);
     rgb *= float3(1.0 + 0.30 * u.temperature, 1.0 + 0.04 * u.temperature, 1.0 - 0.38 * u.temperature);
     float claridade = dot(rgb, LUMA);
@@ -91,13 +91,13 @@ float3 corDaLuz(float4 c) {
 
 // ---------------------------------------------------------------- ruído
 
-float hash21(float2 p) {
+static float hash21(float2 p) {
     p = fract(p * float2(123.34, 456.21));
     p += dot(p, p + 45.32);
     return fract(p.x * p.y);
 }
 
-float ruidoDeValor(float2 p) {
+static float ruidoDeValor(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
@@ -109,7 +109,7 @@ float ruidoDeValor(float2 p) {
 }
 
 /** Três oitavas: nuvem grande com detalhe miúdo. Volta em 0..1. */
-float fbm(float2 p) {
+static float fbm(float2 p) {
     float soma = 0.0;
     float amp = 0.5;
     for (int i = 0; i < 3; i++) {
@@ -121,20 +121,20 @@ float fbm(float2 p) {
 }
 
 /** Ruído de gradiente entrelaçado: o jitter dos passos. Fixo no espaço, não pisca. */
-float jitterDoPixel(float2 p) {
+static float jitterDoPixel(float2 p) {
     return fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715))));
 }
 
 // ---------------------------------------------------------------- a marcha
 
-int amostras() {
+static int amostras() {
     int n = u.quality == 0 ? 16 : (u.quality == 1 ? 32 : (u.quality == 2 ? 64 : 128));
     // na prévia em movimento (`eng.acRascunho`, play/arraste), no máximo a qualidade Média
     return eng.acRascunho == 1 ? min(n, 32) : n;
 }
 
 /** O peso do caminho: t = 0 no pixel, t = 1 no fim do raio. Vale 1 no pixel. */
-float atenuar(float t) {
+static float atenuar(float t) {
     if (u.attenuation == 0) return max(1.0 - t * u.decay * 0.5, 0.0);                        // Linear
     if (u.attenuation == 1) return 1.0 - smoothstep(0.0, 1.0, min(t * u.decay * 0.5, 1.0));  // Smooth
     if (u.attenuation == 2) return exp(-t * u.decay);                                        // Exponential
@@ -142,13 +142,13 @@ float atenuar(float t) {
 }
 
 /** O disco da fonte: cheio no centro, zero na borda do raio. Não depende da imagem. */
-float disco(float2 p, float2 luz, float raio) {
+static float disco(float2 p, float2 luz, float raio) {
     float d = length((p - luz) * float2(eng.acAspect, 1.0)) / max(raio, 0.002);
     return pow(clamp(1.0 - d, 0.0, 1.0), max(u.lightFalloff, 0.1));
 }
 
 /** De 0 (passa tudo) a 1 (bloqueia). A maciez abre a rampa entre os dois. */
-float oclusao(float o) {
+static float oclusao(float o) {
     float s = clamp(u.occlusionSoftness, 0.0, 1.0);
     return smoothstep(0.5 - 0.5 * s, 0.5 + 0.5 * s + 0.001, o);
 }
@@ -158,7 +158,7 @@ float oclusao(float o) {
  * direção da fonte. O ângulo é o entre a direção de visão do pixel e a da fonte,
  * numa câmera de 45° de meio campo — assim a fonte pode estar fora da tela.
  */
-float fase(float2 uv, float2 luz) {
+static float fase(float2 uv, float2 luz) {
     float2 esc = float2(eng.acAspect, 1.0);
     float3 vp = normalize(float3((uv - 0.5) * esc, 1.0));
     float3 vl = normalize(float3((luz - 0.5) * esc, 1.0));
@@ -175,7 +175,7 @@ float fase(float2 uv, float2 luz) {
  * `textureLod` e não `texture`: dentro de laço com saída antecipada as derivadas
  * que escolhem o mipmap não são definidas. Os buffers não têm mipmap.
  */
-float3 marchar(float2 uv, float2 luz, float intLuz, float raioLuz, float jitter, int n) {
+static float3 marchar(float2 uv, float2 luz, float intLuz, float raioLuz, float jitter, int n) {
     float2 raio = (luz - uv) * u.rayLength;
     // A oclusão é uma profundidade óptica: a luz que passa por uma espessura de
     // objeto cai como exp(-espessura * k). Cada passo cobre 1/n do caminho, então
@@ -224,7 +224,7 @@ float3 marchar(float2 uv, float2 luz, float intLuz, float raioLuz, float jitter,
 }
 
 /** Os raios em `uv`: as duas luzes, cada uma com a sua cor. */
-float3 raiosEm(float2 uv) {
+static float3 raiosEm(float2 uv) {
     int n = amostras();
     float jitter = jitterDoPixel(__nv_fragCoord.xy);
 
@@ -252,7 +252,7 @@ float3 raiosEm(float2 uv) {
  * contados duas vezes e outros nunca. Pelo índice, cada pixel da imagem cheia
  * pertence a exatamente um bloco.
  */
-float3 primeiroNivel() {
+static float3 primeiroNivel() {
     int2 tam = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     int2 base = int2(__nv_fragCoord.xy) * 4;
     float3 soma = float3(0.0);
@@ -268,7 +268,7 @@ float3 primeiroNivel() {
 }
 
 /** Um texel de um nível do brilho, já em luz linear. `nivel` diz de qual buffer ler. */
-float3 texelDoNivel(int nivel, int2 i, int2 tam) {
+static float3 texelDoNivel(int nivel, int2 i, int2 tam) {
     i = clamp(i, int2(0), tam - int2(1));
     float3 e;
     if (nivel == 2) e = g1.read(uint2(i), uint(0)).rgb;
@@ -299,7 +299,7 @@ float3 texelDoNivel(int nivel, int2 i, int2 tam) {
  * sem sobra: a energia passa inteira de um nível ao seguinte. O raio do brilho, por
  * isso, não mora aqui: ele desloca o PESO entre as escalas, na composição.
  */
-float3 proximoNivel(int nivel) {
+static float3 proximoNivel(int nivel) {
     int2 tam = nivel == 2 ? int2(int(g1.get_width()), int(g1.get_height())) : (nivel == 3 ? int2(int(g2.get_width()), int(g2.get_height())) : int2(int(g3.get_width()), int(g3.get_height())));
     int2 centro = int2(__nv_fragCoord.xy) * 2;
 
@@ -319,7 +319,7 @@ float3 proximoNivel(int nivel) {
 }
 
 /** O halo da própria fonte, por fórmula: entra na tela mesmo com a fonte fora dela. */
-float3 haloDe(float2 uv, float2 luz, float inten, float raio, float3 cor) {
+static float3 haloDe(float2 uv, float2 luz, float inten, float raio, float3 cor) {
     float d = length((uv - luz) * float2(eng.acAspect, 1.0));
     float r = max(raio, 0.01);
     float h = 0.9 * exp(-pow(d / (r * 1.5), 2.0))

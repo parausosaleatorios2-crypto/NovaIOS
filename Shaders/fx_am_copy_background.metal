@@ -16,7 +16,7 @@ struct am_copy_backgroundParams {
 
 // --- funcoes auxiliares do efeito
 // k ÷ 255 com o arredondamento certo: o float EXATO que a textura de 8 bits devolve ao AM (ver `am-color-balance.xml`).
-float oitoBits(float k) {
+static float oitoBits(float k) {
     uint n = uint(k);
     if (n == 0u) return 0.0;
     if (n == 255u) return 1.0;
@@ -29,7 +29,7 @@ float oitoBits(float k) {
 
 // A cor reta do Nova pré-multiplicada EM 8 BITS, pelo mais perto (o premul do Android): o que a textura do AM guarda.
 // No opaco a cor já é o float da textura, bit a bit.
-float4 doAm(float4 c) {
+static float4 doAm(float4 c) {
     if (c.a >= 1.0) return c;
     float3 k = floor(c.rgb * c.a * 255.0 + 0.5);
     return float4(oitoBits(k.r), oitoBits(k.g), oitoBits(k.b), c.a);

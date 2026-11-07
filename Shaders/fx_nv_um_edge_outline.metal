@@ -19,7 +19,7 @@ struct nv_um_edge_outlineParams {
 };
 
 // --- funcoes auxiliares do efeito
-float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+static float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 fragment float4 fx_nv_um_edge_outline(
     NovaVertexOut       in   [[stage_in]],

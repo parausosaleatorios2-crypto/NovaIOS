@@ -37,7 +37,7 @@ int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (Smooth Source e Blur Mask são em px da composição)
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -45,21 +45,21 @@ void preparar() {
 }
 
 /** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
-int espelhar(int i, int n) {
+static int espelhar(int i, int n) {
     if (i >= 0 && i < n) return i;
     int p = 2 * n;
     i = i - (i / p) * p; if (i < 0) i += p;
     return i < n ? i : p - 1 - i;
 }
 
-int2 naCamada(int2 q) {
+static int2 naCamada(int2 q) {
     return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
 }
 
 // ---- o núcleo das três caixas (o do S_Hotspots) -----------------------------------------------
 // Largura inteira n -> raios r0 ≥ r1 ≥ r2 que somam n ((n + 2 − i) div 3); a soma das três caixas em d, em
 // inteiros (exata), dividida no fim por (2r0 + 1)(2r1 + 1)(2r2 + 1).
-int somaDoTrapezio(int x, int p, int q) {
+static int somaDoTrapezio(int x, int p, int q) {
     int m = q - p;
     int M = p + q;
     x = min(x, M);
@@ -67,14 +67,14 @@ int somaDoTrapezio(int x, int p, int q) {
     return (m + 1) * (2 * p + 1) + (x - m) * (M + 1) - (x * (x + 1) - m * (m + 1)) / 2;
 }
 
-int acumulado(int x, int p, int q) {
+static int acumulado(int x, int p, int q) {
     int total = (2 * p + 1) * (2 * q + 1);
     int meio = (total - (2 * p + 1)) / 2;
     if (x >= 0) return meio + somaDoTrapezio(x, p, q);
     return total - (meio + somaDoTrapezio(-x - 1, p, q));
 }
 
-float pesoDasCaixas(int d, int n) {
+static float pesoDasCaixas(int d, int n) {
     if (n <= 0) return d == 0 ? 1.0 : 0.0;
     int r0 = (n + 2) / 3;
     int r1 = (n + 1) / 3;
@@ -85,7 +85,7 @@ float pesoDasCaixas(int d, int n) {
 }
 
 // Um valor de 0..1 em 24 bits num texel RGBA8.
-float4 gravar24(float m) {
+static float4 gravar24(float m) {
     float a = floor(clamp(m, 0.0, 1.0) * 16777215.0 + 0.5);
     float b0 = floor(a / 65536.0);
     float r = a - b0 * 65536.0;
@@ -93,7 +93,7 @@ float4 gravar24(float m) {
     return float4(b0, b1, r - b1 * 256.0, 255.0) / 255.0;
 }
 
-float ler24(float4 v) {
+static float ler24(float4 v) {
     float3 b = floor(v.rgb * 255.0 + 0.5);
     return (b.x * 65536.0 + b.y * 256.0 + b.z) / 16777215.0;
 }
@@ -101,25 +101,25 @@ float ler24(float4 v) {
 // ---- a fonte e a máscara --------------------------------------------------------------------
 // Medido: Normal (1) faz a conta na cor pré-multiplicada; All Opaque (0) e As Premult (2), na cor reta.
 // monochrome (0x180f26020): (0,3125 R + 0,5 G) + 0,1875 B.
-float luma(int2 p) {
+static float luma(int2 p) {
     float4 s = inputImg.read(uint2(p), uint(0));
     float3 c = u.opacity == 1 ? s.rgb * s.a : s.rgb;
     return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b;
 }
 
-bool temMascara() { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
+static bool temMascara() { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
 
-float mascara(int2 p) {
+static float mascara(int2 p) {
     float4 m = maskImg.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     float v = u.maskUse == 1 ? m.a : dot(m.rgb * m.a, float3(0.3125, 0.5, 0.1875));
     return u.invertMask ? 1.0 - v : v;
 }
 
 // O subpixel 0 da definição: as larguras arredondam, meio para cima.
-int larguraDaFonte() { return int(clamp(floor(u.smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
-int larguraDaMascara() { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaFonte() { return int(clamp(floor(u.smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaMascara() { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
 
-float lumaDesfocada(int2 q, bool emX) {
+static float lumaDesfocada(int2 q, bool emX) {
     int n = larguraDaFonte();
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
@@ -131,7 +131,7 @@ float lumaDesfocada(int2 q, bool emX) {
     return soma;
 }
 
-float mascaraDesfocada(int2 q, bool emX) {
+static float mascaraDesfocada(int2 q, bool emX) {
     int n = larguraDaMascara();
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
@@ -145,12 +145,12 @@ float mascaraDesfocada(int2 q, bool emX) {
 
 // ---- a grade ------------------------------------------------------------------------------------
 // bounce(v, 1): a dobra em triângulo de período 2 (0..1).
-float dobra(float v) {
+static float dobra(float v) {
     float m = __nv_mod(v, 2.0);
     return m > 1.0 ? 2.0 - m : m;
 }
 
-float grade(int2 q) {
+static float grade(int2 q) {
     // xy do Sapphire: −1..1 na largura da camada, y para cima, no centro do pixel (a cena de pé tem a linha 0 embaixo)
     float W = float(gN.x);
     float linha = eng.acEntradaDePe == 1 ? float(gN.y - 1 - q.y) : float(q.y);

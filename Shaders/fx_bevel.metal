@@ -26,7 +26,7 @@ struct bevelParams {
 // --- funcoes auxiliares do efeito
 const float PI = 3.14159265;
 
-float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
+static float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
 
 /**
  * A coroa de amostras: devolve a rampa da borda em `x` e a direção dela em `yz`.
@@ -35,7 +35,7 @@ float2 paraUv(float2 v) { return float2(v.x / max(eng.acAspect, 1e-4), v.y); }
  * fora); a soma vetorial aponta para FORA, porque o alfa cresce para dentro e o
  * sinal é invertido na soma.
  */
-float3 bordaEm(float2 ph, float raio) {
+static float3 bordaEm(float2 ph, float raio) {
     float media = inputImg.sample(__nv_smp, paraUv(ph)).a * 0.2;
     float2 soma = float2(0.0);
 

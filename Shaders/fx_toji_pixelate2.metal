@@ -22,7 +22,7 @@ struct toji_pixelate2Params {
 };
 
 // --- funcoes auxiliares do efeito
-float2x2 rot(float a) {
+static float2x2 rot(float a) {
             float c = cos(a);
             float s = sin(a);
             return float2x2(

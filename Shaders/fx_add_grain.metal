@@ -62,7 +62,7 @@ struct add_grainParams {
 // --- funcoes auxiliares do efeito
 // ============================================================================
 // Os sliders do AE são em ponto fixo 16.16 (0x1800097e0: int · 1/65536).
-float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
+static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
 
 // ---- o ran2 do Numerical Recipes (0x18000d630) e a gaussiana polar (0x18000dc00) ----
 // Em inteiros de 32 bits pelo método de Schrage: nenhum produto passa de 2³¹.
@@ -73,7 +73,7 @@ int gIv[32];
 bool gTem;
 float gGset;
 
-void semear(int s) {
+static void semear(int s) {
     // 0x18000dd70: o positivo vira negativo; a primeira chamada toma o módulo (0 seria o relógio no AE)
     int idum = max(abs(s), 1);
     gIdum2 = idum;
@@ -88,7 +88,7 @@ void semear(int s) {
     gTem = false;
 }
 
-float uniforme() {
+static float uniforme() {
     int k = gIdum / 53668;
     gIdum = 40014 * (gIdum - k * 53668) - k * 12211;
     if (gIdum < 0) gIdum += 2147483563;
@@ -103,7 +103,7 @@ float uniforme() {
     return min(float(gIy) * as_type<float>(0x30000001u), as_type<float>(0x3f7ffffeu));
 }
 
-float gaussiana() {
+static float gaussiana() {
     if (gTem) {
         gTem = false;
         return gGset;
@@ -125,7 +125,7 @@ float gaussiana() {
 
 // O NoiseNode (0x1800156c0): o trecho de 32 px da linha tem o próprio gerador; o pixel k dele usa as
 // gaussianas 3k..3k+2 (× 2: o nó é gaussiana · 2 + 0). `q` em px da camada.
-float3 ruidoDe(int2 q, int semente) {
+static float3 ruidoDe(int2 q, int semente) {
     int X = q.x + 256;
     int Y = q.y + 256;
     int bloco = X - (X & 31);
@@ -156,7 +156,7 @@ int gH;
 float3 gSigX;        // o σ de cada canal
 float3 gSigY;
 
-void preparar() {
+static void preparar() {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -203,7 +203,7 @@ void preparar() {
 }
 
 // O ruído de um px da camada, já misturado (Animate Smoothly), normalizado e na matriz de cor.
-float3 ruidoV(int2 q) {
+static float3 ruidoV(int2 q) {
     float3 n = ruidoDe(q, gSemente1);
     if (gFade == 1.0) {
         n = ruidoDe(q, gSemente2);
@@ -219,21 +219,21 @@ float3 ruidoV(int2 q) {
 const float FAIXA = 8.0;
 
 // 3 valores em [−1, 1] em 63 bits — 21 por canal —, em duas palavras de 32 bits (dois buffers RGBA8).
-uint2 palavras(float3 u) {
+static uint2 palavras(float3 u) {
     uint3 q = uint3(floor((clamp(u, -1.0, 1.0) * 0.5 + 0.5) * 2097151.0 + 0.5));
     return uint2(q.x | (q.y << 21), (q.y >> 11) | (q.z << 10));
 }
 
-float4 bytesDe(uint b) {
+static float4 bytesDe(uint b) {
     return float4(uint4(b & 255u, (b >> 8) & 255u, (b >> 16) & 255u, b >> 24)) / 255.0;
 }
 
-uint palavraDe(float4 c) {
+static uint palavraDe(float4 c) {
     uint4 o = uint4(floor(c * 255.0 + 0.5));
     return o.x | (o.y << 8) | (o.z << 16) | (o.w << 24);
 }
 
-float3 valores(float4 c0, float4 c1) {
+static float3 valores(float4 c0, float4 c1) {
     uint a = palavraDe(c0);
     uint b = palavraDe(c1);
     uint3 q = uint3(a & 2097151u, (a >> 21) | ((b & 1023u) << 11), b >> 10);
@@ -241,13 +241,13 @@ float3 valores(float4 c0, float4 c1) {
 }
 
 // O peso do tap i (gaussiana de σ) — a soma normaliza depois.
-float3 peso(int i, float3 sigma) {
+static float3 peso(int i, float3 sigma) {
     float fi = float(i * i);
     return exp(-0.5 * fi / (sigma * sigma));
 }
 
 // A soma e a soma dos quadrados do núcleo de um eixo (para normalizar e guardar).
-void somas(int n, float3 sigma, out float3 soma, out float3 quad) {
+static void somas(int n, float3 sigma, out float3 soma, out float3 quad) {
     soma = float3(0.0);
     quad = float3(0.0);
     for (int k = 0; k < n; k++) {
@@ -262,7 +262,7 @@ void somas(int n, float3 sigma, out float3 soma, out float3 quad) {
 const int MARGEM = 128;
 
 // ---- Blend with Original: a máscara (0x18000cf50) ------------------------------------------------
-float3 hsv(float3 c) {
+static float3 hsv(float3 c) {
     float mx = max(max(max(0.0, c.r), c.g), c.b);
     float mn = min(min(min(1.0, c.r), c.g), c.b);
     float s = mx == 0.0 ? 0.0 : (mx - mn) / mx;
@@ -276,7 +276,7 @@ float3 hsv(float3 c) {
 
 // O espaço do casamento. Na IMAGEM, o ColorspaceNode do plugin trabalha no formato do AE (8 bits): trunca e
 // fica com o byte de baixo — o I/Q negativo do Chroma dá a volta (−0,1 vira ~0,9).
-float3 espaco(float3 c, int modo, bool imagem) {
+static float3 espaco(float3 c, int modo, bool imagem) {
     if (modo == 1) return c;
     if (modo == 2) return hsv(c);
     float3 r;
@@ -293,7 +293,7 @@ float3 espaco(float3 c, int modo, bool imagem) {
 }
 
 // O valor da máscara num texel do buffer (antes do desfoque).
-float mascara(int2 t) {
+static float mascara(int2 t) {
     float4 o = inputImg.read(uint2(t), uint(0));
     float casa = -1.0;
     int modo = u.matchColorUsing;           // 0 Off, 1 RGB, 2 Hue, 3 Chroma, 4 Luminance, 5..7 R/G/B
@@ -327,18 +327,18 @@ float mascara(int2 t) {
 }
 
 // A máscara num buffer: 16 bits nos dois primeiros bytes.
-float4 gravarMascara(float m) {
+static float4 gravarMascara(float m) {
     float a = floor(clamp(m, 0.0, 1.0) * 65535.0 + 0.5);
     return float4(floor(a / 256.0), __nv_mod(a, 256.0), 0.0, 255.0) / 255.0;
 }
 
-float lerMascara(float4 v) {
+static float lerMascara(float4 v) {
     float2 b = floor(v.rg * 255.0 + 0.5);
     return (b.x * 256.0 + b.y) / 65535.0;
 }
 
 // O desfoque da máscara: gaussiana de W = max(9, ⌊3·blur⌋) e σ = blur, com a borda espelhada na CAMADA.
-float desfocarMascara(int2 t, bool emX) {
+static float desfocarMascara(int2 t, bool emX) {
     float blur = fixo(u.blurMatte);              // em px da camada (o plugin não o reduz na prévia)
     int W = clamp(int(blur * 3.0), 9, 255);
     int r = W >> 1;

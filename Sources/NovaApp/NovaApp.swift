@@ -6,8 +6,6 @@
 //
 
 import SwiftUI
-import NovaUI
-import NovaEngine
 import os
 
 @main

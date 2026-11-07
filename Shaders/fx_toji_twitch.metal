@@ -18,7 +18,7 @@ struct toji_twitchParams {
 };
 
 // --- funcoes auxiliares do efeito
-float rand(float2 co) {
+static float rand(float2 co) {
         return fract(sin(dot(co.xy, float2(12.9898, 78.233))) * 43758.5453);
     }
 
