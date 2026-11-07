@@ -27,6 +27,7 @@ jobs:
       - name: Compilar (sem assinatura)
         run: |
           set -o pipefail
+          mkdir -p build
           xcodebuild -project NovaEditor.xcodeproj -scheme NovaEditor \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/dd \
