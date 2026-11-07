@@ -113,6 +113,12 @@ def split_params(p):
 
 def repair(src):
     src = src.replace('#include "NovaShaderHelpers.h"', '#include "NovaShaderHelpers.h"\n#include "NovaGLSLCompat.h"', 1)
+    # qualificadores GLSL que o tradutor deixou passar
+    src = re.sub(r'^[ \t]*precision\s+\w+\s+\w+\s*;[ \t]*$', '', src, flags=re.M)
+    src = re.sub(r'\bvarying\s+', '', src)
+    src = re.sub(r'\b(inout|out)\s+(?:const\s+)?([A-Za-z_]\w*)\s+([A-Za-z_]\w*)(?=\s*(?:\[\d*\])?\s*[,)])',
+                 r'thread \2& \3', src)
+    src = re.sub(r'\b(?:const\s+)?in\s+(?=[A-Za-z_]\w*\s+[A-Za-z_]\w*\s*[,)])', '', src)
     src = SWZ.sub(lambda m: '.' + m.group(1).translate(str.maketrans('stpq', 'xyzw')), src)
     items = split_top(src)
     top, body_items, out_entries = [], [], []
