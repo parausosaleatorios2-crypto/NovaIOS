@@ -42,7 +42,9 @@ fragment float4 fx_ae_lumetri(
     c = nova_lut3d(lutDeEntradaTex, c);
 
     // Creative: o Look, misturado pela Intensidade.
-    if (lookTipo != 0) {
+    // `lookTipo` (embutido do AM: 0 = sem Look). Aqui o motor sempre entrega uma
+    // LUT 3D (identidade quando nao ha Look), entao misturar e seguro.
+    {
         float3 comLook = nova_lut3d(lookTex, c);
         c = mix(c, comLook, clamp(u.intensidade, 0.0, 200.0) / 100.0);
     }
