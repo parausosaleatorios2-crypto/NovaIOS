@@ -99,13 +99,10 @@ enum ConversorAndroid {
             l.size = SIMD2(Float(dbl(content["larguraDoSolido"]) ?? Double(comp.width)),
                            Float(dbl(content["alturaDoSolido"]) ?? Double(comp.height)))
         case "adjustment":
-            // Camada de ajuste: os efeitos dela valem para o que esta embaixo.
-            // O motor iOS ainda desenha o conteudo dela como solido; transparente
-            // ate o Compositor tratar ajuste (Docs/PENDENCIAS.md).
+            // Camada de ajuste: o Compositor aplica os efeitos dela ao quadro
+            // composto ate ali, como no After Effects (vale para o quadro inteiro).
             l = Layer(name: nome, kind: .adjustment)
-            l.solidColor = SIMD4(0, 0, 0, 0)
             l.size = comp.size
-            avisos.append("\(nome): camada de ajuste ainda nao aplica efeitos no iOS")
         case "media", "image", "video":
             let k = ((content["mediaKind"] as? String) ?? kindRaw).uppercased()
             l = Layer(name: (content["displayName"] as? String) ?? nome, kind: k == "VIDEO" ? .video : .image)
