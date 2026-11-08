@@ -133,6 +133,9 @@ public struct AppliedEffect: Codable, Sendable, Identifiable, Equatable {
     public var vec3s:   [String: Animated<SIMD3<Float>>] = [:]
     public var colors:  [String: Animated<SIMD4<Float>>] = [:]
     public var ints:    [String: Int32] = [:]
+    /// Parametros-textura: curvas e LUTs (veja EffectParamTextures).
+    public var curves: [String: CurveSet]?
+    public var luts: [String: String]?
 
     public init(effectID: String) { self.effectID = effectID }
 

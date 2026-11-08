@@ -132,6 +132,7 @@ struct LayerPropertiesSheet: View {
     let time: Float
     let manifests: [String: EffectManifest]
     let edit: LayerEdit
+    var mediaRoot: URL? = nil
     @Environment(\.dismiss) private var dismiss
 
     private var layer: Layer? { comp.layer(id: layerID) }
@@ -204,7 +205,7 @@ struct LayerPropertiesSheet: View {
                 }
                 Text(title.loc).font(.system(size: 12))
                 if a.hasKeyframe(at: time) {
-                    EasingMenu { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
+                    EasingMenu(current: a.easing(at: time)) { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
                 }
                 Spacer()
                 Text(String(format: "%.1f%@", v, unit)).font(.system(size: 11, design: .monospaced))
@@ -232,7 +233,7 @@ struct LayerPropertiesSheet: View {
                 }
                 Text(title.loc).font(.system(size: 12))
                 if a.hasKeyframe(at: time) {
-                    EasingMenu { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
+                    EasingMenu(current: a.easing(at: time)) { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
                 }
                 Spacer()
                 Text(String(format: "%.0f, %.0f%@", v.x, v.y, unit))
@@ -376,6 +377,23 @@ struct LayerPropertiesSheet: View {
                            onEditingChanged: { ed in if !ed { edit(l.id, true) { _ in } } })
                 }
             }
+        case .curve:
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 11.5))
+                CurvesParamEditor(curves: fx.curveSets[p.id] ?? CurveSet()) { c, save in
+                    edit(l.id, save) { $0.effects[i].curveSets[p.id] = c }
+                }
+            }
+        case .lut:
+            LutParamEditor(title: title, current: fx.lutPaths[p.id], mediaRoot: mediaRoot) { path in
+                edit(l.id, true) { layer in
+                    if let path { layer.effects[i].lutPaths[p.id] = path }
+                    else { layer.effects[i].lutPaths[p.id] = nil }
+                }
+            }
+        case .nodeGrading, .gradacao:
+            Text(String(format: "%@: gradação neutra (editor de rodas de cor ainda não escrito)".loc, title))
+                .font(.system(size: 10.5)).foregroundStyle(NovaTheme.dim2)
         default:
             EmptyView()
         }

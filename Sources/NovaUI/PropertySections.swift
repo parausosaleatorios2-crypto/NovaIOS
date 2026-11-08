@@ -24,6 +24,7 @@ struct AnimSlider: View {
     let onKey: (() -> Void)?
     let onChange: (Float, Bool) -> Void   // (valor, gravar)
     var onEasing: ((Easing) -> Void)? = nil
+    var easing: Easing? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -37,7 +38,7 @@ struct AnimSlider: View {
                     }.buttonStyle(.plain)
                 }
                 Text(title.loc).font(.system(size: 11.5))
-                if hasKey, let onEasing { EasingMenu(onPick: onEasing) }
+                if hasKey, let onEasing { EasingMenu(current: easing, onPick: onEasing) }
                 Spacer()
                 Text(String(format: format, value) + unit)
                     .font(.system(size: 10, design: .monospaced)).foregroundStyle(NovaTheme.dim)
@@ -45,26 +46,6 @@ struct AnimSlider: View {
             Slider(value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
                                   set: { onChange($0, false) }),
                    in: range, onEditingChanged: { ed in if !ed { onChange(value, true) } })
-        }
-    }
-}
-
-/// Interpolacao da chave (presets do Flow no APK: ease, quad, cubic, expo, back, elastic, bounce).
-struct EasingMenu: View {
-    let onPick: (Easing) -> Void
-    static let options: [(String, Easing)] = [
-        ("Linear", .linear), ("Segurar", .hold), ("Suave", .named("ease")),
-        ("Entrada suave", .named("easeIn")), ("Saída suave", .named("easeOut")),
-        ("Entrada e saída", .named("easeInOut")), ("Cúbica", .named("cubic")),
-        ("Exponencial", .named("expoOut")), ("Recuo", .named("backOut")),
-        ("Elástico", .named("elastic")), ("Quicar", .named("bounce")),
-    ]
-    var body: some View {
-        Menu {
-            ForEach(Self.options, id: \.0) { o in Button(o.0.loc) { onPick(o.1) } }
-        } label: {
-            Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
-                .font(.system(size: 10)).foregroundStyle(NovaTheme.accent)
         }
     }
 }
@@ -142,7 +123,8 @@ struct MaskSection: View {
                           animated: !a.keyframes.isEmpty, hasKey: a.hasKeyframe(at: time),
                           onKey: { edit(layer.id, true) { toggleKeyframe(&$0.maskList[i][keyPath: kp], at: time) } },
                           onChange: { v, save in edit(layer.id, save) { $0.maskList[i][keyPath: kp].set(v, at: time) } },
-                          onEasing: { e in edit(layer.id, true) { $0.maskList[i][keyPath: kp].setEasing(at: time, e) } })
+                          onEasing: { e in edit(layer.id, true) { $0.maskList[i][keyPath: kp].setEasing(at: time, e) } },
+                          easing: a.easing(at: time))
     }
 
     private func vec(_ i: Int, _ title: String, _ kp: WritableKeyPath<LayerMask, Animated<SIMD2<Float>>>,

@@ -8,6 +8,7 @@
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaLut.h"
 using namespace metal;
 
 struct ae_lumetriParams {
@@ -18,14 +19,16 @@ struct ae_lumetriParams {
 
 // --- funcoes auxiliares do efeito
 // Medir a interpolação no AE e trocar se for a trilinear (ver o cabeçalho).
-const bool TETRAEDRICA = true;
+constant bool TETRAEDRICA = true;
 
 fragment float4 fx_ae_lumetri(
     NovaVertexOut       in   [[stage_in]],
     constant EngineUniforms& eng [[buffer(0)]],
     constant ae_lumetriParams&  u    [[buffer(1)]],
     sampler             __nv_smp [[sampler(0)]],
-    texture2d<float> inputImg [[texture(0)]])
+    texture2d<float> inputImg [[texture(0)]],
+    texture3d<float> lutDeEntradaTex [[texture(1)]],
+    texture3d<float> lookTex [[texture(2)]])
 {
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
@@ -36,11 +39,11 @@ fragment float4 fx_ae_lumetri(
     float3 c = fonte.rgb;
 
     // Basic Correction: o LUT de entrada, antes de tudo.
-    c = lutDeEntradaAplicar(c, TETRAEDRICA);
+    c = nova_lut3d(lutDeEntradaTex, c);
 
     // Creative: o Look, misturado pela Intensidade.
     if (lookTipo != 0) {
-        float3 comLook = lookAplicar(c, TETRAEDRICA);
+        float3 comLook = nova_lut3d(lookTex, c);
         c = mix(c, comLook, clamp(u.intensidade, 0.0, 200.0) / 100.0);
     }
 

@@ -36,6 +36,7 @@ public final class Compositor {
     private let library: MTLLibrary
 
     public weak var contentProvider: LayerContentProvider?
+    private lazy var paramTextures = EffectParamTextures(device: device)
 
     /// Erros de camadas individuais num quadro. O quadro sai mesmo assim —
     /// uma camada quebrada nao pode derrubar o preview inteiro.
@@ -173,7 +174,8 @@ public final class Compositor {
                 lastFrameWarnings.append("efeito \(fx.effectID) nao carregado")
                 continue
             }
-            let input = EffectRenderer.Input(
+            paramTextures.mediaRoot = (contentProvider as? MediaContentProvider)?.mediaRoot
+            var input = EffectRenderer.Input(
                 content: tex,
                 comp: output,
                 layerSize: layerSize,
@@ -181,6 +183,7 @@ public final class Compositor {
                 pixelScale: 1,
                 time: time,
                 frameDuration: comp.frameDuration)
+            input.paramTextures = paramTextures.textures(for: fx, manifest: m)
             // Efeito que falha fica de fora; a camada continua aparecendo.
             let result: MTLTexture
             do {

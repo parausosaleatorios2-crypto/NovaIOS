@@ -126,6 +126,7 @@ public final class EffectRenderer {
     private var pipelines: [String: MTLRenderPipelineState] = [:]
     private let pipelineLock = NSLock()
     private var fileTextures: [String: MTLTexture] = [:]
+    private lazy var defaultParamTextures = EffectParamTextures(device: device)
     private var transparentTexture: MTLTexture?
 
     /// Nomes das funcoes que existem na metallib do app. Efeitos cujo shader
@@ -269,6 +270,8 @@ public final class EffectRenderer {
         public var pixelScale: Float
         public var time: Float
         public var frameDuration: Float
+        /// Texturas dos parametros curve/lut/node-grading, na ordem do manifesto.
+        public var paramTextures: [MTLTexture] = []
 
         public init(content: MTLTexture, comp: MTLTexture? = nil,
                     files: [String: MTLTexture] = [:],
@@ -381,6 +384,16 @@ public final class EffectRenderer {
                         enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: infoIndex)
                     }
                     infoIndex += 1
+                }
+
+                // Parametros-textura (curva, LUT, gradacao) depois das texturas do XML.
+                var pt = input.paramTextures
+                let precisa = m.params.filter { EffectParamTextures.isTextureParam($0.kind) }.count
+                if pt.count < precisa {
+                    pt = defaultParamTextures.textures(for: AppliedEffect(effectID: m.id), manifest: m)
+                }
+                for (k, t) in pt.enumerated() {
+                    enc.setFragmentTexture(t, index: m.textures.count + k)
                 }
 
                 enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)

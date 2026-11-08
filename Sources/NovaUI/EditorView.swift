@@ -127,7 +127,8 @@ public struct EditorView: View {
             case .exportar: ExportSheet(composition: comp, mediaRoot: mediaRoot, manifests: manifests, time: time)
             case .propriedades(let id):
                 LayerPropertiesSheet(comp: comp, layerID: id, time: time, manifests: manifests,
-                                     edit: { id, save, change in editLayer(id, save, change) })
+                                     edit: { id, save, change in editLayer(id, save, change) },
+                                     mediaRoot: mediaRoot)
             case .info(let t, let m): InfoSheet(titulo: t, mensagem: m)
             }
         }

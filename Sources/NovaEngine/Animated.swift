@@ -33,6 +33,11 @@ public enum Easing: Codable, Sendable, Equatable {
         }
     }
 
+    /// Mesma curva, com as alcas como vetores (para o editor de curvas).
+    public static func cubicBezierRaw(_ x: Float, _ c1: SIMD2<Float>, _ c2: SIMD2<Float>) -> Float {
+        cubicBezier(min(max(x, 0), 1), c1.x, c1.y, c2.x, c2.y)
+    }
+
     static func cubicBezier(_ x: Float, _ x1: Float, _ y1: Float,
                             _ x2: Float, _ y2: Float) -> Float {
         if abs(x1 - y1) < 1e-6 && abs(x2 - y2) < 1e-6 { return x }   // e a reta
@@ -207,6 +212,11 @@ public struct Animated<T: Interpolatable>: Codable, Sendable, Equatable {
     public mutating func set(_ value: T, at time: Float) {
         if keyframes.isEmpty { staticValue = value }
         else { setKeyframe(time: time, value: value) }
+    }
+
+    /// Interpolacao da chave que esta neste instante (nil se nao ha chave ali).
+    public func easing(at time: Float, tolerance: Float = 1e-3) -> Easing? {
+        keyframes.first { abs($0.time - time) < tolerance }?.easing
     }
 
     /// Muda a interpolacao da chave que esta neste instante.

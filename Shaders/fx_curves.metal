@@ -16,7 +16,7 @@ struct curvesParams {
 };
 
 // --- funcoes auxiliares do efeito
-const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
+constant float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
 /**
  * Uma entrada da tabela.
@@ -25,9 +25,9 @@ const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
  * fronteira entre duas entradas pega a vizinha errada — e no degradê isso
  * aparece como uma listra deslocada de uma entrada inteira.
  */
-static float consultar(float valor, int canal) {
+static float consultar(float valor, int canal, texture2d<float> curveTex, sampler __nv_smp) {
     float x = clamp(valor, 0.0, 1.0) * (255.0 / 256.0) + (0.5 / 256.0);
-    float4 tabela = u.curve.sample(__nv_smp, float2(x, 0.5));
+    float4 tabela = curveTex.sample(__nv_smp, float2(x, 0.5));
     return canal == 0 ? tabela.r : (canal == 1 ? tabela.g : tabela.b);
 }
 
@@ -36,7 +36,8 @@ fragment float4 fx_curves(
     constant EngineUniforms& eng [[buffer(0)]],
     constant curvesParams&  u    [[buffer(1)]],
     sampler             __nv_smp [[sampler(0)]],
-    texture2d<float> inputImg [[texture(0)]])
+    texture2d<float> inputImg [[texture(0)]],
+    texture2d<float> curveTex [[texture(1)]])
 {
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
@@ -45,9 +46,9 @@ fragment float4 fx_curves(
     float4 cor = inputImg.sample(__nv_smp, in.acScreenNorm);
 
     float3 ajustada = float3(
-        consultar(cor.r, 0),
-        consultar(cor.g, 1),
-        consultar(cor.b, 2)
+        consultar(cor.r, 0, curveTex, __nv_smp),
+        consultar(cor.g, 1, curveTex, __nv_smp),
+        consultar(cor.b, 2, curveTex, __nv_smp)
     );
 
     // Manter o brilho: aplica a curva só no MATIZ, devolvendo a luminância

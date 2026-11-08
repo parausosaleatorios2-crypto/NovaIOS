@@ -96,7 +96,7 @@ static float4 colorGrading(float2 in.vs_TEXCOORD0) {
     u_xlat2.xyz = u_xlat1.xyz * _Lut3D_Params.yyy;
     u_xlat20 = _Lut3D_Params.x * 0.5;
     u_xlat2.xyz = u_xlat2.xyz * _Lut3D_Params.xxx + float3(u_xlat20);
-    u_xlat2.xyz = u.gradacao.sample(__nv_smp, u_xlat2.xyz).xyz;
+    u_xlat2.xyz = gradacaoTex.sample(__nv_smp, u_xlat2.xyz).xyz;
     u_xlat1.xyz = u_xlat2.xyz;
     u_xlat1 = (-u_xlat0) + u_xlat1;
     u_xlat1 = float4(_blend) * u_xlat1 + u_xlat0;
@@ -110,7 +110,8 @@ fragment float4 fx_node_color_grading(
     sampler             __nv_smp [[sampler(0)]],
     texture2d<float> inputImg [[texture(0)]],
     texture2d<float> camadaRt [[texture(1)]],
-    texture2d<float> saidaRt [[texture(2)]])
+    texture2d<float> saidaRt [[texture(2)]],
+    texture3d<float> gradacaoTex [[texture(3)]])
 {
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
