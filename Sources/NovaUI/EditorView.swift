@@ -30,6 +30,10 @@ public struct EditorView: View {
     @State private var novoTexto = ""
     @State private var pedindoTexto = false
     @State private var manifests: [String: EffectManifest] = [:]
+    /// Desfazer/refazer (UndoHistory no APK): um passo por gravacao.
+    @State private var undoStack: [NovaProject] = []
+    @State private var redoStack: [NovaProject] = []
+    @State private var lastSaved: NovaProject?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -40,11 +44,40 @@ public struct EditorView: View {
 
     public init(project: NovaProject, folder: URL, onSave: @escaping (NovaProject) -> Void) {
         _project = State(initialValue: project)
+        _lastSaved = State(initialValue: project)
         self.folder = folder
         self.onSave = onSave
     }
 
     private var comp: Composition { project.mainComposition ?? Composition() }
+
+    /// Grava e registra um passo de desfazer (so se algo mudou).
+    private func commit() {
+        if let last = lastSaved, last != project {
+            undoStack.append(last)
+            if undoStack.count > 60 { undoStack.removeFirst() }
+            redoStack.removeAll()
+        }
+        lastSaved = project
+        onSave(project)
+    }
+
+    private func desfazer() {
+        guard let prev = undoStack.popLast() else { return }
+        redoStack.append(project)
+        project = prev
+        lastSaved = prev
+        onSave(prev)
+        if let id = selectedLayer, comp.layer(id: id) == nil { selectedLayer = nil }
+    }
+
+    private func refazer() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(project)
+        project = next
+        lastSaved = next
+        onSave(next)
+    }
 
     /// Altera uma camada. `save` false durante gestos e sliders (grava no fim).
     private func editLayer(_ id: UUID, _ save: Bool, _ change: (inout Layer) -> Void) {
@@ -52,7 +85,7 @@ public struct EditorView: View {
                 ?? project.compositions.indices.first,
               let li = project.compositions[ci].layers.firstIndex(where: { $0.id == id }) else { return }
         change(&project.compositions[ci].layers[li])
-        if save { onSave(project) }
+        if save { commit() }
     }
 
     /// Altera a composicao principal e grava o projeto.
@@ -60,7 +93,7 @@ public struct EditorView: View {
         guard let i = project.compositions.firstIndex(where: { $0.id == project.mainCompositionID })
                 ?? project.compositions.indices.first else { return }
         change(&project.compositions[i])
-        onSave(project)
+        commit()
     }
 
     public var body: some View {
@@ -248,6 +281,14 @@ public struct EditorView: View {
             Spacer()
             Text(project.name).font(.system(size: 13, weight: .semibold))
             Spacer()
+            Button { desfazer() } label: {
+                Image(systemName: "arrow.uturn.backward").font(.system(size: 13))
+                    .foregroundStyle(undoStack.isEmpty ? NovaTheme.dim2 : NovaTheme.text)
+            }.disabled(undoStack.isEmpty)
+            Button { refazer() } label: {
+                Image(systemName: "arrow.uturn.forward").font(.system(size: 13))
+                    .foregroundStyle(redoStack.isEmpty ? NovaTheme.dim2 : NovaTheme.text)
+            }.disabled(redoStack.isEmpty)
             Button { sheet = .exportar } label: {
                 Text("Exportar".loc)
                     .font(.system(size: 12, weight: .medium))
