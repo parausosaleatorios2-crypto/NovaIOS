@@ -234,28 +234,20 @@ struct ProjetoRow: View {
 // MARK: - Marketplace e Perfil
 
 struct MarketplaceTab: View {
-    var body: some View {
-        PlaceholderTab(
-            titulo: "Marketplace",
-            icone: "bag",
-            nota: """
-            O Marketplace do app Android fala com novavisionhub-3.onrender.com \
-            (presets, efeitos da comunidade, acervo). O cliente desta API ainda \
-            nao foi escrito: faltam os contratos dos endpoints.
-            """)
-    }
+    // Comunidade (presets e efeitos), Biblioteca NovaVision e Baixadas: MarketplaceView.swift
+    var body: some View { MarketplaceView() }
 }
 
 struct PerfilTab: View {
+    // Conta NovaVision (Firebase), plano, creditos, cache e links: PerfilView.swift
     var body: some View {
-        PlaceholderTab(
-            titulo: "Perfil",
-            icone: "person.crop.circle",
-            nota: """
-            Conta NovaVision, extensões, planos e Discord. Depende de \
-            Firebase Identity Toolkit e dos endpoints do hub — nenhum deles \
-            implementado aqui.
-            """)
+        VStack(spacing: 0) {
+            HStack {
+                Text("Perfil".loc).font(.system(size: 19, weight: .bold))
+                Spacer()
+            }.padding(.horizontal, 16).padding(.vertical, 12)
+            PerfilView()
+        }
     }
 }
 
