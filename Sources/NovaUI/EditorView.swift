@@ -398,14 +398,6 @@ public struct EditorView: View {
             Spacer()
             Text(project.name).font(.system(size: 13, weight: .semibold))
             Spacer()
-            Button { desfazer() } label: {
-                Image(systemName: "arrow.uturn.backward").font(.system(size: 13))
-                    .foregroundStyle(undoStack.isEmpty ? NovaTheme.dim2 : NovaTheme.text)
-            }.disabled(undoStack.isEmpty)
-            Button { refazer() } label: {
-                Image(systemName: "arrow.uturn.forward").font(.system(size: 13))
-                    .foregroundStyle(redoStack.isEmpty ? NovaTheme.dim2 : NovaTheme.text)
-            }.disabled(redoStack.isEmpty)
             Button { sheet = .exportar } label: {
                 Text("Exportar".loc)
                     .font(.system(size: 12, weight: .medium))
@@ -433,41 +425,82 @@ public struct EditorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Faixa de transporte do APK (x02.E): 52 dp, cor de superficie, botoes de
+    /// largura igual — Desfazer, Refazer, Ponto anterior (J), Reproduzir/Pausar,
+    /// Proximo ponto (K), Copiar e colar camada, Vista da previa / acoes.
     private var transport: some View {
-        HStack(spacing: 22) {
-            botao("backward.end.fill") { time = 0 }
-            botao("backward.frame.fill") { time = max(0, time - comp.frameDuration) }
+        HStack(spacing: 0) {
+            botaoFaixa("arrow.uturn.backward", habilitado: !undoStack.isEmpty) { desfazer() }
+            botaoFaixa("arrow.uturn.forward", habilitado: !redoStack.isEmpty) { refazer() }
+            botaoFaixa("backward.frame.fill") { irPara(pontoAnterior()) }
             Button { playing.toggle() } label: {
-                Image(systemName: playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(NovaTheme.accent)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(NovaTheme.accent.opacity(0.16)))
+                RoundedRectangle(cornerRadius: 12).fill(NovaTheme.accent)
+                    .frame(width: 40, height: 34)
+                    .overlay(Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.black))
             }
-            botao("forward.frame.fill") { time = min(comp.duration, time + comp.frameDuration) }
-            botao("forward.end.fill") { time = comp.duration }
-            Spacer()
-            Button { adicionarMarcador() } label: {
-                Image(systemName: "bookmark").font(.system(size: 12)).foregroundStyle(NovaTheme.dim)
-            }
-            if let id = selectedLayer {
-                Button { sheet = .propriedades(id) } label: {
-                    Image(systemName: "slider.horizontal.3").font(.system(size: 13))
-                        .foregroundStyle(NovaTheme.accent)
+            .frame(maxWidth: .infinity)
+            botaoFaixa("forward.frame.fill") { irPara(proximoPonto()) }
+            botaoFaixa("plus.square.on.square", habilitado: selectedLayer != nil) { duplicarSelecionada() }
+            Menu {
+                Button { adicionarMarcador() } label: { Label("Marcador".loc, systemImage: "bookmark") }
+                if let id = selectedLayer {
+                    Button { sheet = .propriedades(id) } label: { Label("Propriedades".loc, systemImage: "slider.horizontal.3") }
+                    Button(role: .destructive) { excluirSelecionada() } label: { Label("Apagar camada".loc, systemImage: "trash") }
                 }
-                Button(role: .destructive) { excluirSelecionada() } label: {
-                    Image(systemName: "trash").font(.system(size: 13))
-                        .foregroundStyle(NovaTheme.warning)
-                }
+                Button { sheet = .exportar } label: { Label("Exportar".loc, systemImage: "square.and.arrow.up") }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.system(size: 17)).foregroundStyle(NovaTheme.dim)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            Text(timecode(time)).font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(NovaTheme.dim)
+            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 16)
-        .frame(height: NovaTheme.Metrics.transportHeight)
+        .padding(.horizontal, 4)
+        .frame(height: 52)
         .background(NovaTheme.surface)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(NovaTheme.line), alignment: .top)
+        .overlay(alignment: .bottomTrailing) {
+            Text(timecode(time)).font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(NovaTheme.dim2).padding(.trailing, 8).padding(.bottom, 1)
+        }
+    }
+
+    private func botaoFaixa(_ icon: String, habilitado: Bool = true, _ a: @escaping () -> Void) -> some View {
+        Button(action: a) {
+            Image(systemName: icon).font(.system(size: 17))
+                .foregroundStyle(habilitado ? NovaTheme.dim : NovaTheme.dim2.opacity(0.5))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .disabled(!habilitado)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Pontos de navegacao (J/K do APK): inicio/fim das camadas, keyframes e marcadores.
+    private var pontos: [Float] {
+        var p: [Float] = [0, comp.duration]
+        for l in comp.layers {
+            p.append(l.startTime); p.append(l.endTime)
+            for k in l.transform.position.keyframes { p.append(k.time) }
+            for k in l.transform.scale.keyframes { p.append(k.time) }
+            for k in l.transform.rotationZ.keyframes { p.append(k.time) }
+            for k in l.transform.opacity.keyframes { p.append(k.time) }
+        }
+        p.append(contentsOf: comp.markers ?? [])
+        return Array(Set(p.map { ($0 * 1000).rounded() / 1000 })).sorted()
+    }
+    private func pontoAnterior() -> Float { pontos.last { $0 < time - 0.001 } ?? 0 }
+    private func proximoPonto() -> Float { pontos.first { $0 > time + 0.001 } ?? comp.duration }
+    private func irPara(_ t: Float) { playing = false; time = min(max(0, t), comp.duration) }
+
+    /// "Copiar e colar camada" do APK: duplica a camada selecionada logo acima.
+    private func duplicarSelecionada() {
+        guard let id = selectedLayer, let l = comp.layer(id: id) else { return }
+        var copia = l
+        copia.id = UUID()
+        copia.name = l.name + " " + "cópia".loc
+        editComp { c in
+            if let i = c.layers.firstIndex(where: { $0.id == id }) { c.layers.insert(copia, at: i) }
+        }
+        selectedLayer = copia.id
     }
 
     private func botao(_ icon: String, _ a: @escaping () -> Void) -> some View {
