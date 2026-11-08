@@ -15,8 +15,12 @@ mutaveis sao proibidas. Aqui cada funcao de entrada vira:
 Tambem troca swizzles GLSL .st/.stp/.stpq por .xy/.xyz/.xyzw.
 Uso: python3 -I Tools/reparar_shader.py entrada.metal saida.metal
 """
+import pathlib
 import re
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import reparar_glsl_extra  # noqa: E402
 
 ENTRY = re.compile(r'^\s*(fragment|kernel|vertex)\b')
 SWZ = re.compile(r'(?<=[\w\)\]])\.([stpq]{2,4})\b')
@@ -119,6 +123,7 @@ def repair(src):
     src = re.sub(r'\b(inout|out)\s+(?:const\s+)?([A-Za-z_]\w*)\s+([A-Za-z_]\w*)(?=\s*(?:\[\d*\])?\s*[,)])',
                  r'thread \2& \3', src)
     src = re.sub(r'\b(?:const\s+)?in\s+(?=[A-Za-z_]\w*\s+[A-Za-z_]\w*\s*[,)])', '', src)
+    src = reparar_glsl_extra.fix(src)
     src = SWZ.sub(lambda m: '.' + m.group(1).translate(str.maketrans('stpq', 'xyzw')), src)
     items = split_top(src)
     top, body_items, out_entries = [], [], []
