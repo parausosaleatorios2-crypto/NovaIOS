@@ -208,7 +208,7 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
             params.append(EffectParam(
                 id: id, kind: kind,
                 label: a["label"], labelEn: a["label-en"],
-                defaultValue: Self.floats(a["default"], count: kind.floatCount),
+                defaultValue: Self.floats(a["default"] ?? Self.defaultXYZ(a), count: kind.floatCount),
                 minValue: a["min"].flatMap(Float.init),
                 maxValue: a["max"].flatMap(Float.init),
                 step: (a["passo"] ?? a["step"]).flatMap(Float.init)))
@@ -245,11 +245,23 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
     }
 
     /// Le "1.0", "0.5, 0.5" ou "#ff8800" conforme o numero de componentes esperado.
+    /// Pontos e vetores do XML trazem o padrao em defaultX/defaultY/defaultZ.
+    static func defaultXYZ(_ a: [String: String]) -> String? {
+        guard let x = a["defaultX"] else { return nil }
+        return [x, a["defaultY"], a["defaultZ"]].compactMap { $0 }.joined(separator: ",")
+    }
+
     static func floats(_ raw: String?, count: Int) -> [Float] {
         guard let raw = raw?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
             return Array(repeating: 0, count: count)
         }
         if raw.hasPrefix("#") { return colorFloats(raw, count: count) }
+        // chaves: default="true"/"false"
+        switch raw.lowercased() {
+        case "true", "on", "yes": return Array(repeating: 1, count: max(count, 1))
+        case "false", "off", "no": return Array(repeating: 0, count: max(count, 1))
+        default: break
+        }
         var out = raw.split(whereSeparator: { $0 == "," || $0 == " " })
                      .compactMap { Float($0.trimmingCharacters(in: .whitespaces)) }
         if out.isEmpty { out = [0] }
