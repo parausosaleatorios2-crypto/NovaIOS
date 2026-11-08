@@ -45,7 +45,12 @@ public struct EditorView: View {
     private let onSave: (NovaProject) -> Void
     private var mediaRoot: URL { folder.appendingPathComponent(NovaProjectIO.mediaFolder) }
 
-    public init(project: NovaProject, folder: URL, onSave: @escaping (NovaProject) -> Void) {
+    /// Modo demonstracao (capturas do CI): roda o roteiro de DemoMode.swift.
+    private let demo: Bool
+
+    public init(project: NovaProject, folder: URL, onSave: @escaping (NovaProject) -> Void,
+                demo: Bool = false) {
+        self.demo = demo
         _project = State(initialValue: project)
         _lastSaved = State(initialValue: project)
         self.folder = folder
@@ -150,6 +155,7 @@ public struct EditorView: View {
             Button("Adicionar".loc) { adicionarTexto(novoTexto) }
         }
         .task(id: playing) { await tocar() }
+        .task { if demo { await roteiroDemo() } }
         .task(id: effectIDs) { await carregarManifestos() }
         .overlay(alignment: .top) {
             if importing || aviso != nil {
@@ -336,6 +342,23 @@ public struct EditorView: View {
             if let m = try? await EffectRegistry.shared.manifest(id: id) { out[id] = m }
         }
         manifests = out
+    }
+
+    /// Roteiro das capturas do CI (tempos em DemoMode.swift).
+    private func roteiroDemo() async {
+        func esperar(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        try? await EffectRegistry.shared.load()
+        let todos = await EffectRegistry.shared.all
+        let efeito = todos.first { $0.id.lowercased().contains("gaussian") && EffectRenderer.isAvailable("fx_\($0.slug)") }
+            ?? todos.first { EffectRenderer.isAvailable("fx_\($0.slug)") && EffectVerification.isUsable($0.id) }
+        time = 1
+        await esperar(4); selectedLayer = comp.layers.first?.id          // texto (camada de cima)
+        await esperar(2); sheet = .efeitos                              // 6 s
+        await esperar(3)                                                 // 9 s: aplica como o toque no navegador
+        if let efeito { aplicarEfeito(efeito); sheet = nil }
+        await esperar(5); sheet = nil                                    // 14 s
+        await esperar(4); sheet = .exportar                              // 18 s
+        await esperar(4); sheet = nil                                    // 22 s
     }
 
     /// Avanca o tempo enquanto toca, no ritmo da composicao.

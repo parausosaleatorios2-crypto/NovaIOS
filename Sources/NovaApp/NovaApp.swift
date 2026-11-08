@@ -25,7 +25,9 @@ struct NovaEditorApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack { HomeView() }
+            Group {
+                if DemoMode.ativo { DemoRoot() } else { NavigationStack { HomeView() } }
+            }
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in
                     // novaeditor://collab e novaeditor://preset, como no manifesto Android.

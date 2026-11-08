@@ -152,3 +152,70 @@ jobs:
             build/reparados.txt
             build/efeitos-verificados.json
             build/sonda.txt
+
+  # Capturas de tela no simulador do iPhone: tela inicial e o roteiro do
+  # modo demonstracao (Sources/NovaUI/DemoMode.swift). Servem para conferir
+  # o layout e reproduzir bugs de interface sem um aparelho.
+  capturas:
+    runs-on: macos-15
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Selecionar Xcode mais novo
+        run: |
+          XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XC"
+          xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: Separar shaders que nao compilam
+        run: |
+          mkdir -p build/air build/err Shaders-excluidos
+          : > build/falhas.txt; : > build/reparados.txt
+          ls Shaders/*.metal | xargs -P 6 -n 1 sh Tools/compilar-shader.sh
+          while read -r f; do [ -n "$f" ] && mv "$f" Shaders-excluidos/; done < build/falhas.txt
+          echo "fora: $(wc -l < build/falhas.txt)"
+
+      - name: Gerar projeto
+        run: brew install xcodegen && xcodegen generate
+
+      - name: Compilar para o simulador
+        run: |
+          set -o pipefail
+          xcodebuild -project NovaEditor.xcodeproj -scheme NovaEditor -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build 2>&1 \
+            | tee build/sim.log | grep -E "error:|\*\* BUILD"
+
+      - name: Capturas
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 -oE "iPhone [0-9]+ Pro \([A-F0-9-]+\)" | grep -oE "[A-F0-9-]{36}")
+          [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep -m1 -oE "iPhone[^(]*\([A-F0-9-]{36}\)" | grep -oE "[A-F0-9-]{36}")
+          echo "simulador: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance dark || true
+          APP=build/sim/Build/Products/Debug-iphonesimulator/NovaEditor.app
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p capturas
+          xcrun simctl launch "$UDID" com.novavision.editor
+          sleep 10
+          xcrun simctl io "$UDID" screenshot capturas/00-inicio.png
+          xcrun simctl terminate "$UDID" com.novavision.editor || true
+          sleep 2
+          SIMCTL_CHILD_NOVA_DEMO=1 xcrun simctl launch "$UDID" com.novavision.editor
+          ANT=0
+          for t in 5 8 12 16 20 24; do
+            sleep $((t - ANT)); ANT=$t
+            xcrun simctl io "$UDID" screenshot "capturas/$(printf %02d $t)s.png"
+          done
+          xcrun simctl spawn "$UDID" log show --last 2m --predicate 'subsystem == "com.novavision.editor"' > capturas/log.txt 2>&1 || true
+          ls -la capturas
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capturas
+          path: |
+            capturas
+            build/sim.log
