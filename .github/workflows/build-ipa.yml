@@ -113,13 +113,23 @@ jobs:
 
       # O IPA (~150 MB) passa do limite de 100 MB por arquivo do git, entao vai
       # para a pagina de Releases: sempre o mesmo link, baixavel pelo celular.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NovaEditor-ipa
+          path: out/NovaEditor-unsigned.ipa
+
+      # A release ipa-latest e fixa; cada build so troca o arquivo nela.
+      # Criar tag nova pelo GITHUB_TOKEN em commit que mexe no workflow da 403
+      # ("Resource not accessible by integration"). Se a release nao existir,
+      # o passo falha sem derrubar o build: o IPA ja esta no artifact acima.
       - name: Publicar IPA em Releases (ipa-latest)
         if: github.ref == 'refs/heads/main'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=ipa-latest
-          FX=$(( $(ls Shaders/fx_*.metal | wc -l) ))
+          FX=$(ls Shaders/fx_*.metal | wc -l | tr -d ' ')
           {
             echo "IPA sem assinatura do commit ${GITHUB_SHA::7} ($(date -u '+%Y-%m-%d %H:%M UTC'))."
             echo
@@ -127,15 +137,8 @@ jobs:
             echo
             echo "Instale pelo eSign (ele assina no aparelho)."
           } > notes.md
-          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
-          gh release create "$TAG" out/NovaEditor-unsigned.ipa \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "NovaEditor IPA (último build)" --notes-file notes.md --latest
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: NovaEditor-ipa
-          path: out/NovaEditor-unsigned.ipa
+          gh release upload "$TAG" out/NovaEditor-unsigned.ipa --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
 
       - uses: actions/upload-artifact@v4
         if: always()
