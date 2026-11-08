@@ -138,6 +138,8 @@ struct InicioTab: View {
                         .strokeBorder(NovaTheme.line2))
                     .padding(.horizontal, 16)
 
+                TemplatesCarrossel(store: store)
+
                 secao("Projetos", acao: "novo")
                 if store.projects.isEmpty {
                     Text("Nenhum projeto ainda".loc)
@@ -150,6 +152,7 @@ struct InicioTab: View {
                                 EditorView(project: p, folder: store.folder(for: p),
                                            onSave: { store.save($0) })
                             } label: { ProjetoRow(project: p) }
+                            .acoesDoProjeto(p, store: store)
                         }
                     }.padding(.horizontal, 16)
                 }
@@ -178,6 +181,7 @@ struct ProjetosTab: View {
             HStack {
                 Text("Projetos".loc).font(.system(size: 19, weight: .bold))
                 Spacer()
+                ImportarNovaBotao(store: store)
             }.padding(.horizontal, 16).padding(.vertical, 12)
 
             if store.projects.isEmpty {
@@ -196,6 +200,7 @@ struct ProjetosTab: View {
                             NavigationLink { EditorView(project: p, folder: store.folder(for: p), onSave: { store.save($0) }) } label: {
                                 ProjetoRow(project: p)
                             }.buttonStyle(.plain)
+                            .acoesDoProjeto(p, store: store)
                         }
                     }.padding(.horizontal, 16)
                 }
