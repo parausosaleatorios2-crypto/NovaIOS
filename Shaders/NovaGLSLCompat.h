@@ -18,6 +18,6 @@ inline float gmLum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 inline float gmLum(float4 c) { return gmLum(c.rgb); }
 
 // mix(a, b, bvec) do GLSL escolhe por componente: no MSL e select.
-inline float2 mix(float2 a, float2 b, bool2 c) { return select(a, b, c); }
-inline float3 mix(float3 a, float3 b, bool3 c) { return select(a, b, c); }
-inline float4 mix(float4 a, float4 b, bool4 c) { return select(a, b, c); }
+// Template: so casa com condicao vetor-de-bool, sem disputar com o mix normal.
+template <typename T, int N>
+inline vec<T, N> mix(vec<T, N> a, vec<T, N> b, vec<bool, N> c) { return select(a, b, c); }
