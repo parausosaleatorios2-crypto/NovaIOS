@@ -123,7 +123,8 @@ def repair(src):
     src = re.sub(r'\b(inout|out)\s+(?:const\s+)?([A-Za-z_]\w*)\s+([A-Za-z_]\w*)(?=\s*(?:\[\d*\])?\s*[,)])',
                  r'thread \2& \3', src)
     src = re.sub(r'\b(?:const\s+)?in\s+(?=[A-Za-z_]\w*\s+[A-Za-z_]\w*\s*[,)])', '', src)
-    src = reparar_glsl_extra.fix(src)
+    if '--basico' not in sys.argv:
+        src = reparar_glsl_extra.fix(src)
     src = SWZ.sub(lambda m: '.' + m.group(1).translate(str.maketrans('stpq', 'xyzw')), src)
     items = split_top(src)
     top, body_items, out_entries = [], [], []
