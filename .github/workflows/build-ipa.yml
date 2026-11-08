@@ -42,6 +42,26 @@ jobs:
           while read -r f; do [ -n "$f" ] && mv "$f" Shaders-excluidos/; done < build/falhas.txt
           echo "### Shaders: $((TOTAL-FAIL)) de $TOTAL compilaram ($REP reparados)" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Conferir EngineUniforms (Swift x Metal)
+        run: python3 -I Tools/gerar_uniforms_h.py --check
+
+      # Aplica cada efeito numa imagem de teste com o mesmo motor do app, no
+      # Mac do runner, e grava verificacao/efeitos.json: o app esconde os que
+      # sairem pretos, transparentes, com NaN ou com erro.
+      - name: Sonda de efeitos (macOS)
+        continue-on-error: true
+        timeout-minutes: 45
+        run: |
+          mkdir -p build/airmac
+          : > build/falhas-mac.txt
+          ls Shaders/*.metal | xargs -P 6 -n 1 sh Tools/compilar-shader-mac.sh
+          echo "falharam no macOS: $(wc -l < build/falhas-mac.txt)"
+          xcrun -sdk macosx metallib build/airmac/*.air -o build/probe.metallib
+          swift build -c release --product nova-effect-probe
+          .build/release/nova-effect-probe build/probe.metallib Resources/effects Resources             build/efeitos-verificados.json | tee build/sonda.txt
+          cp build/efeitos-verificados.json Resources/verificacao/efeitos.json
+          { echo '### Sonda de efeitos'; echo '```'; cat build/sonda.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Instalar XcodeGen
         run: brew install xcodegen
 
@@ -120,3 +140,5 @@ jobs:
             build/erros-shaders.txt
             build/erros-reparados.txt
             build/reparados.txt
+            build/efeitos-verificados.json
+            build/sonda.txt

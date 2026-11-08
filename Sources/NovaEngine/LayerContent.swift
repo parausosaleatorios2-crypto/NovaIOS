@@ -18,7 +18,9 @@ import MetalKit
 import AVFoundation
 import CoreText
 import ImageIO
+#if canImport(UIKit)
 import UIKit
+#endif
 import os
 
 public final class MediaContentProvider: LayerContentProvider {
@@ -141,6 +143,7 @@ public final class MediaContentProvider: LayerContentProvider {
         return tex
     }
 
+#if canImport(UIKit)
     /// Mede o texto como a camada vai ocupar (para posicionar ao criar).
     public static func measureText(_ text: String, fontName: String?, size: CGFloat) -> CGSize {
         let attr = attributed(text.isEmpty ? " " : text, fontName: fontName, size: size,
@@ -177,6 +180,15 @@ public final class MediaContentProvider: LayerContentProvider {
         }
         return img.cgImage
     }
+
+#else
+    /// Sem UIKit (ferramentas de linha de comando no macOS): texto nao e desenhado.
+    public static func measureText(_ text: String, fontName: String?, size: CGFloat) -> CGSize {
+        CGSize(width: 8, height: 8)
+    }
+    static func renderText(_ text: String, fontName: String?, size: CGFloat,
+                           color: SIMD4<Float>) -> CGImage? { nil }
+#endif
 
     // MARK: solido
 

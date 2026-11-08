@@ -202,6 +202,25 @@ public struct Animated<T: Interpolatable>: Codable, Sendable, Equatable {
         return k.id
     }
 
+    /// Muda o valor no instante `time`: se a propriedade ja tem chaves, cria
+    /// ou atualiza a chave ali (como o cronometro do AE); senao muda o valor fixo.
+    public mutating func set(_ value: T, at time: Float) {
+        if keyframes.isEmpty { staticValue = value }
+        else { setKeyframe(time: time, value: value) }
+    }
+
+    /// Ha uma chave exatamente neste instante?
+    public func hasKeyframe(at time: Float, tolerance: Float = 1e-3) -> Bool {
+        keyframes.contains { abs($0.time - time) < tolerance }
+    }
+
+    /// Liga/desliga a animacao (o cronometro): ligar cria a primeira chave com
+    /// o valor atual; desligar apaga as chaves e fica com o valor deste instante.
+    public mutating func toggleAnimation(at time: Float) {
+        if keyframes.isEmpty { setKeyframe(time: time, value: staticValue) }
+        else { clearKeyframes(keepingValueAt: time) }
+    }
+
     public mutating func removeKeyframe(id: UUID) {
         keyframes.removeAll { $0.id == id }
     }

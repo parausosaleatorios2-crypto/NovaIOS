@@ -125,6 +125,25 @@ public final class EffectRenderer {
 
     private var pipelines: [String: MTLRenderPipelineState] = [:]
     private let pipelineLock = NSLock()
+    private var fileTextures: [String: MTLTexture] = [:]
+    private var transparentTexture: MTLTexture?
+
+    /// Nomes das funcoes que existem na metallib do app. Efeitos cujo shader
+    /// nao compilou ficam fora dela e nao devem aparecer para a pessoa.
+    public static let availableFunctions: Set<String> = {
+        guard let dev = MTLCreateSystemDefaultDevice(),
+              let lib = (try? dev.makeDefaultLibrary(bundle: .main)) ?? dev.makeDefaultLibrary()
+        else { return [] }
+        return Set(lib.functionNames)
+    }()
+
+    /// Pasta dos recursos (textures/, resource/...). nil = raiz do bundle do app.
+    /// A sonda de efeitos do CI aponta para Resources/ do repositorio.
+    nonisolated(unsafe) public static var resourceRoot: URL?
+
+    public static func isAvailable(_ functionName: String) -> Bool {
+        availableFunctions.contains(functionName)
+    }
 
     /// Formato de trabalho. rgba16Float preserva faixa alta — os efeitos do AE
     /// trabalham em float e estourar em 8 bits muda o resultado.
@@ -338,23 +357,23 @@ public final class EffectRenderer {
                 enc.setRenderPipelineState(state)
 
                 uni.acPass = passIndex
-                withUnsafeBytes(of: uni) { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+                withUnsafeBytes(of: uni) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<EngineUniforms>.stride, index: 0) }
                 paramBytes.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
                 enc.setFragmentSamplerState(sampler, index: 0)
 
-                // Resolve cada textura declarada no XML.
+                // Resolve cada textura declarada no XML. Nada aqui pode faltar:
+                // origem que o motor ainda nao fornece (outra camada, audio,
+                // historico) entra transparente, como o `empty="transparent"` do XML.
                 var infoIndex = 2
                 for (slot, t) in m.textures.enumerated() {
-                    let tex: MTLTexture?
+                    let tex: MTLTexture
                     switch t.source {
                     case .content:        tex = current
-                    case .buffer:         tex = buffers[t.id]
+                    case .buffer:         tex = buffers[t.id] ?? current
                     case .comp, .scene:   tex = input.comp ?? current
-                    case .file:           tex = input.files[t.id]
-                    }
-                    guard let tex else {
-                        enc.endEncoding()
-                        throw RenderError.missingInput(t.id, effect: m.name)
+                    case .file:
+                        if let f = input.files[t.id] { tex = f }
+                        else { tex = try resolveFile(t, current: current, input: input) }
                     }
                     enc.setFragmentTexture(tex, index: slot)
                     var info = NovaTexInfo(size: SIMD2(Float(tex.width), Float(tex.height)))
@@ -380,4 +399,51 @@ public final class EffectRenderer {
 
     public func release(_ t: MTLTexture) { pool.recycle(t) }
     public func drainPool() { pool.drain() }
+
+    // MARK: texturas que nao sao o conteudo
+
+    /// `src` do XML que nao e content/buffer/comp/scene.
+    private func resolveFile(_ t: EffectTexture, current: MTLTexture,
+                             input: Input) throws -> MTLTexture {
+        let src = t.path ?? ""
+        switch src {
+        case "original": return input.content
+        case "backdrop": return input.comp ?? current
+        case "history", "state": return current
+        default: break
+        }
+        // Imagem do pacote: textures/..., resource/..., testimg.png
+        if src.contains(".") {
+            pipelineLock.lock(); let cached = fileTextures[src]; pipelineLock.unlock()
+            if let cached { return cached }
+            if let url = (Self.resourceRoot ?? Bundle.main.resourceURL)?.appendingPathComponent(src),
+               FileManager.default.fileExists(atPath: url.path) {
+                let loader = MTKTextureLoader(device: device)
+                if let tex = try? loader.newTexture(URL: url, options: [
+                    .SRGB: false,
+                    .origin: MTKTextureLoader.Origin.topLeft,
+                    .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue)]) {
+                    pipelineLock.lock(); fileTextures[src] = tex; pipelineLock.unlock()
+                    return tex
+                }
+            }
+            log.error("textura \(src, privacy: .public) nao encontrada no pacote")
+        }
+        return try transparent()
+    }
+
+    private func transparent() throws -> MTLTexture {
+        if let transparentTexture { return transparentTexture }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
+                                                         width: 1, height: 1, mipmapped: false)
+        d.usage = [.shaderRead]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d) else {
+            throw RenderError.textureAllocFailed(width: 1, height: 1)
+        }
+        let zero: [UInt8] = [0, 0, 0, 0]
+        t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: zero, bytesPerRow: 4)
+        transparentTexture = t
+        return t
+    }
 }

@@ -46,6 +46,15 @@ public struct EditorView: View {
 
     private var comp: Composition { project.mainComposition ?? Composition() }
 
+    /// Altera uma camada. `save` false durante gestos e sliders (grava no fim).
+    private func editLayer(_ id: UUID, _ save: Bool, _ change: (inout Layer) -> Void) {
+        guard let ci = project.compositions.firstIndex(where: { $0.id == project.mainCompositionID })
+                ?? project.compositions.indices.first,
+              let li = project.compositions[ci].layers.firstIndex(where: { $0.id == id }) else { return }
+        change(&project.compositions[ci].layers[li])
+        if save { onSave(project) }
+    }
+
     /// Altera a composicao principal e grava o projeto.
     private func editComp(_ change: (inout Composition) -> Void) {
         guard let i = project.compositions.firstIndex(where: { $0.id == project.mainCompositionID })
@@ -80,6 +89,9 @@ public struct EditorView: View {
             case .efeitos:  EffectBrowserView { e in aplicarEfeito(e); sheet = nil }
             case .layout:   LayoutPickerSheet(selected: $layout)
             case .exportar: ExportSheet(composition: comp, mediaRoot: mediaRoot, manifests: manifests)
+            case .propriedades(let id):
+                LayerPropertiesSheet(comp: comp, layerID: id, time: time, manifests: manifests,
+                                     edit: { id, save, change in editLayer(id, save, change) })
             case .info(let t, let m): InfoSheet(titulo: t, mensagem: m)
             }
         }
@@ -97,7 +109,7 @@ public struct EditorView: View {
             Button("Adicionar".loc) { adicionarTexto(novoTexto) }
         }
         .task(id: playing) { await tocar() }
-        .task(id: effectIDs) { carregarManifestos() }
+        .task(id: effectIDs) { await carregarManifestos() }
         .overlay(alignment: .top) {
             if importing || aviso != nil {
                 Text(importing ? "Carregando mídia…".loc : (aviso ?? ""))
@@ -189,16 +201,22 @@ public struct EditorView: View {
                 c.layers[i].effects.append(AppliedEffect(effectID: e.id))
             }
         }
+        selectedLayer = id
+        // Abre as propriedades para ajustar o efeito na hora.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            sheet = .propriedades(id)
+        }
     }
 
     private var effectIDs: [String] {
         Array(Set(comp.layers.flatMap { $0.effects.map(\.effectID) })).sorted()
     }
 
-    private func carregarManifestos() {
+    private func carregarManifestos() async {
         var out: [String: EffectManifest] = [:]
         for id in effectIDs {
-            if let m = try? EffectRegistry.shared.manifest(id: id) { out[id] = m }
+            if let m = try? await EffectRegistry.shared.manifest(id: id) { out[id] = m }
         }
         manifests = out
     }
@@ -246,6 +264,10 @@ public struct EditorView: View {
         ZStack {
             CheckerboardBackground()
             PreviewSurface(composition: comp, time: time, mediaRoot: mediaRoot, manifests: manifests)
+                .overlay {
+                    TransformGizmo(comp: comp, time: time, selected: $selectedLayer,
+                                   edit: { id, save, change in editLayer(id, save, change) })
+                }
                 .aspectRatio(CGFloat(comp.width) / CGFloat(comp.height), contentMode: .fit)
                 .overlay(Rectangle().strokeBorder(NovaTheme.selection, lineWidth: 1))
                 .padding(14)
@@ -267,7 +289,11 @@ public struct EditorView: View {
             botao("forward.frame.fill") { time = min(comp.duration, time + comp.frameDuration) }
             botao("forward.end.fill") { time = comp.duration }
             Spacer()
-            if selectedLayer != nil {
+            if let id = selectedLayer {
+                Button { sheet = .propriedades(id) } label: {
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                        .foregroundStyle(NovaTheme.accent)
+                }
                 Button(role: .destructive) { excluirSelecionada() } label: {
                     Image(systemName: "trash").font(.system(size: 13))
                         .foregroundStyle(NovaTheme.warning)
@@ -382,11 +408,13 @@ public struct EditorView: View {
 
 enum EditorSheet: Identifiable {
     case efeitos, layout, exportar
+    case propriedades(UUID)
     case info(String, String)
     var id: String {
         switch self {
         case .efeitos: return "efeitos"; case .layout: return "layout"
         case .exportar: return "exportar"; case .info(let t, _): return "info-\(t)"
+        case .propriedades(let u): return "prop-\(u.uuidString)"
         }
     }
 }

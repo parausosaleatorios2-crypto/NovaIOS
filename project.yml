@@ -136,6 +136,9 @@ targets:
       - path: Resources/vibrance
         type: folder
         buildPhase: resources
+      - path: Resources/verificacao
+        type: folder
+        buildPhase: resources
       - path: Resources/wavewarp
         type: folder
         buildPhase: resources

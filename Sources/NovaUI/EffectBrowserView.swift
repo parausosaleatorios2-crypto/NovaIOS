@@ -120,8 +120,13 @@ public struct EffectBrowserView: View {
         let reg = EffectRegistry.shared
         do {
             try await reg.load()
-            entries = await reg.all
-            categorias = await reg.categories.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+            // So os efeitos cujo shader esta na metallib do app (os outros nao
+            // compilaram e aplicar daria erro).
+            let todos = await reg.all
+            entries = todos.filter { EffectRenderer.isAvailable("fx_\($0.slug)") && EffectVerification.isUsable($0.id) }
+            var cont: [String: Int] = [:]
+            for e in entries { cont[e.category ?? "other", default: 0] += 1 }
+            categorias = cont.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
             let errs = await reg.indexErrors
             if !errs.isEmpty && entries.isEmpty {
                 erro = errs.prefix(3).joined(separator: "\n")

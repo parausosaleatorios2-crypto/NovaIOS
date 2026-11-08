@@ -59,15 +59,8 @@ public final class Compositor {
         d.vertexFunction = vert
         d.fragmentFunction = frag
         d.colorAttachments[0].pixelFormat = renderer.workingFormat
-        // A mescla em si acontece no shader (precisa dos 28 modos do AE),
-        // entao o estagio fixo so faz "over" com alfa pre-multiplicado.
-        d.colorAttachments[0].isBlendingEnabled = true
-        d.colorAttachments[0].rgbBlendOperation = .add
-        d.colorAttachments[0].alphaBlendOperation = .add
-        d.colorAttachments[0].sourceRGBBlendFactor = .one
-        d.colorAttachments[0].sourceAlphaBlendFactor = .one
-        d.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-        d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        // A mescla inteira acontece no shader, que le o fundo (copia da
+        // composicao) — os modos do AE precisam dele. Sem mescla fixa.
         do {
             let p = try device.makeRenderPipelineState(descriptor: d)
             blendPipelines[mode] = p
@@ -111,10 +104,15 @@ public final class Compositor {
         clear.colorAttachments[0].storeAction = .store
         cb.makeRenderCommandEncoder(descriptor: clear)?.endEncoding()
 
+        // Copia do fundo que cada camada le para se mesclar.
+        let backdrop = try pool.obtain(width: w, height: h, format: renderer.workingFormat)
+        defer { pool.recycle(backdrop) }
+
         for layer in comp.visibleLayers(at: time) {
             do {
                 try await drawLayer(layer, comp: comp, time: time,
-                              into: output, cb: cb, manifests: manifests)
+                                    into: output, backdrop: backdrop,
+                                    cb: cb, manifests: manifests)
             } catch {
                 let msg = "\(layer.name): \(error.localizedDescription)"
                 lastFrameWarnings.append(msg)
@@ -132,7 +130,8 @@ public final class Compositor {
     }
 
     private func drawLayer(_ layer: Layer, comp: Composition, time: Float,
-                           into output: MTLTexture, cb: MTLCommandBuffer,
+                           into output: MTLTexture, backdrop: MTLTexture,
+                           cb: MTLCommandBuffer,
                            manifests: [String: EffectManifest]) async throws {
         guard let provider = contentProvider else { return }
         let mt = layer.mediaTime(at: time)
@@ -157,14 +156,28 @@ public final class Compositor {
                 pixelScale: 1,
                 time: time,
                 frameDuration: comp.frameDuration)
-            let result = try renderer.render(m, input: input,
+            // Efeito que falha fica de fora; a camada continua aparecendo.
+            let result: MTLTexture
+            do {
+                result = try renderer.render(m, input: input,
                                              values: fx.values(at: time, manifest: m),
                                              into: cb)
+            } catch {
+                lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+                continue
+            }
             if let o = owned { renderer.release(o) }
             owned = result
             tex = result
         }
         defer { if let o = owned { renderer.release(o) } }
+
+        // Fundo atual -> copia que o shader le.
+        guard let blit = cb.makeBlitCommandEncoder() else {
+            throw RenderError.encoderFailed("blit do fundo")
+        }
+        blit.copy(from: output, to: backdrop)
+        blit.endEncoding()
 
         // Mescla no buffer da composicao.
         let rp = MTLRenderPassDescriptor()
@@ -184,8 +197,9 @@ public final class Compositor {
         u.layerToScreen = worldMatrix.inverse
         u.layerSize = layerSize
         u.screenSize = comp.size
-        withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<BlendUniforms>.stride, index: 0) }
         enc.setFragmentTexture(tex, index: 0)
+        enc.setFragmentTexture(backdrop, index: 1)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
     }
@@ -238,11 +252,29 @@ public final class Compositor {
         u.layerToScreen = simd_float4x4(diagonal: SIMD4(sx, sy, 1, 1))
         u.layerSize = SIMD2(Float(source.width), Float(source.height))
         u.screenSize = SIMD2(Float(target.width), Float(target.height))
-        withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
+        withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<BlendUniforms>.stride, index: 0) }
         enc.setFragmentTexture(source, index: 0)
+        enc.setFragmentTexture(try clearTexture(), index: 1)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
     }
 
     public func makeCommandBuffer() -> MTLCommandBuffer? { queue.makeCommandBuffer() }
+
+    private var clear1x1: MTLTexture?
+    /// Fundo transparente para a copia (previa/exportacao).
+    private func clearTexture() throws -> MTLTexture {
+        if let clear1x1 { return clear1x1 }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
+                                                         width: 1, height: 1, mipmapped: false)
+        d.usage = [.shaderRead]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d) else {
+            throw RenderError.textureAllocFailed(width: 1, height: 1)
+        }
+        let z: [UInt8] = [0, 0, 0, 0]
+        t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: z, bytesPerRow: 4)
+        clear1x1 = t
+        return t
+    }
 }

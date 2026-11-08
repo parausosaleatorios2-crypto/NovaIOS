@@ -59,38 +59,48 @@ inline float3 b_setSat(float3 c, float s) {
     return (mx > mn) ? (c - mn) * s / (mx - mn) : float3(0.0);
 }
 
+// Indices = ordem de BlendMode.allCases no Swift.
+// O fundo (`backdrop`) e uma copia da composicao antes desta camada, com alfa
+// pre-multiplicado; o resultado SUBSTITUI o pixel (a GPU nao faz mescla fixa).
 fragment float4 nova_blend_fragment(
     NovaVertexOut in [[stage_in]],
     constant BlendUniforms& u [[buffer(0)]],
-    texture2d<float> src [[texture(0)]])
+    texture2d<float> src [[texture(0)]],
+    texture2d<float> backdrop [[texture(1)]])
 {
     constexpr sampler smp(filter::linear, address::clamp_to_edge);
+    constexpr sampler bsm(filter::nearest, address::clamp_to_edge);
+
+    float4 bp = backdrop.sample(bsm, in.uv);
 
     // Leva o pixel da tela para o espaco da camada.
     float2 screenPx = in.uv * u.screenSize;
     float4 local = u.layerToScreen * float4(screenPx, 0.0, 1.0);
     float2 uv = local.xy / max(u.layerSize, float2(1.0));
-    if (any(uv < 0.0) || any(uv > 1.0)) { return float4(0.0); }
+    if (any(uv < 0.0) || any(uv > 1.0)) { return bp; }
 
     float4 s = src.sample(smp, uv);
     s.a *= u.opacity;
-    if (s.a <= 0.0) { return float4(0.0); }
+    if (u.mode == 1) {   // dissolver: cada pixel aparece ou some conforme a opacidade
+        float n = fract(sin(dot(floor(screenPx), float2(12.9898, 78.233))) * 43758.5453);
+        s.a = n < s.a ? 1.0 : 0.0;
+    }
+    if (s.a <= 0.0) { return bp; }
 
-    // O shader recebe o destino por leitura programavel nao; o estagio fixo
-    // faz o "over". Os modos que precisam do fundo usam o backdrop amostrado
-    // pelo compositor em acPass > 0. Aqui tratamos os separaveis sobre preto,
-    // que e o comportamento de Normal/Add/Screen com destino limpo.
-    float3 b = float3(0.0);
+    float3 b = bp.a > 0.0 ? bp.rgb / bp.a : float3(0.0);
     float3 c = s.rgb;
     switch (u.mode) {
-        case  3: c = b_multiply(b, s.rgb);   break;
         case  2: c = b_darken(b, s.rgb);     break;
+        case  3: c = b_multiply(b, s.rgb);   break;
         case  4: c = b_colorBurn(b, s.rgb);  break;
         case  5: c = b_linearBurn(b, s.rgb); break;
+        case  6: c = b_lum(s.rgb) < b_lum(b) ? s.rgb : b; break;   // cor mais escura
         case  7: c = b_add(b, s.rgb);        break;
         case  8: c = b_lighten(b, s.rgb);    break;
         case  9: c = b_screen(b, s.rgb);     break;
         case 10: c = b_colorDodge(b, s.rgb); break;
+        case 11: c = b_add(b, s.rgb);        break;                // superexposicao linear
+        case 12: c = b_lum(s.rgb) > b_lum(b) ? s.rgb : b; break;   // cor mais clara
         case 13: c = b_overlay(b, s.rgb);    break;
         case 14: c = b_softLight(b, s.rgb);  break;
         case 15: c = b_hardLight(b, s.rgb);  break;
@@ -100,11 +110,18 @@ fragment float4 nova_blend_fragment(
         case 19: c = b_hardMix(b, s.rgb);    break;
         case 20: c = b_difference(b, s.rgb); break;
         case 21: c = b_exclusion(b, s.rgb);  break;
-        case 25: c = b_setLum(b_setSat(s.rgb, b_sat(b)), b_lum(b)); break;
-        case 26: c = b_setLum(b_setSat(b, b_sat(s.rgb)), b_lum(b)); break;
-        case 27: c = b_setLum(s.rgb, b_lum(b)); break;
-        case 28: c = b_setLum(b, b_lum(s.rgb)); break;
+        case 22: c = max(float3(0.0), b - s.rgb); break;            // subtrair
+        case 23: c = min(float3(1.0), b / max(s.rgb, 1e-4)); break; // dividir
+        case 24: c = b_setLum(b_setSat(s.rgb, b_sat(b)), b_lum(b)); break;  // matiz
+        case 25: c = b_setLum(b_setSat(b, b_sat(s.rgb)), b_lum(b)); break;  // saturacao
+        case 26: c = b_setLum(s.rgb, b_lum(b)); break;                       // cor
+        case 27: c = b_setLum(b, b_lum(s.rgb)); break;                       // luminosidade
         default: c = s.rgb; break;
     }
-    return float4(c * s.a, s.a);   // pre-multiplicado
+    // Onde nao ha fundo, a camada aparece como e.
+    c = mix(s.rgb, c, bp.a);
+    if (u.mode == 28) {   // adicionar alfa
+        return float4(min(float3(1.0), c * s.a + bp.rgb), min(1.0, s.a + bp.a));
+    }
+    return float4(c * s.a + bp.rgb * (1.0 - s.a), s.a + bp.a * (1.0 - s.a));
 }

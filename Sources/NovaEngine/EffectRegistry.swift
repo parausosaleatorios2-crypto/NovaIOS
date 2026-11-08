@@ -126,3 +126,31 @@ public actor EffectRegistry {
          .trimmingCharacters(in: .whitespaces)
     }
 }
+
+// MARK: - Verificacao dos efeitos (sonda do CI)
+
+/// Resultado da sonda do CI (Tools/EffectProbe), gravado em
+/// verificacao/efeitos.json no bundle. Efeitos que sairam pretos, transparentes,
+/// com NaN ou com erro ficam fora do navegador de efeitos.
+public enum EffectVerification {
+    public struct Item: Codable, Sendable {
+        public let id: String
+        public let status: String
+    }
+
+    public static let statusById: [String: String] = {
+        guard let url = Bundle.main.url(forResource: "efeitos", withExtension: "json",
+                                        subdirectory: "verificacao"),
+              let data = try? Data(contentsOf: url),
+              let items = try? JSONDecoder().decode([Item].self, from: data) else { return [:] }
+        return Dictionary(items.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
+    }()
+
+    static let quebrados: Set<String> = ["preto", "transparente", "nan", "erro"]
+
+    /// true se a sonda aprovou o efeito, ou se nao ha dado sobre ele.
+    public static func isUsable(_ id: String) -> Bool {
+        guard let s = statusById[id] else { return true }
+        return !quebrados.contains(s)
+    }
+}

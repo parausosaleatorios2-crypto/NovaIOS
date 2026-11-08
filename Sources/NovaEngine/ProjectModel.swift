@@ -54,11 +54,15 @@ public struct Transform: Codable, Sendable, Equatable {
     public var rotationY   = Animated<Float>(0)
     public var rotationZ   = Animated<Float>(0)
     public var opacity     = Animated<Float>(100)                      // percentual
+    /// Inclinacao em graus (x, y). Opcional para abrir projetos antigos.
+    public var skew: Animated<SIMD2<Float>>?
 
     public init() {}
 
-    /// Matriz 4x4 da camada no instante dado. Ordem: ancora, escala, giro, posicao —
-    /// a mesma do After Effects e do app Android.
+    /// Matriz 4x4 da camada no instante dado, igual a
+    /// com.novaeditor.model.Transform.buildMatrix do APK (conferido com o REA):
+    ///   M = T(posicao, z) * Rz * Ry * Rx * Skew * S(escala) * T(-ancora)
+    /// Aplicada a um ponto da camada: tira a ancora, escala, inclina, gira, posiciona.
     public func matrix(at t: Float) -> simd_float4x4 {
         let a = anchorPoint.value(at: t)
         let p = position.value(at: t)
@@ -67,14 +71,20 @@ public struct Transform: Codable, Sendable, Equatable {
         let rx = rotationX.value(at: t) * .pi / 180
         let ry = rotationY.value(at: t) * .pi / 180
         let rz = rotationZ.value(at: t) * .pi / 180
+        let k = skew?.value(at: t) ?? .zero
 
-        var m = matrix_identity_float4x4
-        m = Self.translation(p.x, p.y, z) * m
-        m = Self.rotationZ(rz) * m
-        m = Self.rotationY(ry) * m
-        m = Self.rotationX(rx) * m
-        m = Self.scaling(s.x, s.y, 1) * m
-        m = Self.translation(-a.x, -a.y, 0) * m
+        var m = Self.translation(p.x, p.y, z)
+        if rz != 0 { m = m * Self.rotationZ(rz) }
+        if ry != 0 { m = m * Self.rotationY(ry) }
+        if rx != 0 { m = m * Self.rotationX(rx) }
+        if k.x != 0 || k.y != 0 {
+            var sk = matrix_identity_float4x4
+            sk.columns.1.x = tan(k.x * .pi / 180)
+            sk.columns.0.y = tan(k.y * .pi / 180)
+            m = m * sk
+        }
+        m = m * Self.scaling(s.x, s.y, 1)
+        m = m * Self.translation(-a.x, -a.y, 0)
         return m
     }
 
@@ -83,7 +93,7 @@ public struct Transform: Codable, Sendable, Equatable {
     public var isAnimated: Bool {
         anchorPoint.isAnimated || position.isAnimated || positionZ.isAnimated ||
         scale.isAnimated || rotationX.isAnimated || rotationY.isAnimated ||
-        rotationZ.isAnimated || opacity.isAnimated
+        rotationZ.isAnimated || opacity.isAnimated || (skew?.isAnimated ?? false)
     }
 
     // helpers de matriz
@@ -317,5 +327,15 @@ public struct NovaProject: Codable, Sendable, Identifiable, Equatable {
         self.name = name
         self.compositions = [composition]
         self.mainCompositionID = composition.id
+    }
+}
+
+// MARK: - Inclinacao sempre presente para a interface
+
+public extension Transform {
+    /// `skew` com valor padrao zero, para editar sem tratar o opcional.
+    var skewValue: Animated<SIMD2<Float>> {
+        get { skew ?? Animated(.zero) }
+        set { skew = newValue }
     }
 }
