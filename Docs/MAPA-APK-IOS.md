@@ -6,6 +6,9 @@ legíveis; o resto (render, UI) está ofuscado. Atualizado em 2026-11-08.
 
 Legenda: ✅ feito · 🟡 parcial · ❌ falta
 
+Três sessões trabalham em paralelo: editor/motor (esta), efeitos (shaders) e
+perfil/conta/marketplace/templates.
+
 ## Núcleo do editor
 
 | Área no APK | Classes | iOS |
@@ -59,11 +62,11 @@ Legenda: ✅ feito · 🟡 parcial · ❌ falta
 |---|---|---|
 | Importar mídia | — | ✅ galeria, várias de uma vez |
 | Exportar | `export.ServicoDeExportacao` | ✅ vídeo H.264/HEVC/alfa + áudio, GIF, PNG; PSD ❌ |
-| Projeto `.nova` | `persistence.*Dto` | 🟡 formato próprio; não abre `.nova` do Android |
+| Projeto `.nova` | `persistence.*Dto` | ✅ importa `.nova` do Android (ConversorAndroid); duplicar/exportar/apagar projeto |
 | Importar After Effects | `aeimport.*` | ❌ |
-| Nuvem, conta, biblioteca, IA, marketplace | `cloud.*`, `biblioteca.*` | ❌ (API não documentada) |
-| Layouts Nova/CapCut/Motion/AE | `layout.*` | 🟡 só Nova |
-| Templates | `templates.*` | ❌ |
+| Nuvem, conta, biblioteca, IA, marketplace | `cloud.*`, `biblioteca.*` | 🟡 Perfil, conta (Firebase) e Marketplace (comunidade e biblioteca); IA, legendas e export na nuvem ❌ |
+| Layouts Nova/CapCut/Motion/AE | `layout.*` | 🟡 só Nova; cores do tema iguais às do APK (#00ff89, cartões #141625); disposição das telas sem captura de referência |
+| Templates | `templates.*` | ✅ templates do APK (`Resources/templates`) |
 
 ## Próximos, por impacto
 
