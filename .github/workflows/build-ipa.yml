@@ -5,11 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Varias sessoes enviam ao mesmo tempo: o build novo cancela o anterior (ele
-# ja contem os commits de antes) e nao ha corrida na release ipa-latest.
+# Varias sessoes enviam ao mesmo tempo. Um build por vez: o que esta rodando
+# termina; dos que chegam depois, so o mais novo espera (ele ja contem os
+# anteriores). Sem corrida na release ipa-latest e sem cancelar tudo.
 concurrency:
   group: build-ipa-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
