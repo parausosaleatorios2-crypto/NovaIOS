@@ -12,3 +12,7 @@ template <typename A, typename B> inline auto greaterThanEqual(A a, B b) -> decl
 
 // sampler2D do GLSL como parametro de funcao auxiliar.
 typedef texture2d<float> sampler2D;
+
+// Luminancia que o motor Android injeta nos efeitos gm-* (Rec. 709).
+inline float gmLum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+inline float gmLum(float4 c) { return gmLum(c.rgb); }

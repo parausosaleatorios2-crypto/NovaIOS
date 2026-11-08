@@ -127,8 +127,11 @@ def repair(src):
         if not code:
             (body_items if out_entries or body_items else top).append(it)
             continue
-        if code.startswith('#') or code.startswith('using '):
+        if code.startswith('#include') or code.startswith('using ') or                 (code.startswith('#') and not body_items and not out_entries):
             top.append(it)
+        elif code.startswith('#'):
+            # #define no meio das funcoes fica no lugar (macro e textual).
+            body_items.append(it)
         elif re.match(r'struct\s+\w+Params\b', code) and not body_items:
             top.append(it)
         elif code.startswith('constant '):
@@ -141,7 +144,7 @@ def repair(src):
     if not out_entries:
         return None
 
-    result = [''.join(top)]
+    result = [''.join(t if t.endswith(chr(10)) else t + chr(10) for t in top)]
     for it, helpers in out_entries:
         code = code_of(it)
         po = code.index('(')
@@ -177,6 +180,11 @@ def repair(src):
                 h = re.sub(r'^(\s*(?:/\*.*?\*/|//[^\n]*\n|\s)*)(?:static\s+|inline\s+)+', r'\1', h, flags=re.S)
             ctx.append(h)
 
+        for var, typ in (('__nv_fragCoord', 'float4'), ('__nv_pointCoord', 'float2')):
+            decl = re.compile(chr(92) + 'b' + typ + r'\s+' + var + r'\s*=')
+            if decl.search(body):
+                body = decl.sub(var + ' =', body, count=1)
+                members.append('    %s %s;' % (typ, var))
         rett = 'void' if kind != 'fragment' and ret.strip() == 'void' else ret
         result.append('\nstruct __ctx_%s {\n%s\n%s\n    %s __run() %s\n};\n' % (
             name, '\n'.join(members), ''.join(ctx), rett, body))
