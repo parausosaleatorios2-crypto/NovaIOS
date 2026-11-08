@@ -113,7 +113,8 @@ struct TransformGizmo: View {
 
     /// Camada mais de cima que contem o ponto (em px da composicao).
     private func hit(_ p: SIMD2<Float>) -> UUID? {
-        for l in comp.layers where l.isVisible(at: time) && l.kind.rendersPixels && !l.locked {
+        for l in comp.layers where l.isVisible(at: time) && l.kind.rendersPixels && !l.locked
+            && l.kind != .adjustment {
             let inv = comp.worldMatrix(of: l, at: time).inverse
             let q = inv * SIMD4(p.x, p.y, 0, 1)
             let s = size(l)
@@ -140,8 +141,15 @@ struct LayerPropertiesSheet: View {
             Group {
                 if let l = layer {
                     Form {
-                        transformSection(l)
+                        if l.kind.rendersPixels { transformSection(l) }
+                        if l.kind == .shape { ShapeSection(layer: l, time: time, edit: edit) }
+                        if l.kind == .text { TextSection(layer: l, time: time, edit: edit) }
+                        if l.kind == .video || l.kind == .audio { MediaSection(layer: l, edit: edit) }
                         if !l.effects.isEmpty { effectsSection(l) }
+                        if l.kind.rendersPixels && l.kind != .adjustment {
+                            MaskSection(layer: l, comp: comp, time: time, edit: edit)
+                        }
+                        ParentSection(layer: l, comp: comp, edit: edit)
                         layerSection(l)
                     }
                     .scrollContentBackground(.hidden)
@@ -195,6 +203,9 @@ struct LayerPropertiesSheet: View {
                     }
                 }
                 Text(title.loc).font(.system(size: 12))
+                if a.hasKeyframe(at: time) {
+                    EasingMenu { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
+                }
                 Spacer()
                 Text(String(format: "%.1f%@", v, unit)).font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(NovaTheme.dim)
@@ -220,6 +231,9 @@ struct LayerPropertiesSheet: View {
                     }
                 }
                 Text(title.loc).font(.system(size: 12))
+                if a.hasKeyframe(at: time) {
+                    EasingMenu { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
+                }
                 Spacer()
                 Text(String(format: "%.0f, %.0f%@", v.x, v.y, unit))
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(NovaTheme.dim)
@@ -375,11 +389,7 @@ struct LayerPropertiesSheet: View {
                 TextField("Texto".loc, text: Binding(get: { l.text ?? "" }, set: { t in
                     edit(l.id, true) { layer in
                         layer.text = t
-                        let fs = CGFloat(layer.fontSize ?? 96)
-                        let m = MediaContentProvider.measureText(t, fontName: layer.fontName, size: fs)
-                        let s = SIMD2(Float(m.width), Float(m.height))
-                        layer.size = s
-                        layer.transform.anchorPoint.set(s / 2, at: time)
+                        TextSection.remeasure(&layer, time)
                     }
                 }))
                 HStack {
@@ -387,10 +397,7 @@ struct LayerPropertiesSheet: View {
                     Slider(value: Binding(get: { l.fontSize ?? 96 }, set: { v in
                         edit(l.id, false) { layer in
                             layer.fontSize = v
-                            let m = MediaContentProvider.measureText(layer.text ?? "", fontName: layer.fontName, size: CGFloat(v))
-                            let s = SIMD2(Float(m.width), Float(m.height))
-                            layer.size = s
-                            layer.transform.anchorPoint.set(s / 2, at: time)
+                            TextSection.remeasure(&layer, time)
                         }
                     }), in: 8...600, onEditingChanged: { ed in if !ed { edit(l.id, true) { _ in } } })
                 }
@@ -400,10 +407,6 @@ struct LayerPropertiesSheet: View {
             if l.kind == .solid || l.kind == .shape {
                 ColorPicker("Cor".loc, selection: Binding(get: { Color(rgba: l.solidColor ?? SIMD4(1, 1, 1, 1)) },
                                                           set: { c in edit(l.id, true) { $0.solidColor = c.rgba } }))
-            }
-            if l.kind == .video {
-                Toggle("Sem som".loc, isOn: Binding(get: { l.muted ?? false },
-                                                    set: { m in edit(l.id, true) { $0.muted = m } }))
             }
             Picker("Mesclagem".loc, selection: Binding(get: { l.blendMode },
                                                        set: { b in edit(l.id, true) { $0.blendMode = b } })) {

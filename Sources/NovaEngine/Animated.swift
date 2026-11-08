@@ -209,6 +209,11 @@ public struct Animated<T: Interpolatable>: Codable, Sendable, Equatable {
         else { setKeyframe(time: time, value: value) }
     }
 
+    /// Muda a interpolacao da chave que esta neste instante.
+    public mutating func setEasing(at time: Float, _ e: Easing, tolerance: Float = 1e-3) {
+        if let i = keyframes.firstIndex(where: { abs($0.time - time) < tolerance }) { keyframes[i].easing = e }
+    }
+
     /// Ha uma chave exatamente neste instante?
     public func hasKeyframe(at time: Float, tolerance: Float = 1e-3) -> Bool {
         keyframes.contains { abs($0.time - time) < tolerance }

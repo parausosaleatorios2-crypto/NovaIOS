@@ -69,6 +69,17 @@ public struct TimelineView: View {
                     }
                     t += step
                 }
+                // Marcadores da composicao.
+                for m in composition.markers ?? [] {
+                    let x = nameColumn + CGFloat(m) * pixelsPerSecond - scrollX
+                    guard x >= nameColumn && x <= size.width else { continue }
+                    ctx.fill(Path { p in
+                        p.move(to: CGPoint(x: x - 4, y: 0))
+                        p.addLine(to: CGPoint(x: x + 4, y: 0))
+                        p.addLine(to: CGPoint(x: x, y: 7))
+                        p.closeSubpath()
+                    }, with: .color(NovaTheme.warning))
+                }
             }
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { g in

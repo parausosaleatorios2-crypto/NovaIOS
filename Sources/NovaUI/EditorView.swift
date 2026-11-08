@@ -14,6 +14,8 @@
 import SwiftUI
 import MetalKit
 import PhotosUI
+import AVFoundation
+import UniformTypeIdentifiers
 
 public struct EditorView: View {
     @State private var project: NovaProject
@@ -29,6 +31,7 @@ public struct EditorView: View {
     @State private var aviso: String?
     @State private var novoTexto = ""
     @State private var pedindoTexto = false
+    @State private var importandoAudio = false
     @State private var manifests: [String: EffectManifest] = [:]
     /// Desfazer/refazer (UndoHistory no APK): um passo por gravacao.
     @State private var undoStack: [NovaProject] = []
@@ -121,7 +124,7 @@ public struct EditorView: View {
             switch s {
             case .efeitos:  EffectBrowserView { e in aplicarEfeito(e); sheet = nil }
             case .layout:   LayoutPickerSheet(selected: $layout)
-            case .exportar: ExportSheet(composition: comp, mediaRoot: mediaRoot, manifests: manifests)
+            case .exportar: ExportSheet(composition: comp, mediaRoot: mediaRoot, manifests: manifests, time: time)
             case .propriedades(let id):
                 LayerPropertiesSheet(comp: comp, layerID: id, time: time, manifests: manifests,
                                      edit: { id, save, change in editLayer(id, save, change) })
@@ -135,6 +138,10 @@ public struct EditorView: View {
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await importar(items) }
+        }
+        .fileImporter(isPresented: $importandoAudio, allowedContentTypes: [.audio],
+                      allowsMultipleSelection: true) { r in
+            if case .success(let urls) = r { Task { await importarAudio(urls) } }
         }
         .alert("Texto".loc, isPresented: $pedindoTexto) {
             TextField("Digite o texto".loc, text: $novoTexto)
@@ -206,6 +213,82 @@ public struct EditorView: View {
         selectedLayer = l.id
     }
 
+    private func importarAudio(_ urls: [URL]) async {
+        importing = true
+        defer { importing = false }
+        try? FileManager.default.createDirectory(at: mediaRoot, withIntermediateDirectories: true)
+        var cursor = time
+        var novas: [Layer] = []
+        for u in urls {
+            let ok = u.startAccessingSecurityScopedResource()
+            defer { if ok { u.stopAccessingSecurityScopedResource() } }
+            var name = u.lastPathComponent
+            var n = 2
+            while FileManager.default.fileExists(atPath: mediaRoot.appendingPathComponent(name).path) {
+                name = "\(u.deletingPathExtension().lastPathComponent)-\(n).\(u.pathExtension)"; n += 1
+            }
+            let dst = mediaRoot.appendingPathComponent(name)
+            do { try FileManager.default.copyItem(at: u, to: dst) } catch { aviso = error.localizedDescription; continue }
+            let secs = Float((try? await AVURLAsset(url: dst).load(.duration).seconds) ?? 0)
+            var l = Layer(name: u.deletingPathExtension().lastPathComponent, kind: .audio)
+            l.mediaPath = name
+            l.duration = max(0.1, secs)
+            l.sourceDuration = secs
+            l.startTime = cursor
+            cursor += l.duration
+            novas.append(l)
+        }
+        guard !novas.isEmpty else { return }
+        editComp { c in
+            for l in novas { c.add(l) }
+            c.duration = max(c.duration, c.layers.map(\.endTime).max() ?? c.duration)
+        }
+        selectedLayer = novas.last?.id
+    }
+
+    private func adicionarForma(_ f: MaskShape) {
+        var l = Layer(name: f.label.loc, kind: .shape)
+        let lado = min(comp.size.x, comp.size.y) * 0.4
+        let size = SIMD2<Float>(lado, lado)
+        l.size = size
+        l.shapeStyle = ShapeStyle(shape: f)
+        l.transform.anchorPoint = Animated(size / 2)
+        l.transform.position = Animated(comp.size / 2)
+        l.startTime = time
+        l.duration = max(1, comp.duration - time)
+        editComp { $0.add(l) }
+        selectedLayer = l.id
+    }
+
+    private func adicionarNulo() {
+        var l = Layer(name: "Nulo".loc, kind: .null)
+        l.size = SIMD2(100, 100)
+        l.transform.anchorPoint = Animated(SIMD2(50, 50))
+        l.transform.position = Animated(comp.size / 2)
+        l.startTime = 0
+        l.duration = comp.duration
+        editComp { $0.add(l) }
+        selectedLayer = l.id
+    }
+
+    private func adicionarAjuste() {
+        var l = Layer(name: "Ajuste".loc, kind: .adjustment)
+        l.size = comp.size
+        l.startTime = time
+        l.duration = max(1, comp.duration - time)
+        editComp { $0.add(l) }
+        selectedLayer = l.id
+        aviso = "Aplique efeitos nesta camada: valem para tudo que está embaixo.".loc
+    }
+
+    private func adicionarMarcador() {
+        editComp { c in
+            var m = c.markers ?? []
+            if !m.contains(where: { abs($0 - time) < 0.01 }) { m.append(time) }
+            c.markers = m.sorted()
+        }
+    }
+
     private func adicionarSolido() {
         var l = Layer(name: "Sólido".loc, kind: .solid)
         l.solidColor = SIMD4(0.39, 0.33, 0.95, 1)
@@ -258,6 +341,16 @@ public struct EditorView: View {
     private func tocar() async {
         guard playing else { return }
         if time >= comp.duration { time = 0 }
+        // Som da previa: video e audio da composicao, a partir do cursor.
+        var player: AVPlayer?
+        if let item = await AudioMux.previewItem(composition: comp, mediaRoot: mediaRoot) {
+            let p = AVPlayer(playerItem: item)
+            await p.seek(to: CMTime(seconds: Double(time), preferredTimescale: 600),
+                         toleranceBefore: .zero, toleranceAfter: .zero)
+            p.play()
+            player = p
+        }
+        defer { player?.pause() }
         let inicio = Date()
         let t0 = time
         while playing && !Task.isCancelled {
@@ -330,6 +423,9 @@ public struct EditorView: View {
             botao("forward.frame.fill") { time = min(comp.duration, time + comp.frameDuration) }
             botao("forward.end.fill") { time = comp.duration }
             Spacer()
+            Button { adicionarMarcador() } label: {
+                Image(systemName: "bookmark").font(.system(size: 12)).foregroundStyle(NovaTheme.dim)
+            }
             if let id = selectedLayer {
                 Button { sheet = .propriedades(id) } label: {
                     Image(systemName: "slider.horizontal.3").font(.system(size: 13))
@@ -349,6 +445,21 @@ public struct EditorView: View {
                 }
                 Button { adicionarSolido() } label: {
                     Label("Sólido".loc, systemImage: "square.fill")
+                }
+                Menu {
+                    Button { adicionarForma(.rectangle) } label: { Label("Retângulo".loc, systemImage: "rectangle") }
+                    Button { adicionarForma(.ellipse) } label: { Label("Elipse".loc, systemImage: "circle") }
+                    Button { adicionarForma(.star) } label: { Label("Estrela".loc, systemImage: "star") }
+                    Button { adicionarForma(.polygon) } label: { Label("Polígono".loc, systemImage: "hexagon") }
+                } label: { Label("Forma".loc, systemImage: "square.on.circle") }
+                Button { importandoAudio = true } label: {
+                    Label("Áudio".loc, systemImage: "music.note")
+                }
+                Button { adicionarAjuste() } label: {
+                    Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle")
+                }
+                Button { adicionarNulo() } label: {
+                    Label("Nulo".loc, systemImage: "scope")
                 }
             } label: {
                 Image(systemName: "plus").font(.system(size: 14, weight: .semibold))

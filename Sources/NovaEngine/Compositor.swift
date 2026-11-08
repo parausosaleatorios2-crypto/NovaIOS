@@ -16,6 +16,12 @@ public protocol LayerContentProvider: AnyObject {
     /// Video vem do decodificador; imagem e texto vem de cache.
     func texture(for layer: Layer, at mediaTime: Float,
                  device: MTLDevice) async throws -> MTLTexture?
+    /// Alfa das mascaras da camada no instante da composicao (nil = sem mascara).
+    func maskTexture(for layer: Layer, at time: Float, device: MTLDevice) throws -> MTLTexture?
+}
+
+public extension LayerContentProvider {
+    func maskTexture(for layer: Layer, at time: Float, device: MTLDevice) throws -> MTLTexture? { nil }
 }
 
 public final class Compositor {
@@ -134,14 +140,33 @@ public final class Compositor {
                            cb: MTLCommandBuffer,
                            manifests: [String: EffectManifest]) async throws {
         guard let provider = contentProvider else { return }
-        let mt = layer.mediaTime(at: time)
-        guard var tex = try await provider.texture(for: layer, at: mt, device: device) else { return }
-        // Tamanho da camada em px da composicao. Solido e forma usam uma textura
-        // pequena esticada para esse tamanho.
-        let layerSize = layer.size ?? SIMD2(Float(tex.width), Float(tex.height))
+        let mt = layer.mediaTimeAdjusted(at: time)
+        var tex: MTLTexture
+        var layerSize: SIMD2<Float>
+        var adjustmentCopy: MTLTexture?
+        defer { if let a = adjustmentCopy { pool.recycle(a) } }
+        if layer.kind == .adjustment {
+            // Camada de ajuste: os efeitos dela valem para tudo o que esta embaixo.
+            guard !layer.effects.isEmpty else { return }
+            let c = try pool.obtain(width: output.width, height: output.height, format: output.pixelFormat)
+            guard let blit = cb.makeBlitCommandEncoder() else { throw RenderError.encoderFailed("blit do ajuste") }
+            blit.copy(from: output, to: c)
+            blit.endEncoding()
+            adjustmentCopy = c
+            tex = c
+            layerSize = comp.size
+        } else {
+            guard let t = try await provider.texture(for: layer, at: mt, device: device) else { return }
+            tex = t
+            // Tamanho da camada em px da composicao. Solido e forma usam uma textura
+            // pequena esticada para esse tamanho.
+            layerSize = layer.size ?? SIMD2(Float(tex.width), Float(tex.height))
+        }
+        let mask = try provider.maskTexture(for: layer, at: time, device: device)
 
         // Cadeia de efeitos da camada.
-        let worldMatrix = comp.worldMatrix(of: layer, at: time)
+        let worldMatrix = layer.kind == .adjustment ? matrix_identity_float4x4
+                                                    : comp.worldMatrix(of: layer, at: time)
         var owned: MTLTexture? = nil
         for fx in layer.effects where fx.enabled {
             guard let m = manifests[fx.effectID] else {
@@ -200,6 +225,7 @@ public final class Compositor {
         withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<BlendUniforms>.stride, index: 0) }
         enc.setFragmentTexture(tex, index: 0)
         enc.setFragmentTexture(backdrop, index: 1)
+        enc.setFragmentTexture(try mask ?? whiteTexture(), index: 2)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
     }
@@ -255,11 +281,29 @@ public final class Compositor {
         withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<BlendUniforms>.stride, index: 0) }
         enc.setFragmentTexture(source, index: 0)
         enc.setFragmentTexture(try clearTexture(), index: 1)
+        enc.setFragmentTexture(try whiteTexture(), index: 2)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
     }
 
     public func makeCommandBuffer() -> MTLCommandBuffer? { queue.makeCommandBuffer() }
+
+    private var white1x1: MTLTexture?
+    /// Mascara "tudo visivel".
+    private func whiteTexture() throws -> MTLTexture {
+        if let white1x1 { return white1x1 }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm,
+                                                         width: 1, height: 1, mipmapped: false)
+        d.usage = [.shaderRead]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d) else {
+            throw RenderError.textureAllocFailed(width: 1, height: 1)
+        }
+        let one: [UInt8] = [255, 255, 255, 255]
+        t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: one, bytesPerRow: 4)
+        white1x1 = t
+        return t
+    }
 
     private var clear1x1: MTLTexture?
     /// Fundo transparente para a copia (previa/exportacao).

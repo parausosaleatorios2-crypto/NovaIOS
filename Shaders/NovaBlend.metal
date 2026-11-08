@@ -66,7 +66,8 @@ fragment float4 nova_blend_fragment(
     NovaVertexOut in [[stage_in]],
     constant BlendUniforms& u [[buffer(0)]],
     texture2d<float> src [[texture(0)]],
-    texture2d<float> backdrop [[texture(1)]])
+    texture2d<float> backdrop [[texture(1)]],
+    texture2d<float> mask [[texture(2)]])
 {
     constexpr sampler smp(filter::linear, address::clamp_to_edge);
     constexpr sampler bsm(filter::nearest, address::clamp_to_edge);
@@ -80,7 +81,7 @@ fragment float4 nova_blend_fragment(
     if (any(uv < 0.0) || any(uv > 1.0)) { return bp; }
 
     float4 s = src.sample(smp, uv);
-    s.a *= u.opacity;
+    s.a *= u.opacity * mask.sample(smp, uv).a;   // mascaras da camada
     if (u.mode == 1) {   // dissolver: cada pixel aparece ou some conforme a opacidade
         float n = fract(sin(dot(floor(screenPx), float2(12.9898, 78.233))) * 43758.5453);
         s.a = n < s.a ? 1.0 : 0.0;

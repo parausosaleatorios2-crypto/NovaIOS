@@ -20,13 +20,19 @@ import AVKit
 import UIKit
 import Metal
 import Photos
+import ImageIO
+import UniformTypeIdentifiers
 import os
 
 public struct ExportSheet: View {
     let composition: Composition
     let mediaRoot: URL
     let manifests: [String: EffectManifest]
+    let time: Float
 
+    /// «Exportar vídeo», «Exportando GIF», «Exportar PNGs» (strings do APK).
+    enum Formato: String, CaseIterable { case video, gif, png }
+    @State private var formato: Formato = .video
     @State private var settings: ExportSettings
     @State private var phase: Phase = .options
     @State private var progress: Double = 0
@@ -38,10 +44,12 @@ public struct ExportSheet: View {
         case options, running, done(URL), failed(String)
     }
 
-    public init(composition: Composition, mediaRoot: URL, manifests: [String: EffectManifest]) {
+    public init(composition: Composition, mediaRoot: URL, manifests: [String: EffectManifest],
+                time: Float = 0) {
         self.composition = composition
         self.mediaRoot = mediaRoot
         self.manifests = manifests
+        self.time = time
         var s = ExportSettings()
         s.width = composition.width; s.height = composition.height
         s.frameRate = composition.frameRate
@@ -96,6 +104,44 @@ public struct ExportSheet: View {
 
     private var options: some View {
         Form {
+            Picker("", selection: $formato) {
+                Text("Vídeo".loc).tag(Formato.video)
+                Text("GIF").tag(Formato.gif)
+                Text("Imagem PNG".loc).tag(Formato.png)
+            }.pickerStyle(.segmented).listRowBackground(Color.clear)
+            if formato == .gif {
+                Section {
+                    Text("GIF em laço, 15 quadros por segundo, até 480 px.".loc)
+                        .font(.system(size: 11)).foregroundStyle(NovaTheme.dim)
+                    exportButton
+                }
+            } else if formato == .png {
+                Section {
+                    Text(String(format: "Quadro em %.2fs, no tamanho da composição, com transparência.".loc, time))
+                        .font(.system(size: 11)).foregroundStyle(NovaTheme.dim)
+                    exportButton
+                }
+            } else {
+                videoOptions
+            }
+        }
+    }
+
+    private var exportButton: some View {
+        Button {
+            Task {
+                switch formato {
+                case .video: await run()
+                case .gif: await runGIF()
+                case .png: await runPNG()
+                }
+            }
+        } label: {
+            Text("Exportar".loc).frame(maxWidth: .infinity).font(.system(size: 15, weight: .semibold))
+        }.disabled(composition.layers.isEmpty)
+    }
+
+    @ViewBuilder private var videoOptions: some View {
             Section("Qualidade do vídeo".loc) {
                 Picker("Resolução".loc, selection: $resolution) {
                     ForEach(Self.resolutions, id: \.1) { r in Text(r.0.loc).tag(r.1) }
@@ -146,6 +192,93 @@ public struct ExportSheet: View {
                         .font(.system(size: 11)).foregroundStyle(NovaTheme.dim)
                 }
             }
+    }
+
+    // MARK: GIF e PNG
+
+    /// Monta o compositor e uma textura BGRA compartilhada do tamanho pedido.
+    private func pipeline(width: Int, height: Int) throws -> (Compositor, MTLTexture) {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw RenderError.noDevice }
+        let compositor = try Compositor(renderer: try EffectRenderer(device: device))
+        let provider = MediaContentProvider(mediaRoot: mediaRoot, device: device)
+        keepAlive = provider
+        compositor.contentProvider = provider
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width,
+                                                         height: height, mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d) else {
+            throw RenderError.textureAllocFailed(width: width, height: height)
+        }
+        return (compositor, t)
+    }
+
+    @State private var keepAlive: MediaContentProvider?
+
+    private func image(_ c: Compositor, _ target: MTLTexture, at t: Float) async throws -> CGImage {
+        let frame = try await c.renderFrame(composition, at: t, manifests: manifests)
+        defer { c.release(frame) }
+        guard let cb = c.makeCommandBuffer() else { throw RenderError.encoderFailed("command buffer") }
+        try c.encodeCopy(frame, to: target, in: cb)
+        cb.commit(); cb.waitUntilCompleted()
+        let w = target.width, h = target.height
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        target.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        let info = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: info),
+              let img = ctx.makeImage() else { throw RenderError.encoderFailed("imagem do quadro") }
+        return img
+    }
+
+    @MainActor
+    private func runGIF() async {
+        phase = .running; progress = 0
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer { UIApplication.shared.isIdleTimerDisabled = false }
+        do {
+            let k = min(1, 480 / Double(max(composition.width, composition.height)))
+            let w = max(2, Int(Double(composition.width) * k)), h = max(2, Int(Double(composition.height) * k))
+            let (c, target) = try pipeline(width: w, height: h)
+            let fps: Float = 15
+            let n = max(1, Int(composition.duration * fps))
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(composition.name).gif")
+            try? FileManager.default.removeItem(at: url)
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, n, nil) else {
+                throw MediaError.writerFailed("GIF")
+            }
+            CGImageDestinationSetProperties(dest, [kCGImagePropertyGIFDictionary as String:
+                                                    [kCGImagePropertyGIFLoopCount as String: 0]] as CFDictionary)
+            let frameProps = [kCGImagePropertyGIFDictionary as String:
+                                [kCGImagePropertyGIFDelayTime as String: 1.0 / Double(fps)]] as CFDictionary
+            for i in 0..<n {
+                let img = try await image(c, target, at: Float(i) / fps)
+                CGImageDestinationAddImage(dest, img, frameProps)
+                progress = Double(i + 1) / Double(n)
+            }
+            guard CGImageDestinationFinalize(dest) else { throw MediaError.writerFailed("GIF") }
+            phase = .done(url)
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func runPNG() async {
+        phase = .running; progress = 0
+        do {
+            let (c, target) = try pipeline(width: composition.width, height: composition.height)
+            let img = try await image(c, target, at: time)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(composition.name).png")
+            try? FileManager.default.removeItem(at: url)
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+            else { throw MediaError.writerFailed("PNG") }
+            CGImageDestinationAddImage(dest, img, nil)
+            guard CGImageDestinationFinalize(dest) else { throw MediaError.writerFailed("PNG") }
+            progress = 1
+            phase = .done(url)
+        } catch {
+            phase = .failed(error.localizedDescription)
         }
     }
 
@@ -263,7 +396,14 @@ public struct ExportSheet: View {
 
     private func done(_ url: URL) -> some View {
         VStack(spacing: 14) {
-            VideoPlayer(player: AVPlayer(url: url))
+            Group {
+                if url.pathExtension == "gif" || url.pathExtension == "png",
+                   let img = UIImage(contentsOfFile: url.path) {
+                    Image(uiImage: img).resizable().scaledToFit()
+                } else {
+                    VideoPlayer(player: AVPlayer(url: url))
+                }
+            }
                 .aspectRatio(CGFloat(composition.width) / CGFloat(max(composition.height, 1)),
                              contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -304,7 +444,8 @@ public struct ExportSheet: View {
         }
         do {
             try await PHPhotoLibrary.shared().performChanges {
-                PHAssetCreationRequest.forAsset().addResource(with: .video, fileURL: url, options: nil)
+                let tipo: PHAssetResourceType = url.pathExtension == "mp4" || url.pathExtension == "mov" ? .video : .photo
+                PHAssetCreationRequest.forAsset().addResource(with: tipo, fileURL: url, options: nil)
             }
             savedToPhotos = "Salvo na galeria.".loc
         } catch {

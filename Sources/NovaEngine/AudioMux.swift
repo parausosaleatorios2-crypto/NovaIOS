@@ -12,6 +12,41 @@ import AVFoundation
 
 public enum AudioMux {
 
+    /// Camadas cujo som entra no video: video e audio, ligadas, nao mudas.
+    /// Invertido fica mudo (o AVFoundation nao toca audio ao contrario).
+    static func hasSound(_ l: Layer) -> Bool {
+        (l.kind == .video || l.kind == .audio) && l.enabled && !(l.muted ?? false) && !(l.reversed ?? false)
+    }
+
+    /// Som da composicao para a previa: um AVPlayerItem so de audio.
+    public static func previewItem(composition: Composition, mediaRoot: URL) async -> AVPlayerItem? {
+        let mix = AVMutableComposition()
+        var added = 0
+        for layer in composition.layers where hasSound(layer) {
+            guard let path = layer.mediaPath else { continue }
+            let a = AVURLAsset(url: mediaRoot.appendingPathComponent(path))
+            guard let aTrack = try? await a.loadTracks(withMediaType: .audio).first,
+                  let srcDur = try? await a.load(.duration).seconds else { continue }
+            let speed = Double(max(layer.speed, 0.01))
+            let offset = Double(max(0, layer.mediaOffset))
+            let len = min(Double(layer.duration) * speed, srcDur - offset)
+            guard len > 0.02,
+                  let ca = mix.addMutableTrack(withMediaType: .audio,
+                                               preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            let at = CMTime(seconds: Double(layer.startTime), preferredTimescale: 48000)
+            let src = CMTimeRange(start: CMTime(seconds: offset, preferredTimescale: 48000),
+                                  duration: CMTime(seconds: len, preferredTimescale: 48000))
+            if (try? ca.insertTimeRange(src, of: aTrack, at: at)) != nil {
+                if abs(speed - 1) > 0.001 {
+                    ca.scaleTimeRange(CMTimeRange(start: at, duration: src.duration),
+                                      toDuration: CMTime(seconds: len / speed, preferredTimescale: 48000))
+                }
+                added += 1
+            } else { mix.removeTrack(ca) }
+        }
+        return added > 0 ? AVPlayerItem(asset: mix) : nil
+    }
+
     /// Devolve `out` com video + audio, ou o proprio `video` se nenhuma camada tem som.
     public static func addAudio(video: URL, composition: Composition, mediaRoot: URL,
                                 out: URL, fileType: AVFileType,
@@ -29,8 +64,7 @@ public enum AudioMux {
         try cv.insertTimeRange(CMTimeRange(start: .zero, duration: total), of: vTrack, at: .zero)
 
         var added = 0
-        for layer in composition.layers where layer.kind == .video && layer.enabled
-            && !(layer.muted ?? false) {
+        for layer in composition.layers where Self.hasSound(layer) {
             guard let path = layer.mediaPath else { continue }
             let a = AVURLAsset(url: mediaRoot.appendingPathComponent(path))
             guard let aTrack = try? await a.loadTracks(withMediaType: .audio).first,

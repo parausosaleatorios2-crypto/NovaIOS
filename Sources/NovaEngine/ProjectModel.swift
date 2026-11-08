@@ -227,6 +227,15 @@ public struct Layer: Codable, Sendable, Identifiable, Equatable {
     public var muted: Bool?
     /// Duracao da fonte em segundos (video), para limitar o trim.
     public var sourceDuration: Float?
+    /// Midia em laco / invertida (emLaco, reversed no APK).
+    public var loop: Bool?
+    public var reversed: Bool?
+    /// Mascaras da camada (LayerMask no APK).
+    public var masks: [LayerMask]?
+    /// Forma vetorial (LayerContent.Shape no APK).
+    public var shapeStyle: ShapeStyle?
+    /// Estilo e animacao do texto.
+    public var textStyle: TextStyle?
 
     public var endTime: Float { startTime + duration }
 
@@ -255,6 +264,8 @@ public struct Composition: Codable, Sendable, Identifiable, Equatable {
     public var duration: Float
     public var backgroundColor: SIMD4<Float>
     public var layers: [Layer] = []
+    /// Marcadores da composicao, em segundos (Marker/Markers no APK).
+    public var markers: [Float]?
 
     public var size: SIMD2<Float> { SIMD2(Float(width), Float(height)) }
     public var frameCount: Int { max(1, Int((duration * frameRate).rounded())) }
