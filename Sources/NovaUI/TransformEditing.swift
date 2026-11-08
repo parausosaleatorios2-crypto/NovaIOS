@@ -137,23 +137,85 @@ struct LayerPropertiesSheet: View {
 
     private var layer: Layer? { comp.layer(id: layerID) }
 
+    // Abas da camada, como as ferramentas de camada do APK (enum s22):
+    // Camada, Opacidade, Transformar, Preencher, Borda e sombra, Editar forma,
+    // Animar, Efeitos, Mascara, Velocidade, Som.
+    @State private var aba: String?
+
+    private func abasDe(_ l: Layer) -> [(String, String, String)] {
+        var a: [(String, String, String)] = [("camada", "Camada", "square.3.layers.3d")]
+        if l.kind.rendersPixels {
+            a.append(("opacidade", "Opacidade", "circle.lefthalf.filled"))
+            a.append(("transformar", "Transformar", "arrow.up.left.and.arrow.down.right"))
+        }
+        if l.kind == .shape || l.kind == .text || l.kind == .solid {
+            a.append(("preencher", "Preencher", "paintbrush.fill"))
+        }
+        if l.kind == .shape || l.kind == .text { a.append(("borda", "Borda e sombra", "square.dashed")) }
+        if l.kind == .shape { a.append(("forma", "Editar forma", "pencil.and.outline")) }
+        if l.kind.rendersPixels { a.append(("animar", "Animar", "diamond")) }
+        a.append(("efeitos", "Efeitos", "wand.and.stars"))
+        if l.kind.rendersPixels && l.kind != .adjustment { a.append(("mascara", "Máscara", "circle.circle")) }
+        if l.kind == .video || l.kind == .audio {
+            a.append(("velocidade", "Velocidade", "speedometer"))
+            a.append(("som", "Som", "speaker.wave.2"))
+        }
+        return a
+    }
+
+    private func abaAtual(_ l: Layer) -> String {
+        let ids = abasDe(l).map(\.0)
+        if let aba, ids.contains(aba) { return aba }
+        return l.kind.rendersPixels ? "transformar" : "camada"
+    }
+
+    private func abas(_ l: Layer) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(abasDe(l), id: \.0) { t in
+                    FerramentaBotao(label: t.1.loc, icon: t.2, ativa: abaAtual(l) == t.0, habilitada: true) {
+                        aba = t.0
+                    }
+                }
+            }.padding(.horizontal, 6)
+        }
+        .frame(height: 64)
+        .background(NovaTheme.surface)
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if let l = layer {
-                    Form {
-                        if l.kind.rendersPixels { transformSection(l) }
-                        if l.kind == .shape { ShapeSection(layer: l, time: time, edit: edit) }
-                        if l.kind == .text { TextSection(layer: l, time: time, edit: edit) }
-                        if l.kind == .video || l.kind == .audio { MediaSection(layer: l, edit: edit) }
-                        if !l.effects.isEmpty { effectsSection(l) }
-                        if l.kind.rendersPixels && l.kind != .adjustment {
-                            MaskSection(layer: l, comp: comp, time: time, edit: edit)
+                    VStack(spacing: 0) {
+                        abas(l)
+                        Form {
+                            switch abaAtual(l) {
+                            case "transformar", "opacidade", "animar":
+                                if l.kind == .text && abaAtual(l) == "animar" {
+                                    TextSection(layer: l, time: time, edit: edit)
+                                }
+                                if l.kind.rendersPixels { transformSection(l) }
+                            case "preencher", "borda", "forma":
+                                if l.kind == .shape { ShapeSection(layer: l, time: time, edit: edit) }
+                                if l.kind == .text { TextSection(layer: l, time: time, edit: edit) }
+                                if l.kind == .solid { layerSection(l) }
+                            case "efeitos":
+                                if l.effects.isEmpty {
+                                    Text("Nenhum efeito. Toque em Efeitos na barra de baixo para aplicar.".loc)
+                                        .font(.system(size: 12)).foregroundStyle(NovaTheme.dim)
+                                } else { effectsSection(l) }
+                            case "mascara":
+                                MaskSection(layer: l, comp: comp, time: time, edit: edit)
+                            case "velocidade", "som":
+                                MediaSection(layer: l, edit: edit)
+                            default:
+                                layerSection(l)
+                                ParentSection(layer: l, comp: comp, edit: edit)
+                            }
                         }
-                        ParentSection(layer: l, comp: comp, edit: edit)
-                        layerSection(l)
+                        .scrollContentBackground(.hidden)
                     }
-                    .scrollContentBackground(.hidden)
                 } else {
                     Text("Camada não encontrada".loc).foregroundStyle(NovaTheme.dim)
                 }

@@ -437,37 +437,7 @@ public struct EditorView: View {
                         .foregroundStyle(NovaTheme.warning)
                 }
             }
-            Menu {
-                Button { showPicker = true } label: {
-                    Label("Mídia".loc, systemImage: "photo.on.rectangle")
-                }
-                Button { pedindoTexto = true } label: {
-                    Label("Texto".loc, systemImage: "textformat")
-                }
-                Button { adicionarSolido() } label: {
-                    Label("Sólido".loc, systemImage: "square.fill")
-                }
-                Menu {
-                    Button { adicionarForma(.rectangle) } label: { Label("Retângulo".loc, systemImage: "rectangle") }
-                    Button { adicionarForma(.ellipse) } label: { Label("Elipse".loc, systemImage: "circle") }
-                    Button { adicionarForma(.star) } label: { Label("Estrela".loc, systemImage: "star") }
-                    Button { adicionarForma(.polygon) } label: { Label("Polígono".loc, systemImage: "hexagon") }
-                } label: { Label("Forma".loc, systemImage: "square.on.circle") }
-                Button { importandoAudio = true } label: {
-                    Label("Áudio".loc, systemImage: "music.note")
-                }
-                Button { adicionarAjuste() } label: {
-                    Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle")
-                }
-                Button { adicionarNulo() } label: {
-                    Label("Nulo".loc, systemImage: "scope")
-                }
-            } label: {
-                Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(NovaTheme.accent)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(NovaTheme.accent.opacity(0.16)))
-            }
+
             Text(timecode(time)).font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(NovaTheme.dim)
         }
@@ -492,50 +462,107 @@ public struct EditorView: View {
 
     // MARK: barra de baixo
 
-    private struct BottomItem: Identifiable {
-        let id: String, label: String, icon: String, requiresExtension: String?
+    /// Ferramentas da barra de baixo, na ordem do enum do APK (s22, lido do
+    /// Compose descompilado): (id, rotulo, icone, precisa de camada).
+    /// As de camada ficam apagadas sem camada selecionada, como no Android.
+    private struct Ferramenta: Identifiable {
+        let id: String, label: String, icon: String, precisaCamada: Bool
     }
 
-    private var bottomItems: [BottomItem] {
+    private var ferramentas: [Ferramenta] {
         [
-            .init(id: "biblioteca", label: "Biblioteca", icon: "books.vertical", requiresExtension: nil),
-            .init(id: "legendas",   label: "Legendas",   icon: "captions.bubble", requiresExtension: nil),
-            .init(id: "ia",         label: "IA",         icon: "sparkles",        requiresExtension: nil),
-            .init(id: "link",       label: "Link",       icon: "link",            requiresExtension: "link"),
-            .init(id: "drive",      label: "Drive",      icon: "externaldrive",   requiresExtension: "drive"),
-            .init(id: "efeitos",    label: "Efeitos",    icon: "wand.and.stars",  requiresExtension: nil),
-            .init(id: "layout",     label: "Layout",     icon: "rectangle.3.group", requiresExtension: nil),
+            .init(id: "camada", label: "Camada", icon: "square.3.layers.3d", precisaCamada: true),
+            .init(id: "animar", label: "Animar", icon: "diamond", precisaCamada: true),
+            .init(id: "efeitos", label: "Efeitos", icon: "wand.and.stars", precisaCamada: true),
+            .init(id: "ia", label: "IA", icon: "sparkles", precisaCamada: false),
+            .init(id: "biblioteca", label: "Biblioteca", icon: "books.vertical", precisaCamada: false),
+            .init(id: "legendas", label: "Legendas", icon: "captions.bubble", precisaCamada: false),
+            .init(id: "link", label: "Link", icon: "link", precisaCamada: false),
+            .init(id: "drive", label: "Drive", icon: "externaldrive", precisaCamada: false),
+            .init(id: "layout", label: "Layout", icon: "rectangle.3.group", precisaCamada: false),
+            .init(id: "removerFundo", label: "Remover BG", icon: "person.crop.rectangle", precisaCamada: true),
+            .init(id: "separar", label: "Separar partes", icon: "square.split.2x2", precisaCamada: true),
+            .init(id: "upscale", label: "Aumentar resolução", icon: "sparkle.magnifyingglass", precisaCamada: true),
+            .init(id: "colorizar", label: "Colorizar", icon: "paintpalette", precisaCamada: true),
+            .init(id: "profundidade", label: "Profundidade (nuvem)", icon: "cube.transparent", precisaCamada: true),
         ]
     }
 
+    /// Barra de baixo do editor do APK (x02.c): divisoria, faixa de 76 dp na cor
+    /// de superficie, "+ Adicionar" (quadrado 36 dp, cantos 12, gradiente) e a
+    /// fileira rolavel de ferramentas (icone 24 em caixa 46x34 de cantos 11,
+    /// rotulo 11 sp; realce verde a 18% quando ativa; 28% quando desabilitada).
     private var bottomBar: some View {
-        HStack(spacing: 0) {
-            ForEach(bottomItems) { item in
-                let locked = item.requiresExtension.map { !installedExtensions.contains($0) } ?? false
-                Button {
-                    switch item.id {
-                    case "efeitos": sheet = .efeitos
-                    case "biblioteca": showPicker = true
-                    case "layout":  sheet = .layout
-                    default:
-                        sheet = .info(item.label.loc, locked
-                            ? "Instale a extensão em Perfil › Extensões.".loc
-                            : "Este painel ainda não foi escrito. Veja Docs/PENDENCIAS.md.".loc)
-                    }
+        VStack(spacing: 0) {
+            Rectangle().fill(NovaTheme.line).frame(height: 1)
+            HStack(spacing: 0) {
+                Menu {
+                    Button { showPicker = true } label: { Label("Mídia".loc, systemImage: "photo.on.rectangle") }
+                    Button { pedindoTexto = true } label: { Label("Texto".loc, systemImage: "textformat") }
+                    Menu {
+                        Button { adicionarForma(.rectangle) } label: { Label("Retângulo".loc, systemImage: "rectangle") }
+                        Button { adicionarForma(.ellipse) } label: { Label("Elipse".loc, systemImage: "circle") }
+                        Button { adicionarForma(.star) } label: { Label("Estrela".loc, systemImage: "star") }
+                        Button { adicionarForma(.polygon) } label: { Label("Polígono".loc, systemImage: "hexagon") }
+                    } label: { Label("Forma".loc, systemImage: "square.on.circle") }
+                    Button { adicionarSolido() } label: { Label("Sólido".loc, systemImage: "square.fill") }
+                    Button { importandoAudio = true } label: { Label("Áudio".loc, systemImage: "music.note") }
+                    Button { adicionarAjuste() } label: { Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle") }
+                    Button { adicionarNulo() } label: { Label("Nulo".loc, systemImage: "scope") }
                 } label: {
                     VStack(spacing: 3) {
-                        Image(systemName: item.icon).font(.system(size: 15))
-                        Text(item.label.loc).font(.system(size: 8.5))
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(LinearGradient(colors: [NovaTheme.accent, Color(red: 0, green: 0.78, blue: 0.62)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .opacity(0.9)
+                            .frame(width: 36, height: 36)
+                            .overlay(Image(systemName: "plus").font(.system(size: 18, weight: .bold))
+                                        .foregroundStyle(Color.black))
+                        Text("Adicionar".loc).font(.system(size: 11)).foregroundStyle(NovaTheme.accent)
                     }
-                    .foregroundStyle(locked ? NovaTheme.dim2
-                                     : (item.id == "ia" ? NovaTheme.accent : NovaTheme.dim))
-                    .frame(maxWidth: .infinity)
+                    .frame(width: 70)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(ferramentas) { f in
+                            let habilitada = !f.precisaCamada || selectedLayer != nil
+                            FerramentaBotao(label: f.label.loc, icon: f.icon,
+                                            ativa: ferramentaAtiva == f.id, habilitada: habilitada) {
+                                tocarFerramenta(f.id)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 8)
                 }
             }
+            .frame(height: 76)
+            .background(NovaTheme.surface)
         }
-        .frame(height: NovaTheme.Metrics.bottomBarHeight)
-        .background(NovaTheme.surface)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(NovaTheme.line), alignment: .top)
+    }
+
+    private var ferramentaAtiva: String? {
+        switch sheet {
+        case .efeitos: return "efeitos"
+        case .layout: return "layout"
+        case .propriedades: return "camada"
+        default: return nil
+        }
+    }
+
+    private func tocarFerramenta(_ id: String) {
+        switch id {
+        case "camada", "animar":
+            if let s = selectedLayer { sheet = .propriedades(s) }
+        case "efeitos": sheet = .efeitos
+        case "layout": sheet = .layout
+        case "biblioteca": showPicker = true
+        default:
+            let precisaConta = ["ia", "legendas", "removerFundo", "separar", "upscale", "colorizar", "profundidade"]
+            sheet = .info(ferramentas.first { $0.id == id }?.label.loc ?? id,
+                          precisaConta.contains(id)
+                            ? "No Android esta ferramenta roda no servidor da Nova (com a sua conta). Entre em Perfil › Conta para usar.".loc
+                            : "Instale a extensão em Perfil › Extensões.".loc)
+        }
     }
 
     // MARK: janela pequena
@@ -642,5 +669,40 @@ struct CheckerboardBackground: View {
                 y += s; row += 1
             }
         }
+    }
+}
+
+/// Botao de ferramenta da barra do editor, com as medidas do APK (x02.D).
+struct FerramentaBotao: View {
+    let label: String
+    let icon: String
+    let ativa: Bool
+    let habilitada: Bool
+    let acao: () -> Void
+    @State private var pressionado = false
+
+    var body: some View {
+        let cor: Color = !habilitada ? NovaTheme.text.opacity(0.28) : (ativa ? NovaTheme.accent : NovaTheme.text)
+        Button(action: acao) {
+            VStack(spacing: 2) {
+                RoundedRectangle(cornerRadius: 11)
+                    .fill(NovaTheme.accent.opacity(ativa ? 0.18 : 0))
+                    .overlay(RoundedRectangle(cornerRadius: 11)
+                        .stroke(NovaTheme.accent.opacity(ativa ? 0.9 : 0), lineWidth: ativa ? 0.9 : 0))
+                    .frame(width: 46, height: 34)
+                    .overlay(Image(systemName: icon).font(.system(size: 19)).foregroundStyle(cor))
+                Text(label).font(.system(size: 11)).foregroundStyle(cor)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .padding(.horizontal, 2)
+            }
+            .frame(width: 66)
+            .scaleEffect(pressionado ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.09), value: pressionado)
+        }
+        .buttonStyle(.plain)
+        .disabled(!habilitada)
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .onChanged { _ in pressionado = true }
+            .onEnded { _ in pressionado = false })
     }
 }

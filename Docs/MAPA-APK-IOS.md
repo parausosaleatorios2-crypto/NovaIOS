@@ -14,7 +14,7 @@ perfil/conta/marketplace/templates.
 | Área no APK | Classes | iOS |
 |---|---|---|
 | `model.Transform` (âncora, posição+Z, escala, rotação X/Y/Z, opacidade, skew) | `Transform`, `Mat4` | ✅ matriz igual a `buildMatrix`; gizmo e painel com keyframes |
-| `model.Animated` / `Keyframe` / `Easing` | `Animated`, `Keyframe`, `Easing`, `AjustesDeInterpolacao`, `CurvaAvancada` | 🟡 keyframes + 11 interpolações por chave (linear, segurar, suave, entrada/saída, cúbica, expo, recuo, elástico, quicar); falta gráfico de curva com alças |
+| `model.Animated` / `Keyframe` / `Easing` | `Animated`, `Keyframe`, `Easing`, `AjustesDeInterpolacao`, `CurvaAvancada` | ✅ editor de curva com alças Bézier, presets e curvas próprias salvas |
 | `model.LayerContent` (Media, Text, Solid, Shape, Audio, Camera, Luz, Nulo, Group, Model3D, Midi, Osso, Adjustment) | 13 tipos | 🟡 Media, Text, Solid, Shape (vetorial), Audio, Nulo, Adjustment ✅; Camera/Luz/Group/3D/Midi/Osso ❌ |
 | Mídia: `remap`, `reversed`, `emLaco`, `speed` animado, `gain`, `matte` | `LayerContent.Media`, `MatteDeVideo`, `MapaDeTempo`, `SpeedRamp` | 🟡 velocidade, mudo, invertido, laço e corte de início ✅; remapeamento, rampa e matte ❌ |
 | `model.BlendMode` | 30 modos | ✅ todos no shader, lendo o fundo real |
@@ -30,7 +30,7 @@ perfil/conta/marketplace/templates.
 | 1.490 XMLs (`assets/effects`) | ✅ idênticos ao APK (verificado com `verify_reconstruction`: PASS) |
 | Shaders GLSL → Metal | 🟡 ~945 compilam; a sonda do CI mede quais renderizam certo |
 | Parâmetros (slider, switch, seletor, cor, ponto) | ✅ no painel de propriedades, animáveis |
-| Parâmetros curva, gradação, LUT, malha, flare | ❌ |
+| Parâmetros curva, gradação, LUT, malha, flare | 🟡 curva (editor por canal) e LUT (.cube / looks) ✅; gradação neutra; malha e flare ❌ |
 | Texturas de outra camada (`src="layer"`), áudio, espectro | ❌ entram transparentes |
 | Presets de efeito (`PredefinicaoDoEfeito`, `ui.presets`) | ❌ |
 
@@ -48,7 +48,7 @@ perfil/conta/marketplace/templates.
 | Área | Classes | iOS |
 |---|---|---|
 | Element 3D | `model.element3d.*` (~40) | ❌ |
-| Optical Flares | `model.opticalflares.*` | ❌ |
+| Optical Flares | `model.opticalflares.*` | 🟡 fase 1 na GPU (núcleo, halo, streak, raios, anel, ghosts, hoop, com os controles do efeito); fase 2 = porte fiel do `MotorDoOf` (~6.000 linhas; `irisRender` não descompila) |
 | Partículas (CC Particle World) | `model.ccparticleworld.*` | ❌ |
 | CC Ball Action | `model.ccballaction.*` | ❌ |
 | Puppet | `PuppetArap`, `PuppetPin`, `MotorDoPuppet` | ❌ |
@@ -63,9 +63,9 @@ perfil/conta/marketplace/templates.
 | Importar mídia | — | ✅ galeria, várias de uma vez |
 | Exportar | `export.ServicoDeExportacao` | ✅ vídeo H.264/HEVC/alfa + áudio, GIF, PNG; PSD ❌ |
 | Projeto `.nova` | `persistence.*Dto` | ✅ importa `.nova` do Android (ConversorAndroid); duplicar/exportar/apagar projeto |
-| Importar After Effects | `aeimport.*` | ❌ |
+| Importar After Effects | `aeimport.*` | ❌ conversão é no servidor da Nova (sessão de conta/nuvem) |
 | Nuvem, conta, biblioteca, IA, marketplace | `cloud.*`, `biblioteca.*` | 🟡 Perfil, conta (Firebase) e Marketplace (comunidade e biblioteca); IA, legendas e export na nuvem ❌ |
-| Layouts Nova/CapCut/Motion/AE | `layout.*` | 🟡 só Nova; cores do tema iguais às do APK (#00ff89, cartões #141625); disposição das telas sem captura de referência |
+| Layouts Nova/CapCut/Motion/AE | `layout.*` | 🟡 editor: barra de baixo e abas da camada copiadas do Compose do APK (enum s22, x02.c/x02.D: medidas 76/46×34/11sp); demais telas e layouts CapCut/Motion/AE pendentes |
 | Templates | `templates.*` | ✅ templates do APK (`Resources/templates`) |
 
 ## Próximos, por impacto
