@@ -13,16 +13,21 @@ public enum NovaTheme {
     // color/editor_background e color/editor_surface do APK
     public static let background = Color(red: 0x05/255, green: 0x05/255, blue: 0x0b/255)
     public static let surface    = Color(red: 0x0b/255, green: 0x0d/255, blue: 0x17/255)
-    public static let surface2   = Color(red: 0x11/255, green: 0x14/255, blue: 0x1f/255)
+    // Medidos na captura oficial assets/extensoes/prints/link/1.webp (tema do app):
+    // cartao #141625, botao #1b1e32, chip #1c2033, selecao #113934, verde #00ff89.
+    public static let surface2   = Color(red: 0x14/255, green: 0x16/255, blue: 0x25/255)
+    public static let button     = Color(red: 0x1b/255, green: 0x1e/255, blue: 0x32/255)
+    public static let chip       = Color(red: 0x1c/255, green: 0x20/255, blue: 0x33/255)
+    public static let selectedFill = Color(red: 0x11/255, green: 0x39/255, blue: 0x34/255)
     public static let line       = Color(red: 0x1e/255, green: 0x22/255, blue: 0x31/255)
     public static let line2      = Color(red: 0x2a/255, green: 0x2f/255, blue: 0x42/255)
 
-    public static let text       = Color(red: 0xe8/255, green: 0xeb/255, blue: 0xf2/255)
-    public static let dim        = Color(red: 0x8c/255, green: 0x93/255, blue: 0xa8/255)
-    public static let dim2       = Color(red: 0x5d/255, green: 0x64/255, blue: 0x78/255)
+    public static let text       = Color(red: 0xf4/255, green: 0xf5/255, blue: 0xf8/255)
+    public static let dim        = Color(red: 0xa0/255, green: 0xa2/255, blue: 0xb1/255)
+    public static let dim2       = Color(red: 0x6b/255, green: 0x6f/255, blue: 0x82/255)
 
-    /// Acento verde, lido das capturas. Confirmar o valor exato com o time.
-    public static let accent     = Color(red: 0x00/255, green: 0xe0/255, blue: 0x7a/255)
+    /// Verde de destaque do app Android (#00ff89, medido na captura oficial).
+    public static let accent     = Color(red: 0x00/255, green: 0xff/255, blue: 0x89/255)
     /// Roxo do painel Flow.
     public static let flow       = Color(red: 0xb1/255, green: 0x4c/255, blue: 0xff/255)
     public static let selection  = Color(red: 0x4a/255, green: 0x9e/255, blue: 0xff/255)

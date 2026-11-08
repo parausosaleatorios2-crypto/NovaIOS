@@ -19,6 +19,7 @@ public enum AudioMux {
     }
 
     /// Som da composicao para a previa: um AVPlayerItem so de audio.
+    @MainActor
     public static func previewItem(composition: Composition, mediaRoot: URL) async -> AVPlayerItem? {
         let mix = AVMutableComposition()
         var added = 0
