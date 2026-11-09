@@ -18,7 +18,14 @@ public struct EffectBrowserView: View {
     @Environment(\.dismiss) private var dismiss
 
     let onPick: (EffectIndexEntry) -> Void
+    /// Looks prontos (Magic Bullet Looks): nil esconde a galeria.
+    var onLook: ((LookPronto) -> Void)? = nil
+    @State private var mostrandoLooks = false
     public init(onPick: @escaping (EffectIndexEntry) -> Void) { self.onPick = onPick }
+    init(onPick: @escaping (EffectIndexEntry) -> Void, onLook: @escaping (LookPronto) -> Void) {
+        self.onPick = onPick
+        self.onLook = onLook
+    }
 
     public var body: some View {
         NavigationStack {
@@ -54,11 +61,26 @@ public struct EffectBrowserView: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
+                    if onLook != nil {
+                        Button { mostrandoLooks = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
+                                Text("Looks".loc).font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Capsule().fill(mostrandoLooks ? NovaTheme.accent.opacity(0.18) : NovaTheme.surface))
+                            .overlay(Capsule().strokeBorder(mostrandoLooks ? NovaTheme.accent.opacity(0.4) : NovaTheme.line))
+                            .foregroundStyle(mostrandoLooks ? NovaTheme.accent : NovaTheme.dim)
+                        }
+                    }
                     chip("Tudo", nil, entries.count)
                     ForEach(categorias, id: \.0) { c in chip(c.0, c.0, c.1) }
                 }.padding(.horizontal, 14).padding(.vertical, 9)
             }
             Divider().overlay(NovaTheme.line)
+            if mostrandoLooks, let onLook {
+                LooksProntosGaleria(onLook: onLook)
+            } else {
             List(resultados) { e in
                 Button { onPick(e) } label: {
                     VStack(alignment: .leading, spacing: 2) {
@@ -81,7 +103,9 @@ public struct EffectBrowserView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .searchable(text: $busca, prompt: "Procurar efeito".loc)
+            }
+        }
+        .searchable(text: $busca, prompt: "Procurar efeito".loc)
         }
     }
 

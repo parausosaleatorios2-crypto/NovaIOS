@@ -758,9 +758,12 @@ enum LooksContas {
     struct HslColors { var tabela: [Float]; var matiz, saturacao, luminancia: Bool
         var vazia: Bool { !(matiz || saturacao || luminancia) } }
     static func hslColors(_ a: [Float]) -> HslColors {
-        let h = (0..<8).map { ($0 + 3 < a.count ? a[$0 + 3] : 0) * 0.01 }
-        let s = (0..<8).map { ($0 + 11 < a.count ? a[$0 + 11] : 0) * 0.01 }
-        let l = (0..<8).map { ($0 + 19 < a.count ? a[$0 + 19] : 0) * 0.01 }
+        func faixa(_ ini: Int) -> [Float] {
+            var out = [Float](repeating: 0, count: 8)
+            for k in 0..<8 where ini + k < a.count { out[k] = a[ini + k] * 0.01 }
+            return out
+        }
+        let h = faixa(3), s = faixa(11), l = faixa(19)
         let faixas = FAIXAS
         var desloc = [Double](repeating: 0, count: 8)
         for i in 0..<8 {

@@ -141,7 +141,9 @@ public struct EditorView: View {
         .sheet(item: $sheet) { s in
             Group {
             switch s {
-            case .efeitos:  EffectBrowserView { e in aplicarEfeito(e); sheet = nil }
+            case .efeitos:
+                EffectBrowserView(onPick: { e in aplicarEfeito(e); sheet = nil },
+                                  onLook: { l in sheet = nil; Task { await aplicarLook(l) } })
             case .layout:   LayoutPickerSheet(selected: $layout)
             case .exportar: ExportSheet(composition: comp, mediaRoot: mediaRoot, manifests: manifests, time: time)
             case .propriedades(let id):
@@ -570,6 +572,20 @@ public struct EditorView: View {
     private func pontoAnterior() -> Float { pontos.last { $0 < time - 0.001 } ?? 0 }
     private func proximoPonto() -> Float { pontos.first { $0 > time + 0.001 } ?? comp.duration }
     private func irPara(_ t: Float) { playing = false; time = min(max(0, t), comp.duration) }
+
+    /// Look pronto (Magic Bullet Looks): a cabeca e as ferramentas na camada selecionada.
+    private func aplicarLook(_ l: LookPronto) async {
+        guard let id = selectedLayer ?? comp.layers.first?.id else {
+            aviso = "Adicione uma camada antes do efeito.".loc; return
+        }
+        let efeitos = await LooksProntos.efeitos(l)
+        editComp { c in
+            if let i = c.layers.firstIndex(where: { $0.id == id }) { c.layers[i].effects += efeitos }
+        }
+        await carregarManifestos()
+        selectedLayer = id
+        sheet = .propriedades(id)
+    }
 
     /// Preset .ffx do After Effects: os efeitos vao para a camada selecionada.
     private func aplicarFFX(_ url: URL) async {
