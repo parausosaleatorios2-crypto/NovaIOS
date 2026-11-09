@@ -91,3 +91,39 @@ public enum EditorLayout: String, CaseIterable, Identifiable, Codable, Sendable 
         }
     }
 }
+
+// MARK: - Paineis no estilo do APK
+
+public extension View {
+    /// Painel de baixo como os do Android: fundo escuro, verde nos controles
+    /// (sliders, switches, botoes), letra pequena e cantos de 18.
+    func novaPainel() -> some View {
+        self
+            .tint(NovaTheme.accent)
+            .foregroundStyle(NovaTheme.text)
+            .controlSize(.small)
+            .environment(\.defaultMinListRowHeight, 34)
+            .toolbarBackground(NovaTheme.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .presentationBackground(NovaTheme.surface)
+            .presentationCornerRadius(18)
+            .presentationDragIndicator(.visible)
+            .preferredColorScheme(.dark)
+    }
+
+    /// Linhas de Form/List no cartao do APK (#141625) em vez do cinza do iOS.
+    func novaLinhas() -> some View {
+        self
+            .listRowBackground(NovaTheme.surface2)
+            .listRowSeparatorTint(NovaTheme.line)
+            .font(.system(size: 12.5))
+    }
+
+    /// Form/List sem o fundo do sistema.
+    func novaForm() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(NovaTheme.surface)
+            .listSectionSpacing(.compact)
+    }
+}

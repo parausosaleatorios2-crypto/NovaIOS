@@ -38,6 +38,27 @@
 
         <lut id="look" group="Creative" label="Look" />
         <slider id="intensidade" group="Creative" label="Intensity" default="100.0" min="0.0" max="200.0" step="1.0" snap="100.0" />
+        <!-- Como o Lumetri Color do After Effects (iOS): correcao basica, criativo e vinheta. -->
+        <slider id="temperatura" group="Basic Correction" label="Temperature" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="matiz" group="Basic Correction" label="Tint" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="exposicao" group="Basic Correction" label="Exposure" default="0.0" min="-5.0" max="5.0" step="0.01" snap="0.0" />
+        <slider id="contraste" group="Basic Correction" label="Contrast" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="realces" group="Basic Correction" label="Highlights" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="sombras" group="Basic Correction" label="Shadows" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="brancos" group="Basic Correction" label="Whites" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="pretos" group="Basic Correction" label="Blacks" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="saturacao" group="Basic Correction" label="Saturation" default="100.0" min="0.0" max="200.0" step="0.1" snap="100.0" />
+        <slider id="filmeDesbotado" group="Creative" label="Faded Film" default="0.0" min="0.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="nitidez" group="Creative" label="Sharpen" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="vibracao" group="Creative" label="Vibrance" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="saturacaoCriativa" group="Creative" label="Creative Saturation" default="100.0" min="0.0" max="200.0" step="0.1" snap="100.0" />
+        <color id="tomSombras" group="Creative" label="Shadow Tint" default="#808080" />
+        <color id="tomRealces" group="Creative" label="Highlight Tint" default="#808080" />
+        <slider id="equilibrioTom" group="Creative" label="Tint Balance" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="vinheta" group="Vignette" label="Amount" default="0.0" min="-5.0" max="5.0" step="0.01" snap="0.0" />
+        <slider id="vinhetaMeio" group="Vignette" label="Midpoint" default="50.0" min="0.0" max="100.0" step="0.1" snap="50.0" />
+        <slider id="vinhetaRedondeza" group="Vignette" label="Roundness" default="0.0" min="-100.0" max="100.0" step="0.1" snap="0.0" />
+        <slider id="vinhetaDifusao" group="Vignette" label="Feather" default="50.0" min="0.0" max="100.0" step="0.1" snap="50.0" />
     </params>
 
     <shader><![CDATA[

@@ -121,8 +121,9 @@ struct LutParamEditor: View {
     }
 
     private func nome(_ p: String) -> String {
-        (p as NSString).lastPathComponent.replacingOccurrences(of: ".png", with: "")
+        let base = (p as NSString).lastPathComponent.replacingOccurrences(of: ".png", with: "")
             .replacingOccurrences(of: ".cube", with: "")
+        return base.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
     var body: some View {

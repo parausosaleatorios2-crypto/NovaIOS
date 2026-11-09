@@ -53,13 +53,15 @@ public struct EffectParam: Codable, Sendable, Identifiable {
     public let maxValue: Float?
     public let step: Float?
     public let options: [String]
+    /// Grupo do AE (atributo group, ex.: "Basic Correction"), para os titulos no painel.
+    public let group: String?
 
     public init(id: String, kind: EffectParamKind, label: String? = nil, labelEn: String? = nil,
                 defaultValue: [Float] = [], minValue: Float? = nil, maxValue: Float? = nil,
-                step: Float? = nil, options: [String] = []) {
+                step: Float? = nil, options: [String] = [], group: String? = nil) {
         self.id = id; self.kind = kind; self.label = label; self.labelEn = labelEn
         self.defaultValue = defaultValue; self.minValue = minValue; self.maxValue = maxValue
-        self.step = step; self.options = options
+        self.step = step; self.options = options; self.group = group
     }
 }
 
@@ -203,7 +205,8 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
             flushSelector()
             if kind == .selector || kind == .cycle {
                 currentSelectorID = id
-                currentOptions = []
+                // options="A|B|C" no proprio elemento; <choice> filhos somam depois.
+                currentOptions = (a["options"] ?? "").split(separator: "|").map(String.init)
             }
             params.append(EffectParam(
                 id: id, kind: kind,
@@ -211,7 +214,8 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
                 defaultValue: Self.floats(a["default"] ?? Self.defaultXYZ(a), count: kind.floatCount),
                 minValue: a["min"].flatMap(Float.init),
                 maxValue: a["max"].flatMap(Float.init),
-                step: (a["passo"] ?? a["step"]).flatMap(Float.init)))
+                step: (a["passo"] ?? a["step"]).flatMap(Float.init),
+                group: a["group"]))
         }
     }
 
@@ -240,7 +244,7 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
         params[idx] = EffectParam(id: old.id, kind: old.kind, label: old.label,
                                   labelEn: old.labelEn, defaultValue: old.defaultValue,
                                   minValue: old.minValue, maxValue: old.maxValue,
-                                  step: old.step, options: currentOptions)
+                                  step: old.step, options: currentOptions, group: old.group)
         currentSelectorID = nil; currentOptions = []
     }
 

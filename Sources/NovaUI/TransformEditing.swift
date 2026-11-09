@@ -190,6 +190,7 @@ struct LayerPropertiesSheet: View {
                     VStack(spacing: 0) {
                         abas(l)
                         Form {
+                            Group {
                             switch abaAtual(l) {
                             case "transformar", "opacidade", "animar":
                                 if l.kind == .text && abaAtual(l) == "animar" {
@@ -213,19 +214,28 @@ struct LayerPropertiesSheet: View {
                                 layerSection(l)
                                 ParentSection(layer: l, comp: comp, edit: edit)
                             }
+                            }
+                            .novaLinhas()
                         }
-                        .scrollContentBackground(.hidden)
+                        .novaForm()
                     }
                 } else {
                     Text("Camada não encontrada".loc).foregroundStyle(NovaTheme.dim)
                 }
             }
-            .background(NovaTheme.background)
+            .background(NovaTheme.surface)
             .navigationTitle(layer?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) {
-                Button("Fechar".loc) { dismiss() } } }
+                Button { dismiss() } label: {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.black)
+                        .frame(width: 30, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(NovaTheme.accent))
+                }
+            } }
         }
+        .novaPainel()
         .presentationDetents([.fraction(0.45), .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.45)))
         .preferredColorScheme(.dark)
@@ -362,7 +372,15 @@ struct LayerPropertiesSheet: View {
                             .buttonStyle(.plain).foregroundStyle(NovaTheme.warning)
                     }
                     if let m = manifests[fx.effectID] {
-                        ForEach(m.params) { p in paramRow(l, i, fx, p) }
+                        ForEach(Array(m.params.enumerated()), id: \.element.id) { k, p in
+                            if let g = p.group, k == 0 || m.params[k - 1].group != g {
+                                Text(g.uppercased())
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(NovaTheme.accent.opacity(0.85))
+                                    .padding(.top, 6)
+                            }
+                            paramRow(l, i, fx, p)
+                        }
                     }
                 }
             }

@@ -181,7 +181,8 @@ struct ProjetosTab: View {
             HStack {
                 Text("Projetos".loc).font(.system(size: 19, weight: .bold))
                 Spacer()
-                ImportarNovaBotao(store: store)
+                ImportarAEBotao(store: store)
+                ImportarNovaBotao(store: store).padding(.leading, 10)
             }.padding(.horizontal, 16).padding(.vertical, 12)
 
             if store.projects.isEmpty {

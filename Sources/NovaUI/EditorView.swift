@@ -35,6 +35,7 @@ public struct EditorView: View {
     @State private var manifests: [String: EffectManifest] = [:]
     /// Desfazer/refazer (UndoHistory no APK): um passo por gravacao.
     @State private var undoStack: [NovaProject] = []
+    @State private var importandoFFX = false
     @State private var redoStack: [NovaProject] = []
     @State private var lastSaved: NovaProject?
 
@@ -115,7 +116,9 @@ public struct EditorView: View {
                 } else {
                     preview
                     transport
-                    TimelineView(composition: comp, time: $time, selected: $selectedLayer)
+                    TimelineView(composition: comp, time: $time, selected: $selectedLayer,
+                                 editLayer: { id, save, change in editLayer(id, save, change) },
+                                 editComp: { change in editComp(change) })
                         .frame(height: 190)
                 }
 
@@ -126,6 +129,7 @@ public struct EditorView: View {
         .navigationBarHidden(true)
         .preferredColorScheme(.dark)
         .sheet(item: $sheet) { s in
+            Group {
             switch s {
             case .efeitos:  EffectBrowserView { e in aplicarEfeito(e); sheet = nil }
             case .layout:   LayoutPickerSheet(selected: $layout)
@@ -136,6 +140,8 @@ public struct EditorView: View {
                                      mediaRoot: mediaRoot)
             case .info(let t, let m): InfoSheet(titulo: t, mensagem: m)
             }
+            }
+            .novaPainel()
         }
         .photosPicker(isPresented: $showPicker, selection: $pickerItems,
                       maxSelectionCount: nil, selectionBehavior: .ordered,
@@ -458,6 +464,10 @@ public struct EditorView: View {
         .padding(.horizontal, 4)
         .frame(height: 52)
         .background(NovaTheme.surface)
+        .fileImporter(isPresented: $importandoFFX, allowedContentTypes: AEImportador.tipos) { r in
+            guard case .success(let url) = r else { return }
+            Task { await aplicarFFX(url) }
+        }
         .overlay(alignment: .bottomTrailing) {
             Text(timecode(time)).font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(NovaTheme.dim2).padding(.trailing, 8).padding(.bottom, 1)
@@ -490,6 +500,31 @@ public struct EditorView: View {
     private func pontoAnterior() -> Float { pontos.last { $0 < time - 0.001 } ?? 0 }
     private func proximoPonto() -> Float { pontos.first { $0 > time + 0.001 } ?? comp.duration }
     private func irPara(_ t: Float) { playing = false; time = min(max(0, t), comp.duration) }
+
+    /// Preset .ffx do After Effects: os efeitos vao para a camada selecionada.
+    private func aplicarFFX(_ url: URL) async {
+        guard let id = selectedLayer ?? comp.layers.first?.id, let l = comp.layer(id: id) else {
+            aviso = "Adicione uma camada antes do efeito.".loc; return
+        }
+        do {
+            let tam = l.size ?? SIMD2(Float(comp.width), Float(comp.height))
+            let (efeitos, avisos) = try await AEImportador.efeitosDoPreset(url, tamanho: tam)
+            if !efeitos.isEmpty {
+                editComp { c in
+                    if let i = c.layers.firstIndex(where: { $0.id == id }) { c.layers[i].effects += efeitos }
+                }
+                await carregarManifestos()
+            }
+            let ok = String(format: "%d efeito(s) do preset aplicados em \"%@\".".loc, efeitos.count, l.name)
+            aviso = avisos.isEmpty ? ok : ok + "
+
+" + avisos.prefix(8).joined(separator: "
+")
+            if !efeitos.isEmpty { selectedLayer = id; sheet = .propriedades(id) }
+        } catch {
+            aviso = error.localizedDescription
+        }
+    }
 
     /// "Copiar e colar camada" do APK: duplica a camada selecionada logo acima.
     private func duplicarSelecionada() {
@@ -565,6 +600,10 @@ public struct EditorView: View {
                     Button { importandoAudio = true } label: { Label("Áudio".loc, systemImage: "music.note") }
                     Button { adicionarAjuste() } label: { Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle") }
                     Button { adicionarNulo() } label: { Label("Nulo".loc, systemImage: "scope") }
+                    Divider()
+                    Button { importandoFFX = true } label: {
+                        Label("Preset do After Effects (.ffx)".loc, systemImage: "wand.and.rays")
+                    }
                 } label: {
                     VStack(spacing: 3) {
                         RoundedRectangle(cornerRadius: 12)

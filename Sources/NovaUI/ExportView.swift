@@ -109,6 +109,7 @@ public struct ExportSheet: View {
                 Text("GIF").tag(Formato.gif)
                 Text("Imagem PNG".loc).tag(Formato.png)
             }.pickerStyle(.segmented).listRowBackground(Color.clear)
+            Group {
             if formato == .gif {
                 Section {
                     Text("GIF em laço, 15 quadros por segundo, até 480 px.".loc)
@@ -124,7 +125,10 @@ public struct ExportSheet: View {
             } else {
                 videoOptions
             }
+            }
+            .novaLinhas()
         }
+        .novaForm()
     }
 
     private var exportButton: some View {
