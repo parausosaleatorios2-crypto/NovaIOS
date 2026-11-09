@@ -40,7 +40,9 @@ public struct EngineUniforms {
     public var acLayerSize          = SIMD2<Float>(1920, 1080)
     public var acTamanhoDaCamada    = SIMD2<Float>(1920, 1080)
     public var acLayerNorm          = SIMD2<Float>(0, 0)
-    public var acCamada             = SIMD2<Float>(0, 0)
+    /// Fracao do buffer que a camada ocupa. No iOS a camada enche o buffer do efeito (1, 1);
+    /// com (0, 0) 27 efeitos (Directional Blur, Wave Warp, Motion Tile, Sapphire…) viam 1 px.
+    public var acCamada             = SIMD2<Float>(1, 1)
     public var acLayerCenter        = SIMD2<Float>(960, 540)
     public var acLayerCenterNorm    = SIMD2<Float>(0.5, 0.5)
     public var acEntradaDePe        = SIMD2<Float>(0, 0)
