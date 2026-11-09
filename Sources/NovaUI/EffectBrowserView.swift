@@ -106,7 +106,6 @@ public struct EffectBrowserView: View {
             }
         }
         .searchable(text: $busca, prompt: "Procurar efeito".loc)
-        }
     }
 
     private func chip(_ titulo: String, _ valor: String?, _ n: Int) -> some View {
