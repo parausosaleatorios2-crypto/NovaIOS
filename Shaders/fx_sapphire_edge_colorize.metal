@@ -33,18 +33,13 @@ constant float GIRO = 1.0;          // o sentido do Rotate Colors (medido)
 constant float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
-int2 gT;          // o buffer
-int2 gN;          // a camada do AE dentro dele, em px
-int2 gInicio;     // o canto da camada no buffer
-float gEscala;     // a prévia reduzida (Blur Matte é em px da composição)
-bool gDePe;        // cena de pé (camada de ajuste, grupo solto): a linha 0 do buffer é a base da imagem
 
-static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg, thread int2& gT, thread int2& gN, thread int2& gInicio, thread float& gEscala, thread bool& gDePe) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
     gEscala = eng.acEscalaDePixel > 0.0 ? eng.acEscalaDePixel : 1.0;
-    gDePe = eng.acEntradaDePe == 1;
+    gDePe = eng.acEntradaDePe.x == 1.0;
 }
 
 /** Espelha o índice na camada repetindo o pixel da borda (abc|cba), quantas voltas forem. */
@@ -55,7 +50,7 @@ static int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-static int2 naCamada(int2 q) {
+static int2 naCamada(int2 q, thread int2& gN, thread int2& gInicio) {
     return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
 }
 
@@ -104,39 +99,39 @@ static float ler24(float4 v) {
 // ---- a máscara (PROCESS_MASKS: a mesma do S_HalfTone e do S_Emboss) ---------------------------
 static bool temMascara(texture2d<float> maskImg) { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
 
-static float mascara(int2 p, constant sapphire_edge_colorizeParams& u, sampler __nv_smp, texture2d<float> maskImg) {
+static float mascara(int2 p, constant sapphire_edge_colorizeParams& u, sampler __nv_smp, texture2d<float> maskImg, thread int2& gT) {
     float4 m = maskImg.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     float v = u.maskUse == 1 ? m.a : dot(m.rgb * m.a, float3(0.3125, 0.5, 0.1875));
     return u.invertMask ? 1.0 - v : v;
 }
 
 // o blur da máscara é sem subpixel (a largura arredonda)
-static int larguraDaMascara(constant sapphire_edge_colorizeParams& u) { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaMascara(constant sapphire_edge_colorizeParams& u, thread float& gEscala) { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
 
-static float mascaraDesfocadaX(int2 q, constant sapphire_edge_colorizeParams& u, sampler __nv_smp, texture2d<float> maskImg) {
-    int n = larguraDaMascara(u);
+static float mascaraDesfocadaX(int2 q, constant sapphire_edge_colorizeParams& u, sampler __nv_smp, texture2d<float> maskImg, thread int2& gT, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    int n = larguraDaMascara(u, gEscala);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
-        if (k != 0.0) soma += k * mascara(naCamada(q + int2(d, 0)), u, __nv_smp, maskImg);
+        if (k != 0.0) soma += k * mascara(naCamada(q + int2(d, 0), gN, gInicio), u, __nv_smp, maskImg, gT);
     }
     return soma;
 }
 
-static float mascaraDesfocadaY(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> mH) {
-    int n = larguraDaMascara(u);
+static float mascaraDesfocadaY(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> mH, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    int n = larguraDaMascara(u, gEscala);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
-        if (k != 0.0) soma += k * ler24(mH.read(uint2(naCamada(q + int2(0, d))), uint(0)));
+        if (k != 0.0) soma += k * ler24(mH.read(uint2(naCamada(q + int2(0, d), gN, gInicio)), uint(0)));
     }
     return soma;
 }
 
 /** A máscara no pixel p do buffer (1 sem camada de máscara). */
-static float mascaraEm(int2 p, constant sapphire_edge_colorizeParams& u, sampler __nv_smp, texture2d<float> mV, texture2d<float> maskImg) {
+static float mascaraEm(int2 p, constant sapphire_edge_colorizeParams& u, sampler __nv_smp, texture2d<float> mV, texture2d<float> maskImg, thread int2& gT, thread float& gEscala) {
     if (!temMascara(maskImg)) return 1.0;
-    return larguraDaMascara(u) > 0 ? ler24(mV.read(uint2(p), uint(0))) : mascara(p, u, __nv_smp, maskImg);
+    return larguraDaMascara(u, gEscala) > 0 ? ler24(mV.read(uint2(p), uint(0))) : mascara(p, u, __nv_smp, maskImg, gT);
 }
 
 // ---- a luminância ----------------------------------------------------------------------------
@@ -150,11 +145,11 @@ static float luma(int2 p, constant sapphire_edge_colorizeParams& u, texture2d<fl
 }
 
 /** O edge_smooth da definição: o Edge Smooth do AE chega em px da composição e vira px / (W / 8). */
-static float suaveInterno(constant sapphire_edge_colorizeParams& u) { return u.edgeSmooth * gEscala * 8.0 / float(gN.x); }
+static float suaveInterno(constant sapphire_edge_colorizeParams& u, thread int2& gN, thread float& gEscala) { return u.edgeSmooth * gEscala * 8.0 / float(gN.x); }
 
 /** A largura do blur: 0,125 · W · edge_smooth, em px do buffer (= o Edge Smooth em px, na escala da prévia). */
-static float larguraDoBlur(constant sapphire_edge_colorizeParams& u) {
-    float w = clamp(0.125 * float(gN.x) * suaveInterno(u), 0.0, LARGURA_MAX);
+static float larguraDoBlur(constant sapphire_edge_colorizeParams& u, thread int2& gN, thread float& gEscala) {
+    float w = clamp(0.125 * float(gN.x) * suaveInterno(u, gN, gEscala), 0.0, LARGURA_MAX);
     return u.subpixelSmooth ? w : floor(w + 0.5);
 }
 
@@ -166,49 +161,49 @@ static float pesoDoBlur(int d, float w) {
     return f > 0.0 ? k + (pesoDasCaixas(d, a + 1) - k) * f : k;
 }
 
-static float lumaDesfocadaX(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> inputImg) {
-    float w = larguraDoBlur(u);
+static float lumaDesfocadaX(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> inputImg, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    float w = larguraDoBlur(u, gN, gEscala);
     int n = int(ceil(w));
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDoBlur(d, w);
-        if (k != 0.0) soma += k * luma(naCamada(q + int2(d, 0)), u, inputImg);
+        if (k != 0.0) soma += k * luma(naCamada(q + int2(d, 0), gN, gInicio), u, inputImg);
     }
     return soma;
 }
 
-static float lumaDesfocadaY(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> bX) {
-    float w = larguraDoBlur(u);
+static float lumaDesfocadaY(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> bX, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    float w = larguraDoBlur(u, gN, gEscala);
     int n = int(ceil(w));
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDoBlur(d, w);
-        if (k != 0.0) soma += k * ler24(bX.read(uint2(naCamada(q + int2(0, d))), uint(0)));
+        if (k != 0.0) soma += k * ler24(bX.read(uint2(naCamada(q + int2(0, d), gN, gInicio)), uint(0)));
     }
     return soma;
 }
 
 /** p na coluna x e na linha (da IMAGEM: 0 é o topo) da camada. */
-static float altura(int x, int linha, constant sapphire_edge_colorizeParams& u, texture2d<float> inputImg, texture2d<float> bY) {
+static float altura(int x, int linha, constant sapphire_edge_colorizeParams& u, texture2d<float> inputImg, texture2d<float> bY, thread int2& gN, thread int2& gInicio, thread float& gEscala, thread bool& gDePe) {
     int y = gDePe ? gN.y - 1 - linha : linha;
     int2 p = gInicio + int2(x, y);
-    return larguraDoBlur(u) > 0.0 ? ler24(bY.read(uint2(p), uint(0))) : luma(p, u, inputImg);
+    return larguraDoBlur(u, gN, gEscala) > 0.0 ? ler24(bY.read(uint2(p), uint(0))) : luma(p, u, inputImg);
 }
 
 // ---- o grad (o do S_DistortChroma e do S_Emboss) ----------------------------------------------
 /** Diferença central sem dividir por 2; na borda, um lado só vezes 2; y = a linha de cima menos a de baixo. */
-static float2 gradiente(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> inputImg, texture2d<float> bY) {
+static float2 gradiente(int2 q, constant sapphire_edge_colorizeParams& u, texture2d<float> inputImg, texture2d<float> bY, thread int2& gN, thread int2& gInicio, thread float& gEscala, thread bool& gDePe) {
     int x = q.x;
     int linha = gDePe ? gN.y - 1 - q.y : q.y;
     float gx, gy;
     if (gN.x < 2) gx = 0.0;
-    else if (x == 0) gx = (altura(1, linha, u, inputImg, bY) - altura(0, linha, u, inputImg, bY)) * 2.0;
-    else if (x == gN.x - 1) gx = (altura(x, linha, u, inputImg, bY) - altura(x - 1, linha, u, inputImg, bY)) * 2.0;
-    else gx = altura(x + 1, linha, u, inputImg, bY) - altura(x - 1, linha, u, inputImg, bY);
+    else if (x == 0) gx = (altura(1, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe) - altura(0, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe)) * 2.0;
+    else if (x == gN.x - 1) gx = (altura(x, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe) - altura(x - 1, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe)) * 2.0;
+    else gx = altura(x + 1, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe) - altura(x - 1, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe);
     if (gN.y < 2) gy = 0.0;
-    else if (linha == 0) gy = (altura(x, 0, u, inputImg, bY) - altura(x, 1, u, inputImg, bY)) * 2.0;
-    else if (linha == gN.y - 1) gy = (altura(x, linha - 1, u, inputImg, bY) - altura(x, linha, u, inputImg, bY)) * 2.0;
-    else gy = altura(x, linha - 1, u, inputImg, bY) - altura(x, linha + 1, u, inputImg, bY);
+    else if (linha == 0) gy = (altura(x, 0, u, inputImg, bY, gN, gInicio, gEscala, gDePe) - altura(x, 1, u, inputImg, bY, gN, gInicio, gEscala, gDePe)) * 2.0;
+    else if (linha == gN.y - 1) gy = (altura(x, linha - 1, u, inputImg, bY, gN, gInicio, gEscala, gDePe) - altura(x, linha, u, inputImg, bY, gN, gInicio, gEscala, gDePe)) * 2.0;
+    else gy = altura(x, linha - 1, u, inputImg, bY, gN, gInicio, gEscala, gDePe) - altura(x, linha + 1, u, inputImg, bY, gN, gInicio, gEscala, gDePe);
     return float2(gx, gy);
 }
 
@@ -226,25 +221,30 @@ fragment float4 fx_sapphire_edge_colorize(
     texture2d<float> bY [[texture(4)]],
     texture2d<float> maskImg [[texture(5)]])
 {
+    int2 gT = int2(0);
+    int2 gN = int2(0);
+    int2 gInicio = int2(0);
+    float gEscala = float(0);
+    bool gDePe = false;
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar(eng, inputImg);
+    preparar(eng, inputImg, gT, gN, gInicio, gEscala, gDePe);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
-    if (eng.acPass == 0) { __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocadaX(q, u, __nv_smp, maskImg)); return __nv_out; }
-    if (eng.acPass == 1) { __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocadaY(q, u, mH)); return __nv_out; }
-    if (eng.acPass == 2) { __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocadaX(q, u, inputImg)); return __nv_out; }
-    if (eng.acPass == 3) { __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocadaY(q, u, bX)); return __nv_out; }
+    if (eng.acPass == 0) { __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocadaX(q, u, __nv_smp, maskImg, gT, gN, gInicio, gEscala)); return __nv_out; }
+    if (eng.acPass == 1) { __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocadaY(q, u, mH, gN, gInicio, gEscala)); return __nv_out; }
+    if (eng.acPass == 2) { __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocadaX(q, u, inputImg, gN, gInicio, gEscala)); return __nv_out; }
+    if (eng.acPass == 3) { __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocadaY(q, u, bX, gN, gInicio, gEscala)); return __nv_out; }
 
     // ---- 4: o gradiente e as cores ----
     float4 s = inputImg.read(uint2(t), uint(0));
     if (fora) { __nv_out = s; return __nv_out; }
 
-    float2 g = gradiente(q, u, inputImg, bY) * (0.05 * float(gN.x) * u.brightness * (suaveInterno(u) + 0.1));
+    float2 g = gradiente(q, u, inputImg, bY, gN, gInicio, gEscala, gDePe) * (0.05 * float(gN.x) * u.brightness * (suaveInterno(u, gN, gEscala) + 0.1));
     float ang = radians(GIRO * u.rotateColors);
     float c = cos(ang), sn = sin(ang);
     g = float2(g.x * c - g.y * sn, g.x * sn + g.y * c);
@@ -256,7 +256,7 @@ fragment float4 fx_sapphire_edge_colorize(
 
     // Medido: a máscara mistura ANTES de prender (o dissolve do Autogen roda no efeito; o Opacity, depois, no AE),
     // com a Fonte na cor do Opacity (pré-multiplicada no Normal, reta nos outros dois).
-    if (temMascara(maskImg)) cor = mix(corDaFonte(s, u), cor, mascaraEm(t, u, __nv_smp, mV, maskImg));
+    if (temMascara(maskImg)) cor = mix(corDaFonte(s, u), cor, mascaraEm(t, u, __nv_smp, mV, maskImg, gT, gEscala));
 
     // Opacity: Normal toma o resultado como JÁ pré-multiplicado, limitado ao alfa; As Premult, como cor reta com o alfa
     // da fonte; All Opaque sai opaco.

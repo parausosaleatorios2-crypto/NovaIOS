@@ -42,12 +42,8 @@ constant float LARGURA_MAX = 720.0;
 // Os sliders do Sapphire chegam em ponto fixo 16.16.
 static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
 
-int2 gT;          // o buffer
-int2 gN;          // a camada do AE dentro dele, em px
-int2 gInicio;     // o canto da camada no buffer
-float gEscala;     // a prévia reduzida (o Source Blur é em px da composição)
 
-static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg, thread int2& gT, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -61,7 +57,7 @@ static int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-static int2 naCamada(int2 q) { return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
+static int2 naCamada(int2 q, thread int2& gN, thread int2& gInicio) { return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y)); }
 
 static float4 guardar(float f) {
     uint b = as_type<uint>(f);
@@ -82,24 +78,24 @@ static float3 entrada(int2 p, constant sapphire_psyko_stripesParams& u, texture2
 static float monochrome(float3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
 
 // Medido: o Source Blur do AE já é a largura em px (subpixel ligado de fábrica no plugin).
-static float larguraPx(constant sapphire_psyko_stripesParams& u) { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
+static float larguraPx(constant sapphire_psyko_stripesParams& u, thread float& gEscala) { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
 
 /** Uma das três caixas de um eixo (a conta do S_GlowAura): a que cresce leva as pontas com a fração. */
-static float caixa(int2 q, bool emX, int qual, bool deA, constant sapphire_psyko_stripesParams& u, texture2d<float> ga, texture2d<float> gb) {
-    float w = larguraPx(u);
+static float caixa(int2 q, bool emX, int qual, bool deA, constant sapphire_psyko_stripesParams& u, texture2d<float> ga, texture2d<float> gb, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    float w = larguraPx(u, gEscala);
     int a = int(floor(w));
     float f = w - float(a);
     int r = (a + 2 - qual) / 3;
     bool cresce = f > 0.0 && a - (a / 3) * 3 == qual;
     float soma = 0.0;
     for (int d = -r; d <= r; d++) {
-        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)));
+        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)), gN, gInicio);
         soma += lido(deA ? ga.read(uint2(p), uint(0)) : gb.read(uint2(p), uint(0)));
     }
     float n = float(2 * r + 1);
     if (!cresce) return soma / n;
-    int2 e = naCamada(q - (emX ? int2(r + 1, 0) : int2(0, r + 1)));
-    int2 g = naCamada(q + (emX ? int2(r + 1, 0) : int2(0, r + 1)));
+    int2 e = naCamada(q - (emX ? int2(r + 1, 0) : int2(0, r + 1)), gN, gInicio);
+    int2 g = naCamada(q + (emX ? int2(r + 1, 0) : int2(0, r + 1)), gN, gInicio);
     float pontas = deA ? lido(ga.read(uint2(e), uint(0))) + lido(ga.read(uint2(g), uint(0))) : lido(gb.read(uint2(e), uint(0))) + lido(gb.read(uint2(g), uint(0)));
     return soma * ((1.0 - f) / n + f / (n + 2.0)) + pontas * (f / (n + 2.0));
 }
@@ -113,18 +109,22 @@ fragment float4 fx_sapphire_psyko_stripes(
     texture2d<float> ga [[texture(1)]],
     texture2d<float> gb [[texture(2)]])
 {
+    int2 gT = int2(0);
+    int2 gN = int2(0);
+    int2 gInicio = int2(0);
+    float gEscala = float(0);
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar(eng, inputImg);
+    preparar(eng, inputImg, gT, gN, gInicio, gEscala);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
     if (eng.acPass == 0) { __nv_out = fora ? float4(0.0) : guardar(monochrome(entrada(t, u, inputImg))); return __nv_out; }
     if (eng.acPass <= 6) {
-        float c = fora ? 0.0 : caixa(q, eng.acPass <= 3, (eng.acPass - 1) - ((eng.acPass - 1) / 3) * 3, (eng.acPass & 1) == 1, u, ga, gb);
+        float c = fora ? 0.0 : caixa(q, eng.acPass <= 3, (eng.acPass - 1) - ((eng.acPass - 1) / 3) * 3, (eng.acPass & 1) == 1, u, ga, gb, gN, gInicio, gEscala);
         __nv_out = guardar(c);
         return __nv_out;
     }
@@ -139,7 +139,7 @@ fragment float4 fx_sapphire_psyko_stripes(
     float2 grad = fixo(u.stripeMag) * float2(cos(ang), sin(ang));
     // xy do Sapphire: −1..1 na largura da camada, y para cima (a linha 0 do buffer é o topo, de pé é a base)
     float meia = float(gN.x) * 0.5;
-    float linha = eng.acEntradaDePe == 1 ? float(gN.y - 1 - q.y) : float(q.y);
+    float linha = eng.acEntradaDePe.x == 1.0 ? float(gN.y - 1 - q.y) : float(q.y);
     float2 xy = float2((float(q.x) + 0.5 - meia) / meia, (float(gN.y) * 0.5 - (linha + 0.5)) / meia);
     float3 fq = fixo(u.freqColors) * float3(fixo(u.freqRed), fixo(u.freqGreen), fixo(u.freqBlue));
     float3 c = (0.5 + 0.5 * sin(6.2831853 * (fq * (bw + dot(xy, grad) - ph)))) * fixo(u.brightness) * (floor(u.color.rgb * 255.0 + 0.5) / 255.0);

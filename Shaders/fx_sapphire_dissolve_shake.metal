@@ -182,7 +182,7 @@ static float4 ler(float2 fonte, float2 R, bool noPixel, constant EngineUniforms&
     i = float2(dobrar(i.x, R.x, u.wrapX), dobrar(i.y, R.y, u.wrapY));
     float2 uv = (i + 0.5) / R;
     // a conta é com a linha 0 no TOPO, como no plugin; numa cena de pé (camada de ajuste) ela é a base do buffer
-    if (eng.acEntradaDePe == 1) uv.y = 1.0 - uv.y;
+    if (eng.acEntradaDePe.x == 1.0) uv.y = 1.0 - uv.y;
     float4 cor = inputImg.sample(__nv_smp, uv);
     return float4(cor.rgb * cor.a, cor.a);
 }
@@ -202,7 +202,7 @@ fragment float4 fx_sapphire_dissolve_shake(
     float2 R = float2(int2(int(inputImg.get_width()), int(inputImg.get_height())));
     float2 px = in.acScreenNorm * R;
     // Na camada de ajuste a cena chega de pé (a linha 0 do buffer é a BASE): sem virar, Y e giro saíam ao contrário.
-    if (eng.acEntradaDePe == 1) px.y = R.y - px.y;
+    if (eng.acEntradaDePe.x == 1.0) px.y = R.y - px.y;
     float4 agora = movimento(eng.acTime, R, eng, u, tabela);
     float4 soma;
     if (u.motionBlur && u.moBlurLength > 0.0 && eng.acFrameDuration > 0.0) {

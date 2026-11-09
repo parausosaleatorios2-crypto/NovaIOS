@@ -54,7 +54,7 @@ static int dobrar(int i, int n, int modo) {
 
 static float4 pixel(int2 i, constant EngineUniforms& eng, texture2d<float> inputImg) {
     // a conta é com a linha 0 no TOPO, como no plugin; numa cena de pé (camada de ajuste) ela é a base do buffer
-    if (eng.acEntradaDePe == 1) i.y = int2(int(inputImg.get_width()), int(inputImg.get_height())).y - 1 - i.y;
+    if (eng.acEntradaDePe.x == 1.0) i.y = int2(int(inputImg.get_width()), int(inputImg.get_height())).y - 1 - i.y;
     float4 c = inputImg.read(uint2(i), uint(0));
     return float4(c.rgb * c.a, c.a);
 }
@@ -106,8 +106,8 @@ static float4 reta(float2 p0, float2 p1, int2 T, constant EngineUniforms& eng, c
     for (int j = 0; j < MAX_PASSOS; j++) {
         int k = j * salto;
         if (k >= n) break;
-        float u = a + passo * float(k);
-        float t = t0 + (u - u0) * incl;
+        float uu = a + passo * float(k);
+        float t = t0 + (uu - u0) * incl;
         // Exposure Bias (medido): o peso vai em linha reta de uma ponta à outra
         float w = u.exposureBias * float(n - k) + (1.0 - u.exposureBias) * float(k + 1);
         if (n == 1) w = 1.0;
@@ -116,7 +116,7 @@ static float4 reta(float2 p0, float2 p1, int2 T, constant EngineUniforms& eng, c
             if (k == n - 1) w *= 1.0 - fb;
         }
         float tf = floor(t), ft = t - tf;
-        int iu = int(u), it = int(tf);
+        int iu = int(uu), it = int(tf);
         soma += w * mix(ponto(emx, iu, it, it, T, eng, u, inputImg), ponto(emx, iu, it + 1, it, T, eng, u, inputImg), ft);
         pesos += w;
     }
@@ -162,7 +162,7 @@ fragment float4 fx_sapphire_blur_mo_curves(
     float2 c = mix(u.center, centerFim, 0.5) * R - 0.5;
     // Na camada de ajuste (e no grupo solto) a cena chega de pé: a linha 0 do buffer é a BASE. Sem virar, o Shift Y e
     // o giro saíam ao contrário do mesmo efeito numa camada (relato de 22/10/2026, o mesmo do S_Shake na 0.756).
-    if (eng.acEntradaDePe == 1) {
+    if (eng.acEntradaDePe.x == 1.0) {
         p.y = R.y - 1.0 - p.y;
         c.y = R.y - 1.0 - c.y;
     }

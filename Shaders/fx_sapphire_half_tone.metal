@@ -33,12 +33,8 @@ struct sapphire_half_toneParams {
 constant float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
-int2 gT;          // o buffer
-int2 gN;          // a camada do AE dentro dele, em px
-int2 gInicio;     // o canto da camada no buffer
-float gEscala;     // a prévia reduzida (Smooth Source e Blur Mask são em px da composição)
 
-static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg, thread int2& gT, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -53,7 +49,7 @@ static int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-static int2 naCamada(int2 q) {
+static int2 naCamada(int2 q, thread int2& gN, thread int2& gInicio) {
     return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
 }
 
@@ -110,36 +106,36 @@ static float luma(int2 p, constant sapphire_half_toneParams& u, texture2d<float>
 
 static bool temMascara(texture2d<float> maskImg) { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
 
-static float mascara(int2 p, constant sapphire_half_toneParams& u, sampler __nv_smp, texture2d<float> maskImg) {
+static float mascara(int2 p, constant sapphire_half_toneParams& u, sampler __nv_smp, texture2d<float> maskImg, thread int2& gT) {
     float4 m = maskImg.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     float v = u.maskUse == 1 ? m.a : dot(m.rgb * m.a, float3(0.3125, 0.5, 0.1875));
     return u.invertMask ? 1.0 - v : v;
 }
 
 // O subpixel 0 da definição: as larguras arredondam, meio para cima.
-static int larguraDaFonte(constant sapphire_half_toneParams& u) { return int(clamp(floor(u.smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
-static int larguraDaMascara(constant sapphire_half_toneParams& u) { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaFonte(constant sapphire_half_toneParams& u, thread float& gEscala) { return int(clamp(floor(u.smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaMascara(constant sapphire_half_toneParams& u, thread float& gEscala) { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
 
-static float lumaDesfocada(int2 q, bool emX, constant sapphire_half_toneParams& u, texture2d<float> inputImg, texture2d<float> bX) {
-    int n = larguraDaFonte(u);
+static float lumaDesfocada(int2 q, bool emX, constant sapphire_half_toneParams& u, texture2d<float> inputImg, texture2d<float> bX, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    int n = larguraDaFonte(u, gEscala);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
         if (k == 0.0) continue;
-        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)));
+        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)), gN, gInicio);
         soma += k * (emX ? luma(p, u, inputImg) : ler24(bX.read(uint2(p), uint(0))));
     }
     return soma;
 }
 
-static float mascaraDesfocada(int2 q, bool emX, constant sapphire_half_toneParams& u, sampler __nv_smp, texture2d<float> mH, texture2d<float> maskImg) {
-    int n = larguraDaMascara(u);
+static float mascaraDesfocada(int2 q, bool emX, constant sapphire_half_toneParams& u, sampler __nv_smp, texture2d<float> mH, texture2d<float> maskImg, thread int2& gT, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    int n = larguraDaMascara(u, gEscala);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
         if (k == 0.0) continue;
-        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)));
-        soma += k * (emX ? mascara(p, u, __nv_smp, maskImg) : ler24(mH.read(uint2(p), uint(0))));
+        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)), gN, gInicio);
+        soma += k * (emX ? mascara(p, u, __nv_smp, maskImg, gT) : ler24(mH.read(uint2(p), uint(0))));
     }
     return soma;
 }
@@ -151,10 +147,10 @@ static float dobra(float v) {
     return m > 1.0 ? 2.0 - m : m;
 }
 
-static float grade(int2 q, constant EngineUniforms& eng, constant sapphire_half_toneParams& u) {
+static float grade(int2 q, constant EngineUniforms& eng, constant sapphire_half_toneParams& u, thread int2& gN) {
     // xy do Sapphire: −1..1 na largura da camada, y para cima, no centro do pixel (a cena de pé tem a linha 0 embaixo)
     float W = float(gN.x);
-    float linha = eng.acEntradaDePe == 1 ? float(gN.y - 1 - q.y) : float(q.y);
+    float linha = eng.acEntradaDePe.x == 1.0 ? float(gN.y - 1 - q.y) : float(q.y);
     float2 xy = float2((float(q.x) + 0.5) * 2.0 / W - 1.0, float(gN.y) / W - (linha + 0.5) * 2.0 / W);
     // a definição prende o Rel Width em 0,01 (o AE deixa 0,0099945, o Opium-5 usa)
     float fx = u.dotsFrequency / max(u.dotsRelWidth, 0.01);
@@ -177,21 +173,25 @@ fragment float4 fx_sapphire_half_tone(
     texture2d<float> mH [[texture(2)]],
     texture2d<float> maskImg [[texture(3)]])
 {
+    int2 gT = int2(0);
+    int2 gN = int2(0);
+    int2 gInicio = int2(0);
+    float gEscala = float(0);
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar(eng, inputImg);
+    preparar(eng, inputImg, gT, gN, gInicio, gEscala);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
     if (eng.acPass == 0) {
-        __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocada(q, true, u, inputImg, bX));
+        __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocada(q, true, u, inputImg, bX, gN, gInicio, gEscala));
         return __nv_out;
     }
     if (eng.acPass == 1) {
-        __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocada(q, true, u, __nv_smp, mH, maskImg));
+        __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocada(q, true, u, __nv_smp, mH, maskImg, gT, gN, gInicio, gEscala));
         return __nv_out;
     }
 
@@ -201,8 +201,8 @@ fragment float4 fx_sapphire_half_tone(
         __nv_out = s;
         return __nv_out;
     }
-    float bw = larguraDaFonte(u) > 0 ? lumaDesfocada(q, false, u, inputImg, bX) : luma(t, u, inputImg);
-    float g = grade(q, eng, u);
+    float bw = larguraDaFonte(u, gEscala) > 0 ? lumaDesfocada(q, false, u, inputImg, bX, gN, gInicio, gEscala) : luma(t, u, inputImg);
+    float g = grade(q, eng, u, gN);
     if (u.dots == 1) g = 1.0 - g;
     float sh = u.dotsSharpness + 1.0;
     float peso = clamp((g + (-1.0 + (1.0 / sh + 1.0) * (bw + u.dotsLighten))) * sh, 0.0, 1.0);
@@ -218,7 +218,7 @@ fragment float4 fx_sapphire_half_tone(
     else r = cor * a;                              // As Premult: a cor reta com o alfa da fonte
 
     if (temMascara(maskImg)) {
-        float m = larguraDaMascara(u) > 0 ? mascaraDesfocada(q, false, u, __nv_smp, mH, maskImg) : mascara(t, u, __nv_smp, maskImg);
+        float m = larguraDaMascara(u, gEscala) > 0 ? mascaraDesfocada(q, false, u, __nv_smp, mH, maskImg, gT, gN, gInicio, gEscala) : mascara(t, u, __nv_smp, maskImg, gT);
         float3 sp = s.rgb * s.a;
         r = sp + (r - sp) * m;
         a = s.a;

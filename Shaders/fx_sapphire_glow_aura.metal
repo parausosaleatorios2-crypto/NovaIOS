@@ -49,12 +49,8 @@ constant float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do
 static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
-int2 gT;          // o buffer
-int2 gN;          // a camada do AE dentro dele, em px
-int2 gInicio;     // o canto da camada no buffer
-float gEscala;     // a prévia reduzida (o Glow Width é em px da composição)
 
-static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg, thread int2& gT, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -69,7 +65,7 @@ static int espelhar(int i, int n) {
     return i < n ? i : p - 1 - i;
 }
 
-static int2 naCamada(int2 q) {
+static int2 naCamada(int2 q, thread int2& gN, thread int2& gInicio) {
     return gInicio + int2(espelhar(q.x, gN.x), espelhar(q.y, gN.y));
 }
 
@@ -96,7 +92,7 @@ static bool temMatte(texture2d<float> matteImg) { return int2(int(matteImg.get_w
 static bool temFundo(texture2d<float> bgImg) { return int2(int(bgImg.get_width()), int(bgImg.get_height())).x > 1; }
 
 // As camadas de entrada no lugar delas na composição, pré-multiplicadas.
-static float4 camada(texture2d<float> t, int2 p, sampler __nv_smp) {
+static float4 camada(texture2d<float> t, int2 p, sampler __nv_smp, thread int2& gT) {
     float4 c = t.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     return float4(c.rgb * c.a, c.a);
 }
@@ -104,12 +100,12 @@ static float4 camada(texture2d<float> t, int2 p, sampler __nv_smp) {
 static float3 limiarTh(constant sapphire_glow_auraParams& u) { return fixo(u.threshold) + floor(u.thresholdAddColor.rgb * 255.0 + 0.5) / 255.0; }
 
 // bw = max(0, monochrome(s − th)), na ordem do plugin
-static float bw(int2 p, constant sapphire_glow_auraParams& u, sampler __nv_smp, texture2d<float> inputImg, texture2d<float> matteImg) {
+static float bw(int2 p, constant sapphire_glow_auraParams& u, sampler __nv_smp, texture2d<float> inputImg, texture2d<float> matteImg, thread int2& gT) {
     float4 e = entrada(p, u, inputImg);
     float3 s = mix(e.rgb, float3(e.a), fixo(u.glowFromAlpha));
     // a Matte (medido): a cor pré-multiplicada dela, canal a canal, multiplica a fonte antes de tudo
     if (temMatte(matteImg)) {
-        float3 m = camada(matteImg, p, __nv_smp).rgb;
+        float3 m = camada(matteImg, p, __nv_smp, gT).rgb;
         s *= u.invertMatte ? 1.0 - m : m;
     }
     float3 c = s - limiarTh(u);
@@ -122,7 +118,7 @@ static float escalaK(constant sapphire_glow_auraParams& u) {
 }
 
 // A largura do desfoque em px do buffer.
-static float larguraPx(constant sapphire_glow_auraParams& u) {
+static float larguraPx(constant sapphire_glow_auraParams& u, thread float& gEscala) {
     float w = fixo(u.glowWidth) * gEscala;
     if (!u.subpixel) w = floor(w + 0.5);
     return clamp(w, 0.0, LARGURA_MAX);
@@ -133,42 +129,42 @@ static float larguraPx(constant sapphire_glow_auraParams& u) {
  * (W + 2 − qual) div 3, que somam W; com a largura quebrada só a caixa (⌊W⌋ mod 3) cresce, e ela leva as duas
  * pontas com o peso da fração: (1 − f)·caixa(r) + f·caixa(r + 1).
  */
-static float caixa(int2 q, bool emX, int qual, bool deA, constant sapphire_glow_auraParams& u, texture2d<float> ga, texture2d<float> gb) {
-    float w = larguraPx(u);
+static float caixa(int2 q, bool emX, int qual, bool deA, constant sapphire_glow_auraParams& u, texture2d<float> ga, texture2d<float> gb, thread int2& gN, thread int2& gInicio, thread float& gEscala) {
+    float w = larguraPx(u, gEscala);
     int a = int(floor(w));
     float f = w - float(a);
     int r = (a + 2 - qual) / 3;
     bool cresce = f > 0.0 && a - (a / 3) * 3 == qual;
     float soma = 0.0;
     for (int d = -r; d <= r; d++) {
-        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)));
+        int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)), gN, gInicio);
         soma += lido(deA ? ga.read(uint2(p), uint(0)) : gb.read(uint2(p), uint(0)));
     }
     float n = float(2 * r + 1);
     if (!cresce) return soma / n;
-    int2 e = naCamada(q - (emX ? int2(r + 1, 0) : int2(0, r + 1)));
-    int2 g = naCamada(q + (emX ? int2(r + 1, 0) : int2(0, r + 1)));
+    int2 e = naCamada(q - (emX ? int2(r + 1, 0) : int2(0, r + 1)), gN, gInicio);
+    int2 g = naCamada(q + (emX ? int2(r + 1, 0) : int2(0, r + 1)), gN, gInicio);
     float pontas = deA ? lido(ga.read(uint2(e), uint(0))) + lido(ga.read(uint2(g), uint(0))) : lido(gb.read(uint2(e), uint(0))) + lido(gb.read(uint2(g), uint(0)));
     return soma * ((1.0 - f) / n + f / (n + 2.0)) + pontas * (f / (n + 2.0));
 }
 
-static float picEm(int2 q, texture2d<float> ga) { return lido(ga.read(uint2(gInicio + q), uint(0))); }
+static float picEm(int2 q, texture2d<float> ga, thread int2& gInicio) { return lido(ga.read(uint2(gInicio + q), uint(0))); }
 
 // grad_direction (0x180b72be0): diferença central; na borda da camada, um lado só vezes 2.
-static float direcao(int2 q, float p0, constant EngineUniforms& eng, texture2d<float> ga) {
+static float direcao(int2 q, float p0, constant EngineUniforms& eng, texture2d<float> ga, thread int2& gN, thread int2& gInicio) {
     float gx, gy;
     if (gN.x < 2) gx = 0.0;
-    else if (q.x == 0) gx = (picEm(q + int2(1, 0), ga) - p0) * 2.0;
-    else if (q.x == gN.x - 1) gx = (p0 - picEm(q - int2(1, 0), ga)) * 2.0;
-    else gx = picEm(q + int2(1, 0), ga) - picEm(q - int2(1, 0), ga);
+    else if (q.x == 0) gx = (picEm(q + int2(1, 0), ga, gInicio) - p0) * 2.0;
+    else if (q.x == gN.x - 1) gx = (p0 - picEm(q - int2(1, 0), ga, gInicio)) * 2.0;
+    else gx = picEm(q + int2(1, 0), ga, gInicio) - picEm(q - int2(1, 0), ga, gInicio);
     // a linha de CIMA da imagem menos a de baixo; no buffer de conteúdo a linha 0 é o topo, numa cena
     // guardada de pé (eng.acEntradaDePe) é a base
-    int cima = eng.acEntradaDePe == 1 ? 1 : -1;
+    int cima = eng.acEntradaDePe.x == 1.0 ? 1 : -1;
     int yc = q.y + cima, yb = q.y - cima;
     if (gN.y < 2) gy = 0.0;
-    else if (yc < 0 || yc >= gN.y) gy = (p0 - picEm(int2(q.x, yb), ga)) * 2.0;
-    else if (yb < 0 || yb >= gN.y) gy = (picEm(int2(q.x, yc), ga) - p0) * 2.0;
-    else gy = picEm(int2(q.x, yc), ga) - picEm(int2(q.x, yb), ga);
+    else if (yc < 0 || yc >= gN.y) gy = (p0 - picEm(int2(q.x, yb), ga, gInicio)) * 2.0;
+    else if (yb < 0 || yb >= gN.y) gy = (picEm(int2(q.x, yc), ga, gInicio) - p0) * 2.0;
+    else gy = picEm(int2(q.x, yc), ga, gInicio) - picEm(int2(q.x, yb), ga, gInicio);
     if (gx * gx + gy * gy < 1e-8) return 0.0;
     float t = __nv_atan(gy, gx) * 0.15915494;
     return t - floor(t);
@@ -197,22 +193,26 @@ fragment float4 fx_sapphire_glow_aura(
     texture2d<float> bgImg [[texture(3)]],
     texture2d<float> matteImg [[texture(4)]])
 {
+    int2 gT = int2(0);
+    int2 gN = int2(0);
+    int2 gInicio = int2(0);
+    float gEscala = float(0);
     float4 __nv_fragCoord = in.position;
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar(eng, inputImg);
+    preparar(eng, inputImg, gT, gN, gInicio, gEscala);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
     if (eng.acPass == 0) {
-        __nv_out = fora ? float4(0.0) : guardar(bw(t, u, __nv_smp, inputImg, matteImg));
+        __nv_out = fora ? float4(0.0) : guardar(bw(t, u, __nv_smp, inputImg, matteImg, gT));
         return __nv_out;
     }
     if (eng.acPass <= 6) {
         // 1..3 em x, 4..6 em y; os passes ímpares leem ga, os pares gb
-        float c = fora ? 0.0 : caixa(q, eng.acPass <= 3, (eng.acPass - 1) - ((eng.acPass - 1) / 3) * 3, (eng.acPass & 1) == 1, u, ga, gb);
+        float c = fora ? 0.0 : caixa(q, eng.acPass <= 3, (eng.acPass - 1) - ((eng.acPass - 1) / 3) * 3, (eng.acPass & 1) == 1, u, ga, gb, gN, gInicio, gEscala);
         __nv_out = guardar(eng.acPass == 6 ? escalaK(u) * c : c);
         return __nv_out;
     }
@@ -225,12 +225,12 @@ fragment float4 fx_sapphire_glow_aura(
     float4 S = entrada(t, u, inputImg);
     float4 r;
     if (u.show == 1) {
-        r = float4(float3(bw(t, u, __nv_smp, inputImg, matteImg) * escalaK(u)), 1.0);
+        r = float4(float3(bw(t, u, __nv_smp, inputImg, matteImg, gT) * escalaK(u)), 1.0);
     } else {
-        float p0 = picEm(q, ga);
+        float p0 = picEm(q, ga, gInicio);
         // a largura interna do Sapphire (medido): px ÷ (largura da camada ÷ 8)
         float wn = fixo(u.glowWidth) / (float(gN.x) / gEscala / 8.0);
-        float a = direcao(q, p0, eng, ga) + p0 * (wn * fixo(u.twist) / 4.0);
+        float a = direcao(q, p0, eng, ga, gN, gInicio) + p0 * (wn * fixo(u.twist) / 4.0);
         float3 ph = fixo(u.phase) + float3(fixo(u.phaseRed), fixo(u.phaseGreen), fixo(u.phaseBlue)) + fixo(u.phaseSpeed) * eng.acTime;
         float3 fq = fixo(u.frequency) * float3(fixo(u.frequencyRed), fixo(u.frequencyGreen), fixo(u.frequencyBlue));
         float3 g = 0.5 + 0.5 * sin(6.2831853 * (a * fq - ph));
@@ -242,7 +242,7 @@ fragment float4 fx_sapphire_glow_aura(
         // glow_rgba_combine (da definição; medido: um canal negativo da luz não escurece)
         float claro = fixo(u.lightBackground);
         bool fundo = temFundo(bgImg);
-        float4 B = fundo ? camada(bgImg, t, __nv_smp) : float4(0.0);
+        float4 B = fundo ? camada(bgImg, t, __nv_smp, gT) : float4(0.0);
         float3 glowB = max(luz, float3(0.0)) * (1.0 + (2.0 * (fundo ? B.rgb : S.rgb) - 1.0) * claro);
         float4 gl = float4(glowB, max(glowB.r, max(glowB.g, glowB.b)) * fixo(u.affectAlpha));
         float4 src = S * fixo(u.sourceOpacity);
