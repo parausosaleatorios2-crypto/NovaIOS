@@ -508,14 +508,18 @@ public struct EditorView: View {
         }
         do {
             let tam = l.size ?? SIMD2(Float(comp.width), Float(comp.height))
-            let (efeitos, avisos) = try await AEImportador.efeitosDoPreset(url, tamanho: tam)
-            if !efeitos.isEmpty {
-                editComp { c in
-                    if let i = c.layers.firstIndex(where: { $0.id == id }) { c.layers[i].effects += efeitos }
+            let (efeitos, animacao, avisos) = try await AEImportador.efeitosDoPreset(url, tamanho: tam)
+            var chaves = 0
+            let t0 = time
+            editComp { c in
+                if let i = c.layers.firstIndex(where: { $0.id == id }) {
+                    c.layers[i].effects += efeitos
+                    if !animacao.isEmpty { chaves = AEImportador.aplicarAnimacao(animacao, em: &c.layers[i], aPartirDe: t0) }
                 }
-                await carregarManifestos()
             }
-            let ok = String(format: "%d efeito(s) do preset aplicados em \"%@\".".loc, efeitos.count, l.name)
+            if !efeitos.isEmpty { await carregarManifestos() }
+            var ok = String(format: "%d efeito(s) do preset aplicados em \"%@\".".loc, efeitos.count, l.name)
+            if chaves > 0 { ok += " " + String(format: "Animação: %d chaves a partir do cursor.".loc, chaves) }
             aviso = avisos.isEmpty ? ok : ok + "
 
 " + avisos.prefix(8).joined(separator: "

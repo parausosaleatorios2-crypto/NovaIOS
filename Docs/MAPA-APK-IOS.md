@@ -48,7 +48,7 @@ perfil/conta/marketplace/templates.
 | Área | Classes | iOS |
 |---|---|---|
 | Element 3D | `model.element3d.*` (~40) | ❌ |
-| Optical Flares | `model.opticalflares.*` | 🟡 fase 1 na GPU (núcleo, halo, streak, raios, anel, ghosts, hoop, com os controles do efeito); fase 2 = porte fiel do `MotorDoOf` (~6.000 linhas; `irisRender` não descompila) |
+| Optical Flares | `model.opticalflares.*` | 🟡 motor da GPU do iOS: controles do AE + 10 presets e 21 opções (Glow, Streak, Spike Ball, Shimmer, Ring, Hoop, Multi Iris com forma da íris, aberração cromática, flicker, saturação, fade nas bordas); porte bit a bit do `MotorDoOf` e leitura do `.ofp` pendentes |
 | Partículas (CC Particle World) | `model.ccparticleworld.*` | ❌ |
 | CC Ball Action | `model.ccballaction.*` | ❌ |
 | Puppet | `PuppetArap`, `PuppetPin`, `MotorDoPuppet` | ❌ |
@@ -63,9 +63,10 @@ perfil/conta/marketplace/templates.
 | Importar mídia | — | ✅ galeria, várias de uma vez |
 | Exportar | `export.ServicoDeExportacao` | ✅ vídeo H.264/HEVC/alfa + áudio, GIF, PNG; PSD ❌ |
 | Projeto `.nova` | `persistence.*Dto` | ✅ importa `.nova` do Android (ConversorAndroid); duplicar/exportar/apagar projeto |
-| Importar After Effects | `aeimport.*` | ❌ conversão é no servidor da Nova (sessão de conta/nuvem) |
+| Lumetri Color | `ae-lumetri` | 🟢 como o do AE: Input LUT, Temperature/Tint, Exposure, Contrast, Highlights/Shadows/Whites/Blacks, Saturation, Look (27 looks + .cube), Intensity, Faded Film, Sharpen, Vibrance, Shadow/Highlight Tint, Vignette |
+| Importar After Effects | `aeimport.*` | 🟢 local no iPhone (`AEImport.swift`, leitor RIFX): `.aep` → comp principal (tamanho, fps, duração), camadas (tempo, pai, sólido/ajuste/nulo/texto/forma/mídia escolhida junto), transform com chaves e efeitos com valores; `.ffx` → efeitos e presets de animação na camada. Sem: pré-comps (viram sólido), máscaras, expressões, texto/forma detalhados. O servidor do Android exige Play Integrity e não atende iOS |
 | Nuvem, conta, biblioteca, IA, marketplace | `cloud.*`, `biblioteca.*` | 🟡 Perfil, conta (Firebase) e Marketplace (comunidade e biblioteca); IA, legendas e export na nuvem ❌ |
-| Layouts Nova/CapCut/Motion/AE | `layout.*` | 🟡 editor: barra de baixo e abas da camada copiadas do Compose do APK (enum s22, x02.c/x02.D: medidas 76/46×34/11sp); demais telas e layouts CapCut/Motion/AE pendentes |
+| Layouts Nova/CapCut/Motion/AE | `layout.*` | 🟡 editor: barra de baixo, faixa de transporte (x02.E, 52 dp: desfazer, refazer, J/K, play, copiar camada, ações) e abas da camada copiadas do Compose; painéis no tema do APK (cartões #141625, controles verdes); layouts CapCut/Motion/AE pendentes |
 | Templates | `templates.*` | ✅ templates do APK (`Resources/templates`) |
 
 ## Próximos, por impacto

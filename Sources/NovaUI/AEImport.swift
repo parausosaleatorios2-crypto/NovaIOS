@@ -372,7 +372,8 @@ enum AEImportador {
     // MARK: .ffx
 
     /// Efeitos de um preset .ffx, para aplicar numa camada.
-    static func efeitosDoPreset(_ url: URL, tamanho: SIMD2<Float>) async throws -> (efeitos: [AppliedEffect], avisos: [String]) {
+    static func efeitosDoPreset(_ url: URL, tamanho: SIMD2<Float>) async throws
+        -> (efeitos: [AppliedEffect], animacao: [AEPropriedade], avisos: [String]) {
         let dados = try lerArquivo(url)
         let arq = try AEArquivo(dados)
         guard arq.forma == "FaFX" else { throw AEErro.formato }
@@ -385,14 +386,71 @@ enum AEImportador {
             }
         }
         varrer(arq.raiz)
-        guard !lidos.isEmpty else { throw AEErro.semEfeito }
+
+        // Preset de animacao: os caminhos (tdsp) e, na mesma ordem, os valores (tdbs).
+        var animacao: [AEPropriedade] = []
+        if let besc = arq.raiz.first(where: { $0.listType == "besc" }) {
+            var base: Double = 30720
+            if let beso = besc.filho("beso") {
+                let b = Double(arq.u32(beso, 12)); if b > 0 { base = b }
+            }
+            let caminhos = besc.filhos("LIST", "tdsp").compactMap { sp -> String? in
+                sp.filhos("LIST", "tdsi").compactMap { $0.filho("tdmn").map(arq.texto) }.last
+            }.filter { $0 != "ADBE End of path sentinel" }
+            for (i, tb) in besc.filhos("LIST", "tdbs").enumerated() where i < caminhos.count {
+                animacao.append(arq.propriedade(tb, match: caminhos[i], base: base))
+            }
+        }
+        guard !lidos.isEmpty || !animacao.isEmpty else { throw AEErro.semEfeito }
         let cat = await catalogo()
         var out: [AppliedEffect] = [], avisos: [String] = []
         for e in lidos {
             if let ap = await converter(e, catalogo: cat, tamanho: tamanho, inicioDaCamada: 0) { out.append(ap) }
             else { avisos.append(String(format: "Sem equivalente na Nova: %@".loc, e.nome)) }
         }
-        return (out, avisos)
+        return (out, animacao, avisos)
+    }
+
+    /// Aplica um preset de animacao (posicao/rotacao como deslocamento sobre o
+    /// valor atual da camada; escala e opacidade como estao), a partir de `t0`.
+    static func aplicarAnimacao(_ props: [AEPropriedade], em l: inout Layer, aPartirDe t0: Float) -> Int {
+        var n = 0
+        let pos0 = l.transform.position.value(at: t0)
+        let rot0 = l.transform.rotationZ.value(at: t0)
+        let px = props.first { $0.match == "ADBE Position_0" }, py = props.first { $0.match == "ADBE Position_1" }
+        if px != nil || py != nil {
+            let tempos = Set((px?.chaves.map(\.t) ?? []) + (py?.chaves.map(\.t) ?? [])).sorted()
+            for t in tempos {
+                let x = px?.chaves.first { abs($0.t - t) < 1e-6 }?.v.first ?? px?.estatico.first ?? 0
+                let y = py?.chaves.first { abs($0.t - t) < 1e-6 }?.v.first ?? py?.estatico.first ?? 0
+                _ = l.transform.position.setKeyframe(time: t0 + Float(t), value: pos0 + SIMD2(Float(x), Float(y)))
+                n += 1
+            }
+        }
+        for p in props {
+            switch p.match {
+            case "ADBE Position":
+                for k in p.chaves where k.v.count >= 2 {
+                    _ = l.transform.position.setKeyframe(time: t0 + Float(k.t), value: pos0 + SIMD2(Float(k.v[0]), Float(k.v[1])))
+                    n += 1
+                }
+            case "ADBE Rotate Z":
+                for k in p.chaves {
+                    _ = l.transform.rotationZ.setKeyframe(time: t0 + Float(k.t), value: rot0 + Float(k.v.first ?? 0)); n += 1
+                }
+            case "ADBE Scale":
+                for k in p.chaves where k.v.count >= 2 {
+                    _ = l.transform.scale.setKeyframe(time: t0 + Float(k.t), value: SIMD2(Float(k.v[0]), Float(k.v[1])) * 100); n += 1
+                }
+            case "ADBE Opacity":
+                let fator: Float = (p.chaves.compactMap { $0.v.first }.map { abs($0) }.max() ?? 0) <= 1.0001 ? 100 : 1
+                for k in p.chaves {
+                    _ = l.transform.opacity.setKeyframe(time: t0 + Float(k.t), value: Float(k.v.first ?? 1) * fator); n += 1
+                }
+            default: break
+            }
+        }
+        return n
     }
 
     // MARK: .aep
@@ -437,8 +495,8 @@ enum AEImportador {
                         fontes[id] = f
                     }
                     varrer(c.kids)
-                } else if c.listType == "Fold" || c.listType == "Item" {
-                    varrer(c.kids)
+                } else if c.listType != "Layr" && c.listType != "tdgp" {
+                    varrer(c.kids)       // pastas (Fold, Sfdr…) e o resto
                 }
             }
         }
@@ -573,9 +631,8 @@ enum AEImportador {
                 l.transform.position = Animated(tamComp / 2)
             }
             if let sc = g.props["ADBE Scale"] {
-                let todos = sc.estatico.prefix(2) + sc.chaves.flatMap { $0.v.prefix(2) }
-                let fator: Float = (todos.map { abs($0) }.max() ?? 0) <= 20 ? 100 : 1
-                l.transform.scale = vec(sc, SIMD2(100, 100), escala: fator)
+                // o AE grava a escala como fracao (1 = 100%), estatica e nas chaves
+                l.transform.scale = vec(sc, SIMD2(100, 100), escala: 100)
             }
             l.transform.rotationZ = esc(g.props["ADBE Rotate Z"], 0, percent: false)
             l.transform.opacity = esc(g.props["ADBE Opacity"], 100, percent: true)
