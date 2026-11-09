@@ -520,10 +520,7 @@ public struct EditorView: View {
             if !efeitos.isEmpty { await carregarManifestos() }
             var ok = String(format: "%d efeito(s) do preset aplicados em \"%@\".".loc, efeitos.count, l.name)
             if chaves > 0 { ok += " " + String(format: "Animação: %d chaves a partir do cursor.".loc, chaves) }
-            aviso = avisos.isEmpty ? ok : ok + "
-
-" + avisos.prefix(8).joined(separator: "
-")
+            aviso = avisos.isEmpty ? ok : ok + "\n\n" + avisos.prefix(8).joined(separator: "\n")
             if !efeitos.isEmpty { selectedLayer = id; sheet = .propriedades(id) }
         } catch {
             aviso = error.localizedDescription
