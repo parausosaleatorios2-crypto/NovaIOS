@@ -8,6 +8,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreImage
 
 // MARK: - Curvas (efeito Curvas)
 
@@ -103,7 +104,57 @@ struct CurvesParamEditor: View {
     }
 }
 
-// MARK: - LUT
+// MARK: - LUT (galeria de Looks no estilo do Magic Bullet Looks)
+
+/// Miniaturas dos looks: a imagem de amostra com o LUT aplicado (CoreImage
+/// CIColorCube), feitas uma vez e guardadas.
+enum LooksMiniaturas {
+    private static let cache = NSCache<NSString, UIImage>()
+    private static let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+
+    static let amostra: CIImage? = {
+        guard let u = Bundle.main.resourceURL?.appendingPathComponent("presets/amostra.jpg"),
+              let img = CIImage(contentsOf: u) else { return nil }
+        // reduz para ~180 px de lado (miniatura)
+        let lado = max(img.extent.width, img.extent.height)
+        let k = 180 / max(lado, 1)
+        return img.transformed(by: CGAffineTransform(scaleX: k, y: k))
+    }()
+
+    static func cubo(_ url: URL) -> (Int, Data)? {
+        guard let lido = try? (url.pathExtension.lowercased() == "cube"
+                               ? EffectParamTextures.parseCube(url)
+                               : EffectParamTextures.parseStrip(url)) else { return nil }
+        let (n, rgba) = lido
+        var f = [Float](repeating: 1, count: n * n * n * 4)
+        for i in 0..<(n * n * n) {
+            f[i * 4] = Float(rgba[i * 4]) / 255
+            f[i * 4 + 1] = Float(rgba[i * 4 + 1]) / 255
+            f[i * 4 + 2] = Float(rgba[i * 4 + 2]) / 255
+        }
+        return (n, f.withUnsafeBufferPointer { Data(buffer: $0) })
+    }
+
+    static func imagem(_ caminho: String?, url: URL?) async -> UIImage? {
+        let chave = (caminho ?? "nenhum") as NSString
+        if let c = cache.object(forKey: chave) { return c }
+        let feito: UIImage? = await Task.detached(priority: .utility) {
+            guard let base = amostra else { return nil }
+            var saida = base
+            if let url, let cb = cubo(url), let f = CIFilter(name: "CIColorCube") {
+                let (n, dados) = cb
+                f.setValue(n, forKey: "inputCubeDimension")
+                f.setValue(dados, forKey: "inputCubeData")
+                f.setValue(base, forKey: kCIInputImageKey)
+                if let o = f.outputImage { saida = o }
+            }
+            guard let cg = ciContext.createCGImage(saida, from: base.extent) else { return nil }
+            return UIImage(cgImage: cg)
+        }.value
+        if let feito { cache.setObject(feito, forKey: chave) }
+        return feito
+    }
+}
 
 struct LutParamEditor: View {
     let title: String
@@ -111,6 +162,8 @@ struct LutParamEditor: View {
     let mediaRoot: URL?
     let onChange: (String?) -> Void
     @State private var importando = false
+    @State private var categoria = "Todos"
+    @State private var importados: [String] = []
 
     /// Looks que vem no app (Resources/looks, LUT 33^3 em tira).
     static var bundled: [String] {
@@ -120,27 +173,81 @@ struct LutParamEditor: View {
             .sorted().map { "looks/" + $0 }
     }
 
-    private func nome(_ p: String) -> String {
+    /// Categorias como as gavetas do Looks (pelo nome do arquivo).
+    static func categoria(de p: String) -> String {
+        let n = (p as NSString).lastPathComponent.lowercased()
+        if p.hasPrefix("projeto/") { return "Meus" }
+        if n.contains("-cc") { return "Nova" }
+        if n.hasPrefix("noir") { return "P&B" }
+        for k in ["vintage", "retro", "desbotado", "matte", "sepia", "pastel"] where n.contains(k) { return "Vintage" }
+        for k in ["cinema", "bleach", "drama", "classico", "cross", "noite"] where n.contains(k) { return "Cinema" }
+        return "Estilo"
+    }
+    static let categorias = ["Todos", "Cinema", "Vintage", "Estilo", "P&B", "Nova", "Meus"]
+
+    static func nome(_ p: String) -> String {
         let base = (p as NSString).lastPathComponent.replacingOccurrences(of: ".png", with: "")
             .replacingOccurrences(of: ".cube", with: "")
         return base.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
+    private func url(_ p: String) -> URL? {
+        if p.hasPrefix("projeto/") { return mediaRoot?.appendingPathComponent(String(p.dropFirst(8))) }
+        return Bundle.main.resourceURL?.appendingPathComponent(p)
+    }
+
+    private var lista: [String] {
+        let todos = Self.bundled + importados
+        return categoria == "Todos" ? todos : todos.filter { Self.categoria(de: $0) == categoria }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Menu {
-                Button("Nenhum (sem mudança)".loc) { onChange(nil) }
-                ForEach(Self.bundled, id: \.self) { p in Button(nome(p)) { onChange(p) } }
-                Divider()
-                Button { importando = true } label: { Label("Importar .cube…".loc, systemImage: "square.and.arrow.down") }
-            } label: {
-                HStack {
-                    Text(title).font(.system(size: 11.5))
-                    Spacer()
-                    Text(current.map(nome) ?? "Nenhum".loc).font(.system(size: 11)).foregroundStyle(NovaTheme.accent)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(NovaTheme.dim)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text(current.map(Self.nome) ?? "Nenhum".loc)
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(NovaTheme.accent)
+            }
+            // gavetas
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Self.categorias, id: \.self) { c in
+                        Button { categoria = c } label: {
+                            Text(c.loc).font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Capsule().fill(categoria == c ? NovaTheme.accent.opacity(0.18) : NovaTheme.chip))
+                                .overlay(Capsule().strokeBorder(categoria == c ? NovaTheme.accent.opacity(0.6) : Color.clear))
+                                .foregroundStyle(categoria == c ? NovaTheme.accent : NovaTheme.dim)
+                        }.buttonStyle(.plain)
+                    }
                 }
             }
+            // miniaturas com o look aplicado
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    LookTile(nome: "Nenhum".loc, caminho: nil, url: nil, selecionado: current == nil) { onChange(nil) }
+                    ForEach(lista, id: \.self) { p in
+                        LookTile(nome: Self.nome(p), caminho: p, url: url(p), selecionado: current == p) { onChange(p) }
+                    }
+                    Button { importando = true } label: {
+                        VStack(spacing: 4) {
+                            RoundedRectangle(cornerRadius: 10).fill(NovaTheme.button)
+                                .frame(width: 78, height: 78)
+                                .overlay(Image(systemName: "plus").font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(NovaTheme.accent))
+                            Text("Importar .cube".loc).font(.system(size: 10)).foregroundStyle(NovaTheme.dim)
+                        }
+                    }.buttonStyle(.plain)
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(height: 104)
+        }
+        .onAppear {
+            guard let root = mediaRoot,
+                  let f = try? FileManager.default.contentsOfDirectory(atPath: root.path) else { return }
+            importados = f.filter { $0.lowercased().hasSuffix(".cube") }.sorted().map { "projeto/" + $0 }
         }
         .fileImporter(isPresented: $importando,
                       allowedContentTypes: [UTType(filenameExtension: "cube") ?? .data, .data]) { r in
@@ -151,8 +258,44 @@ struct LutParamEditor: View {
             let dst = root.appendingPathComponent(u.lastPathComponent)
             try? FileManager.default.removeItem(at: dst)
             if (try? FileManager.default.copyItem(at: u, to: dst)) != nil {
-                onChange("projeto/" + u.lastPathComponent)
+                let p = "projeto/" + u.lastPathComponent
+                if !importados.contains(p) { importados.append(p) }
+                onChange(p)
             }
         }
+    }
+}
+
+/// Um look da galeria: miniatura com o LUT aplicado, nome embaixo.
+struct LookTile: View {
+    let nome: String
+    let caminho: String?
+    let url: URL?
+    let selecionado: Bool
+    let acao: () -> Void
+    @State private var img: UIImage?
+
+    var body: some View {
+        Button(action: acao) {
+            VStack(spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(NovaTheme.surface2)
+                    if let img {
+                        Image(uiImage: img).resizable().scaledToFill()
+                    } else {
+                        ProgressView().scaleEffect(0.6)
+                    }
+                }
+                .frame(width: 78, height: 78)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(selecionado ? NovaTheme.accent : NovaTheme.line, lineWidth: selecionado ? 2.5 : 1))
+                Text(nome).font(.system(size: 10, weight: selecionado ? .semibold : .regular))
+                    .foregroundStyle(selecionado ? NovaTheme.accent : NovaTheme.text)
+                    .lineLimit(1).frame(width: 80)
+            }
+        }
+        .buttonStyle(.plain)
+        .task(id: caminho) { img = await LooksMiniaturas.imagem(caminho, url: url) }
     }
 }

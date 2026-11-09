@@ -36,6 +36,10 @@ public struct EditorView: View {
     /// Desfazer/refazer (UndoHistory no APK): um passo por gravacao.
     @State private var undoStack: [NovaProject] = []
     @State private var importandoFFX = false
+    /// Qual arquivo o seletor esta pedindo (guardado ate a resposta chegar).
+    @State private var seletorFFX = false
+    /// Muda a cada batida marcada (vibra).
+    @State private var batidaPiscando = false
     /// "Vista da previa" do APK: so a previa, sem a timeline.
     @State private var previaCheia = false
     /// Chip "Full" da previa: ajustar (Full) ou preencher a area (Fill).
@@ -157,15 +161,23 @@ public struct EditorView: View {
             guard !items.isEmpty else { return }
             Task { await importar(items) }
         }
-        .fileImporter(isPresented: $importandoAudio, allowedContentTypes: [.audio],
-                      allowsMultipleSelection: true) { r in
-            if case .success(let urls) = r { Task { await importarAudio(urls) } }
+        .fileImporter(isPresented: Binding(get: { importandoAudio || importandoFFX },
+                                           set: { if !$0 { importandoAudio = false; importandoFFX = false } }),
+                      allowedContentTypes: seletorFFX ? AEImportador.tipos : [.audio],
+                      allowsMultipleSelection: !seletorFFX) { r in
+            let eraFFX = seletorFFX
+            importandoAudio = false; importandoFFX = false
+            guard case .success(let urls) = r, !urls.isEmpty else { return }
+            if eraFFX { Task { await aplicarFFX(urls[0]) } }
+            else { Task { await importarAudio(urls) } }
         }
         .alert("Texto".loc, isPresented: $pedindoTexto) {
             TextField("Digite o texto".loc, text: $novoTexto)
             Button("Cancelar".loc, role: .cancel) {}
             Button("Adicionar".loc) { adicionarTexto(novoTexto) }
         }
+        .onChange(of: importandoFFX) { _, v in if v { seletorFFX = true } }
+        .onChange(of: importandoAudio) { _, v in if v { seletorFFX = false } }
         .task(id: playing) { await tocar() }
         .task { if demo { await roteiroDemo() } }
         .task(id: effectIDs) { await carregarManifestos() }
@@ -500,6 +512,16 @@ public struct EditorView: View {
             .frame(maxWidth: .infinity)
             botaoFaixa("forward.end.fill") { irPara(proximoPonto()) }
             botaoFaixa("plus.square.fill.on.square.fill", habilitado: selectedLayer != nil) { duplicarSelecionada() }
+            // Marcar batida: marcador no cursor (toque no ritmo da musica tocando)
+            Button { adicionarMarcador(); batidaPiscando.toggle() } label: {
+                Image(systemName: "metronome.fill").font(.system(size: 19))
+                    .foregroundStyle(NovaTheme.warning)
+                    .scaleEffect(batidaPiscando ? 1.0 : 1.0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .buttonStyle(EncolheAoTocar())
+            .frame(maxWidth: .infinity)
+            .sensoryFeedback(.impact(weight: .medium), trigger: batidaPiscando)
             botaoFaixa(previaCheia ? "arrow.down.right.and.arrow.up.left" : "viewfinder") {
                 withAnimation(.easeInOut(duration: 0.2)) { previaCheia.toggle() }
             }
@@ -507,10 +529,6 @@ public struct EditorView: View {
         .padding(.horizontal, 4)
         .frame(height: 52)
         .background(NovaTheme.surface2)
-        .fileImporter(isPresented: $importandoFFX, allowedContentTypes: AEImportador.tipos) { r in
-            guard case .success(let url) = r else { return }
-            Task { await aplicarFFX(url) }
-        }
     }
 
     private func botaoFaixa(_ icon: String, habilitado: Bool = true, _ a: @escaping () -> Void) -> some View {
@@ -814,8 +832,6 @@ struct FerramentaBotao: View {
     let ativa: Bool
     let habilitada: Bool
     let acao: () -> Void
-    @State private var pressionado = false
-
     var body: some View {
         let cor: Color = !habilitada ? NovaTheme.text.opacity(0.28) : (ativa ? NovaTheme.accent : NovaTheme.text)
         Button(action: acao) {
@@ -831,13 +847,18 @@ struct FerramentaBotao: View {
                     .padding(.horizontal, 2)
             }
             .frame(width: 66)
-            .scaleEffect(pressionado ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.09), value: pressionado)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EncolheAoTocar())
         .disabled(!habilitada)
-        .simultaneousGesture(DragGesture(minimumDistance: 0)
-            .onChanged { _ in pressionado = true }
-            .onEnded { _ in pressionado = false })
+    }
+}
+
+/// Encolhe um pouco enquanto o dedo esta no botao, sem roubar o arraste da
+/// rolagem (o gesto de antes travava a barra de ferramentas).
+struct EncolheAoTocar: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.09), value: configuration.isPressed)
     }
 }

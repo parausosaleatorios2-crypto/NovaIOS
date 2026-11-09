@@ -340,9 +340,12 @@ struct LayerPropertiesSheet: View {
     private func keyButton(_ notAnimated: Bool, _ hasKey: Bool, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: notAnimated ? "stopwatch" : (hasKey ? "diamond.fill" : "diamond"))
-                .font(.system(size: 11))
-                .foregroundStyle(notAnimated ? NovaTheme.dim2 : NovaTheme.accent)
-                .frame(width: 22, height: 22)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(notAnimated ? NovaTheme.dim : NovaTheme.accent)
+                .frame(width: 38, height: 38)
+                .background(RoundedRectangle(cornerRadius: 9)
+                    .fill(notAnimated ? NovaTheme.button : NovaTheme.accent.opacity(0.12)))
+                .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 

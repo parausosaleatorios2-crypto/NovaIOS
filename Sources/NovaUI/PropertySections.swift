@@ -28,13 +28,16 @@ struct AnimSlider: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 4) {
+            HStack(spacing: 8) {
                 if let onKey {
                     Button(action: onKey) {
                         Image(systemName: !animated ? "stopwatch" : (hasKey ? "diamond.fill" : "diamond"))
-                            .font(.system(size: 10))
-                            .foregroundStyle(animated ? NovaTheme.accent : NovaTheme.dim2)
-                            .frame(width: 20, height: 20)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(animated ? NovaTheme.accent : NovaTheme.dim)
+                            .frame(width: 38, height: 38)
+                            .background(RoundedRectangle(cornerRadius: 9)
+                                .fill(animated ? NovaTheme.accent.opacity(0.12) : NovaTheme.button))
+                            .contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
                 Text(title.loc).font(.system(size: 11.5))

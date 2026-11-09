@@ -96,17 +96,34 @@ public actor VideoDecoder {
         return try Self.makeTexture(from: image, device: device)
     }
 
+    /// Textura RGBA de 8 bits em sRGB, alfa pre-multiplicado. Fotos do iPhone vem
+    /// em HEIC Display P3 / HDR (10-16 bits, alfa no comeco, BGR…); o
+    /// MTKTextureLoader devolvia formatos que os shaders liam errado (a foto
+    /// parecia invertida). Redesenhar num bitmap conhecido resolve todos.
     nonisolated static func makeTexture(from image: CGImage, device: MTLDevice) throws -> MTLTexture {
-        let loader = MTKTextureLoader(device: device)
-        do {
-            return try loader.newTexture(cgImage: image, options: [
-                .SRGB: false,
-                .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
-                .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue)
-            ])
-        } catch {
-            throw MediaError.readerFailed(error.localizedDescription)
+        let w = max(image.width, 1), h = max(image.height, 1)
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let espaco = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let ok: Bool = px.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                      bytesPerRow: w * 4, space: espaco,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                        | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            ctx.interpolationQuality = .high
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
         }
+        guard ok else { throw MediaError.readerFailed("CGContext") }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: w, height: h,
+                                                         mipmapped: false)
+        d.usage = .shaderRead
+        d.storageMode = .shared
+        guard let tex = device.makeTexture(descriptor: d) else { throw MediaError.readerFailed("makeTexture") }
+        px.withUnsafeBytes { buf in
+            tex.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
+                        withBytes: buf.baseAddress!, bytesPerRow: w * 4)
+        }
+        return tex
     }
 
     /// Leitura sequencial, para exportar: muito mais rapida que buscar quadro a quadro.
