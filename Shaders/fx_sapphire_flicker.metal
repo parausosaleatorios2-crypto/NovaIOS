@@ -3,11 +3,12 @@
 // origem : assets/effects/sapphire-flicker.xml
 // id     : nova.effect.sflicker
 // passes : 1
-// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// gerado por glsl2msl.py e consertado a mao no iOS (fix_msl.py): globais passados as funcoes
 // ---------------------------------------------------------------------------
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaGLSLCompat.h"
 using namespace metal;
 
 struct sapphire_flickerParams {
@@ -29,19 +30,19 @@ struct sapphire_flickerParams {
 
 // --- funcoes auxiliares do efeito
 // ---- A TABELA DO RUÍDO (gerada por tools/sflicker/benchmark/gerar.py; não editar à mão) ----
-const int LARGURA = 1024;                  // amostras por linha da textura
-const float PASSO = 16.0;                    // amostras por unidade de u
-const float FAIXA = 0.94;                    // os valores guardados vão de −FAIXA a +FAIXA
-const float SEMENTE = 0.122986;                // a semente medida no After Effects (a padrão do plugin)
-const int TAMANHO = 32769;                  // amostras de cada trecho
+constant int LARGURA = 1024;                  // amostras por linha da textura
+constant float PASSO = 16.0;                    // amostras por unidade de u
+constant float FAIXA = 0.94;                    // os valores guardados vão de −FAIXA a +FAIXA
+constant float SEMENTE = 0.122986;                // a semente medida no After Effects (a padrão do plugin)
+constant int TAMANHO = 32769;                  // amostras de cada trecho
 // a linha onde começa cada trecho: brilho, e a cor de cada canal (R, G, B)
 // Em FUNÇÕES, não em arrays constantes: índice variável num array constante é o que driver de celular erra
 // (como no S_Shake que "não funcionam em alguns celulares", 30/10/2026).
 static int linhaDoTrecho(int t) { if (t == 0) return 0; if (t == 1) return 33; if (t == 2) return 66; if (t == 3) return 99; return 0; }
-const float PI2 = 6.28318530718;
+constant float PI2 = 6.28318530718;
 
 /** Uma amostra da tabela: 16 bits em dois canais (R alto, G baixo). */
-static float amostra(int trecho, int i) {
+static float amostra(int trecho, int i, texture2d<float> tabela) {
     // fora da tabela o pisca continua: ela é percorrida de volta, e de novo de ida (sem salto)
     int volta = 2 * (TAMANHO - 1);
     // o vaivém é simétrico em volta do 0: o índice negativo vale o positivo (e dividir inteiro negativo é
@@ -54,14 +55,14 @@ static float amostra(int trecho, int i) {
 }
 
 /** O ruído do trecho (0 = brilho, 1 a 3 = a cor de R, G e B) no ponto `u`. */
-static float ruido(int trecho, float u) {
+static float ruido(int trecho, float _u0, constant sapphire_flickerParams& u, texture2d<float> tabela) {
     // A semente medida no After Effects dá o MESMO pisca de lá; qualquer outra lê a mesma tabela a
     // partir de um ponto que depende da semente — outro pisca, do mesmo jeito.
     float desvio = abs(u.seed - SEMENTE) < 0.0006 ? 0.0 : fract(u.seed * 0.61803 + 0.137) * 1500.0 + 37.0;
-    float x = (abs(u) + desvio) * PASSO;
+    float x = (abs(_u0) + desvio) * PASSO;
     float i = floor(x), f = x - i;
     int k = int(i);
-    float p0 = amostra(trecho, k - 1), p1 = amostra(trecho, k), p2 = amostra(trecho, k + 1), p3 = amostra(trecho, k + 2);
+    float p0 = amostra(trecho, k - 1, tabela), p1 = amostra(trecho, k, tabela), p2 = amostra(trecho, k + 1, tabela), p3 = amostra(trecho, k + 2, tabela);
     // Catmull–Rom pelas quatro amostras vizinhas
     return p1 + 0.5 * f * (p2 - p0 + f * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3 + f * (3.0 * (p1 - p2) + p3 - p0)));
 }
@@ -80,10 +81,10 @@ fragment float4 fx_sapphire_flicker(
 
     float4 cor = inputImg.sample(__nv_smp, in.acScreenNorm);
     // Medido: o ruído anda com u = Rand Freq · t (em segundos — não depende da taxa de quadros).
-    float u = u.randFreq * eng.acTime;
+    float uu = u.randFreq * eng.acTime;
     float3 pisca = float3(0.0);
-    if (u.randLumaAmp != 0.0) pisca += u.randLumaAmp * ruido(0, u);
-    if (u.randColorAmp != 0.0) pisca += u.randColorAmp * float3(ruido(1, u), ruido(2, u), ruido(3, u));
+    if (u.randLumaAmp != 0.0) pisca += u.randLumaAmp * ruido(0, uu, u, tabela);
+    if (u.randColorAmp != 0.0) pisca += u.randColorAmp * float3(ruido(1, uu, u, tabela), ruido(2, uu, u, tabela), ruido(3, uu, u, tabela));
     // Medido: a onda é um COSSENO (começa no alto), e a fase de cada canal é em voltas.
     if (u.waveAmp != 0.0) pisca += u.waveAmp * cos(PI2 * (u.waveFreq * eng.acTime - float3(u.waveRPhase, u.waveGPhase, u.waveBPhase)));
     // Medido: ganho = Brightness + Amplitude · (u.amplitude do canal) · pisca, nunca abaixo de zero;

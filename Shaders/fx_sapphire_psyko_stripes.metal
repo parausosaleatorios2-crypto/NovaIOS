@@ -3,11 +3,12 @@
 // origem : assets/effects/sapphire-psyko-stripes.xml
 // id     : nova.effect.spsykostripes
 // passes : 8
-// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// gerado por glsl2msl.py e consertado a mao no iOS (fix_msl.py): globais passados as funcoes
 // ---------------------------------------------------------------------------
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaGLSLCompat.h"
 using namespace metal;
 
 struct sapphire_psyko_stripesParams {
@@ -36,7 +37,7 @@ struct sapphire_psyko_stripesParams {
 };
 
 // --- funcoes auxiliares do efeito
-const float LARGURA_MAX = 720.0;
+constant float LARGURA_MAX = 720.0;
 
 // Os sliders do Sapphire chegam em ponto fixo 16.16.
 static float fixo(float v) { return floor(v * 65536.0 + 0.5) / 65536.0; }
@@ -46,7 +47,7 @@ int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (o Source Blur é em px da composição)
 
-static void preparar() {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -73,7 +74,7 @@ static float lido(float4 c) {
 }
 
 // Input Opacity (medido): Normal (1) usa a cor pré-multiplicada; All Opaque (0) e As Premult (2), a reta.
-static float3 entrada(int2 p) {
+static float3 entrada(int2 p, constant sapphire_psyko_stripesParams& u, texture2d<float> inputImg) {
     float4 s = inputImg.read(uint2(p), uint(0));
     return u.inputOpacity == 1 ? s.rgb * s.a : s.rgb;
 }
@@ -81,11 +82,11 @@ static float3 entrada(int2 p) {
 static float monochrome(float3 c) { return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b; }
 
 // Medido: o Source Blur do AE já é a largura em px (subpixel ligado de fábrica no plugin).
-static float larguraPx() { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
+static float larguraPx(constant sapphire_psyko_stripesParams& u) { return clamp(fixo(u.sourceBlur) * gEscala, 0.0, LARGURA_MAX); }
 
 /** Uma das três caixas de um eixo (a conta do S_GlowAura): a que cresce leva as pontas com a fração. */
-static float caixa(int2 q, bool emX, int qual, bool deA) {
-    float w = larguraPx();
+static float caixa(int2 q, bool emX, int qual, bool deA, constant sapphire_psyko_stripesParams& u, texture2d<float> ga, texture2d<float> gb) {
+    float w = larguraPx(u);
     int a = int(floor(w));
     float f = w - float(a);
     int r = (a + 2 - qual) / 3;
@@ -116,14 +117,14 @@ fragment float4 fx_sapphire_psyko_stripes(
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar();
+    preparar(eng, inputImg);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
-    if (eng.acPass == 0) { __nv_out = fora ? float4(0.0) : guardar(monochrome(entrada(t))); return __nv_out; }
+    if (eng.acPass == 0) { __nv_out = fora ? float4(0.0) : guardar(monochrome(entrada(t, u, inputImg))); return __nv_out; }
     if (eng.acPass <= 6) {
-        float c = fora ? 0.0 : caixa(q, eng.acPass <= 3, (eng.acPass - 1) - ((eng.acPass - 1) / 3) * 3, (eng.acPass & 1) == 1);
+        float c = fora ? 0.0 : caixa(q, eng.acPass <= 3, (eng.acPass - 1) - ((eng.acPass - 1) / 3) * 3, (eng.acPass & 1) == 1, u, ga, gb);
         __nv_out = guardar(c);
         return __nv_out;
     }
@@ -146,7 +147,7 @@ fragment float4 fx_sapphire_psyko_stripes(
     float3 pic = lum + (c - lum) * fixo(u.saturation);
     float k = mix(1.0, min(1.0, bw * fixo(u.scaleBySrcAmp)), fixo(u.scaleBySource));
     float3 o = pic * k + fixo(u.offset);
-    o = mix(o, entrada(t), fixo(u.mixWithSource));
+    o = mix(o, entrada(t, u, inputImg), fixo(u.mixWithSource));
 
     // Output Opacity (medido): Copy From Input = clip(saída) como cor reta com o alfa da fonte; All Opaque, opaco
     float a = u.outputOpacity == 0 ? 1.0 : s.a;

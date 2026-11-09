@@ -3,11 +3,12 @@
 // origem : assets/effects/sapphire-gradient.xml
 // id     : nova.effect.sgradient
 // passes : 1
-// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// gerado por glsl2msl.py e consertado a mao no iOS (fix_msl.py): globais passados as funcoes
 // ---------------------------------------------------------------------------
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaGLSLCompat.h"
 using namespace metal;
 
 struct sapphire_gradientParams {
@@ -49,7 +50,7 @@ fragment float4 fx_sapphire_gradient(
     // Da definição do efeito: a posição ao longo da reta Start -> End (0 no início, 1 no fim), no espaço da CAMADA
     // (o centro do pixel levado a ela, em unidades com a proporção dela; a escala comum some na divisão).
     float2 L = float2(eng.acAspect, 1.0);
-    float2 q = eng.acBufferNoPonto((float2(pi) + 0.5) / float2(T)) * L;
+    float2 q = ((float2(pi) + 0.5) / float2(T)) * L;
     float2 a = u.start * L, d = u.end * L - a;
     float linear = dot(q - a, d) / max(dot(d, d), 1e-12);
     float suave = (1.0 - cos(3.14159265 * clamp(linear, 0.0, 1.0))) * 0.5;

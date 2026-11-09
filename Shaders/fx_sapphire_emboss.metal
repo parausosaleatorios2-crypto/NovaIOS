@@ -3,11 +3,12 @@
 // origem : assets/effects/sapphire-emboss.xml
 // id     : nova.effect.semboss
 // passes : 5
-// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// gerado por glsl2msl.py e consertado a mao no iOS (fix_msl.py): globais passados as funcoes
 // ---------------------------------------------------------------------------
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaGLSLCompat.h"
 using namespace metal;
 
 struct sapphire_embossParams {
@@ -25,7 +26,7 @@ struct sapphire_embossParams {
 };
 
 // --- funcoes auxiliares do efeito
-const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
+constant float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
 int2 gT;          // o buffer
@@ -34,7 +35,7 @@ int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (Blur Matte é em px da composição)
 bool gDePe;        // cena de pé (camada de ajuste, grupo solto): a linha 0 do buffer é a base da imagem
 
-static void preparar() {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -97,28 +98,28 @@ static float ler24(float4 v) {
 }
 
 // ---- a matte ---------------------------------------------------------------------------------
-static bool temMascara() { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
+static bool temMascara(texture2d<float> maskImg) { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
 
-static float mascara(int2 p) {
+static float mascara(int2 p, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> maskImg) {
     float4 m = maskImg.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     float v = u.maskUse == 1 ? m.a : dot(m.rgb * m.a, float3(0.3125, 0.5, 0.1875));
     return u.invertMask ? 1.0 - v : v;
 }
 
-static int larguraDaMascara() { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaMascara(constant sapphire_embossParams& u) { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
 
-static float mascaraDesfocadaX(int2 q) {
-    int n = larguraDaMascara();
+static float mascaraDesfocadaX(int2 q, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> maskImg) {
+    int n = larguraDaMascara(u);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
-        if (k != 0.0) soma += k * mascara(naCamada(q + int2(d, 0)));
+        if (k != 0.0) soma += k * mascara(naCamada(q + int2(d, 0)), u, __nv_smp, maskImg);
     }
     return soma;
 }
 
-static float mascaraDesfocadaY(int2 q) {
-    int n = larguraDaMascara();
+static float mascaraDesfocadaY(int2 q, constant sapphire_embossParams& u, texture2d<float> mH) {
+    int n = larguraDaMascara(u);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
@@ -128,37 +129,37 @@ static float mascaraDesfocadaY(int2 q) {
 }
 
 /** A matte no pixel p do buffer (1 sem camada de matte). */
-static float matte(int2 p) {
-    if (!temMascara()) return 1.0;
-    return larguraDaMascara() > 0 ? ler24(mV.read(uint2(p), uint(0))) : mascara(p);
+static float matte(int2 p, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> mV, texture2d<float> maskImg) {
+    if (!temMascara(maskImg)) return 1.0;
+    return larguraDaMascara(u) > 0 ? ler24(mV.read(uint2(p), uint(0))) : mascara(p, u, __nv_smp, maskImg);
 }
 
 // ---- os bumps --------------------------------------------------------------------------------
-static bool temBumps() { return int2(int(bumpsImg.get_width()), int(bumpsImg.get_height())).x > 1; }
+static bool temBumps(texture2d<float> bumpsImg) { return int2(int(bumpsImg.get_width()), int(bumpsImg.get_height())).x > 1; }
 
 // Medido: Normal (1) faz a conta na cor pré-multiplicada; All Opaque (0) e As Premult (2), na cor reta.
-static float3 corDaFonte(float4 s) { return u.opacity == 1 ? s.rgb * s.a : s.rgb; }
+static float3 corDaFonte(float4 s, constant sapphire_embossParams& u) { return u.opacity == 1 ? s.rgb * s.a : s.rgb; }
 
 /** monochrome (0x180f26020) dos Bumps, vezes a matte, menos o limiar. */
-static float bumpsCrus(int2 p) {
+static float bumpsCrus(int2 p, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> inputImg, texture2d<float> mV, texture2d<float> bumpsImg, texture2d<float> maskImg) {
     float3 c;
-    if (temBumps()) {
+    if (temBumps(bumpsImg)) {
         float4 b = bumpsImg.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
         c = b.rgb * b.a;
     } else {
-        c = corDaFonte(inputImg.read(uint2(p), uint(0)));
+        c = corDaFonte(inputImg.read(uint2(p), uint(0)), u);
     }
     float m = (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b;
     if (u.bumpsThreshold != 0.0) m = max(0.0, m - u.bumpsThreshold);
-    return matte(p) * m;
+    return matte(p, u, __nv_smp, mV, maskImg) * m;
 }
 
 /** O bumps_smooth da definição: o Bumps Smooth do AE chega em px da composição e vira px / (W / 8). */
-static float suaveInterno() { return u.bumpsSmooth * gEscala * 8.0 / float(gN.x); }
+static float suaveInterno(constant sapphire_embossParams& u) { return u.bumpsSmooth * gEscala * 8.0 / float(gN.x); }
 
 /** A largura do blur: 0,125 · W · bumps_smooth, em px do buffer (= o Bumps Smooth em px, na escala da prévia). */
-static float larguraDosBumps() {
-    float w = clamp(0.125 * float(gN.x) * suaveInterno(), 0.0, LARGURA_MAX);
+static float larguraDosBumps(constant sapphire_embossParams& u) {
+    float w = clamp(0.125 * float(gN.x) * suaveInterno(u), 0.0, LARGURA_MAX);
     return u.subpixelSmooth ? w : floor(w + 0.5);
 }
 
@@ -170,19 +171,19 @@ static float pesoDoBlur(int d, float w) {
     return f > 0.0 ? k + (pesoDasCaixas(d, a + 1) - k) * f : k;
 }
 
-static float bumpsDesfocadosX(int2 q) {
-    float w = larguraDosBumps();
+static float bumpsDesfocadosX(int2 q, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> inputImg, texture2d<float> mV, texture2d<float> bumpsImg, texture2d<float> maskImg) {
+    float w = larguraDosBumps(u);
     int n = int(ceil(w));
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDoBlur(d, w);
-        if (k != 0.0) soma += k * bumpsCrus(naCamada(q + int2(d, 0)));
+        if (k != 0.0) soma += k * bumpsCrus(naCamada(q + int2(d, 0)), u, __nv_smp, inputImg, mV, bumpsImg, maskImg);
     }
     return soma;
 }
 
-static float bumpsDesfocadosY(int2 q) {
-    float w = larguraDosBumps();
+static float bumpsDesfocadosY(int2 q, constant sapphire_embossParams& u, texture2d<float> bX) {
+    float w = larguraDosBumps(u);
     int n = int(ceil(w));
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
@@ -193,31 +194,31 @@ static float bumpsDesfocadosY(int2 q) {
 }
 
 /** p na coluna x e na linha (da IMAGEM: 0 é o topo) da camada. */
-static float altura(int x, int linha) {
+static float altura(int x, int linha, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> inputImg, texture2d<float> mV, texture2d<float> bY, texture2d<float> bumpsImg, texture2d<float> maskImg) {
     int y = gDePe ? gN.y - 1 - linha : linha;
     int2 p = gInicio + int2(x, y);
-    return larguraDosBumps() > 0.0 ? ler24(bY.read(uint2(p), uint(0))) : bumpsCrus(p);
+    return larguraDosBumps(u) > 0.0 ? ler24(bY.read(uint2(p), uint(0))) : bumpsCrus(p, u, __nv_smp, inputImg, mV, bumpsImg, maskImg);
 }
 
 // ---- a luz -----------------------------------------------------------------------------------
 /** O Light Dir XY (fração da camada, y para baixo) visto do centro, no xy do Sapphire: −1..1 na largura, y para cima. */
-static float2 direcaoDaLuz() {
+static float2 direcaoDaLuz(constant sapphire_embossParams& u) {
     return float2((u.lightDir.x - 0.5) * 2.0, (0.5 - u.lightDir.y) * 2.0 * float(gN.y) / float(gN.x));
 }
 
 /** grad_in_direction (o lambda 0x180b721a0): diferença central sem dividir por 2; na borda, um lado só vezes 2. */
-static float gradienteNaDirecao(int2 q, float2 D) {
+static float gradienteNaDirecao(int2 q, float2 D, constant sapphire_embossParams& u, sampler __nv_smp, texture2d<float> inputImg, texture2d<float> mV, texture2d<float> bY, texture2d<float> bumpsImg, texture2d<float> maskImg) {
     int x = q.x;
     int linha = gDePe ? gN.y - 1 - q.y : q.y;
     float gx, gy;
     if (gN.x < 2) gx = 0.0;
-    else if (x == 0) gx = (altura(1, linha) - altura(0, linha)) * 2.0;
-    else if (x == gN.x - 1) gx = (altura(x, linha) - altura(x - 1, linha)) * 2.0;
-    else gx = altura(x + 1, linha) - altura(x - 1, linha);
+    else if (x == 0) gx = (altura(1, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg) - altura(0, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg)) * 2.0;
+    else if (x == gN.x - 1) gx = (altura(x, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg) - altura(x - 1, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg)) * 2.0;
+    else gx = altura(x + 1, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg) - altura(x - 1, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg);
     if (gN.y < 2) gy = 0.0;
-    else if (linha == 0) gy = (altura(x, 0) - altura(x, 1)) * 2.0;
-    else if (linha == gN.y - 1) gy = (altura(x, linha - 1) - altura(x, linha)) * 2.0;
-    else gy = altura(x, linha - 1) - altura(x, linha + 1);
+    else if (linha == 0) gy = (altura(x, 0, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg) - altura(x, 1, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg)) * 2.0;
+    else if (linha == gN.y - 1) gy = (altura(x, linha - 1, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg) - altura(x, linha, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg)) * 2.0;
+    else gy = altura(x, linha - 1, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg) - altura(x, linha + 1, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg);
     return gx * D.x + gy * D.y;
 }
 
@@ -238,27 +239,27 @@ fragment float4 fx_sapphire_emboss(
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar();
+    preparar(eng, inputImg);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
-    if (eng.acPass == 0) { __nv_out = (fora || !temMascara()) ? float4(0.0) : gravar24(mascaraDesfocadaX(q)); return __nv_out; }
-    if (eng.acPass == 1) { __nv_out = (fora || !temMascara()) ? float4(0.0) : gravar24(mascaraDesfocadaY(q)); return __nv_out; }
-    if (eng.acPass == 2) { __nv_out = fora ? float4(0.0) : gravar24(bumpsDesfocadosX(q)); return __nv_out; }
-    if (eng.acPass == 3) { __nv_out = fora ? float4(0.0) : gravar24(bumpsDesfocadosY(q)); return __nv_out; }
+    if (eng.acPass == 0) { __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocadaX(q, u, __nv_smp, maskImg)); return __nv_out; }
+    if (eng.acPass == 1) { __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocadaY(q, u, mH)); return __nv_out; }
+    if (eng.acPass == 2) { __nv_out = fora ? float4(0.0) : gravar24(bumpsDesfocadosX(q, u, __nv_smp, inputImg, mV, bumpsImg, maskImg)); return __nv_out; }
+    if (eng.acPass == 3) { __nv_out = fora ? float4(0.0) : gravar24(bumpsDesfocadosY(q, u, bX)); return __nv_out; }
 
     // ---- 4: o gradiente e a luz ----
     float4 s = inputImg.read(uint2(t), uint(0));
     if (fora) { __nv_out = s; return __nv_out; }
 
-    float2 ld = direcaoDaLuz();
+    float2 ld = direcaoDaLuz(u);
     float z = min(1.0 - length(ld), 1.0);
-    float2 D = -ld * u.bumpsScale * (suaveInterno() + 0.1) * 0.05 * float(gN.x);
-    float g = gradienteNaDirecao(q, D);
+    float2 D = -ld * u.bumpsScale * (suaveInterno(u) + 0.1) * 0.05 * float(gN.x);
+    float g = gradienteNaDirecao(q, D, u, __nv_smp, inputImg, mV, bY, bumpsImg, maskImg);
     // Medido: as cores valem em 8 bits.
     float3 luz = floor(u.lightColor.rgb * 255.0 + 0.5) / 255.0 * u.brightness;
-    float3 cor = corDaFonte(s) * (g + z) * luz;
+    float3 cor = corDaFonte(s, u) * (g + z) * luz;
 
     // O resultado em pré-multiplicado, com o alfa da saída.
     float a = s.a;
@@ -267,8 +268,8 @@ fragment float4 fx_sapphire_emboss(
     else if (u.opacity == 1) r = clamp(cor, float3(0.0), float3(a));     // Normal: a conta já é a pré-multiplicada
     else r = clamp(cor, 0.0, 1.0) * a;                             // As Premult: a cor reta com o alfa da fonte
 
-    if (temMascara()) {
-        float m = matte(t);
+    if (temMascara(maskImg)) {
+        float m = matte(t, u, __nv_smp, mV, maskImg);
         float3 sp = s.rgb * s.a;
         r = sp + (r - sp) * m;
         a = s.a;

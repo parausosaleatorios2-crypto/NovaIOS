@@ -3,11 +3,12 @@
 // origem : assets/effects/sapphire-half-tone.xml
 // id     : nova.effect.shalftone
 // passes : 3
-// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// gerado por glsl2msl.py e consertado a mao no iOS (fix_msl.py): globais passados as funcoes
 // ---------------------------------------------------------------------------
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaGLSLCompat.h"
 using namespace metal;
 
 struct sapphire_half_toneParams {
@@ -29,7 +30,7 @@ struct sapphire_half_toneParams {
 };
 
 // --- funcoes auxiliares do efeito
-const float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
+constant float LARGURA_MAX = 720.0;     // a maior largura do desfoque, em px do buffer
 
 // ---- a camada do AE no buffer --------------------------------------------------------------
 int2 gT;          // o buffer
@@ -37,7 +38,7 @@ int2 gN;          // a camada do AE dentro dele, em px
 int2 gInicio;     // o canto da camada no buffer
 float gEscala;     // a prévia reduzida (Smooth Source e Blur Mask são em px da composição)
 
-static void preparar() {
+static void preparar(constant EngineUniforms& eng, texture2d<float> inputImg) {
     gT = int2(int(inputImg.get_width()), int(inputImg.get_height()));
     gN = clamp(int2(floor(max(eng.acCamada, float2(0.001)) * float2(gT) + 0.5)), int2(1), gT);
     gInicio = (gT - gN) / 2;
@@ -101,44 +102,44 @@ static float ler24(float4 v) {
 // ---- a fonte e a máscara --------------------------------------------------------------------
 // Medido: Normal (1) faz a conta na cor pré-multiplicada; All Opaque (0) e As Premult (2), na cor reta.
 // monochrome (0x180f26020): (0,3125 R + 0,5 G) + 0,1875 B.
-static float luma(int2 p) {
+static float luma(int2 p, constant sapphire_half_toneParams& u, texture2d<float> inputImg) {
     float4 s = inputImg.read(uint2(p), uint(0));
     float3 c = u.opacity == 1 ? s.rgb * s.a : s.rgb;
     return (0.3125 * c.r + 0.5 * c.g) + 0.1875 * c.b;
 }
 
-static bool temMascara() { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
+static bool temMascara(texture2d<float> maskImg) { return int2(int(maskImg.get_width()), int(maskImg.get_height())).x > 1; }
 
-static float mascara(int2 p) {
+static float mascara(int2 p, constant sapphire_half_toneParams& u, sampler __nv_smp, texture2d<float> maskImg) {
     float4 m = maskImg.sample(__nv_smp, (float2(p) + 0.5) / float2(gT));
     float v = u.maskUse == 1 ? m.a : dot(m.rgb * m.a, float3(0.3125, 0.5, 0.1875));
     return u.invertMask ? 1.0 - v : v;
 }
 
 // O subpixel 0 da definição: as larguras arredondam, meio para cima.
-static int larguraDaFonte() { return int(clamp(floor(u.smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
-static int larguraDaMascara() { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaFonte(constant sapphire_half_toneParams& u) { return int(clamp(floor(u.smoothSource * gEscala + 0.5), 0.0, LARGURA_MAX)); }
+static int larguraDaMascara(constant sapphire_half_toneParams& u) { return int(clamp(floor(u.blurMask * gEscala + 0.5), 0.0, LARGURA_MAX)); }
 
-static float lumaDesfocada(int2 q, bool emX) {
-    int n = larguraDaFonte();
+static float lumaDesfocada(int2 q, bool emX, constant sapphire_half_toneParams& u, texture2d<float> inputImg, texture2d<float> bX) {
+    int n = larguraDaFonte(u);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
         if (k == 0.0) continue;
         int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)));
-        soma += k * (emX ? luma(p) : ler24(bX.read(uint2(p), uint(0))));
+        soma += k * (emX ? luma(p, u, inputImg) : ler24(bX.read(uint2(p), uint(0))));
     }
     return soma;
 }
 
-static float mascaraDesfocada(int2 q, bool emX) {
-    int n = larguraDaMascara();
+static float mascaraDesfocada(int2 q, bool emX, constant sapphire_half_toneParams& u, sampler __nv_smp, texture2d<float> mH, texture2d<float> maskImg) {
+    int n = larguraDaMascara(u);
     float soma = 0.0;
     for (int d = -n; d <= n; d++) {
         float k = pesoDasCaixas(d, n);
         if (k == 0.0) continue;
         int2 p = naCamada(q + (emX ? int2(d, 0) : int2(0, d)));
-        soma += k * (emX ? mascara(p) : ler24(mH.read(uint2(p), uint(0))));
+        soma += k * (emX ? mascara(p, u, __nv_smp, maskImg) : ler24(mH.read(uint2(p), uint(0))));
     }
     return soma;
 }
@@ -150,7 +151,7 @@ static float dobra(float v) {
     return m > 1.0 ? 2.0 - m : m;
 }
 
-static float grade(int2 q) {
+static float grade(int2 q, constant EngineUniforms& eng, constant sapphire_half_toneParams& u) {
     // xy do Sapphire: −1..1 na largura da camada, y para cima, no centro do pixel (a cena de pé tem a linha 0 embaixo)
     float W = float(gN.x);
     float linha = eng.acEntradaDePe == 1 ? float(gN.y - 1 - q.y) : float(q.y);
@@ -180,17 +181,17 @@ fragment float4 fx_sapphire_half_tone(
     float2 __nv_pointCoord = in.uv;
     float4 __nv_out = float4(0.0);
 
-    preparar();
+    preparar(eng, inputImg);
     int2 t = min(int2(floor(in.acScreenNorm * float2(gT))), gT - int2(1));
     int2 q = t - gInicio;
     bool fora = any(lessThan(q, int2(0))) || any(greaterThanEqual(q, gN));
 
     if (eng.acPass == 0) {
-        __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocada(q, true));
+        __nv_out = fora ? float4(0.0) : gravar24(lumaDesfocada(q, true, u, inputImg, bX));
         return __nv_out;
     }
     if (eng.acPass == 1) {
-        __nv_out = (fora || !temMascara()) ? float4(0.0) : gravar24(mascaraDesfocada(q, true));
+        __nv_out = (fora || !temMascara(maskImg)) ? float4(0.0) : gravar24(mascaraDesfocada(q, true, u, __nv_smp, mH, maskImg));
         return __nv_out;
     }
 
@@ -200,8 +201,8 @@ fragment float4 fx_sapphire_half_tone(
         __nv_out = s;
         return __nv_out;
     }
-    float bw = larguraDaFonte() > 0 ? lumaDesfocada(q, false) : luma(t);
-    float g = grade(q);
+    float bw = larguraDaFonte(u) > 0 ? lumaDesfocada(q, false, u, inputImg, bX) : luma(t, u, inputImg);
+    float g = grade(q, eng, u);
     if (u.dots == 1) g = 1.0 - g;
     float sh = u.dotsSharpness + 1.0;
     float peso = clamp((g + (-1.0 + (1.0 / sh + 1.0) * (bw + u.dotsLighten))) * sh, 0.0, 1.0);
@@ -216,8 +217,8 @@ fragment float4 fx_sapphire_half_tone(
     else if (u.opacity == 1) r = min(cor, float3(a));  // Normal: a conta já é a pré-multiplicada (o AE a limita ao alfa)
     else r = cor * a;                              // As Premult: a cor reta com o alfa da fonte
 
-    if (temMascara()) {
-        float m = larguraDaMascara() > 0 ? mascaraDesfocada(q, false) : mascara(t);
+    if (temMascara(maskImg)) {
+        float m = larguraDaMascara(u) > 0 ? mascaraDesfocada(q, false, u, __nv_smp, mH, maskImg) : mascara(t, u, __nv_smp, maskImg);
         float3 sp = s.rgb * s.a;
         r = sp + (r - sp) * m;
         a = s.a;

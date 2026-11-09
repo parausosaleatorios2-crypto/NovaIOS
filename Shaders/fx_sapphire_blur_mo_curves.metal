@@ -3,12 +3,20 @@
 // origem : assets/effects/sapphire-blur-mo-curves.xml
 // id     : nova.effect.sblurmocurves
 // passes : 1
-// gerado por glsl2msl.py - NAO editar a mao; edite o XML e gere de novo
+// gerado por glsl2msl.py e consertado a mao no iOS (fix_msl.py): globais passados as funcoes
 // ---------------------------------------------------------------------------
 #include <metal_stdlib>
 #include "NovaEngineUniforms.h"
 #include "NovaShaderHelpers.h"
+#include "NovaGLSLCompat.h"
 using namespace metal;
+
+// iOS: o motor nao entrega os valores no fim do obturador; o fim e o instante atual.
+#define centerFim (u.center)
+#define shiftXFim (u.shiftX)
+#define shiftYFim (u.shiftY)
+#define zDistFim (u.zDist)
+#define rotateFim (u.rotate)
 
 struct sapphire_blur_mo_curvesParams {
     int mode;
@@ -26,8 +34,8 @@ struct sapphire_blur_mo_curvesParams {
 };
 
 // --- funcoes auxiliares do efeito
-const int MAX_PASSOS = 512;      // lá, 1000
-const int PASSOS_DO_RASCUNHO = 96;  // na prévia em movimento (`eng.acRascunho`, play/arraste); parado e na exportação, MAX_PASSOS
+constant int MAX_PASSOS = 512;      // lá, 1000
+constant int PASSOS_DO_RASCUNHO = 96;  // na prévia em movimento (`eng.acRascunho`, play/arraste); parado e na exportação, MAX_PASSOS
 
 /** A borda de um índice de pixel: 0 nada, 1 ladrilho, 2 espelho em volta do índice 0 e do índice n (medido). */
 static int dobrar(int i, int n, int modo) {
@@ -44,7 +52,7 @@ static int dobrar(int i, int n, int modo) {
     return i;
 }
 
-static float4 pixel(int2 i) {
+static float4 pixel(int2 i, constant EngineUniforms& eng, texture2d<float> inputImg) {
     // a conta é com a linha 0 no TOPO, como no plugin; numa cena de pé (camada de ajuste) ela é a base do buffer
     if (eng.acEntradaDePe == 1) i.y = int2(int(inputImg.get_width()), int(inputImg.get_height())).y - 1 - i.y;
     float4 c = inputImg.read(uint2(i), uint(0));
@@ -52,20 +60,20 @@ static float4 pixel(int2 i) {
 }
 
 /** A fonte no ponto `p` (índices de pixel), bilinear — é o que o efeito faz quando nada se mexe. */
-static float4 parado(float2 p, int2 T) {
+static float4 parado(float2 p, int2 T, constant EngineUniforms& eng, constant sapphire_blur_mo_curvesParams& u, texture2d<float> inputImg) {
     float2 b = floor(p), f = p - b;
     float4 soma = float4(0.0);
     for (int k = 0; k < 4; k++) {
         int2 i = int2(b) + int2(k & 1, k >> 1);
         if ((u.wrapX == 0 && (i.x < 0 || i.x >= T.x)) || (u.wrapY == 0 && (i.y < 0 || i.y >= T.y))) continue;
         float w = ((k & 1) == 1 ? f.x : 1.0 - f.x) * ((k >> 1) == 1 ? f.y : 1.0 - f.y);
-        soma += w * pixel(int2(dobrar(i.x, T.x, u.wrapX), dobrar(i.y, T.y, u.wrapY)));
+        soma += w * pixel(int2(dobrar(i.x, T.x, u.wrapX), dobrar(i.y, T.y, u.wrapY)), eng, inputImg);
     }
     return soma;
 }
 
 /** Um ponto da reta: `iu` no eixo maior, `it` no menor (já escolhida a linha `tf` ou `tf + 1`). */
-static float4 ponto(bool emx, int iu, int it, int tf, int2 T) {
+static float4 ponto(bool emx, int iu, int it, int tf, int2 T, constant EngineUniforms& eng, constant sapphire_blur_mo_curvesParams& u, texture2d<float> inputImg) {
     int nu = emx ? T.x : T.y, nt = emx ? T.y : T.x;
     int mu = emx ? u.wrapX : u.wrapY, mt = emx ? u.wrapY : u.wrapX;
     // a borda sem Wrap: no eixo maior o ponto tem de cair dentro; no menor, vale de −1 a n − 1, repetindo a borda
@@ -73,16 +81,16 @@ static float4 ponto(bool emx, int iu, int it, int tf, int2 T) {
     if (mt == 0 && (tf < -1 || tf >= nt)) return float4(0.0);
     iu = dobrar(iu, nu, mu);
     it = mt == 0 ? clamp(it, 0, nt - 1) : dobrar(it, nt, mt);
-    return pixel(emx ? int2(iu, it) : int2(it, iu));
+    return pixel(emx ? int2(iu, it) : int2(it, iu), eng, inputImg);
 }
 
 /**
  * O `blur_warp` do Sapphire com Subpixel (lido do código): a reta de `p0` a `p1` percorrida em passos
  * inteiros do eixo em que ela anda mais, com interpolação linear no outro.
  */
-static float4 reta(float2 p0, float2 p1, int2 T) {
+static float4 reta(float2 p0, float2 p1, int2 T, constant EngineUniforms& eng, constant sapphire_blur_mo_curvesParams& u, texture2d<float> inputImg) {
     float2 d = p1 - p0;
-    if (d.x == 0.0 && d.y == 0.0) return parado(p0, T);
+    if (d.x == 0.0 && d.y == 0.0) return parado(p0, T, eng, u, inputImg);
     bool emx = abs(d.x) >= abs(d.y);
     float u0 = emx ? p0.x : p0.y, u1 = emx ? p1.x : p1.y;
     float t0 = emx ? p0.y : p0.x, t1 = emx ? p1.y : p1.x;
@@ -109,7 +117,7 @@ static float4 reta(float2 p0, float2 p1, int2 T) {
         }
         float tf = floor(t), ft = t - tf;
         int iu = int(u), it = int(tf);
-        soma += w * mix(ponto(emx, iu, it, it, T), ponto(emx, iu, it + 1, it, T), ft);
+        soma += w * mix(ponto(emx, iu, it, it, T, eng, u, inputImg), ponto(emx, iu, it + 1, it, T, eng, u, inputImg), ft);
         pesos += w;
     }
     return pesos > 0.0 ? soma / pesos : float4(0.0);
@@ -174,7 +182,7 @@ fragment float4 fx_sapphire_blur_mo_curves(
     float2 q1 = float2(antes(p1.x, R.x, u.wrapX), antes(p1.y, R.y, u.wrapY));
     p0 = q1 + (p0 - p1);
     p1 = q1;
-    float4 soma = reta(p0, p1, T) * u.brightness;      // medido: o Brightness multiplica o alfa também
+    float4 soma = reta(p0, p1, T, eng, u, inputImg) * u.brightness;      // medido: o Brightness multiplica o alfa também
     float alfa = min(soma.a, 1.0);
     __nv_out = alfa > 0.0 ? float4(min(soma.rgb / alfa, float3(1.0)), alfa) : float4(0.0);
     return __nv_out;
