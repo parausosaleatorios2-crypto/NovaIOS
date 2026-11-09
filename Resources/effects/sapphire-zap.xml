@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Zap — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_zap.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-zap"
+    name="S_Zap"
+    name-en="S_Zap"
+    desc="Raio elétrico entre dois pontos, com galhos e brilho, animado."
+    desc-en="Raio elétrico entre dois pontos, com galhos e brilho, animado."
+    category="generate"
+    tags="zap,raio,eletrico,lightning,choque,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="start" label="Start" defaultX="0.2" defaultY="0.5" />
+        <point id="end" label="End" defaultX="0.8" defaultY="0.5" />
+        <slider id="wiggle" label="Wiggle" default="0.08" min="0.0" max="0.5" step="0.01" snap="0.08" />
+        <slider id="width" label="Width" default="3.0" min="0.5" max="30.0" step="0.01" snap="3.0" />
+        <slider id="glow" label="Glow" default="1.5" min="0.0" max="6.0" step="0.01" snap="1.5" />
+        <slider id="speed" label="Speed" default="12.0" min="0.0" max="60.0" step="0.01" snap="12.0" />
+        <color id="color" label="Color" default="#7FC8FF" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

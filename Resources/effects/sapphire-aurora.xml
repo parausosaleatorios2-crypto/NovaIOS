@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Aurora — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_aurora.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-aurora"
+    name="S_Aurora"
+    name-en="S_Aurora"
+    desc="Aurora boreal animada por cima da imagem."
+    desc-en="Aurora boreal animada por cima da imagem."
+    category="generate"
+    tags="aurora,boreal,ceu,luzes,gerar,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="color1" label="Color 1" default="#21FF9E" />
+        <color id="color2" label="Color 2" default="#7A3CFF" />
+        <slider id="intensity" label="Intensity" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="height" label="Height" default="0.35" min="0.0" max="1.0" step="0.01" snap="0.35" />
+        <slider id="speed" label="Speed" default="0.3" min="0.0" max="5.0" step="0.01" snap="0.3" />
+        <slider id="scale" label="Scale" default="1.0" min="0.1" max="5.0" step="0.01" snap="1.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

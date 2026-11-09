@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Rays — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_rays.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-rays"
+    name="S_Rays"
+    name-en="S_Rays"
+    desc="Raios de luz volumétricos saindo de um ponto (só os raios, sem a imagem)."
+    desc-en="Raios de luz volumétricos saindo de um ponto (só os raios, sem a imagem)."
+    category="stylize"
+    tags="rays,raios,god rays,volumetric,luz,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.3" />
+        <slider id="rayLength" label="Ray Length" default="0.7" min="0.0" max="2.0" step="0.01" snap="0.7" />
+        <slider id="threshold" label="Threshold" default="0.4" min="0.0" max="1.0" step="0.01" snap="0.4" />
+        <slider id="brightness" label="Brightness" default="2.0" min="0.0" max="10.0" step="0.01" snap="2.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <switch id="combine" label="Combine With Source" default="true" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

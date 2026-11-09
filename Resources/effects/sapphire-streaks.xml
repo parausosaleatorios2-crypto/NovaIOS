@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Streaks — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_streaks.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-streaks"
+    name="S_Streaks"
+    name-en="S_Streaks"
+    desc="Riscos de luz numa direção a partir das partes claras (efeito anamórfico)."
+    desc-en="Riscos de luz numa direção a partir das partes claras (efeito anamórfico)."
+    category="stylize"
+    tags="streaks,riscos,anamorfico,flare,luz,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="angle" label="Angle" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="length" label="Length" default="250.0" min="0.0" max="1500.0" step="1.0" snap="250.0" />
+        <slider id="threshold" label="Threshold" default="0.7" min="0.0" max="1.0" step="0.01" snap="0.7" />
+        <slider id="brightness" label="Brightness" default="1.5" min="0.0" max="10.0" step="0.01" snap="1.5" />
+        <color id="color" label="Color" default="#7FB8FF" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

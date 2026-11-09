@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_JpegDamage — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_jpeg_damage.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-jpeg-damage"
+    name="S_JpegDamage"
+    name-en="S_JpegDamage"
+    desc="Artefatos de compressão: blocos 8×8, cores achatadas e borrões de croma."
+    desc-en="Artefatos de compressão: blocos 8×8, cores achatadas e borrões de croma."
+    category="stylize"
+    tags="jpeg damage,compressao,artefato,blocos,datamosh,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="blockSize" label="Block Size" default="16.0" min="4.0" max="128.0" step="1.0" snap="16.0" />
+        <slider id="quality" label="Quality" default="0.3" min="0.0" max="1.0" step="0.01" snap="0.3" />
+        <slider id="chromaBlur" label="Chroma Blocks" default="2.0" min="1.0" max="8.0" step="0.01" snap="2.0" />
+        <slider id="flicker" label="Flicker" default="0.2" min="0.0" max="1.0" step="0.01" snap="0.2" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

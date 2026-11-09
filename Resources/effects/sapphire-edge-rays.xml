@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_EdgeRays — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_edge_rays.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-edge-rays"
+    name="S_EdgeRays"
+    name-en="S_EdgeRays"
+    desc="Raios de luz que saem das bordas da imagem em direção a um ponto."
+    desc-en="Raios de luz que saem das bordas da imagem em direção a um ponto."
+    category="stylize"
+    tags="edge rays,raios,bordas,contorno,luz,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="rayLength" label="Ray Length" default="0.4" min="0.0" max="2.0" step="0.01" snap="0.4" />
+        <slider id="edgeThreshold" label="Edge Threshold" default="0.1" min="0.0" max="1.0" step="0.01" snap="0.1" />
+        <slider id="brightness" label="Brightness" default="3.0" min="0.0" max="20.0" step="0.01" snap="3.0" />
+        <color id="color" label="Color" default="#9AD8FF" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

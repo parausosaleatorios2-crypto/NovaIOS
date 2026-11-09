@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_BlurChannels — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_blur_channels.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-blur-channels"
+    name="S_BlurChannels"
+    name-en="S_BlurChannels"
+    desc="Desfoca cada canal (vermelho, verde, azul e alfa) com um raio diferente."
+    desc-en="Desfoca cada canal (vermelho, verde, azul e alfa) com um raio diferente."
+    category="blur"
+    tags="blur channels,desfoque,canais,rgb,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="blurRed" label="Blur Red" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+        <slider id="blurGreen" label="Blur Green" default="8.0" min="0.0" max="100.0" step="1.0" snap="8.0" />
+        <slider id="blurBlue" label="Blur Blue" default="16.0" min="0.0" max="100.0" step="1.0" snap="16.0" />
+        <slider id="blurAlpha" label="Blur Alpha" default="0.0" min="0.0" max="100.0" step="1.0" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

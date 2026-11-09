@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_FilmEffect — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_film_effect.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-film-effect"
+    name="S_FilmEffect"
+    name-en="S_FilmEffect"
+    desc="Aparência de filme: grão, halação nas luzes, vinheta, oscilação de brilho e riscos."
+    desc-en="Aparência de filme: grão, halação nas luzes, vinheta, oscilação de brilho e riscos."
+    category="stylize"
+    tags="film effect,filme,grao,grain,halation,vinheta,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="grain" label="Grain" default="0.25" min="0.0" max="1.0" step="0.01" snap="0.25" />
+        <slider id="grainSize" label="Grain Size" default="1.5" min="0.5" max="6.0" step="0.01" snap="1.5" />
+        <slider id="halation" label="Halation" default="0.6" min="0.0" max="3.0" step="0.01" snap="0.6" />
+        <slider id="vignette" label="Vignette" default="0.35" min="0.0" max="1.0" step="0.01" snap="0.35" />
+        <slider id="flicker" label="Flicker" default="0.08" min="0.0" max="1.0" step="0.01" snap="0.08" />
+        <slider id="scratches" label="Scratches" default="0.15" min="0.0" max="1.0" step="0.01" snap="0.15" />
+        <color id="tint" label="Tint" default="#FFF4E0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

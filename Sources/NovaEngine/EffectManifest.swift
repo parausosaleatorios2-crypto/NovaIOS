@@ -107,6 +107,8 @@ public struct EffectManifest: Codable, Sendable, Identifiable {
     public let passes: [EffectPass]
     /// Nome do parametro que controla quantas vezes os passes repetem (65 efeitos usam).
     public let iterationsParam: String?
+    /// Motor especial do efeito (atributo stage do XML: "widetime", "timeslice"…).
+    public var stage: String? = nil
     /// Nome da funcao fragment no .metal gerado.
     public var functionName: String { "fx_\(slug)" }
 
@@ -304,6 +306,7 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
             params: params,
             textures: textures,
             passes: effective,
-            iterationsParam: iterationsParam)
+            iterationsParam: iterationsParam,
+            stage: effectAttrs["stage"])
     }
 }

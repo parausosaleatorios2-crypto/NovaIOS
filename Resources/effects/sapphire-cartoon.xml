@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Cartoon — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_cartoon.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-cartoon"
+    name="S_Cartoon"
+    name-en="S_Cartoon"
+    desc="Desenho animado: cores em poucos tons e contorno escuro nas bordas."
+    desc-en="Desenho animado: cores em poucos tons e contorno escuro nas bordas."
+    category="stylize"
+    tags="cartoon,desenho,toon,contorno,posterizar,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="levels" label="Color Levels" type="integer" default="6" min="2" max="16" step="1" />
+        <slider id="edgeThreshold" label="Edge Threshold" default="0.15" min="0.0" max="1.0" step="0.01" snap="0.15" />
+        <slider id="edgeWidth" label="Edge Width" default="1.5" min="0.5" max="6.0" step="0.01" snap="1.5" />
+        <slider id="saturation" label="Saturation" default="1.3" min="0.0" max="3.0" step="0.01" snap="1.3" />
+        <color id="edgeColor" label="Edge Color" default="#000000" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

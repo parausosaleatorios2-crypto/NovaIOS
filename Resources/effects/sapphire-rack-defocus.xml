@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_RackDefocus — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_rack_defocus.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-rack-defocus"
+    name="S_RackDefocus"
+    name-en="S_RackDefocus"
+    desc="Desfoque de lente com bokeh: os pontos claros viram discos (ou hexágonos) brilhantes."
+    desc-en="Desfoque de lente com bokeh: os pontos claros viram discos (ou hexágonos) brilhantes."
+    category="blur"
+    tags="rack defocus,bokeh,desfoque,lente,blur,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount" label="Amount" default="15.0" min="0.0" max="150.0" step="1.0" snap="15.0" />
+        <selector id="shape" label="Shape" default="0" options="Disco|Hexágono|Octógono" />
+        <slider id="bokehBrightness" label="Bokeh Brightness" default="1.5" min="0.0" max="8.0" step="0.01" snap="1.5" />
+        <slider id="bokehThreshold" label="Bokeh Threshold" default="0.7" min="0.0" max="1.0" step="0.01" snap="0.7" />
+        <slider id="aspect" label="Aspect" default="1.0" min="0.2" max="5.0" step="0.01" snap="1.0" />
+        <slider id="rotate" label="Rotate" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

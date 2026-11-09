@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_DigitalDamage — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_digital_damage.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-digital-damage"
+    name="S_DigitalDamage"
+    name-en="S_DigitalDamage"
+    desc="Defeito digital: blocos que pulam, canais separados e linhas, mudando com o tempo."
+    desc-en="Defeito digital: blocos que pulam, canais separados e linhas, mudando com o tempo."
+    category="stylize"
+    tags="digital damage,glitch,defeito,blocos,dano,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="amount" label="Amount" default="0.35" min="0.0" max="1.0" step="0.01" snap="0.35" />
+        <slider id="blockSize" label="Block Size" default="32.0" min="4.0" max="256.0" step="1.0" snap="32.0" />
+        <slider id="speed" label="Speed" default="8.0" min="0.0" max="60.0" step="0.01" snap="8.0" />
+        <slider id="shift" label="Shift" default="60.0" min="0.0" max="500.0" step="1.0" snap="60.0" />
+        <slider id="colorSplit" label="Color Split" default="12.0" min="0.0" max="100.0" step="1.0" snap="12.0" />
+        <slider id="seed" label="Seed" default="0.0" min="0.0" max="1000.0" step="1.0" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

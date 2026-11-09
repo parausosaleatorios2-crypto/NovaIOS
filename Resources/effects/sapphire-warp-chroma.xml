@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_WarpChroma — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_warp_chroma.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-warp-chroma"
+    name="S_WarpChroma"
+    name-en="S_WarpChroma"
+    desc="Aberração cromática forte: a imagem se abre num arco-íris a partir de um ponto ou numa direção."
+    desc-en="Aberração cromática forte: a imagem se abre num arco-íris a partir de um ponto ou numa direção."
+    category="distort"
+    tags="warp chroma,aberracao cromatica,chromatic,rgb,prisma,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="amount" label="Amount" default="20.0" min="0.0" max="200.0" step="1.0" snap="20.0" />
+        <selector id="mode" label="Mode" default="0" options="Radial|Zoom|Horizontal|Vertical" />
+        <slider id="samples" label="Samples" type="integer" default="16" min="3" max="48" step="1" />
+        <slider id="saturation" label="Saturation" default="1.0" min="0.0" max="2.0" step="0.01" snap="1.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

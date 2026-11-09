@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Glint — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_glint.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-glint"
+    name="S_Glint"
+    name-en="S_Glint"
+    desc="Estrelas de brilho nos pontos claros: raios finos em cruz ou estrela, com cor e rotação."
+    desc-en="Estrelas de brilho nos pontos claros: raios finos em cruz ou estrela, com cor e rotação."
+    category="stylize"
+    tags="glint,estrela,brilho,star,sparkle,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="threshold" label="Threshold" default="0.75" min="0.0" max="1.0" step="0.01" snap="0.75" />
+        <slider id="brightness" label="Brightness" default="1.5" min="0.0" max="10.0" step="0.01" snap="1.5" />
+        <slider id="rays" label="Num Rays" type="integer" default="4" min="2" max="16" step="1" />
+        <slider id="length" label="Ray Length" default="120.0" min="0.0" max="600.0" step="1.0" snap="120.0" />
+        <slider id="rotate" label="Rotate" type="angle" default="45.0" min="-360.0" max="360.0" step="1.0" snap="45.0" />
+        <color id="color" label="Color" default="#FFFFFF" />
+        <slider id="twinkle" label="Twinkle" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

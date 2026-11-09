@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_BlurMotion — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_blur_motion.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-blur-motion"
+    name="S_BlurMotion"
+    name-en="S_BlurMotion"
+    desc="Desfoque de movimento numa direção, com o rastro centrado, para frente ou para trás."
+    desc-en="Desfoque de movimento numa direção, com o rastro centrado, para frente ou para trás."
+    category="blur"
+    tags="blur motion,motion blur,desfoque de movimento,rastro,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="angle" label="Angle" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="length" label="Length" default="40.0" min="0.0" max="600.0" step="1.0" snap="40.0" />
+        <selector id="bias" label="Bias" default="0" options="Centro|Para frente|Para trás" />
+        <slider id="samples" label="Samples" type="integer" default="32" min="4" max="96" step="1" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

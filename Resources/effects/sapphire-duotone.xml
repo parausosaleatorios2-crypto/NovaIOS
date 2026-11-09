@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Duotone — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_duotone.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-duotone"
+    name="S_Duotone"
+    name-en="S_Duotone"
+    desc="Pinta a imagem com duas cores, uma nas sombras e outra nas luzes."
+    desc-en="Pinta a imagem com duas cores, uma nas sombras e outra nas luzes."
+    category="color"
+    tags="duotone,duas cores,gradient map,cor,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <color id="darkColor" label="Dark Color" default="#1B0B4D" />
+        <color id="lightColor" label="Light Color" default="#FFC46B" />
+        <slider id="contrast" label="Contrast" default="1.0" min="0.0" max="4.0" step="0.01" snap="1.0" />
+        <slider id="mix" label="Mix With Source" default="0.0" min="0.0" max="1.0" step="0.01" snap="0.0" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

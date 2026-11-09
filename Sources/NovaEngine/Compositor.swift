@@ -139,66 +139,25 @@ public final class Compositor {
     private func drawLayer(_ layer: Layer, comp: Composition, time: Float,
                            into output: MTLTexture, backdrop: MTLTexture,
                            cb: MTLCommandBuffer,
-                           manifests: [String: EffectManifest]) async throws {
-        guard let provider = contentProvider else { return }
-        let mt = layer.mediaTimeAdjusted(at: time)
-        var tex: MTLTexture
-        var layerSize: SIMD2<Float>
-        var adjustmentCopy: MTLTexture?
-        defer { if let a = adjustmentCopy { pool.recycle(a) } }
-        if layer.kind == .adjustment {
-            // Camada de ajuste: os efeitos dela valem para tudo o que esta embaixo.
-            guard !layer.effects.isEmpty else { return }
-            let c = try pool.obtain(width: output.width, height: output.height, format: output.pixelFormat)
-            guard let blit = cb.makeBlitCommandEncoder() else { throw RenderError.encoderFailed("blit do ajuste") }
-            blit.copy(from: output, to: c)
-            blit.endEncoding()
-            adjustmentCopy = c
-            tex = c
-            layerSize = comp.size
-        } else {
-            guard let t = try await provider.texture(for: layer, at: mt, device: device) else { return }
-            tex = t
-            // Tamanho da camada em px da composicao. Solido e forma usam uma textura
-            // pequena esticada para esse tamanho.
-            layerSize = layer.size ?? SIMD2(Float(tex.width), Float(tex.height))
+                           manifests: [String: EffectManifest],
+                           profundidade: Int = 0) async throws {
+        var guardar: [MTLTexture] = []          // texturas do pool do compositor
+        var doRenderer: [MTLTexture] = []       // texturas do pool do EffectRenderer
+        defer {
+            for t in guardar { pool.recycle(t) }
+            for t in doRenderer { renderer.release(t) }
         }
-        let mask = try provider.maskTexture(for: layer, at: time, device: device)
-
-        // Cadeia de efeitos da camada.
+        guard let inicio = try await conteudoBase(layer, comp: comp, time: time, output: output,
+                                                  cb: cb, manifests: manifests,
+                                                  profundidade: profundidade, guardar: &guardar)
+        else { return }
+        let (base, layerSize) = inicio
+        let mask = try contentProvider?.maskTexture(for: layer, at: time, device: device)
         let worldMatrix = layer.kind == .adjustment ? matrix_identity_float4x4
                                                     : comp.worldMatrix(of: layer, at: time)
-        var owned: MTLTexture? = nil
-        for fx in layer.effects where fx.enabled {
-            guard let m = manifests[fx.effectID] else {
-                lastFrameWarnings.append("efeito \(fx.effectID) nao carregado")
-                continue
-            }
-            paramTextures.mediaRoot = (contentProvider as? MediaContentProvider)?.mediaRoot
-            var input = EffectRenderer.Input(
-                content: tex,
-                comp: output,
-                layerSize: layerSize,
-                layerCenter: SIMD2(Float(tex.width)/2, Float(tex.height)/2),
-                pixelScale: 1,
-                time: time,
-                frameDuration: comp.frameDuration)
-            input.paramTextures = paramTextures.textures(for: fx, manifest: m)
-            // Efeito que falha fica de fora; a camada continua aparecendo.
-            let result: MTLTexture
-            do {
-                result = try renderer.render(m, input: input,
-                                             values: fx.values(at: time, manifest: m),
-                                             into: cb)
-            } catch {
-                lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
-                continue
-            }
-            if let o = owned { renderer.release(o) }
-            owned = result
-            tex = result
-        }
-        defer { if let o = owned { renderer.release(o) } }
+        let tex = try await cadeia(layer, comp: comp, time: time, inicial: base, layerSize: layerSize,
+                                   limite: layer.effects.count, output: output, cb: cb, manifests: manifests,
+                                   profundidade: profundidade, guardar: &guardar, doRenderer: &doRenderer)
 
         // Fundo atual -> copia que o shader le.
         guard let blit = cb.makeBlitCommandEncoder() else {
@@ -231,6 +190,271 @@ public final class Compositor {
         enc.setFragmentTexture(try mask ?? whiteTexture(), index: 2)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         enc.endEncoding()
+    }
+
+    /// Conteudo da camada no instante, antes dos efeitos. Camada de ajuste: o que
+    /// esta embaixo dela (no instante do quadro, o proprio buffer; noutro instante,
+    /// as camadas de baixo desenhadas de novo).
+    private func conteudoBase(_ layer: Layer, comp: Composition, time: Float, output: MTLTexture,
+                              cb: MTLCommandBuffer, manifests: [String: EffectManifest],
+                              profundidade: Int, emOutroTempo: Bool = false,
+                              guardar: inout [MTLTexture]) async throws -> (MTLTexture, SIMD2<Float>)? {
+        guard let provider = contentProvider else { return nil }
+        if layer.kind == .adjustment {
+            guard !layer.effects.isEmpty else { return nil }
+            let c = try pool.obtain(width: output.width, height: output.height, format: output.pixelFormat)
+            guardar.append(c)
+            if emOutroTempo {
+                try await desenharAbaixo(layer, comp: comp, time: time, into: c, cb: cb,
+                                         manifests: manifests, profundidade: profundidade + 1)
+            } else {
+                guard let blit = cb.makeBlitCommandEncoder() else { throw RenderError.encoderFailed("blit do ajuste") }
+                blit.copy(from: output, to: c)
+                blit.endEncoding()
+            }
+            return (c, comp.size)
+        }
+        guard let t = try await provider.texture(for: layer, at: layer.mediaTimeAdjusted(at: time), device: device)
+        else { return nil }
+        // Tamanho da camada em px da composicao. Solido e forma usam uma textura
+        // pequena esticada para esse tamanho.
+        return (t, layer.size ?? SIMD2(Float(t.width), Float(t.height)))
+    }
+
+    /// As camadas que estao embaixo de `layer`, no instante `time`, num buffer limpo.
+    private func desenharAbaixo(_ layer: Layer, comp: Composition, time: Float, into alvo: MTLTexture,
+                                cb: MTLCommandBuffer, manifests: [String: EffectManifest],
+                                profundidade: Int) async throws {
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = alvo
+        rp.colorAttachments[0].loadAction = .clear
+        let bg = comp.backgroundColor
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: Double(bg.x), green: Double(bg.y),
+                                                          blue: Double(bg.z), alpha: Double(bg.w))
+        rp.colorAttachments[0].storeAction = .store
+        cb.makeRenderCommandEncoder(descriptor: rp)?.endEncoding()
+        guard let idx = comp.layers.firstIndex(where: { $0.id == layer.id }) else { return }
+        let abaixo = Set(comp.layers[(idx + 1)...].map(\.id))
+        let fundo = try pool.obtain(width: alvo.width, height: alvo.height, format: alvo.pixelFormat)
+        defer { pool.recycle(fundo) }
+        for l in comp.visibleLayers(at: time) where abaixo.contains(l.id) {
+            try? await drawLayer(l, comp: comp, time: time, into: alvo, backdrop: fundo, cb: cb,
+                                 manifests: manifests, profundidade: profundidade)
+        }
+    }
+
+    // MARK: efeitos de tempo (CC Wide Time, S_TimeSlice)
+
+    private static let estagiosDeTempo: Set<String> = ["widetime", "timeslice"]
+
+    /// Aplica os efeitos [0..<limite] da camada sobre `inicial`.
+    private func cadeia(_ layer: Layer, comp: Composition, time: Float, inicial: MTLTexture,
+                        layerSize: SIMD2<Float>, limite: Int, output: MTLTexture, cb: MTLCommandBuffer,
+                        manifests: [String: EffectManifest], profundidade: Int,
+                        guardar: inout [MTLTexture], doRenderer: inout [MTLTexture]) async throws -> MTLTexture {
+        var tex = inicial
+        for (i, fx) in layer.effects.prefix(limite).enumerated() where fx.enabled {
+            guard let m = manifests[fx.effectID] else {
+                lastFrameWarnings.append("efeito \(fx.effectID) nao carregado")
+                continue
+            }
+            if let st = m.stage, Self.estagiosDeTempo.contains(st) {
+                // Dentro de uma amostra de outro instante o efeito de tempo passa direto
+                // (como no AE, que nao aninha o Wide Time).
+                guard profundidade == 0 else { continue }
+                do {
+                    let r = try await efeitoDeTempo(st, m, fx, indice: i, layer: layer, comp: comp, time: time,
+                                                    atual: tex, output: output, cb: cb, manifests: manifests,
+                                                    guardar: &guardar)
+                    tex = r
+                } catch {
+                    lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+                }
+                continue
+            }
+            paramTextures.mediaRoot = (contentProvider as? MediaContentProvider)?.mediaRoot
+            var input = EffectRenderer.Input(
+                content: tex,
+                comp: output,
+                layerSize: layerSize,
+                layerCenter: SIMD2(Float(tex.width)/2, Float(tex.height)/2),
+                pixelScale: 1,
+                time: time,
+                frameDuration: comp.frameDuration)
+            input.paramTextures = paramTextures.textures(for: fx, manifest: m)
+            // Efeito que falha fica de fora; a camada continua aparecendo.
+            do {
+                let result = try renderer.render(m, input: input, values: fx.values(at: time, manifest: m), into: cb)
+                doRenderer.append(result)
+                tex = result
+            } catch {
+                lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+            }
+        }
+        return tex
+    }
+
+    /// A camada no instante `t`, com os efeitos que vem antes do efeito de tempo.
+    private func amostra(_ layer: Layer, comp: Composition, t: Float, indice: Int, output: MTLTexture,
+                         cb: MTLCommandBuffer, manifests: [String: EffectManifest],
+                         guardar: inout [MTLTexture]) async throws -> MTLTexture? {
+        var doRenderer: [MTLTexture] = []
+        guard let inicio = try await conteudoBase(layer, comp: comp, time: t, output: output, cb: cb,
+                                                  manifests: manifests, profundidade: 1,
+                                                  emOutroTempo: true, guardar: &guardar) else { return nil }
+        let (base, tam) = inicio
+        let r = try await cadeia(layer, comp: comp, time: t, inicial: base, layerSize: tam, limite: indice,
+                                 output: output, cb: cb, manifests: manifests, profundidade: 1,
+                                 guardar: &guardar, doRenderer: &doRenderer)
+        // o resultado passa para o pool do compositor (copia), o resto volta ao renderer
+        if doRenderer.isEmpty { return r }
+        let c = try pool.obtain(width: r.width, height: r.height, format: renderer.workingFormat)
+        guardar.append(c)
+        guard let blit = cb.makeBlitCommandEncoder() else { throw RenderError.encoderFailed("blit da amostra") }
+        if r.pixelFormat == c.pixelFormat { blit.copy(from: r, to: c) }
+        blit.endEncoding()
+        for t in doRenderer { renderer.release(t) }
+        return c
+    }
+
+    private struct TempoUniforms {
+        var peso: Float = 1
+        var modo: Int32 = 0           // 0 = peso fixo (Wide Time); 1 = fatia (Time Slice)
+        var cosseno: Float = 1
+        var seno: Float = 0
+        var k: Float = 8
+        var base: Float = 0
+        var inicio: Float = 0
+        var passo: Float = 1
+        var indice: Float = 0
+        var ultimo: Float = 0
+        var aspecto: Float = 1
+        var interpolar: Int32 = 0
+        var opacidade: Int32 = 1
+    }
+
+    private var pipelineDeTempo: MTLRenderPipelineState?
+    private func tempoPipeline() throws -> MTLRenderPipelineState {
+        if let p = pipelineDeTempo { return p }
+        guard let vert = library.makeFunction(name: "nova_fullscreen_vertex"),
+              let frag = library.makeFunction(name: "nova_tempo_fragment") else {
+            throw RenderError.functionMissing("nova_tempo_fragment", effect: "tempo")
+        }
+        let d = MTLRenderPipelineDescriptor()
+        d.label = "tempo"
+        d.vertexFunction = vert
+        d.fragmentFunction = frag
+        let a = d.colorAttachments[0]!
+        a.pixelFormat = renderer.workingFormat
+        a.isBlendingEnabled = true          // soma: cada amostra entra com o seu peso
+        a.rgbBlendOperation = .add; a.alphaBlendOperation = .add
+        a.sourceRGBBlendFactor = .one; a.destinationRGBBlendFactor = .one
+        a.sourceAlphaBlendFactor = .one; a.destinationAlphaBlendFactor = .one
+        let p = try device.makeRenderPipelineState(descriptor: d)
+        pipelineDeTempo = p
+        return p
+    }
+
+    private func numero(_ v: [String: EffectValue], _ id: String, _ m: EffectManifest, _ padrao: Float) -> Float {
+        switch v[id] {
+        case .float(let f): return f
+        case .int(let i): return Float(i)
+        default: return m.param(id)?.defaultValue.first ?? padrao
+        }
+    }
+
+    private func efeitoDeTempo(_ estagio: String, _ m: EffectManifest, _ fx: AppliedEffect, indice: Int,
+                               layer: Layer, comp: Composition, time: Float, atual: MTLTexture,
+                               output: MTLTexture, cb: MTLCommandBuffer, manifests: [String: EffectManifest],
+                               guardar: inout [MTLTexture]) async throws -> MTLTexture {
+        let v = fx.values(at: time, manifest: m)
+        let fd = comp.frameDuration
+        let destino = try pool.obtain(width: atual.width, height: atual.height, format: renderer.workingFormat)
+        guardar.append(destino)
+        var meus: [MTLTexture] = []          // amostras de outros instantes
+        defer { guardar += meus }
+        let limpa = MTLRenderPassDescriptor()
+        limpa.colorAttachments[0].texture = destino
+        limpa.colorAttachments[0].loadAction = .clear
+        limpa.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        limpa.colorAttachments[0].storeAction = .store
+        cb.makeRenderCommandEncoder(descriptor: limpa)?.endEncoding()
+
+        func somar(_ t: MTLTexture, _ u: TempoUniforms) throws {
+            let rp = MTLRenderPassDescriptor()
+            rp.colorAttachments[0].texture = destino
+            rp.colorAttachments[0].loadAction = .load
+            rp.colorAttachments[0].storeAction = .store
+            guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else {
+                throw RenderError.encoderFailed("encoder do tempo")
+            }
+            enc.setRenderPipelineState(try tempoPipeline())
+            var uu = u
+            withUnsafeBytes(of: &uu) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<TempoUniforms>.stride, index: 0) }
+            enc.setFragmentTexture(t, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            enc.endEncoding()
+        }
+        /// Camada no instante (o proprio quadro reaproveita `atual`).
+        var cache: [Int: MTLTexture] = [:]
+        func quadro(_ q: Int, _ t: Float) async throws -> MTLTexture? {
+            if abs(t - time) < fd * 0.25 { return atual }
+            if let c = cache[q] { return c }
+            let lim = max(0, min(t, comp.duration))
+            let r = try await amostra(layer, comp: comp, t: lim, indice: indice, output: output, cb: cb,
+                                      manifests: manifests, guardar: &meus)
+            if let r { cache[q] = r }
+            return r
+        }
+
+        if estagio == "widetime" {
+            // CC Wide Time: a media dos quadros de -Backward a +Forward. Com Native
+            // Motion Blur, sub-quadros entre eles. No maximo 25 imagens por quadro.
+            let fwd = max(0, Int(numero(v, "forwardSteps", m, 3).rounded()))
+            let back = max(0, Int(numero(v, "backwardSteps", m, 3).rounded()))
+            let mb = numero(v, "nativeMotionBlur", m, 0) != 0
+            let sub = mb ? 4 : 1
+            var desl: [Float] = []
+            for passo in (-back * sub)...(fwd * sub) { desl.append(Float(passo) / Float(sub)) }
+            if desl.count > 25 {
+                let n = desl.count
+                desl = (0..<25).map { desl[Int((Float($0) / 24 * Float(n - 1)).rounded())] }
+            }
+            let peso = 1 / Float(desl.count)
+            for (k, d) in desl.enumerated() {
+                let t = time + d * fd
+                guard let q = try await quadro(k * 1000 + Int((d * 100).rounded()), t) else { continue }
+                var u = TempoUniforms(); u.peso = peso; u.modo = 0
+                try somar(q, u)
+            }
+            return destino
+        }
+
+        // S_TimeSlice (porte de FatiaDoTempo do APK).
+        let angulo = Double(numero(v, "sliceDirection", m, -90)) * .pi / 180
+        let fatias = max(Double(numero(v, "sliceNumber", m, 12)), 1)
+        let interp = numero(v, "interpFrames", m, 0) != 0
+        let opac = Int32(numero(v, "opacity", m, 1))
+        let cosA = cos(angulo), senA = sin(angulo)
+        let k = fatias / 1.5
+        let aspecto = Double(atual.height) / Double(max(atual.width, 1))
+        let base = Double(time / fd) + Double(numero(v, "frameOffset", m, 0))
+        let alcance = (abs(senA) * aspecto + abs(cosA)) * k
+        let lo = Int(floor(base - alcance)), hi = Int(floor(base + alcance))
+        let total = hi - lo + 1 + (interp ? 1 : 0)
+        let passo = max(1, Int(ceil(Double(total) / 64)))
+        let n = (hi - lo) / passo + (interp ? 1 : 0)
+        for j in 0...max(n, 0) {
+            let f = lo + j * passo
+            guard let q = try await quadro(f, Float(f) * fd) else { continue }
+            var u = TempoUniforms()
+            u.modo = 1; u.cosseno = Float(cosA); u.seno = Float(senA); u.k = Float(k)
+            u.base = Float(base); u.inicio = Float(lo); u.passo = Float(passo)
+            u.indice = Float(j); u.ultimo = Float(max(n, 0)); u.aspecto = Float(aspecto)
+            u.interpolar = interp ? 1 : 0; u.opacidade = opac
+            try somar(q, u)
+        }
+        return destino
     }
 
     public func release(_ t: MTLTexture) { pool.recycle(t) }

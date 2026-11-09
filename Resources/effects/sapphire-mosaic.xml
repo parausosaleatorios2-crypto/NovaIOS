@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Mosaic — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_mosaic.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-mosaic"
+    name="S_Mosaic"
+    name-en="S_Mosaic"
+    desc="Mosaico de células (quadradas, hexagonais ou tijolos) com borda colorida."
+    desc-en="Mosaico de células (quadradas, hexagonais ou tijolos) com borda colorida."
+    category="stylize"
+    tags="mosaic,mosaico,pixel,hexagono,azulejo,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <slider id="cellSize" label="Cell Size" default="24.0" min="2.0" max="300.0" step="1.0" snap="24.0" />
+        <selector id="shape" label="Shape" default="0" options="Quadrado|Hexágono|Tijolo" />
+        <slider id="rotate" label="Rotate" type="angle" default="0.0" min="-360.0" max="360.0" step="1.0" snap="0.0" />
+        <slider id="edgeWidth" label="Edge Width" default="0.0" min="0.0" max="0.5" step="0.01" snap="0.0" />
+        <color id="edgeColor" label="Edge Color" default="#000000" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  S_Kaleido — efeito no estilo do Sapphire, feito para o NovaEditor iOS (shader
+  original de GPU em Shaders/fx_sapphire_kaleido.metal; o <shader> abaixo é só a cópia
+  da entrada para o Android).
+-->
+<effect
+    id="nova.effect.ios.sapphire-kaleido"
+    name="S_Kaleido"
+    name-en="S_Kaleido"
+    desc="Caleidoscópio: espelha a imagem em fatias girando em volta de um centro."
+    desc-en="Caleidoscópio: espelha a imagem em fatias girando em volta de um centro."
+    category="distort"
+    tags="kaleido,caleidoscopio,espelho,simetria,mirror,sapphire,boris fx">
+
+    <params>
+        <texture id="inputImg" src="content" />
+        <point id="center" label="Center" defaultX="0.5" defaultY="0.5" />
+        <slider id="segments" label="Segments" type="integer" default="6" min="2" max="32" step="1" />
+        <slider id="rotate" label="Rotate" type="angle" default="0.0" min="-3600.0" max="3600.0" step="1.0" snap="0.0" />
+        <slider id="zoom" label="Zoom" default="1.0" min="0.1" max="10.0" step="0.01" snap="1.0" />
+        <point id="offset" label="Source Offset" defaultX="0.5" defaultY="0.5" />
+    </params>
+
+    <shader><![CDATA[
+void main() {
+    fragColor = texture(inputImg, acScreenNorm);
+}
+    ]]></shader>
+</effect>
