@@ -123,9 +123,19 @@ for e in entries {
         let m = try await registry.manifest(id: e.id)
         let values = AppliedEffect(effectID: e.id).values(at: 0.5, manifest: m)
         guard let cb = queue.makeCommandBuffer() else { throw RenderError.noDevice }
-        let out = try renderer.render(m, input: .init(content: input, comp: input,
-                                                       time: 0.5, frameDuration: 1.0 / 30),
+        let out: MTLTexture
+        if m.stage == "mblooks", let t = LooksFerramentas.porManifesto[e.id] {
+            // Ferramenta do Magic Bullet Looks: roda pelo motor do Looks, como no editor.
+            out = try renderer.renderLooks(entrada: input,
+                                           passos: [LooksPasso(codigo: t.codigo,
+                                                               valores: LooksFerramentas.valores(t.params, de: values),
+                                                               lut: "looks/cinema-teal-orange.png")],
+                                           forca: 1, mediaRoot: nil, cb: cb)
+        } else {
+            out = try renderer.render(m, input: .init(content: input, comp: input,
+                                                      time: 0.5, frameDuration: 1.0 / 30),
                                       values: values, into: cb)
+        }
         cb.commit(); cb.waitUntilCompleted()
         if let err = cb.error { throw err }
         guard let px = readBack(out) else { throw RenderError.noDevice }

@@ -128,6 +128,17 @@ public final class EffectRenderer {
     private var fileTextures: [String: MTLTexture] = [:]
     private lazy var defaultParamTextures = EffectParamTextures(device: device)
     private var transparentTexture: MTLTexture?
+    private lazy var looks = LooksMotor(device: device, library: library, pool: pool)
+
+    /// Avisos da ultima passada do Looks (ferramenta sem porte, LUT que nao abriu).
+    public var looksAvisos: [String] { looks.avisos }
+
+    /// Uma instancia do Magic Bullet Looks (cabeca + ferramentas) sobre a camada.
+    /// A textura devolvida sai do pool: devolva com `release(_:)`.
+    public func renderLooks(entrada: MTLTexture, passos: [LooksPasso], forca: Float, mediaRoot: URL?,
+                            cb: MTLCommandBuffer) throws -> MTLTexture {
+        try looks.render(entrada: entrada, passos: passos, forca: forca, mediaRoot: mediaRoot, cb: cb)
+    }
 
     /// Nomes das funcoes que existem na metallib do app. Efeitos cujo shader
     /// nao compilou ficam fora dela e nao devem aparecer para a pessoa.

@@ -253,9 +253,49 @@ public final class Compositor {
                         manifests: [String: EffectManifest], profundidade: Int,
                         guardar: inout [MTLTexture], doRenderer: inout [MTLTexture]) async throws -> MTLTexture {
         var tex = inicial
-        for (i, fx) in layer.effects.prefix(limite).enumerated() where fx.enabled {
+        var pularLooks = Set<Int>()
+        let efeitos = Array(layer.effects.prefix(limite))
+        for (i, fx) in efeitos.enumerated() where fx.enabled {
             guard let m = manifests[fx.effectID] else {
                 lastFrameWarnings.append("efeito \(fx.effectID) nao carregado")
+                continue
+            }
+            if m.stage == "mblooks" {
+                // Magic Bullet Looks: a cabeca e as ferramentas logo depois dela sao UMA
+                // passada do motor do Looks (como uma instancia do efeito no AE); uma
+                // ferramenta sem cabeca antes roda sozinha, com forca 100.
+                if pularLooks.contains(i) { continue }
+                func passo(_ e: AppliedEffect, _ me: EffectManifest) -> LooksPasso? {
+                    guard let t = LooksFerramentas.porManifesto[e.effectID] else { return nil }
+                    let v = e.values(at: time, manifest: me)
+                    return LooksPasso(codigo: t.codigo, valores: LooksFerramentas.valores(t.params, de: v),
+                                      lut: e.lutPaths["lut"])
+                }
+                var passos: [LooksPasso] = []
+                var forca: Float = 1
+                if fx.effectID == LooksFerramentas.cabeca {
+                    if case .float(let s)? = fx.values(at: time, manifest: m)["strength"] { forca = s / 100 }
+                    var j = i + 1
+                    while j < efeitos.count, let m2 = manifests[efeitos[j].effectID], m2.stage == "mblooks",
+                          efeitos[j].effectID != LooksFerramentas.cabeca {
+                        if efeitos[j].enabled, let p = passo(efeitos[j], m2) { passos.append(p) }
+                        pularLooks.insert(j)
+                        j += 1
+                    }
+                } else if let p = passo(fx, m) {
+                    passos.append(p)
+                }
+                guard !passos.isEmpty else { continue }
+                do {
+                    let r = try renderer.renderLooks(entrada: tex, passos: passos, forca: forca,
+                                                     mediaRoot: (contentProvider as? MediaContentProvider)?.mediaRoot,
+                                                     cb: cb)
+                    doRenderer.append(r)
+                    tex = r
+                    lastFrameWarnings.append(contentsOf: renderer.looksAvisos)
+                } catch {
+                    lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+                }
                 continue
             }
             if let st = m.stage, Self.estagiosDeTempo.contains(st) {

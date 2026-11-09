@@ -43,6 +43,10 @@
         <slider id="scatter" label="Espalhamento"
                 default="0.02" min="0.0" max="0.3" step="0.005" snap="0.0" />
 
+        <!-- iOS: como o 4-Color Gradient do AE, mistura com a camada. -->
+        <slider id="opacity" label="Opacidade" default="100.0" min="0.0" max="100.0" step="1.0" snap="100.0" />
+        <selector id="blendingMode" label="Mesclagem" default="0"
+                  options="Nenhuma|Normal|Adicionar|Multiplicar|Tela|Sobrepor|Luz suave|Luz forte|Subexpor cor|Superexpor cor|Escurecer|Clarear|Diferença|Exclusão|Matiz|Saturação|Cor|Luminosidade" />
     </params>
 
     <shader><![CDATA[
