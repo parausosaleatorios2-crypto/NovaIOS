@@ -29,7 +29,6 @@
 
 import Foundation
 import SwiftUI
-import NovaEngine
 import UniformTypeIdentifiers
 
 // MARK: - Leitor RIFX
