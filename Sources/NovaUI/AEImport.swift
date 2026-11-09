@@ -420,8 +420,10 @@ enum AEImportador {
         if px != nil || py != nil {
             let tempos = Set((px?.chaves.map(\.t) ?? []) + (py?.chaves.map(\.t) ?? [])).sorted()
             for t in tempos {
-                let x = px?.chaves.first { abs($0.t - t) < 1e-6 }?.v.first ?? px?.estatico.first ?? 0
-                let y = py?.chaves.first { abs($0.t - t) < 1e-6 }?.v.first ?? py?.estatico.first ?? 0
+                let kx = px?.chaves.first(where: { abs($0.t - t) < 1e-6 })
+                let ky = py?.chaves.first(where: { abs($0.t - t) < 1e-6 })
+                let x: Double = kx?.v.first ?? px?.estatico.first ?? 0
+                let y: Double = ky?.v.first ?? py?.estatico.first ?? 0
                 _ = l.transform.position.setKeyframe(time: t0 + Float(t), value: pos0 + SIMD2(Float(x), Float(y)))
                 n += 1
             }
@@ -621,8 +623,10 @@ enum AEImportador {
                                         Float(py.estatico.first ?? Double(tamComp.y / 2))))
                 let tempos = Set(px.chaves.map(\.t) + py.chaves.map(\.t)).sorted()
                 for t in tempos {
-                    let x = px.chaves.first { abs($0.t - t) < 1e-6 }?.v.first ?? px.estatico.first ?? 0
-                    let y = py.chaves.first { abs($0.t - t) < 1e-6 }?.v.first ?? py.estatico.first ?? 0
+                    let kx = px.chaves.first(where: { abs($0.t - t) < 1e-6 })
+                    let ky = py.chaves.first(where: { abs($0.t - t) < 1e-6 })
+                    let x: Double = kx?.v.first ?? px.estatico.first ?? 0
+                    let y: Double = ky?.v.first ?? py.estatico.first ?? 0
                     _ = an.setKeyframe(time: Float(inicio + t), value: SIMD2(Float(x), Float(y)))
                 }
                 l.transform.position = an

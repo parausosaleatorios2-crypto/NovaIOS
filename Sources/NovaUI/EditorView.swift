@@ -36,6 +36,10 @@ public struct EditorView: View {
     /// Desfazer/refazer (UndoHistory no APK): um passo por gravacao.
     @State private var undoStack: [NovaProject] = []
     @State private var importandoFFX = false
+    /// "Vista da previa" do APK: so a previa, sem a timeline.
+    @State private var previaCheia = false
+    /// Chip "Full" da previa: ajustar (Full) ou preencher a area (Fill).
+    @State private var previaPreenche = false
     @State private var redoStack: [NovaProject] = []
     @State private var lastSaved: NovaProject?
 
@@ -109,17 +113,19 @@ public struct EditorView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 topBar
-                Divider().overlay(NovaTheme.line)
 
                 if layout == .afterEffects && geo.size.width < layout.minimumSize.width {
                     janelaPequena(geo.size)
                 } else {
                     preview
+                    alcaDivisoria
                     transport
+                    if !previaCheia {
                     TimelineView(composition: comp, time: $time, selected: $selectedLayer,
                                  editLayer: { id, save, change in editLayer(id, save, change) },
                                  editComp: { change in editComp(change) })
-                        .frame(height: 190)
+                        .frame(height: 230)
+                    }
                 }
 
                 bottomBar
@@ -393,42 +399,89 @@ public struct EditorView: View {
 
     // MARK: topo
 
+    /// Topo do editor do APK: seta de voltar, nome do projeto (ponto rosa com
+    /// alteracoes nesta sessao), diamante da Nova Pro e o menu redondo.
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 14) {
             Button { dismiss() } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .semibold))
-                    Text("Projetos".loc).font(.system(size: 12))
-                }.foregroundStyle(NovaTheme.dim)
+                Image(systemName: "arrow.left").font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(NovaTheme.dim)
+                    .frame(width: 32, height: 40)
             }
-            Spacer()
-            Text(project.name).font(.system(size: 13, weight: .semibold))
-            Spacer()
-            Button { sheet = .exportar } label: {
-                Text("Exportar".loc)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(NovaTheme.accent)
+            HStack(spacing: 6) {
+                Text(project.name).font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(NovaTheme.text).lineLimit(1)
+                if !undoStack.isEmpty {
+                    Circle().fill(Color(red: 0.94, green: 0.34, blue: 0.43)).frame(width: 5, height: 5)
+                }
+            }
+            Spacer(minLength: 8)
+            Button {
+                sheet = .info("Nova Pro", "Recursos Pro da Nova (IA, nuvem, marketplace) ficam em Perfil > Conta.".loc)
+            } label: {
+                Image(systemName: "diamond.fill").font(.system(size: 18))
+                    .foregroundStyle(LinearGradient(colors: [Color(red: 0.62, green: 0.4, blue: 1),
+                                                             Color(red: 0.45, green: 0.3, blue: 0.95)],
+                                                    startPoint: .top, endPoint: .bottom))
+            }
+            Menu {
+                Button { sheet = .exportar } label: { Label("Exportar".loc, systemImage: "square.and.arrow.up") }
+                Button { sheet = .layout } label: { Label("Layout do editor".loc, systemImage: "rectangle.3.group") }
+                Button { adicionarMarcador() } label: { Label("Marcador".loc, systemImage: "bookmark") }
+                if let id = selectedLayer {
+                    Divider()
+                    Button { sheet = .propriedades(id) } label: { Label("Propriedades".loc, systemImage: "slider.horizontal.3") }
+                    Button { duplicarSelecionada() } label: { Label("Duplicar camada".loc, systemImage: "plus.square.on.square") }
+                    Button(role: .destructive) { excluirSelecionada() } label: { Label("Apagar camada".loc, systemImage: "trash") }
+                }
+            } label: {
+                Image(systemName: "ellipsis").rotationEffect(.degrees(90))
+                    .font(.system(size: 17, weight: .bold)).foregroundStyle(NovaTheme.accent.opacity(0.9))
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Color(red: 0.07, green: 0.22, blue: 0.26)))
             }
         }
-        .padding(.horizontal, 12).frame(height: 42)
+        .padding(.leading, 10).padding(.trailing, 12)
+        .frame(height: 56)
         .background(NovaTheme.surface)
+    }
+
+    /// Divisoria entre a previa e a faixa, com a alca no meio (como no APK).
+    private var alcaDivisoria: some View {
+        ZStack {
+            Rectangle().fill(NovaTheme.line).frame(height: 1)
+            Capsule().fill(NovaTheme.line2).frame(width: 34, height: 4)
+        }
+        .frame(height: 14)
+        .background(NovaTheme.background)
     }
 
     // MARK: previa
 
     private var preview: some View {
-        ZStack {
-            CheckerboardBackground()
+        ZStack(alignment: .bottomTrailing) {
+            Color(red: 0x10/255, green: 0x11/255, blue: 0x18/255)
             PreviewSurface(composition: comp, time: time, mediaRoot: mediaRoot, manifests: manifests)
                 .overlay {
                     TransformGizmo(comp: comp, time: time, selected: $selectedLayer,
                                    edit: { id, save, change in editLayer(id, save, change) })
                 }
-                .aspectRatio(CGFloat(comp.width) / CGFloat(comp.height), contentMode: .fit)
-                .overlay(Rectangle().strokeBorder(NovaTheme.selection, lineWidth: 1))
-                .padding(14)
+                .aspectRatio(CGFloat(comp.width) / CGFloat(comp.height),
+                             contentMode: previaPreenche ? .fill : .fit)
+                .overlay(Rectangle().strokeBorder(Color.white.opacity(0.85), lineWidth: 1))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(previaPreenche ? 0 : 6)
+                .clipped()
+            Button { previaPreenche.toggle() } label: {
+                Text(previaPreenche ? "Fill" : "Full")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(NovaTheme.text)
+                    .padding(.horizontal, 9).padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.55)))
+            }
+            .padding(8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
     }
 
     /// Faixa de transporte do APK (x02.E): 52 dp, cor de superficie, botoes de
@@ -438,46 +491,32 @@ public struct EditorView: View {
         HStack(spacing: 0) {
             botaoFaixa("arrow.uturn.backward", habilitado: !undoStack.isEmpty) { desfazer() }
             botaoFaixa("arrow.uturn.forward", habilitado: !redoStack.isEmpty) { refazer() }
-            botaoFaixa("backward.frame.fill") { irPara(pontoAnterior()) }
+            botaoFaixa("backward.end.fill") { irPara(pontoAnterior()) }
             Button { playing.toggle() } label: {
-                RoundedRectangle(cornerRadius: 12).fill(NovaTheme.accent)
-                    .frame(width: 40, height: 34)
-                    .overlay(Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.black))
-            }
-            .frame(maxWidth: .infinity)
-            botaoFaixa("forward.frame.fill") { irPara(proximoPonto()) }
-            botaoFaixa("plus.square.on.square", habilitado: selectedLayer != nil) { duplicarSelecionada() }
-            Menu {
-                Button { adicionarMarcador() } label: { Label("Marcador".loc, systemImage: "bookmark") }
-                if let id = selectedLayer {
-                    Button { sheet = .propriedades(id) } label: { Label("Propriedades".loc, systemImage: "slider.horizontal.3") }
-                    Button(role: .destructive) { excluirSelecionada() } label: { Label("Apagar camada".loc, systemImage: "trash") }
-                }
-                Button { sheet = .exportar } label: { Label("Exportar".loc, systemImage: "square.and.arrow.up") }
-            } label: {
-                Image(systemName: "ellipsis.circle").font(.system(size: 17)).foregroundStyle(NovaTheme.dim)
+                Image(systemName: playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 26)).foregroundStyle(NovaTheme.text)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity)
+            botaoFaixa("forward.end.fill") { irPara(proximoPonto()) }
+            botaoFaixa("plus.square.fill.on.square.fill", habilitado: selectedLayer != nil) { duplicarSelecionada() }
+            botaoFaixa(previaCheia ? "arrow.down.right.and.arrow.up.left" : "viewfinder") {
+                withAnimation(.easeInOut(duration: 0.2)) { previaCheia.toggle() }
+            }
         }
         .padding(.horizontal, 4)
         .frame(height: 52)
-        .background(NovaTheme.surface)
+        .background(NovaTheme.surface2)
         .fileImporter(isPresented: $importandoFFX, allowedContentTypes: AEImportador.tipos) { r in
             guard case .success(let url) = r else { return }
             Task { await aplicarFFX(url) }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Text(timecode(time)).font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(NovaTheme.dim2).padding(.trailing, 8).padding(.bottom, 1)
         }
     }
 
     private func botaoFaixa(_ icon: String, habilitado: Bool = true, _ a: @escaping () -> Void) -> some View {
         Button(action: a) {
-            Image(systemName: icon).font(.system(size: 17))
-                .foregroundStyle(habilitado ? NovaTheme.dim : NovaTheme.dim2.opacity(0.5))
+            Image(systemName: icon).font(.system(size: 19))
+                .foregroundStyle(habilitado ? NovaTheme.text.opacity(0.85) : NovaTheme.dim2.opacity(0.5))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .disabled(!habilitado)
