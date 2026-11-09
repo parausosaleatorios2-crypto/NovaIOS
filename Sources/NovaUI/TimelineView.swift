@@ -32,10 +32,19 @@ public struct TimelineView: View {
     @State private var gesto: (UUID, Alca, Layer)?
     @State private var guia: Float?
     @State private var aviso: String?
+    @State private var recolhida = false
+    @State private var expandidas: Set<UUID> = []
 
     private enum Alca { case corpo, entrada, saida }
 
-    private let nameColumn: CGFloat = 112
+    /// Coluna da esquerda do APK (~78 dp): chevron, olho, solo e o icone do tipo.
+    private var nameColumn: CGFloat { recolhida ? 0 : 80 }
+    /// Folga antes do tempo 0, como no APK (o primeiro clipe nao cola na coluna).
+    private let inicioPista: CGFloat = 16
+    private let alturaLinha: CGFloat = 32
+    private let alturaCabecalho: CGFloat = 30
+    /// Vermelho/rosa do cursor do APK.
+    static let corCursor = Color(red: 0xf0/255, green: 0x56/255, blue: 0x6e/255)
     private let alcaLargura: CGFloat = 14
     private let encaixePx: CGFloat = 9
 
@@ -59,7 +68,7 @@ public struct TimelineView: View {
             if selecionada != nil && editComp != nil { acoes }
             ruler
             ScrollView([.vertical], showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 3) {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(composition.layers) { layer in
                         row(layer)
                     }
@@ -68,7 +77,7 @@ public struct TimelineView: View {
                             .font(.system(size: 11)).foregroundStyle(NovaTheme.dim2)
                             .padding(.vertical, 18).frame(maxWidth: .infinity)
                     }
-                }.padding(.vertical, 5)
+                }.padding(.vertical, 4)
             }
             .simultaneousGesture(rolagem)
         }
@@ -99,7 +108,7 @@ public struct TimelineView: View {
 
     private var maxScroll: CGFloat {
         let fim = CGFloat(max(composition.duration, composition.layers.map(\.endTime).max() ?? 0)) * pixelsPerSecond
-        return max(0, fim + 60 - pista)
+        return max(0, fim + 60 + inicioPista - pista)
     }
 
     private func limitarRolagem() { scrollX = min(max(0, scrollX), maxScroll) }
@@ -121,58 +130,75 @@ public struct TimelineView: View {
     /// Durante a reproducao o cursor nao sai da tela (como no APK).
     private func seguirCursor(_ t: Float) {
         guard gesto == nil, scrollBase == nil else { return }
-        let x = CGFloat(t) * pixelsPerSecond - scrollX
+        let x = CGFloat(t) * pixelsPerSecond - scrollX + inicioPista
         if x > pista - 24 { scrollX = min(maxScroll, CGFloat(t) * pixelsPerSecond - pista * 0.25) }
         else if x < 0 { scrollX = max(0, CGFloat(t) * pixelsPerSecond - pista * 0.25) }
     }
 
-    private func x(_ t: Float) -> CGFloat { CGFloat(t) * pixelsPerSecond - scrollX }
-    private func t(_ x: CGFloat) -> Float { Float((x + scrollX) / pixelsPerSecond) }
+    private func x(_ t: Float) -> CGFloat { CGFloat(t) * pixelsPerSecond - scrollX + inicioPista }
+    private func t(_ x: CGFloat) -> Float { Float((x + scrollX - inicioPista) / pixelsPerSecond) }
 
     // MARK: regua
 
+    /// Cabecalho do APK: "<" que recolhe a coluna da esquerda e a regua com
+    /// tracinhos finos (o chip do tempo fica no cursor).
     private var ruler: some View {
-        Canvas { ctx, size in
-            let step = tickStep()
-            var tt: Float = Float(Int(Float(scrollX / pixelsPerSecond) / step)) * step
-            let fim = Float((scrollX + size.width) / pixelsPerSecond)
-            while tt <= min(fim, max(composition.duration, 0) + step) {
-                let px = nameColumn + x(tt)
-                if px >= nameColumn - 1 && px <= size.width {
-                    ctx.stroke(Path { p in
-                        p.move(to: CGPoint(x: px, y: size.height - 6))
-                        p.addLine(to: CGPoint(x: px, y: size.height))
-                    }, with: .color(NovaTheme.dim2), lineWidth: 1)
-                    ctx.draw(Text(label(tt)).font(.system(size: 8)).foregroundColor(NovaTheme.dim2),
-                             at: CGPoint(x: px + 13, y: size.height / 2))
+        ZStack(alignment: .leading) {
+            Canvas { ctx, size in
+                let step = tickStep()
+                let sub = step / 5
+                var tt: Float = max(0, Float(Int(t(0) / sub)) * sub)
+                let fim = t(size.width - nameColumn)
+                var n = Int((tt / sub).rounded())
+                while tt <= min(fim, composition.duration + step) {
+                    let px = nameColumn + x(tt)
+                    if px >= nameColumn - 1 && px <= size.width {
+                        let grande = n % 5 == 0
+                        ctx.stroke(Path { p in
+                            p.move(to: CGPoint(x: px, y: size.height - (grande ? 9 : 5)))
+                            p.addLine(to: CGPoint(x: px, y: size.height))
+                        }, with: .color(NovaTheme.dim2.opacity(grande ? 0.9 : 0.5)), lineWidth: 0.8)
+                    }
+                    n += 1
+                    tt = Float(n) * sub
                 }
-                tt += step
+                let fx = nameColumn + x(composition.duration)
+                if fx >= nameColumn && fx <= size.width {
+                    ctx.fill(Path(CGRect(x: fx, y: size.height - 12, width: 1, height: 12)),
+                             with: .color(NovaTheme.dim))
+                }
+                for m in composition.markers ?? [] {
+                    let mx = nameColumn + x(m)
+                    guard mx >= nameColumn && mx <= size.width else { continue }
+                    ctx.fill(Path { p in
+                        p.move(to: CGPoint(x: mx - 4, y: size.height - 10))
+                        p.addLine(to: CGPoint(x: mx + 4, y: size.height - 10))
+                        p.addLine(to: CGPoint(x: mx, y: size.height - 3))
+                        p.closeSubpath()
+                    }, with: .color(NovaTheme.warning))
+                }
             }
-            // fim da composicao
-            let fx = nameColumn + x(composition.duration)
-            if fx >= nameColumn && fx <= size.width {
-                ctx.fill(Path(CGRect(x: fx, y: 0, width: 1, height: size.height)),
-                         with: .color(NovaTheme.danger.opacity(0.7)))
-            }
-            for m in composition.markers ?? [] {
-                let mx = nameColumn + x(m)
-                guard mx >= nameColumn && mx <= size.width else { continue }
-                ctx.fill(Path { p in
-                    p.move(to: CGPoint(x: mx - 4, y: 0))
-                    p.addLine(to: CGPoint(x: mx + 4, y: 0))
-                    p.addLine(to: CGPoint(x: mx, y: 7))
-                    p.closeSubpath()
-                }, with: .color(NovaTheme.warning))
-            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                guard g.location.x > nameColumn else { return }
+                time = min(max(0, t(g.location.x - nameColumn)), composition.duration)
+            })
+            Button { withAnimation(.easeInOut(duration: 0.2)) { recolhida.toggle(); limitarRolagem() } } label: {
+                Image(systemName: recolhida ? "chevron.right" : "chevron.left")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(NovaTheme.dim)
+                    .frame(width: 34, height: alturaCabecalho)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain)
         }
-        .frame(height: NovaTheme.Metrics.rulerHeight)
-        .contentShape(Rectangle())
-        .gesture(DragGesture(minimumDistance: 0).onChanged { g in
-            guard g.location.x > nameColumn else { return }
-            time = min(max(0, t(g.location.x - nameColumn)), composition.duration)
-        })
-        .background(NovaTheme.surface2)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(NovaTheme.line), alignment: .bottom)
+        .frame(height: alturaCabecalho)
+        .background(NovaTheme.surface)
+    }
+
+    /// Tempo no formato do chip do APK: minutos:segundos:quadros.
+    private func tempoQuadros(_ t: Float) -> String {
+        let fps = max(Int(composition.frameRate.rounded()), 1)
+        let q = Int((t * Float(fps)).rounded())
+        return String(format: "%02d:%02d:%02d", q / (fps * 60), (q / fps) % 60, q % fps)
     }
 
     private func tickStep() -> Float {
@@ -189,66 +215,195 @@ public struct TimelineView: View {
 
     // MARK: linha de camada
 
-    private func row(_ layer: Layer) -> some View {
-        let sel = selected == layer.id
-        return HStack(spacing: 0) {
-            HStack(spacing: 5) {
-                Button {
-                    el(layer.id, true) { $0.enabled.toggle() }
-                } label: {
-                    Image(systemName: layer.enabled ? "eye" : "eye.slash")
-                        .font(.system(size: 9))
-                        .foregroundStyle(layer.enabled ? NovaTheme.dim : NovaTheme.dim2)
-                }.buttonStyle(.plain)
-                Text(layer.name).font(.system(size: 10)).lineLimit(1)
-                    .foregroundStyle(sel ? NovaTheme.text : NovaTheme.dim)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6)
-            .frame(width: nameColumn, height: NovaTheme.Metrics.timelineRowHeight)
-            .background(sel ? NovaTheme.selectedFill : Color.clear)
-            .contentShape(Rectangle())
-            .onTapGesture { selected = sel ? nil : layer.id }
-
-            ZStack(alignment: .topLeading) {
-                Color.clear.contentShape(Rectangle())
-                    .onTapGesture { selected = nil }
-                clipe(layer, sel)
-            }
-            .frame(height: NovaTheme.Metrics.timelineRowHeight)
-            .frame(maxWidth: .infinity)
-            .clipped()
+    // Cores e icones por tipo, como no print do APK.
+    static func corDoTipo(_ k: LayerKind) -> Color {
+        func c(_ h: Int) -> Color {
+            Color(red: Double((h >> 16) & 255) / 255, green: Double((h >> 8) & 255) / 255, blue: Double(h & 255) / 255)
+        }
+        switch k {
+        case .null: return c(0x474b63)
+        case .camera: return c(0x5a3f86)
+        case .video: return c(0x1f5e4b)
+        case .image: return c(0x2b4f73)
+        case .text: return c(0x6a3d74)
+        case .shape: return c(0x7a5426)
+        case .solid: return c(0x7a2f3e)
+        case .adjustment: return c(0x3a4f86)
+        case .audio: return c(0x245f6e)
+        case .light: return c(0x7a6a26)
+        case .group, .precomp: return c(0x3f4a5e)
+        case .model3d: return c(0x45507a)
+        case .counter: return c(0x5e4a2a)
         }
     }
 
-    private func clipe(_ layer: Layer, _ sel: Bool) -> some View {
-        let w = max(6, CGFloat(layer.duration) * pixelsPerSecond)
-        let h = NovaTheme.Metrics.timelineRowHeight - 5
-        return RoundedRectangle(cornerRadius: 5)
-            .fill(NovaTheme.trackColor(layer.kind.rawValue).opacity(layer.enabled ? 1 : 0.45))
-            .frame(width: w, height: h)
-            .overlay(alignment: .leading) {
-                Text(layer.name).font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .padding(.leading, sel ? alcaLargura + 3 : 6).lineLimit(1)
+    static func iconeDoTipo(_ k: LayerKind) -> String {
+        switch k {
+        case .null: return "arrow.up.and.down.and.arrow.left.and.right"
+        case .camera: return "video.fill"
+        case .video: return "film"
+        case .image: return "photo"
+        case .text: return "textformat"
+        case .shape: return "star.fill"
+        case .solid: return "square.fill"
+        case .adjustment: return "slider.horizontal.3"
+        case .audio: return "waveform"
+        case .light: return "lightbulb.fill"
+        case .group: return "folder.fill"
+        case .precomp: return "square.stack.3d.up.fill"
+        case .model3d: return "cube.fill"
+        case .counter: return "number"
+        }
+    }
+
+    /// Propriedades animadas da camada (nome, tempos das chaves), na ordem do APK.
+    private func animadas(_ l: Layer) -> [(String, [Float])] {
+        let tr = l.transform
+        var a: [(String, [Float])] = []
+        func add<T: Interpolatable>(_ n: String, _ v: Animated<T>) {
+            if !v.keyframes.isEmpty { a.append((n, v.keyframes.map { $0.time })) }
+        }
+        add("Posição", tr.position); add("Escala", tr.scale); add("Rotação", tr.rotationZ)
+        add("Opacidade", tr.opacity); add("Âncora", tr.anchorPoint); add("Profundidade (Z)", tr.positionZ)
+        add("Rotação X", tr.rotationX); add("Rotação Y", tr.rotationY)
+        if let sk = tr.skew { add("Inclinação", sk) }
+        return a
+    }
+
+    @ViewBuilder
+    private func row(_ layer: Layer) -> some View {
+        let sel = selected == layer.id
+        let props = animadas(layer)
+        let aberta = expandidas.contains(layer.id)
+        HStack(spacing: 0) {
+            if !recolhida { colunaEsquerda(layer, sel, temProps: !props.isEmpty, aberta: aberta) }
+            ZStack(alignment: .topLeading) {
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { selected = nil }
+                clipe(layer, sel, chaves: props.flatMap { $0.1 })
             }
-            .overlay(RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(sel ? NovaTheme.accent : Color.white.opacity(0.1), lineWidth: sel ? 1.6 : 1))
+            .frame(height: alturaLinha)
+            .frame(maxWidth: .infinity)
+            .clipped()
+        }
+        if aberta {
+            ForEach(Array(props.enumerated()), id: \.offset) { _, p in
+                HStack(spacing: 0) {
+                    if !recolhida {
+                        Text(p.0.loc).font(.system(size: 10)).foregroundStyle(NovaTheme.dim)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                            .padding(.leading, 22)
+                            .frame(width: nameColumn, height: 22, alignment: .leading)
+                    }
+                    ZStack(alignment: .topLeading) {
+                        Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1).offset(y: 11)
+                        ForEach(Array(p.1.enumerated()), id: \.offset) { _, k in
+                            losango(9).offset(x: x(k) - 4.5, y: 6.5)
+                        }
+                    }
+                    .frame(height: 22).frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                }
+            }
+        }
+    }
+
+    /// Chevron (propriedades), olho verde, circulo do solo e o icone do tipo.
+    private func colunaEsquerda(_ layer: Layer, _ sel: Bool, temProps: Bool, aberta: Bool) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                if aberta { expandidas.remove(layer.id) } else { expandidas.insert(layer.id) }
+            } label: {
+                Image(systemName: aberta ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .bold)).foregroundStyle(NovaTheme.dim)
+                    .frame(width: 14, height: alturaLinha).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).opacity(temProps ? 1 : 0).disabled(!temProps)
+            Button { el(layer.id, true) { $0.enabled.toggle() } } label: {
+                Image(systemName: layer.enabled ? "eye.fill" : "eye.slash.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(layer.enabled ? NovaTheme.accent : NovaTheme.dim2)
+                    .frame(width: 24, height: alturaLinha).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            Button { el(layer.id, true) { $0.solo.toggle() } } label: {
+                Circle()
+                    .strokeBorder(layer.solo ? NovaTheme.accent : NovaTheme.dim2, lineWidth: 1.2)
+                    .background(Circle().fill(layer.solo ? NovaTheme.accent.opacity(0.35) : Color.clear))
+                    .frame(width: 11, height: 11)
+                    .frame(width: 18, height: alturaLinha).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Self.corDoTipo(layer.kind).opacity(0.45))
+                .frame(width: 22, height: 22)
+                .overlay(Image(systemName: Self.iconeDoTipo(layer.kind))
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.white.opacity(0.85)))
+                .padding(.leading, 1)
+            Spacer(minLength: 0)
+        }
+        .frame(width: nameColumn, height: alturaLinha)
+        .background(sel ? NovaTheme.selectedFill.opacity(0.6) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture { selected = sel ? nil : layer.id }
+    }
+
+    /// Losango branco de quadro-chave.
+    private func losango(_ lado: CGFloat) -> some View {
+        Rectangle().fill(Color.white)
+            .overlay(Rectangle().stroke(Color.black.opacity(0.45), lineWidth: 0.8))
+            .frame(width: lado / 1.414, height: lado / 1.414)
+            .rotationEffect(.degrees(45))
+            .frame(width: lado, height: lado)
+    }
+
+    private func clipe(_ layer: Layer, _ sel: Bool, chaves: [Float]) -> some View {
+        let w = max(6, CGFloat(layer.duration) * pixelsPerSecond)
+        let h = alturaLinha - 4
+        let cor = Self.corDoTipo(layer.kind)
+        let faixa = layer.kind == .video || layer.kind == .audio
+        return RoundedRectangle(cornerRadius: 6)
+            .fill(cor.opacity(layer.enabled ? 1 : 0.45))
+            .frame(width: w, height: h)
+            .overlay(alignment: .bottom) {
+                // video: a faixa mais clara de baixo, como no APK
+                Rectangle().fill(Color.white.opacity(faixa ? 0.14 : 0)).frame(height: 4)
+            }
+            .overlay(alignment: .leading) {
+                Rectangle().fill(Color.white.opacity(0.35)).frame(width: 2.5)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(alignment: .leading) {
+                Text(layer.name).font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.95)).lineLimit(1)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.black.opacity(0.38)))
+                    .padding(.leading, sel ? alcaLargura + 3 : 6)
+                    .frame(maxWidth: max(0, w - 8), alignment: .leading)
+            }
+            .overlay(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
+                    ForEach(Array(chaves.enumerated()), id: \.offset) { _, k in
+                        losango(10).offset(x: CGFloat(k - layer.startTime) * pixelsPerSecond - 5, y: h / 2 - 5)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(sel ? NovaTheme.accent : Color.white.opacity(0.06), lineWidth: sel ? 1.6 : 1))
             .overlay(alignment: .leading) { if sel { alca(layer, .entrada) } }
             .overlay(alignment: .trailing) { if sel { alca(layer, .saida) } }
             .contentShape(Rectangle())
             .onTapGesture { selected = layer.id }
             .highPriorityGesture(arrastar(layer, .corpo),
                                  including: sel && editLayer != nil && !layer.locked ? .all : .subviews)
-            .offset(x: x(layer.startTime), y: 2.5)
+            .offset(x: x(layer.startTime), y: 2)
     }
 
     /// Alca de aparar (o "[" e o "]" do clipe selecionado no APK).
     private func alca(_ layer: Layer, _ tipo: Alca) -> some View {
-        UnevenRoundedRectangle(topLeadingRadius: tipo == .entrada ? 5 : 0,
-                               bottomLeadingRadius: tipo == .entrada ? 5 : 0,
-                               bottomTrailingRadius: tipo == .saida ? 5 : 0,
-                               topTrailingRadius: tipo == .saida ? 5 : 0)
+        UnevenRoundedRectangle(topLeadingRadius: tipo == .entrada ? 6 : 0,
+                               bottomLeadingRadius: tipo == .entrada ? 6 : 0,
+                               bottomTrailingRadius: tipo == .saida ? 6 : 0,
+                               topTrailingRadius: tipo == .saida ? 6 : 0)
             .fill(NovaTheme.accent)
             .frame(width: alcaLargura)
             .overlay(Image(systemName: tipo == .entrada ? "chevron.compact.left" : "chevron.compact.right")
@@ -490,18 +645,24 @@ public struct TimelineView: View {
                 if let g = guia {
                     let gx = nameColumn + x(g)
                     if gx >= nameColumn && gx <= geo.size.width {
-                        Rectangle().fill(NovaTheme.warning).frame(width: 1)
+                        Rectangle().fill(NovaTheme.warning).frame(width: 1, height: max(0, geo.size.height - topo))
                             .offset(x: gx - 0.5, y: topo)
                     }
                 }
                 let px = nameColumn + x(time)
                 if px >= nameColumn && px <= geo.size.width {
-                    ZStack(alignment: .top) {
-                        Rectangle().fill(NovaTheme.accent).frame(width: 1.4)
-                        Rectangle().fill(NovaTheme.accent).frame(width: 9, height: 7)
-                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                    Rectangle().fill(Self.corCursor)
+                        .frame(width: 1.2, height: max(0, geo.size.height - topo - 8))
+                        .offset(x: px - 0.6, y: topo + 8)
+                    HStack(spacing: 4) {
+                        Image(systemName: "flag.fill").font(.system(size: 8))
+                        Text(tempoQuadros(time)).font(.system(size: 11, weight: .bold, design: .monospaced))
                     }
-                    .offset(x: px - 0.7, y: topo)
+                    .foregroundStyle(Color.black.opacity(0.85))
+                    .padding(.horizontal, 8).frame(height: 20)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Self.corCursor))
+                    .fixedSize()
+                    .position(x: min(max(px, nameColumn + 48), geo.size.width - 48), y: topo + 15)
                 }
             }
             .allowsHitTesting(false)
