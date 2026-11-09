@@ -76,8 +76,11 @@ public struct EffectTexture: Codable, Sendable, Identifiable {
     public let id: String
     public let source: Source
     public let path: String?
-    public init(id: String, source: Source, path: String? = nil) {
-        self.id = id; self.source = source; self.path = path
+    /// Fracao do tamanho da camada para um `buffer` (scale="0.5" no XML): as
+    /// piramides dos glows e blurs (154 efeitos) dependem disso.
+    public var scale: Float = 1
+    public init(id: String, source: Source, path: String? = nil, scale: Float = 1) {
+        self.id = id; self.source = source; self.path = path; self.scale = scale
     }
 }
 
@@ -199,7 +202,8 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
             let srcRaw = a["src"] ?? "content"
             let src = EffectTexture.Source(rawValue: srcRaw) ?? .file
             textures.append(EffectTexture(id: id, source: src,
-                                          path: src == .file ? srcRaw : a["path"]))
+                                          path: src == .file ? srcRaw : a["path"],
+                                          scale: a["scale"].flatMap(Float.init).map { max(0.001, min($0, 4)) } ?? 1))
         default:
             guard insideParams, let kind = EffectParamKind(rawValue: name),
                   let id = a["id"], !seenIDs.contains(id) else { break }

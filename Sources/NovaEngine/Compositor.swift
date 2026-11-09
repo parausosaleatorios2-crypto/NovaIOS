@@ -200,6 +200,31 @@ public final class Compositor {
                               profundidade: Int, emOutroTempo: Bool = false,
                               guardar: inout [MTLTexture]) async throws -> (MTLTexture, SIMD2<Float>)? {
         guard let provider = contentProvider else { return nil }
+        if layer.kind == .group {
+            // Grupo (pre-comp): as camadas de dentro montadas num buffer limpo do
+            // tamanho da composicao; depois o grupo segue como uma camada qualquer
+            // (efeitos, transform, mascara, mesclagem).
+            let c = try pool.obtain(width: output.width, height: output.height, format: output.pixelFormat)
+            guardar.append(c)
+            let rp = MTLRenderPassDescriptor()
+            rp.colorAttachments[0].texture = c
+            rp.colorAttachments[0].loadAction = .clear
+            rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            rp.colorAttachments[0].storeAction = .store
+            cb.makeRenderCommandEncoder(descriptor: rp)?.endEncoding()
+            let fundo = try pool.obtain(width: c.width, height: c.height, format: c.pixelFormat)
+            guardar.append(fundo)
+            guard profundidade < 8 else { return (c, comp.size) }
+            for f in comp.visibleChildren(of: layer.id, at: time) {
+                do {
+                    try await drawLayer(f, comp: comp, time: time, into: c, backdrop: fundo, cb: cb,
+                                        manifests: manifests, profundidade: profundidade + 1)
+                } catch {
+                    lastFrameWarnings.append("\(f.name): \(error.localizedDescription)")
+                }
+            }
+            return (c, comp.size)
+        }
         if layer.kind == .adjustment {
             guard !layer.effects.isEmpty else { return nil }
             let c = try pool.obtain(width: output.width, height: output.height, format: output.pixelFormat)

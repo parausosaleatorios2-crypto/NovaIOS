@@ -149,6 +149,13 @@ public struct EditorView: View {
                                      edit: { id, save, change in editLayer(id, save, change) },
                                      mediaRoot: mediaRoot)
             case .info(let t, let m): InfoSheet(titulo: t, mensagem: m)
+            case .agrupar:
+                AgruparSheet(camadas: comp.layers.filter { $0.groupID == nil || $0.groupID == comp.layer(id: selectedLayer ?? UUID())?.groupID },
+                             marcadas: Set([selectedLayer].compactMap { $0 })) { ids, nome in
+                    var novo: UUID?
+                    editComp { novo = $0.group(ids, name: nome) }
+                    if let novo { selectedLayer = novo }
+                }
             }
             }
             .novaPainel()
@@ -440,10 +447,16 @@ public struct EditorView: View {
                 Button { sheet = .exportar } label: { Label("Exportar".loc, systemImage: "square.and.arrow.up") }
                 Button { sheet = .layout } label: { Label("Layout do editor".loc, systemImage: "rectangle.3.group") }
                 Button { adicionarMarcador() } label: { Label("Marcador".loc, systemImage: "bookmark") }
+                Button { sheet = .agrupar } label: { Label("Agrupar camadas (pré-comp)…".loc, systemImage: "rectangle.stack.badge.plus") }
                 if let id = selectedLayer {
                     Divider()
                     Button { sheet = .propriedades(id) } label: { Label("Propriedades".loc, systemImage: "slider.horizontal.3") }
                     Button { duplicarSelecionada() } label: { Label("Duplicar camada".loc, systemImage: "plus.square.on.square") }
+                    if comp.layer(id: id)?.kind == .group {
+                        Button { editComp { $0.ungroup(id) }; selectedLayer = nil } label: {
+                            Label("Desagrupar".loc, systemImage: "rectangle.stack.badge.minus")
+                        }
+                    }
                     Button(role: .destructive) { excluirSelecionada() } label: { Label("Apagar camada".loc, systemImage: "trash") }
                 }
             } label: {
@@ -740,12 +753,12 @@ public struct EditorView: View {
 // MARK: - Sheets
 
 enum EditorSheet: Identifiable {
-    case efeitos, layout, exportar
+    case efeitos, layout, exportar, agrupar
     case propriedades(UUID)
     case info(String, String)
     var id: String {
         switch self {
-        case .efeitos: return "efeitos"; case .layout: return "layout"
+        case .efeitos: return "efeitos"; case .layout: return "layout"; case .agrupar: return "agrupar"
         case .exportar: return "exportar"; case .info(let t, _): return "info-\(t)"
         case .propriedades(let u): return "prop-\(u.uuidString)"
         }
@@ -860,5 +873,68 @@ struct EncolheAoTocar: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.09), value: configuration.isPressed)
+    }
+}
+
+/// "Agrupar" (a pre-comp do AE): marca as camadas e da o nome do grupo.
+struct AgruparSheet: View {
+    let camadas: [Layer]
+    @State var marcadas: Set<UUID>
+    let onAgrupar: ([UUID], String) -> Void
+    @State private var nome = "Grupo"
+    @Environment(\.dismiss) private var dismiss
+
+    init(camadas: [Layer], marcadas: Set<UUID>, onAgrupar: @escaping ([UUID], String) -> Void) {
+        self.camadas = camadas
+        _marcadas = State(initialValue: marcadas)
+        self.onAgrupar = onAgrupar
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Nome do grupo".loc, text: $nome)
+                }
+                .novaLinhas()
+                Section("Camadas".loc) {
+                    ForEach(camadas) { l in
+                        Button {
+                            if marcadas.contains(l.id) { marcadas.remove(l.id) } else { marcadas.insert(l.id) }
+                        } label: {
+                            HStack {
+                                Image(systemName: marcadas.contains(l.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(marcadas.contains(l.id) ? NovaTheme.accent : NovaTheme.dim2)
+                                Text(l.name).foregroundStyle(NovaTheme.text)
+                                Spacer()
+                                Text(l.kind.label.loc).font(.system(size: 11)).foregroundStyle(NovaTheme.dim2)
+                            }
+                        }
+                    }
+                }
+                .novaLinhas()
+                Section {
+                    Text("As camadas marcadas viram um grupo que se move, recebe efeitos e mesclagem como uma camada só — como a pré-composição do After Effects. Desfaça em ⋮ › Desagrupar.".loc)
+                        .font(.system(size: 11)).foregroundStyle(NovaTheme.dim)
+                }
+                .listRowBackground(Color.clear)
+            }
+            .novaForm()
+            .navigationTitle("Agrupar camadas".loc)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar".loc) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Agrupar".loc) {
+                        // na ordem da timeline
+                        let ids = camadas.map(\.id).filter { marcadas.contains($0) }
+                        onAgrupar(ids, nome.isEmpty ? "Grupo" : nome)
+                        dismiss()
+                    }
+                    .disabled(marcadas.isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

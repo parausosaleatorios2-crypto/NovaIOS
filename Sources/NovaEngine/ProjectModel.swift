@@ -239,6 +239,9 @@ public struct Layer: Codable, Sendable, Identifiable, Equatable {
     public var shapeStyle: ShapeStyle?
     /// Estilo e animacao do texto.
     public var textStyle: TextStyle?
+    /// Grupo (pre-comp) a que a camada pertence: o `groupId` do APK. A camada
+    /// some da lista de cima e e desenhada dentro do grupo.
+    public var groupID: UUID?
 
     public var endTime: Float { startTime + duration }
 
@@ -287,7 +290,48 @@ public struct Composition: Codable, Sendable, Identifiable, Equatable {
     public func visibleLayers(at t: Float) -> [Layer] {
         let soloed = layers.filter(\.solo)
         let pool = soloed.isEmpty ? layers : soloed
-        return pool.filter { $0.isVisible(at: t) && $0.kind.rendersPixels }.reversed()
+        return pool.filter { $0.groupID == nil && $0.isVisible(at: t) && $0.kind.rendersPixels }.reversed()
+    }
+
+    /// As camadas de dentro de um grupo, visiveis em `t`, de baixo para cima.
+    public func visibleChildren(of group: UUID, at t: Float) -> [Layer] {
+        layers.filter { $0.groupID == group && $0.isVisible(at: t) && $0.kind.rendersPixels }.reversed()
+    }
+
+    /// As camadas de dentro de um grupo (de cima para baixo).
+    public func children(of group: UUID) -> [Layer] { layers.filter { $0.groupID == group } }
+
+    /// Agrupa as camadas (como a pre-comp do AE): cria a camada Grupo do tamanho
+    /// da composicao no lugar da de cima e poe as outras logo abaixo dela.
+    @discardableResult
+    public mutating func group(_ ids: [UUID], name: String) -> UUID? {
+        let alvo = layers.filter { ids.contains($0.id) }
+        guard !alvo.isEmpty else { return nil }
+        var g = Layer(name: name, kind: .group)
+        g.size = size
+        g.transform.anchorPoint = Animated(size / 2)
+        g.transform.position = Animated(size / 2)
+        g.startTime = alvo.map(\.startTime).min() ?? 0
+        g.duration = max(0.04, (alvo.map(\.endTime).max() ?? duration) - g.startTime)
+        g.groupID = alvo.first?.groupID      // grupo dentro de grupo fica onde estava
+        let topo = layers.firstIndex { ids.contains($0.id) } ?? 0
+        var filhos: [Layer] = []
+        for var l in layers where ids.contains(l.id) {
+            l.groupID = g.id
+            filhos.append(l)
+        }
+        layers.removeAll { ids.contains($0.id) }
+        let pos = min(topo, layers.count)
+        layers.insert(g, at: pos)
+        layers.insert(contentsOf: filhos, at: pos + 1)
+        return g.id
+    }
+
+    /// Desfaz o grupo: as camadas voltam para fora, no lugar dele.
+    public mutating func ungroup(_ id: UUID) {
+        guard let g = layer(id: id), g.kind == .group else { return }
+        for i in layers.indices where layers[i].groupID == id { layers[i].groupID = g.groupID }
+        layers.removeAll { $0.id == id }
     }
 
     public func layer(id: UUID) -> Layer? { layers.first { $0.id == id } }
@@ -295,6 +339,10 @@ public struct Composition: Codable, Sendable, Identifiable, Equatable {
     public mutating func add(_ l: Layer) { layers.insert(l, at: 0) }
 
     public mutating func remove(id: UUID) {
+        // apagar um grupo apaga o que esta dentro dele
+        if layer(id: id)?.kind == .group {
+            for f in children(of: id) { remove(id: f.id) }
+        }
         layers.removeAll { $0.id == id }
         for i in layers.indices where layers[i].parentID == id { layers[i].parentID = nil }
     }

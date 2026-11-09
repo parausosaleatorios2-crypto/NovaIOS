@@ -319,7 +319,10 @@ public final class EffectRenderer {
         // Texturas-buffer declaradas no XML (alvos dos passes intermediarios).
         var buffers: [String: MTLTexture] = [:]
         for t in m.textures where t.source == .buffer {
-            buffers[t.id] = try pool.obtain(width: w, height: h, format: workingFormat)
+            // scale do XML: a piramide do Deep Glow e dos blurs vive em meio, um quarto…
+            let bw = max(1, Int((Float(w) * t.scale).rounded(.up)))
+            let bh = max(1, Int((Float(h) * t.scale).rounded(.up)))
+            buffers[t.id] = try pool.obtain(width: bw, height: bh, format: workingFormat)
         }
 
         // Quantas vezes os passes repetem.
@@ -371,6 +374,12 @@ public final class EffectRenderer {
                 enc.setRenderPipelineState(state)
 
                 uni.acPass = passIndex
+                // Como no motor do Android: resolucao, texel e aspecto sao os do ALVO do passe
+                // (um buffer com scale="0.5" desenha em meia resolucao).
+                let tw = Float(target.width), th = Float(target.height)
+                uni.acResolution = SIMD2(tw, th)
+                uni.acTexelSize = SIMD2(1 / tw, 1 / th)
+                uni.acAspect = tw / th
                 withUnsafeBytes(of: uni) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<EngineUniforms>.stride, index: 0) }
                 paramBytes.withUnsafeBytes { enc.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
                 enc.setFragmentSamplerState(sampler, index: 0)
