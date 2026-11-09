@@ -216,7 +216,8 @@ fragment float4 fx_glitchify(
     float2 pc = uv * res / cel;
     float n = gl_ruido(pc * float2(0.25, 1.0), t, u);
     float corte = clamp(u.noiseCutoff / 100.0, 0.0, 1.0);
-    float ativo = u.useNoise != 0 ? smoothstep(corte, corte + 0.02, n) * A : A;
+    // o ruido vem em degraus (0, 1/q, 2/q...): o corte compara com >=, senao o degrau 0,5 nunca liga
+    float ativo = u.useNoise != 0 ? step(corte - 1e-4, n) * A : A;
     if (u.showNoise != 0) return float4(float3(n), 1.0);
 
     float4 cor = original;
