@@ -197,6 +197,12 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.novavision.editor
+        # Motor do Optical Flares em C (Sources/OFCore, gerado do smali do APK): o Swift
+        # chega nele pelo bridging header; a conta em float32 nao pode virar FMA.
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/OFCore/include/OFCore.h
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Sources/OFCore/include $(SRCROOT)/Sources/OFCore"
+        OTHER_CFLAGS: "-fwrapv -ffp-contract=off -Wno-unused-label -Wno-unused-variable"
+        GCC_C_LANGUAGE_STANDARD: gnu11
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone e iPad
         # Preencha com o seu time. Sem isto nao ha assinatura e nao ha IPA.

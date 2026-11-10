@@ -47,30 +47,30 @@
         <selector id="colorMode" label="Color Mode" default="0" options="Tint|Multiply" />
         <slider id="animationEvolution" label="Animation Evolution" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" snap="0.0" />
         <selector id="renderMode" label="Render Mode" default="0" options="On Black|On Transparent|Over Original" />
-        <flare id="flare" label="Flare" />
+        <flare hidden="true" id="flare" label="Flare" />
 
-        <!-- Opcoes do iOS (o motor da GPU, fase 1): o tipo de flare e cada elemento a parte. -->
-        <selector id="preset" label="Flare (preset)" default="0" options="Padrão|Anamórfico Azul|Sol Quente|Estrela (Spike Ball)|Ficção Científica|Sutil|Neon Verde|Arco-íris|Lente Vintage|Pôr do Sol" />
-        <slider id="glowIntensity" label="Glow" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <slider id="glowSize" label="Glow Size" default="100.0" min="10.0" max="400.0" step="1.0" />
-        <slider id="streakIntensity" label="Streak" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <slider id="streakLength" label="Streak Length" default="100.0" min="10.0" max="500.0" step="1.0" />
-        <slider id="streakAngle" label="Streak Angle" default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" />
-        <slider id="raysIntensity" label="Rays (Spike Ball)" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <spinner id="rayCount" label="Ray Count" default="12.0" min="2.0" max="48.0" step="1.0" />
-        <slider id="raysLength" label="Rays Length" default="100.0" min="10.0" max="400.0" step="1.0" />
-        <slider id="shimmerIntensity" label="Shimmer" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <slider id="ringIntensity" label="Ring" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <slider id="hoopIntensity" label="Hoop" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <slider id="ghostsIntensity" label="Multi Iris (Ghosts)" default="100.0" min="0.0" max="400.0" step="1.0" />
-        <spinner id="ghostCount" label="Ghost Count" default="7.0" min="0.0" max="16.0" step="1.0" />
-        <slider id="ghostSize" label="Ghost Size" default="100.0" min="10.0" max="400.0" step="1.0" />
-        <selector id="irisShape" label="Iris Shape" default="0" options="Hexágono|Círculo|Octógono|Pentágono" />
-        <slider id="chromatic" label="Chromatic Aberration" default="0.0" min="0.0" max="100.0" step="1.0" />
-        <slider id="flicker" label="Flicker" default="0.0" min="0.0" max="100.0" step="1.0" />
-        <slider id="flickerSpeed" label="Flicker Speed" default="10.0" min="0.0" max="100.0" step="1.0" />
-        <slider id="saturation" label="Saturation" default="100.0" min="0.0" max="200.0" step="1.0" />
-        <switch id="fadeOffEdges" label="Fade Off Edges" default="false" />
+        <!-- Opcoes do shader de reserva (sem as tabelas do motor): escondidas no painel; quem desenha e o MotorDoOf em C. -->
+        <selector hidden="true" id="preset" label="Flare (preset)" default="0" options="Padrão|Anamórfico Azul|Sol Quente|Estrela (Spike Ball)|Ficção Científica|Sutil|Neon Verde|Arco-íris|Lente Vintage|Pôr do Sol" />
+        <slider hidden="true" id="glowIntensity" label="Glow" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="glowSize" label="Glow Size" default="100.0" min="10.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="streakIntensity" label="Streak" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="streakLength" label="Streak Length" default="100.0" min="10.0" max="500.0" step="1.0" />
+        <slider hidden="true" id="streakAngle" label="Streak Angle" default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" />
+        <slider hidden="true" id="raysIntensity" label="Rays (Spike Ball)" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <spinner hidden="true" id="rayCount" label="Ray Count" default="12.0" min="2.0" max="48.0" step="1.0" />
+        <slider hidden="true" id="raysLength" label="Rays Length" default="100.0" min="10.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="shimmerIntensity" label="Shimmer" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="ringIntensity" label="Ring" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="hoopIntensity" label="Hoop" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <slider hidden="true" id="ghostsIntensity" label="Multi Iris (Ghosts)" default="100.0" min="0.0" max="400.0" step="1.0" />
+        <spinner hidden="true" id="ghostCount" label="Ghost Count" default="7.0" min="0.0" max="16.0" step="1.0" />
+        <slider hidden="true" id="ghostSize" label="Ghost Size" default="100.0" min="10.0" max="400.0" step="1.0" />
+        <selector hidden="true" id="irisShape" label="Iris Shape" default="0" options="Hexágono|Círculo|Octógono|Pentágono" />
+        <slider hidden="true" id="chromatic" label="Chromatic Aberration" default="0.0" min="0.0" max="100.0" step="1.0" />
+        <slider hidden="true" id="flicker" label="Flicker" default="0.0" min="0.0" max="100.0" step="1.0" />
+        <slider hidden="true" id="flickerSpeed" label="Flicker Speed" default="10.0" min="0.0" max="100.0" step="1.0" />
+        <slider hidden="true" id="saturation" label="Saturation" default="100.0" min="0.0" max="200.0" step="1.0" />
+        <switch hidden="true" id="fadeOffEdges" label="Fade Off Edges" default="false" />
     </params>
 
     <!-- A cópia da entrada: quem desenha é o `PasseDoOpticalFlares` (ver o comentário do topo). -->

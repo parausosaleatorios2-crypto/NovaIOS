@@ -157,6 +157,8 @@ struct AEEfeito {
     /// do bloco "MBL2" que o plugin guarda no parametro de dados (LIST aRbs / aRbp).
     var look: [(codigo: String, valores: [Double])] = []
     var lookIgnoradas: [String] = []
+    /// Optical Flares: o flare do Lens Editor (bloco "OFP" do parametro de dados).
+    var flareOfp: Data? = nil
 }
 
 struct AEGrupo {
@@ -256,6 +258,15 @@ extension AEArquivo {
         }
         if nome.isEmpty && match.isEmpty { return nil }
         var fx = AEEfeito(match: match, nome: nome.isEmpty ? match : nome, props: props)
+        if match == "VIDEOCOPILOT OpticalFlares" || nome == "Optical Flares" {
+            for rb in g.filhos("LIST", "aRbs") {
+                if let d = rb.filho("aRbp"), d.range.count > 4,
+                   bytes[d.range.lowerBound] == 0x4F, bytes[d.range.lowerBound + 1] == 0x46,
+                   bytes[d.range.lowerBound + 2] == 0x50 {
+                    fx.flareOfp = Data(bytes[d.range])
+                }
+            }
+        }
         if match == "MB LookSuite3" || nome == "Magic Bullet Looks" || nome == "Looks" {
             for rb in g.filhos("LIST", "aRbs") {
                 if let d = rb.filho("aRbp") { lerLook(d, &fx) }
@@ -396,6 +407,7 @@ enum AEImportador {
         guard let entrada = candidatos.lazy.compactMap({ catalogo[norm($0)] }).first,
               let man = try? await EffectRegistry.shared.manifest(id: entrada.id) else { return nil }
         var ap = AppliedEffect(effectID: entrada.id)
+        if let f = fx.flareOfp { ap.luts = ["flare": "ofp64:" + f.base64EncodedString()] }
         if let mapa = porParametro[fx.match] {
             for prop in fx.props {
                 guard let r = prop.match.range(of: "-", options: .backwards),

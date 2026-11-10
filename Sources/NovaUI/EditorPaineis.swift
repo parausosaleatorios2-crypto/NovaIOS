@@ -501,10 +501,12 @@ struct PainelParametros: View {
                 .padding(.horizontal, 4)
                 if let m = manifest {
                     ForEach(Array(m.params.enumerated()), id: \.element.id) { k, p in
-                        if let g = p.group, k == 0 || m.params[k - 1].group != g {
-                            CabecalhoGrupo(texto: g)
+                        if p.hidden != true {
+                            if let g = p.group, k == 0 || m.params[k - 1].group != g {
+                                CabecalhoGrupo(texto: g)
+                            }
+                            linha(i, fx, p)
                         }
-                        linha(i, fx, p)
                     }
                     if fx.effectID == LooksFerramentas.cabeca {
                         ferramentasDoLook(i)

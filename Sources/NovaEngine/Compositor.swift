@@ -323,6 +323,19 @@ public final class Compositor {
                 }
                 continue
             }
+            if m.stage == "opticalflares", OpticalFlaresMotor.pronto, let flare = OpticalFlaresMotor.flare(de: fx) {
+                do {
+                    let v = fx.values(at: time, manifest: m)
+                    let w = tex.width, h = tex.height
+                    let ctl = OpticalFlaresMotor.controles(v, largura: w, altura: h, tempo: time)
+                    tex = try passeNaCPU(entrada: tex, cb: cb, guardar: &guardar) { leitura, escrita in
+                        OpticalFlaresMotor.rodar(leitura: leitura, escrita: escrita, flare: flare, controles: ctl)
+                    }
+                } catch {
+                    lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+                }
+                continue
+            }
             if m.stage == "glitchify" {
                 do {
                     tex = try glitchify(fx, m, entrada: tex, time: time, comp: comp, cb: cb, guardar: &guardar)
@@ -448,6 +461,18 @@ public final class Compositor {
                            comp: Composition, cb: MTLCommandBuffer,
                            guardar: inout [MTLTexture]) throws -> MTLTexture {
         let w = entrada.width, h = entrada.height
+        let ctl = Glitchify.Controles(valores: fx.values(at: time, manifest: m), largura: w, altura: h)
+        let t = Glitchify.tempoDoAe(Double(time), Double(comp.frameDuration))
+        return try passeNaCPU(entrada: entrada, cb: cb, guardar: &guardar) { leitura, escrita in
+            Glitchify.rodar(leitura: leitura, escrita: escrita, controles: ctl, tempo: t)
+        }
+    }
+
+    /// Um efeito que roda na CPU no meio da cadeia: copia a entrada para rgba8 compartilhado,
+    /// para o command buffer num MTLSharedEvent ate a CPU terminar e sobe o resultado.
+    private func passeNaCPU(entrada: MTLTexture, cb: MTLCommandBuffer, guardar: inout [MTLTexture],
+                            conta: @escaping (MTLTexture, MTLTexture) -> Void) throws -> MTLTexture {
+        let w = entrada.width, h = entrada.height
         let d8 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: w, height: h,
                                                           mipmapped: false)
         d8.usage = [.renderTarget, .shaderRead]
@@ -458,12 +483,10 @@ public final class Compositor {
             throw RenderError.textureAllocFailed(width: w, height: h)
         }
         try encodeCopy(entrada, to: leitura, in: cb)
-        let ctl = Glitchify.Controles(valores: fx.values(at: time, manifest: m), largura: w, altura: h)
-        let t = Glitchify.tempoDoAe(Double(time), Double(comp.frameDuration))
         cb.encodeSignalEvent(evento, value: 1)
         cb.encodeWaitForEvent(evento, value: 2)
         evento.notify(Self.ouvinteGlitchify, atValue: 1) { ev, _ in
-            Glitchify.rodar(leitura: leitura, escrita: escrita, controles: ctl, tempo: t)
+            conta(leitura, escrita)
             ev.signaledValue = 2
         }
         let saida = try pool.obtain(width: w, height: h, format: renderer.workingFormat)

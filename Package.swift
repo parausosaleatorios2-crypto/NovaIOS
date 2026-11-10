@@ -14,8 +14,14 @@ let package = Package(
         .executable(name: "nova-effect-probe", targets: ["EffectProbe"]),
     ],
     targets: [
+        // Motor do Optical Flares do APK em C (gerado do smali).
+        .target(
+            name: "OFCore",
+            path: "Sources/OFCore",
+            cSettings: [.unsafeFlags(["-fwrapv", "-ffp-contract=off", "-Wno-unused-label"])]),
         .target(
             name: "NovaEngine",
+            dependencies: ["OFCore"],
             path: "Sources/NovaEngine"),
         // Sonda do CI: aplica cada efeito numa imagem de teste e mede o resultado.
         .executableTarget(

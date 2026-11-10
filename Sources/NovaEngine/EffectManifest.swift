@@ -55,6 +55,8 @@ public struct EffectParam: Codable, Sendable, Identifiable {
     public let options: [String]
     /// Grupo do AE (atributo group, ex.: "Basic Correction"), para os titulos no painel.
     public let group: String?
+    /// hidden="true": nao aparece no painel (opcoes so do shader de reserva).
+    public var hidden: Bool?
 
     public init(id: String, kind: EffectParamKind, label: String? = nil, labelEn: String? = nil,
                 defaultValue: [Float] = [], minValue: Float? = nil, maxValue: Float? = nil,
@@ -222,6 +224,7 @@ public final class EffectManifestParser: NSObject, XMLParserDelegate {
                 maxValue: a["max"].flatMap(Float.init),
                 step: (a["passo"] ?? a["step"]).flatMap(Float.init),
                 group: a["group"]))
+            if a["hidden"] == "true" { params[params.count - 1].hidden = true }
         }
     }
 

@@ -379,6 +379,7 @@ struct LayerPropertiesSheet: View {
                     }
                     if let m = manifests[fx.effectID] {
                         ForEach(Array(m.params.enumerated()), id: \.element.id) { k, p in
+                            if p.hidden != true {
                             if let g = p.group, k == 0 || m.params[k - 1].group != g {
                                 Text(g.uppercased())
                                     .font(.system(size: 10, weight: .semibold))
@@ -386,6 +387,7 @@ struct LayerPropertiesSheet: View {
                                     .padding(.top, 6)
                             }
                             paramRow(l, i, fx, p)
+                            }
                         }
                     }
                 }
