@@ -1,0 +1,39 @@
+name: Motor do Optical Flares
+
+on:
+  push:
+    paths:
+      - 'Sources/OFCore/**'
+      - 'Tools/ofcore/**'
+      - '.github/workflows/motor-of.yml'
+  workflow_dispatch:
+
+jobs:
+  # O motor do Optical Flares (Sources/OFCore, gerado do smali do APK) compilado e rodado
+  # no Linux: desenha o flare padrao e guarda a imagem. Rapido, para pegar erro de C cedo.
+  motor-of:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar e desenhar o flare padrao
+        run: |
+          set -o pipefail
+          clang --version | head -1
+          mkdir -p of-saida
+          clang -std=gnu11 -O2 -ffp-contract=off -fwrapv -Wno-unused-label -Wno-unused-variable             -Wno-unused-but-set-variable -I Sources/OFCore/include -I Sources/OFCore             Sources/OFCore/*.c Tools/ofcore/of_teste.c -lm -o of-saida/of_teste 2>&1 | tee of-saida/compilacao.txt | grep -E "error" | head -80 || true
+          test -x of-saida/of_teste
+          time ./of-saida/of_teste Resources/opticalflares/tabelas.bin Resources/opticalflares/padrao.ofp of-saida/flare.ppm | tee of-saida/saida.txt
+          python3 -c "
+          import zlib,struct
+          d=open('of-saida/flare.ppm','rb').read().split(b'\n',3)
+          w,h=map(int,d[1].split()); px=d[3]
+          raw=b''.join(b'\0'+px[y*w*3:(y+1)*w*3] for y in range(h))
+          def ch(t,b): c=struct.pack('>I',len(b))+t+b; return c+struct.pack('>I',zlib.crc32(t+b)&0xffffffff)
+          open('of-saida/flare.png','wb').write(b'\x89PNG\r\n\x1a\n'+ch(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+ch(b'IDAT',zlib.compress(raw))+ch(b'IEND',b''))
+          "
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motor-of
+          path: of-saida
