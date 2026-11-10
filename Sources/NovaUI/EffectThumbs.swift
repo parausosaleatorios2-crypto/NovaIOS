@@ -127,9 +127,11 @@ final class EffectThumbs: ObservableObject {
                                                      time: 0.5, frameDuration: 1.0 / 30),
                                      values: valores, into: cb)
             }
-            cb.commit()
+            // O aviso de "terminou" tem que ser pedido ANTES do commit: depois
+            // dele o Metal lanca excecao e o app fecha.
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 cb.addCompletedHandler { _ in c.resume() }
+                cb.commit()
             }
             if cb.error != nil { return nil }
             defer { if saida !== entrada { r.release(saida) } }
