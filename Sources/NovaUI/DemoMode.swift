@@ -41,6 +41,8 @@ public enum DemoMode {
         forma.transform.anchorPoint = Animated(SIMD2(300, 300))
         forma.transform.position = Animated(SIMD2(540, 760))
         forma.duration = 8
+        // O Glitchify roda na CPU no meio da cadeia: as capturas mostram se ele funciona.
+        forma.effects.append(AppliedEffect(effectID: "nova.effect.glitchify"))
 
         var texto = Layer(name: "NOVA EDITOR", kind: .text)
         texto.text = "NOVA EDITOR"
