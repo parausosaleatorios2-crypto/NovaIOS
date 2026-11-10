@@ -153,6 +153,10 @@ struct AEEfeito {
     var match: String
     var nome: String
     var props: [AEPropriedade]
+    /// Magic Bullet Looks: as ferramentas do Look (codigo de 4 letras + valores), lidas
+    /// do bloco "MBL2" que o plugin guarda no parametro de dados (LIST aRbs / aRbp).
+    var look: [(codigo: String, valores: [Double])] = []
+    var lookIgnoradas: [String] = []
 }
 
 struct AEGrupo {
@@ -251,7 +255,43 @@ extension AEArquivo {
             atual = nil
         }
         if nome.isEmpty && match.isEmpty { return nil }
-        return AEEfeito(match: match, nome: nome.isEmpty ? match : nome, props: props)
+        var fx = AEEfeito(match: match, nome: nome.isEmpty ? match : nome, props: props)
+        if match == "MB LookSuite3" || nome == "Magic Bullet Looks" || nome == "Looks" {
+            for rb in g.filhos("LIST", "aRbs") {
+                if let d = rb.filho("aRbp") { lerLook(d, &fx) }
+            }
+        }
+        return fx
+    }
+
+    /// "MBL2" [4cc][u32 tam][dados]...; cada "tool" traz [codigo][0] [u32 n] e n doubles.
+    func lerLook(_ c: AEChunk, _ fx: inout AEEfeito) {
+        let a = c.range.lowerBound, z = c.range.upperBound
+        guard z - a > 16, String(bytes: bytes[a..<a + 4], encoding: .ascii) == "MBL2" else { return }
+        func tag(_ o: Int) -> String { String(bytes: bytes[o..<o + 4], encoding: .isoLatin1) ?? "" }
+        func dbl(_ o: Int) -> Double {
+            var v: UInt64 = 0
+            for i in 0..<8 { v = v << 8 | UInt64(bytes[o + i]) }
+            return Double(bitPattern: v)
+        }
+        var o = a + 8
+        while o + 8 <= z {
+            let t = tag(o), n = Int(AEArquivo.u32(bytes, o + 4))
+            let dados = o + 8
+            guard n >= 0, dados + n <= z else { break }
+            if t == "tool", n >= 12 {
+                let cod = tag(dados)
+                let q = Int(AEArquivo.u32(bytes, dados + 8))
+                if q >= 0, dados + 12 + q * 8 <= dados + n {
+                    fx.look.append((cod, (0..<q).map { dbl(dados + 12 + $0 * 8) }))
+                }
+            } else if t == "lutr" {
+                fx.lookIgnoradas.append("LUT")
+            } else if t == "cust" {
+                fx.lookIgnoradas.append(textoBruto(AEChunk(id: t, listType: nil, range: dados..<(dados + n)), de: 0, max: 64))
+            }
+            o = dados + n
+        }
     }
 }
 
@@ -294,6 +334,40 @@ enum AEImportador {
         "ADBE Change To Color": "Change to Color", "ADBE Channel Mixer": "Channel Mixer",
         "ADBE Gradient Ramp": "Gradient Ramp", "ADBE Ramp": "Gradient Ramp", "ADBE Stroke": "Stroke",
         "ADBE Glo": "Glow", "S_Shake": "S_Shake", "S_Glow": "S_Glow", "S_Sharpen": "S_Sharpen",
+        "MB LookSuite3": "Magic Bullet Looks", "Looks": "Magic Bullet Looks",
+        "CSpice Glitchify": "Glitchify", "ADBE 4ColorGradient": "4-Color Gradient",
+    ]
+
+    enum TipoAE { case num, bool, menu([Int]), ponto, inteiro, direcao }
+
+    /// Parametros pelo nome interno do AE (sufixo de "<match>-0001"), como a tabela do
+    /// conversor do APK: os nomes visiveis do Glitchify se repetem entre os grupos.
+    static let porParametro: [String: [String: (String, TipoAE)]] = [
+        "CSpice Glitchify": [
+            "0001": ("amount", .num), "0002": ("speed", .num), "0003": ("seed", .inteiro),
+            "0005": ("completion", .num), "0006": ("softness", .num),
+            "0007": ("transitionChannel", .menu(Glitchify.menuTransicao)),
+            "0010": ("transformSpeed", .num), "0011": ("position", .ponto), "0012": ("positionWiggle", .num),
+            "0013": ("scale", .num), "0014": ("scaleWiggle", .num), "0015": ("cropTopLeft", .ponto),
+            "0016": ("cropBottomRight", .ponto), "0017": ("cropWiggle", .num), "0018": ("opacity", .num),
+            "0019": ("transferMode", .menu(Glitchify.menuModos)), "0020": ("compositeOver", .bool),
+            "0023": ("channelEnable", .bool), "0025": ("splitChannel", .menu(Glitchify.menuSplit)),
+            "0026": ("splitH", .num), "0027": ("splitV", .num), "0028": ("splitSpeed", .num),
+            "0031": ("scaleAmount", .num), "0032": ("scaleChannel", .menu(Glitchify.menuScale)),
+            "0033": ("scaleVertical", .bool), "0034": ("scaleOffset", .num), "0035": ("scaleSpeed", .num),
+            "0037": ("channelMode", .menu(Glitchify.menuModos)), "0040": ("colorEnable", .bool),
+            "0041": ("colorOffset", .num), "0042": ("colorAmount", .num), "0043": ("colorOpacity", .num),
+            "0044": ("colorMode", .menu(Glitchify.menuModos)), "0047": ("imageEnable", .bool),
+            "0048": ("streak", .num), "0049": ("verticalSort", .bool), "0051": ("sliceAmount", .num),
+            "0057": ("blockAmount", .num), "0058": ("blockSpeed", .num), "0059": ("blockWidth", .num),
+            "0060": ("blockHeight", .num), "0061": ("blockDirection", .direcao),
+            "0063": ("blockMode", .menu(Glitchify.menuModos)), "0066": ("compressionEnable", .bool),
+            "0067": ("compressionMultiplier", .num), "0068": ("ditherAmount", .num), "0069": ("jpegAmount", .num),
+            "0073": ("showNoise", .bool), "0074": ("gain", .num), "0075": ("lacunarity", .num),
+            "0076": ("octaves", .inteiro), "0079": ("repeatEdge", .bool), "0082": ("sigmoid", .bool),
+            "0083": ("quantization", .num), "0084": ("fillGaps", .bool), "0087": ("useNoise", .bool),
+            "0088": ("noiseCutoff", .inteiro), "0096": ("grouping", .num), "0099": ("wiggleSteps", .num),
+        ],
     ]
 
     static func norm(_ s: String) -> String {
@@ -318,10 +392,25 @@ enum AEImportador {
     /// Converte um efeito do AE num efeito da Nova (nil quando nao ha equivalente).
     static func converter(_ fx: AEEfeito, catalogo: [String: EffectIndexEntry], tamanho: SIMD2<Float>,
                           inicioDaCamada: Double) async -> AppliedEffect? {
-        let candidatos = [porMatch[fx.match], fx.nome, fx.match].compactMap { $0 }
+        let candidatos = [porMatch[fx.match], porMatch[fx.nome], fx.nome, fx.match].compactMap { $0 }
         guard let entrada = candidatos.lazy.compactMap({ catalogo[norm($0)] }).first,
               let man = try? await EffectRegistry.shared.manifest(id: entrada.id) else { return nil }
         var ap = AppliedEffect(effectID: entrada.id)
+        if let mapa = porParametro[fx.match] {
+            for prop in fx.props {
+                guard let r = prop.match.range(of: "-", options: .backwards),
+                      let (pid, tipo) = mapa[String(prop.match[r.upperBound...])],
+                      let p = man.params.first(where: { $0.id == pid }),
+                      let v = prop.estatico.first else { continue }
+                switch tipo {
+                case .bool: ap.ints[pid] = v != 0 ? 1 : 0
+                case .direcao: ap.ints[pid] = Int32(max(0, Int(v.rounded()) - 1))
+                case .menu(let m): ap.ints[pid] = Int32(max(0, m.firstIndex(of: Int(v.rounded())) ?? 0))
+                case .num, .ponto, .inteiro: aplicar(prop, em: p, &ap, tamanho: tamanho, inicio: inicioDaCamada)
+                }
+            }
+            return ap
+        }
         var porNome: [String: EffectParam] = [:]
         for p in man.params {
             for n in [p.labelEn, p.label, p.id].compactMap({ $0 }) where porNome[norm(n)] == nil {
@@ -368,6 +457,37 @@ enum AEImportador {
         }
     }
 
+    /// As ferramentas de um Magic Bullet Looks lido do AE, na ordem do Look, para
+    /// entrarem logo depois da cabeca (como o motor espera).
+    static func ferramentasDoLook(_ fx: AEEfeito) async -> (efeitos: [AppliedEffect], avisos: [String]) {
+        var porCodigo: [String: (id: String, params: [String])] = [:]
+        for (id, t) in LooksFerramentas.porManifesto { porCodigo[t.codigo] = (id, t.params) }
+        var out: [AppliedEffect] = [], fora: [String] = fx.lookIgnoradas
+        for t in fx.look {
+            guard let f = porCodigo[t.codigo], let man = try? await EffectRegistry.shared.manifest(id: f.id) else {
+                fora.append(t.codigo); continue
+            }
+            var ap = AppliedEffect(effectID: f.id)
+            for (i, nome) in f.params.enumerated() where i < t.valores.count {
+                guard let p = man.params.first(where: { $0.id == nome }) else { continue }
+                let v = t.valores[i]
+                switch p.kind {
+                case .switchParam, .checkbox, .selector, .cycle:
+                    ap.ints[p.id] = Int32(max(0, min(1_000_000, Int(v.rounded()))))
+                case .slider, .spinner, .float, .hueDisc:
+                    ap.floats[p.id] = Animated(Float(v))
+                default: break
+                }
+            }
+            out.append(ap)
+        }
+        var avisos: [String] = []
+        if !fora.isEmpty {
+            avisos.append(String(format: "Ferramentas do Looks sem equivalente: %@".loc, fora.joined(separator: ", ")))
+        }
+        return (out, avisos)
+    }
+
     // MARK: .ffx
 
     /// Efeitos de um preset .ffx, para aplicar numa camada.
@@ -404,7 +524,13 @@ enum AEImportador {
         let cat = await catalogo()
         var out: [AppliedEffect] = [], avisos: [String] = []
         for e in lidos {
-            if let ap = await converter(e, catalogo: cat, tamanho: tamanho, inicioDaCamada: 0) { out.append(ap) }
+            if let ap = await converter(e, catalogo: cat, tamanho: tamanho, inicioDaCamada: 0) {
+                out.append(ap)
+                if !e.look.isEmpty || !e.lookIgnoradas.isEmpty {
+                    let (fs, av) = await ferramentasDoLook(e)
+                    out += fs; avisos += av
+                }
+            }
             else { avisos.append(String(format: "Sem equivalente na Nova: %@".loc, e.nome)) }
         }
         return (out, animacao, avisos)
@@ -644,6 +770,10 @@ enum AEImportador {
             for fx in g.efeitos {
                 if let ap = await converter(fx, catalogo: cat, tamanho: tam, inicioDaCamada: inicio) {
                     l.effects.append(ap)
+                    if !fx.look.isEmpty || !fx.lookIgnoradas.isEmpty {
+                        let (fs, av) = await ferramentasDoLook(fx)
+                        l.effects += fs; avisos += av
+                    }
                 } else if !semEquivalente.contains(fx.nome) {
                     semEquivalente.insert(fx.nome)
                 }
