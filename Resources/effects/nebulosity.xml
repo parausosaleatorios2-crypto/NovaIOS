@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nebulosidade: nebulosa, galáxia, nuvem e fumaça volumétricas.
+
+  Mesma ideia do plugin Nebulosity (Irrealix) para o After Effects, mas a conta é nossa: um raio sai da
+  câmera por pixel e atravessa um volume; a densidade em cada passo é ruído 3D em camadas (fBm) com o
+  espaço torcido por outro ruído (domain warp), recortada por uma forma (esfera achatada, disco de
+  galáxia ou camada infinita). A cor vem de uma rampa de três cores pela densidade, com emissão no
+  miolo, e a luz é uma segunda amostra na direção dela (sombra própria). Composição de frente para trás.
+-->
+<effect
+    id="nova.effect.nebulosity"
+    name="Nebulosidade"
+    name-en="Nebulosity"
+    desc="Nebulosa, galáxia, nuvem ou fumaça em volume 3D (raymarching de ruído), com luz, cor por densidade e evolução."
+    desc-en="Volumetric nebulae, galaxies, clouds and smoke (raymarched noise) with lighting, density colouring and evolution."
+    category="procedural"
+    blend="mode"
+    tags="nebulosity,nebulosa,galáxia,volume,raymarching,nuvem,fumaça,espaço,céu">
+
+    <params>
+        <texture id="inputImg" src="content" />
+
+        <selector id="shape" label="Forma" default="0" options="Nuvem esférica|Disco de galáxia|Camada infinita" />
+        <slider id="density" label="Densidade" default="1.2" min="0.0" max="5.0" step="0.01" />
+        <slider id="coverage" label="Recorte" default="0.35" min="0.0" max="1.0" step="0.01" />
+        <slider id="size" label="Tamanho" default="1.0" min="0.2" max="3.0" step="0.01" />
+
+        <!-- ============================= Ruído ============================= -->
+        <slider id="noiseScale" group="Ruído" label="Escala" default="1.6" min="0.2" max="8.0" step="0.01" />
+        <slider id="octaves" group="Ruído" label="Detalhe" default="5" min="1" max="7" step="1" type="integer" />
+        <slider id="warp" group="Ruído" label="Torção" default="0.8" min="0.0" max="3.0" step="0.01" />
+        <slider id="evolution" group="Ruído" label="Evolução" default="0.08" min="0.0" max="1.0" step="0.001" snap="0.0" />
+        <slider id="seed" group="Ruído" label="Semente" default="0" min="0" max="100" step="1" type="integer" />
+
+        <!-- ============================= Câmera ============================ -->
+        <slider id="rotation" group="Câmera" label="Giro" default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" />
+        <slider id="tilt" group="Câmera" label="Inclinação" default="20.0" min="-90.0" max="90.0" step="1.0" type="angle" />
+        <slider id="spin" group="Câmera" label="Rotação no tempo" default="4.0" min="-90.0" max="90.0" step="0.1" snap="0.0" />
+        <slider id="zoom" group="Câmera" label="Distância" default="1.0" min="0.3" max="3.0" step="0.01" />
+        <point id="center" group="Câmera" label="Centro" defaultX="0.5" defaultY="0.5" />
+
+        <!-- ============================== Luz ============================== -->
+        <slider id="lightAngle" group="Luz" label="Ângulo da luz" default="45.0" min="0.0" max="360.0" step="1.0" type="angle" />
+        <slider id="lightIntensity" group="Luz" label="Intensidade" default="1.4" min="0.0" max="5.0" step="0.01" />
+        <slider id="absorption" group="Luz" label="Absorção" default="1.0" min="0.0" max="4.0" step="0.01" />
+        <slider id="emission" group="Luz" label="Brilho do miolo" default="1.2" min="0.0" max="5.0" step="0.01" />
+
+        <!-- ============================== Cor ============================== -->
+        <color id="colorThin" group="Cor" label="Cor da borda" default="#FF1B3A8C" />
+        <color id="colorMid" group="Cor" label="Cor do meio" default="#FFB0307A" />
+        <color id="colorCore" group="Cor" label="Cor do miolo" default="#FFFFC27A" />
+        <slider id="stars" group="Cor" label="Estrelas" default="0.6" min="0.0" max="2.0" step="0.01" />
+        <switch id="overInput" group="Cor" label="Sobre a imagem" default="true" />
+
+        <slider id="quality" group="Qualidade" label="Passos" default="48" min="16" max="96" step="1" type="integer" />
+    </params>
+
+    <presets>
+        <preset id="galaxia" name="🌌 Galáxia" name-en="🌌 Galaxy">
+            <value param="shape" value="1" />
+            <value param="density" value="1.6" />
+            <value param="coverage" value="0.3" />
+            <value param="warp" value="1.4" />
+            <value param="tilt" value="55.0" />
+            <value param="spin" value="8.0" />
+            <value param="colorThin" value="#FF2A4DB8" />
+            <value param="colorMid" value="#FF9A5BD6" />
+            <value param="colorCore" value="#FFFFE6B0" />
+        </preset>
+        <preset id="fumaca" name="💨 Fumaça" name-en="💨 Smoke">
+            <value param="shape" value="2" />
+            <value param="density" value="0.8" />
+            <value param="coverage" value="0.45" />
+            <value param="evolution" value="0.25" />
+            <value param="emission" value="0.0" />
+            <value param="stars" value="0.0" />
+            <value param="colorThin" value="#FF5A5A5A" />
+            <value param="colorMid" value="#FFA0A0A0" />
+            <value param="colorCore" value="#FFE8E8E8" />
+        </preset>
+        <preset id="nebulosaQuente" name="🔥 Nebulosa quente" name-en="🔥 Hot nebula">
+            <value param="density" value="2.0" />
+            <value param="warp" value="1.8" />
+            <value param="colorThin" value="#FF5A0E1E" />
+            <value param="colorMid" value="#FFE0461E" />
+            <value param="colorCore" value="#FFFFE08A" />
+            <value param="emission" value="2.2" />
+        </preset>
+    </presets>
+
+    <shader><![CDATA[
+
+const float PI = 3.14159265;
+
+float hash3(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+/** Ruído de valor 3D com interpolação suave. */
+float ruido3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 s = f * f * (3.0 - 2.0 * f);
+    float a = hash3(i);
+    float b = hash3(i + vec3(1.0, 0.0, 0.0));
+    float c = hash3(i + vec3(0.0, 1.0, 0.0));
+    float d = hash3(i + vec3(1.0, 1.0, 0.0));
+    float e = hash3(i + vec3(0.0, 0.0, 1.0));
+    float g = hash3(i + vec3(1.0, 0.0, 1.0));
+    float h = hash3(i + vec3(0.0, 1.0, 1.0));
+    float k = hash3(i + vec3(1.0, 1.0, 1.0));
+    return mix(mix(mix(a, b, s.x), mix(c, d, s.x), s.y),
+               mix(mix(e, g, s.x), mix(h, k, s.x), s.y), s.z);
+}
+
+float fbm3(vec3 p, int n) {
+    float soma = 0.0;
+    float peso = 0.0;
+    float amp = 1.0;
+    for (int i = 0; i < 7; i++) {
+        if (i >= n) break;
+        soma += ruido3(p) * amp;
+        peso += amp;
+        amp *= 0.5;
+        p = p * 2.03 + vec3(1.7, 9.2, 4.1);
+    }
+    return soma / max(peso, 1e-4);
+}
+
+vec3 girarY(vec3 p, float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+}
+
+vec3 girarX(vec3 p, float a) {
+    float c = cos(a);
+    float s = sin(a);
+    return vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z);
+}
+
+/** Forma que recorta o ruído: 1 dentro, 0 fora, macia na borda. */
+float forma(vec3 p) {
+    int f = int(shape + 0.5);
+    if (f == 1) {
+        float r = length(p.xz);
+        float braco = 0.5 + 0.5 * sin(atan(p.z, p.x) * 2.0 - r * 6.0);
+        float disco = exp(-abs(p.y) * 7.0 / max(size, 0.05)) * smoothstep(size * 1.1, 0.0, r);
+        return disco * mix(0.55, 1.0, braco);
+    }
+    if (f == 2) {
+        return smoothstep(1.0, 0.2, abs(p.y));
+    }
+    return smoothstep(size, size * 0.35, length(p));
+}
+
+float densidade(vec3 p, float t, int n) {
+    vec3 q = p * noiseScale + vec3(seed * 7.13, seed * 3.71, seed * 5.37);
+    vec3 torto = vec3(fbm3(q + vec3(0.0, t, 0.0), 3),
+                      fbm3(q + vec3(5.2, 1.3, t), 3),
+                      fbm3(q + vec3(t, 2.8, 9.1), 3));
+    float v = fbm3(q + (torto - 0.5) * warp * 2.0 + vec3(0.0, 0.0, t * 0.5), n);
+    v = (v - coverage) / max(1.0 - coverage, 1e-3);
+    return max(v, 0.0) * forma(p) * density;
+}
+
+vec3 rampa(float d) {
+    vec3 a = colorThin.rgb;
+    vec3 b = colorMid.rgb;
+    vec3 c = colorCore.rgb;
+    float x = clamp(d, 0.0, 1.0);
+    return x < 0.5 ? mix(a, b, x * 2.0) : mix(b, c, (x - 0.5) * 2.0);
+}
+
+float estrelas(vec2 p) {
+    vec2 g = floor(p);
+    vec2 f = fract(p) - 0.5;
+    float h = hash3(vec3(g, 7.0));
+    vec2 o = vec2(hash3(vec3(g, 1.0)), hash3(vec3(g, 2.0))) - 0.5;
+    float d = length(f - o * 0.7);
+    float liga = step(0.92, h);
+    return liga * smoothstep(0.06, 0.0, d) * (0.5 + 0.5 * hash3(vec3(g, 3.0)));
+}
+
+void main() {
+    vec4 original = texture(inputImg, acScreenNorm);
+
+    vec2 uv = (acScreenNorm - center) * 2.0;
+    uv.x *= acAspect;
+
+    float t = acTime * evolution;
+    int n = clamp(int(octaves + 0.5), 1, 7);
+    int passos = clamp(int(quality + 0.5), 16, 96);
+
+    // Câmera olhando para a origem; o volume gira, a câmera fica.
+    vec3 ro = vec3(0.0, 0.0, -2.6 * zoom);
+    vec3 rd = normalize(vec3(uv, 1.6));
+    float giro = (rotation + spin * acTime) * PI / 180.0;
+    float incl = tilt * PI / 180.0;
+
+    float la = lightAngle * PI / 180.0;
+    vec3 luz = normalize(vec3(cos(la), sin(la), -0.6));
+
+    // Faixa do raio que atravessa a caixa |p| < 1.6.
+    float perto = max(0.0, 2.6 * zoom - 1.6 * size - 0.2);
+    float longe = 2.6 * zoom + 1.6 * size + 0.2;
+    float dt = (longe - perto) / float(passos);
+    // Começo do passo embaralhado por pixel: tira as faixas do raymarching.
+    float s0 = hash3(vec3(acScreenNorm * 913.0, 1.0)) * dt;
+
+    vec3 cor = vec3(0.0);
+    float transm = 1.0;
+    for (int i = 0; i < 96; i++) {
+        if (i >= passos || transm < 0.01) break;
+        float s = perto + s0 + float(i) * dt;
+        vec3 p = girarY(girarX(ro + rd * s, incl), giro);
+        float d = densidade(p, t, n);
+        if (d > 0.002) {
+            // sombra própria: uma amostra na direção da luz
+            vec3 pl = p + girarY(girarX(luz, incl), giro) * 0.18;
+            float dl = densidade(pl, t, max(n - 2, 1));
+            float sombra = exp(-dl * absorption * 2.0);
+            vec3 c = rampa(d * 0.6);
+            vec3 brilho = c * (0.25 + lightIntensity * sombra) + colorCore.rgb * emission * d * d * 0.35;
+            float a = 1.0 - exp(-d * absorption * dt * 3.0);
+            cor += transm * a * brilho;
+            transm *= 1.0 - a;
+        }
+    }
+
+    float alfa = 1.0 - transm;
+    float st = estrelas(acScreenNorm * vec2(acAspect, 1.0) * 160.0) * stars * transm;
+    cor += vec3(st);
+    alfa = max(alfa, min(st, 1.0));
+
+    vec4 neb = vec4(cor, alfa);
+    if (overInput > 0.5) {
+        fragColor = vec4(neb.rgb + original.rgb * (1.0 - neb.a), neb.a + original.a * (1.0 - neb.a));
+    } else {
+        fragColor = neb;
+    }
+}
+    ]]></shader>
+</effect>
