@@ -46,6 +46,10 @@ public struct EditorView: View {
     @State private var previaPreenche = false
     @State private var redoStack: [NovaProject] = []
     @State private var lastSaved: NovaProject?
+    /// Painel aberto embaixo da timeline (efeitos, parametros, transformar…).
+    @State private var painel: PainelAberto?
+    @State private var renomeando = false
+    @State private var nomeNovo = ""
 
     @Environment(\.dismiss) private var dismiss
 
@@ -128,11 +132,11 @@ public struct EditorView: View {
                     TimelineView(composition: comp, time: $time, selected: $selectedLayer,
                                  editLayer: { id, save, change in editLayer(id, save, change) },
                                  editComp: { change in editComp(change) })
-                        .frame(height: 230)
+                        .frame(height: alturaTimeline)
                     }
                 }
 
-                bottomBar
+                areaDeBaixo
             }
             .background(NovaTheme.background)
         }
@@ -150,6 +154,10 @@ public struct EditorView: View {
                 LayerPropertiesSheet(comp: comp, layerID: id, time: time, manifests: manifests,
                                      edit: { id, save, change in editLayer(id, save, change) },
                                      mediaRoot: mediaRoot)
+            case .propriedadesAba(let id, let aba):
+                LayerPropertiesSheet(comp: comp, layerID: id, time: time, manifests: manifests,
+                                     edit: { id, save, change in editLayer(id, save, change) },
+                                     mediaRoot: mediaRoot, abaInicial: aba)
             case .info(let t, let m): InfoSheet(titulo: t, mensagem: m)
             case .agrupar:
                 AgruparSheet(camadas: comp.layers.filter { $0.groupID == nil || $0.groupID == comp.layer(id: selectedLayer ?? UUID())?.groupID },
@@ -179,6 +187,14 @@ public struct EditorView: View {
             guard case .success(let urls) = r, !urls.isEmpty else { return }
             if eraFFX { Task { await aplicarFFX(urls[0]) } }
             else { Task { await importarAudio(urls) } }
+        }
+        .alert("Nome da camada".loc, isPresented: $renomeando) {
+            TextField("Nome".loc, text: $nomeNovo)
+            Button("Cancelar".loc, role: .cancel) {}
+            Button("OK") {
+                let n = nomeNovo.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let id = selectedLayer, !n.isEmpty { editLayer(id, true) { $0.name = n } }
+            }
         }
         .alert("Texto".loc, isPresented: $pedindoTexto) {
             TextField("Digite o texto".loc, text: $novoTexto)
@@ -352,17 +368,15 @@ public struct EditorView: View {
             aviso = "Adicione uma camada antes do efeito.".loc
             return
         }
+        let novo = AppliedEffect(effectID: e.id)
         editComp { c in
             if let i = c.layers.firstIndex(where: { $0.id == id }) {
-                c.layers[i].effects.append(AppliedEffect(effectID: e.id))
+                c.layers[i].effects.append(novo)
             }
         }
         selectedLayer = id
-        // Abre as propriedades para ajustar o efeito na hora.
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            sheet = .propriedades(id)
-        }
+        // Abre os parametros do efeito embaixo, como no APK.
+        painel = PainelAberto(camada: id, tipo: .efeito(novo.id))
     }
 
     private var effectIDs: [String] {
@@ -422,21 +436,50 @@ public struct EditorView: View {
 
     /// Topo do editor do APK: seta de voltar, nome do projeto (ponto rosa com
     /// alteracoes nesta sessao), diamante da Nova Pro e o menu redondo.
+    private var camadaSelecionada: Layer? { selectedLayer.flatMap { comp.layer(id: $0) } }
+
     private var topBar: some View {
         HStack(spacing: 14) {
-            Button { dismiss() } label: {
+            Button {
+                if painelAtual != nil { painel = nil }
+                else if selectedLayer != nil { selectedLayer = nil }
+                else { dismiss() }
+            } label: {
                 Image(systemName: "arrow.left").font(.system(size: 19, weight: .medium))
                     .foregroundStyle(NovaTheme.dim)
                     .frame(width: 32, height: 40)
             }
-            HStack(spacing: 6) {
-                Text(project.name).font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(NovaTheme.text).lineLimit(1)
-                if !undoStack.isEmpty {
-                    Circle().fill(Color(red: 0.94, green: 0.34, blue: 0.43)).frame(width: 5, height: 5)
+            if let l = camadaSelecionada {
+                // Clipe selecionado: nome com lapis, duplicar e apagar (como no APK).
+                Button { nomeNovo = l.name; renomeando = true } label: {
+                    HStack(spacing: 8) {
+                        Text(l.name).font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(NovaTheme.text).lineLimit(1)
+                        Image(systemName: "pencil").font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(NovaTheme.dim)
+                    }
                 }
+                .buttonStyle(.plain)
+                Spacer(minLength: 8)
+                Button { duplicarSelecionada() } label: {
+                    Image(systemName: "square.on.square.dashed").font(.system(size: 19))
+                        .foregroundStyle(NovaTheme.text.opacity(0.85))
+                }
+                Button { excluirSelecionada() } label: {
+                    Image(systemName: "trash").font(.system(size: 19))
+                        .foregroundStyle(NovaTheme.danger)
+                }
+                .padding(.horizontal, 6)
+            } else {
+                HStack(spacing: 6) {
+                    Text(project.name).font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(NovaTheme.text).lineLimit(1)
+                    if !undoStack.isEmpty {
+                        Circle().fill(Color(red: 0.94, green: 0.34, blue: 0.43)).frame(width: 5, height: 5)
+                    }
+                }
+                Spacer(minLength: 8)
             }
-            Spacer(minLength: 8)
             Button {
                 sheet = .info("Nova Pro", "Recursos Pro da Nova (IA, nuvem, marketplace) ficam em Perfil > Conta.".loc)
             } label: {
@@ -584,7 +627,7 @@ public struct EditorView: View {
         }
         await carregarManifestos()
         selectedLayer = id
-        sheet = .propriedades(id)
+        painel = PainelAberto(camada: id, tipo: .efeitos)
     }
 
     /// Preset .ffx do After Effects: os efeitos vao para a camada selecionada.
@@ -607,7 +650,7 @@ public struct EditorView: View {
             var ok = String(format: "%d efeito(s) do preset aplicados em \"%@\".".loc, efeitos.count, l.name)
             if chaves > 0 { ok += " " + String(format: "Animação: %d chaves a partir do cursor.".loc, chaves) }
             aviso = avisos.isEmpty ? ok : ok + "\n\n" + avisos.prefix(8).joined(separator: "\n")
-            if !efeitos.isEmpty { selectedLayer = id; sheet = .propriedades(id) }
+            if !efeitos.isEmpty { selectedLayer = id; painel = PainelAberto(camada: id, tipo: .efeitos) }
         } catch {
             aviso = error.localizedDescription
         }
@@ -640,36 +683,102 @@ public struct EditorView: View {
 
     // MARK: barra de baixo
 
-    /// Ferramentas da barra de baixo, na ordem do enum do APK (s22, lido do
-    /// Compose descompilado): (id, rotulo, icone, precisa de camada).
-    /// As de camada ficam apagadas sem camada selecionada, como no Android.
-    private struct Ferramenta: Identifiable {
-        let id: String, label: String, icon: String, precisaCamada: Bool
+    /// Painel aberto, se for da camada selecionada.
+    private var painelAtual: PainelEditor? {
+        guard let p = painel, p.camada == selectedLayer, comp.layer(id: p.camada) != nil else { return nil }
+        return p.tipo
     }
 
-    private var ferramentas: [Ferramenta] {
-        [
-            .init(id: "camada", label: "Camada", icon: "square.3.layers.3d", precisaCamada: true),
-            .init(id: "animar", label: "Animar", icon: "diamond", precisaCamada: true),
-            .init(id: "efeitos", label: "Efeitos", icon: "wand.and.stars", precisaCamada: true),
-            .init(id: "ia", label: "IA", icon: "sparkles", precisaCamada: false),
-            .init(id: "biblioteca", label: "Biblioteca", icon: "books.vertical", precisaCamada: false),
-            .init(id: "legendas", label: "Legendas", icon: "captions.bubble", precisaCamada: false),
-            .init(id: "link", label: "Link", icon: "link", precisaCamada: false),
-            .init(id: "drive", label: "Drive", icon: "externaldrive", precisaCamada: false),
-            .init(id: "layout", label: "Layout", icon: "rectangle.3.group", precisaCamada: false),
-            .init(id: "removerFundo", label: "Remover BG", icon: "person.crop.rectangle", precisaCamada: true),
-            .init(id: "separar", label: "Separar partes", icon: "square.split.2x2", precisaCamada: true),
-            .init(id: "upscale", label: "Aumentar resolução", icon: "sparkle.magnifyingglass", precisaCamada: true),
-            .init(id: "colorizar", label: "Colorizar", icon: "paintpalette", precisaCamada: true),
-            .init(id: "profundidade", label: "Profundidade (nuvem)", icon: "cube.transparent", precisaCamada: true),
-        ]
+    private var alturaTimeline: CGFloat {
+        if selectedLayer == nil { return 230 }
+        return painelAtual == nil ? 170 : 130
     }
 
-    /// Barra de baixo do editor do APK (x02.c): divisoria, faixa de 76 dp na cor
-    /// de superficie, "+ Adicionar" (quadrado 36 dp, cantos 12, gradiente) e a
-    /// fileira rolavel de ferramentas (icone 24 em caixa 46x34 de cantos 11,
-    /// rotulo 11 sp; realce verde a 18% quando ativa; 28% quando desabilitada).
+    private var editar: LayerEdit { { id, save, change in editLayer(id, save, change) } }
+
+    /// O que fica embaixo da timeline: a barra (nada selecionado), o painel do
+    /// clipe (clipe selecionado) ou o painel aberto a partir dele.
+    @ViewBuilder
+    private var areaDeBaixo: some View {
+        if let l = camadaSelecionada {
+            switch painelAtual {
+            case .some(.efeitos):
+                PainelEfeitos(layer: l, manifests: manifests, edit: editar,
+                              onVoltar: { painel = nil },
+                              onAdicionar: { sheet = .efeitos },
+                              onAbrir: { fx in painel = PainelAberto(camada: l.id, tipo: .efeito(fx)) })
+                    .frame(height: 300)
+            case .some(.efeito(let fx)):
+                PainelParametros(layer: l, fxID: fx,
+                                 manifest: l.effects.first(where: { $0.id == fx }).flatMap { manifests[$0.effectID] },
+                                 time: time, edit: editar,
+                                 onVoltar: { painel = PainelAberto(camada: l.id, tipo: .efeitos) },
+                                 onAbrirCompleto: { sheet = .propriedadesAba(l.id, "efeitos") })
+                    .frame(height: 300)
+            case .some(.transformar):
+                PainelTransformar(layer: l, comp: comp, time: time, edit: editar, onVoltar: { painel = nil })
+                    .frame(height: 300)
+            case .some(.opacidade):
+                PainelOpacidade(layer: l, time: time, edit: editar, onVoltar: { painel = nil })
+                    .frame(height: 300)
+            case .none:
+                PainelClipe(layer: l) { acaoClipe($0, l) }
+            }
+        } else {
+            bottomBar
+        }
+    }
+
+    private func acaoClipe(_ id: String, _ l: Layer) {
+        let dentro = time > l.startTime + 0.01 && time < l.endTime - 0.01
+        switch id {
+        case "restaurar":
+            editLayer(l.id, true) { MediaImporter.fit(&$0, in: comp) }
+        case "aparaInicio":
+            guard dentro else { aviso = "Ponha o cursor dentro do clipe.".loc; return }
+            let t = time
+            editLayer(l.id, true) { c in
+                let d = t - c.startTime
+                c.startTime = t
+                c.duration -= d
+                c.mediaOffset += d * c.speed
+            }
+        case "aparaFim":
+            guard dentro else { aviso = "Ponha o cursor dentro do clipe.".loc; return }
+            let t = time
+            editLayer(l.id, true) { $0.duration = t - $0.startTime }
+        case "dividir":
+            guard dentro else { aviso = "Ponha o cursor dentro do clipe.".loc; return }
+            var b = l
+            b.id = UUID()
+            let d = time - l.startTime
+            b.startTime = time
+            b.duration = l.duration - d
+            b.mediaOffset = l.mediaOffset + d * l.speed
+            editComp { c in
+                if let i = c.layers.firstIndex(where: { $0.id == l.id }) {
+                    c.layers[i].duration = d
+                    c.layers.insert(b, at: i)
+                }
+            }
+            selectedLayer = b.id
+        case "som":
+            editLayer(l.id, true) { $0.muted = !($0.muted ?? false) }
+        case "transformar":
+            painel = PainelAberto(camada: l.id, tipo: .transformar)
+        case "opacidade":
+            painel = PainelAberto(camada: l.id, tipo: .opacidade)
+        case "efeitos":
+            painel = PainelAberto(camada: l.id, tipo: .efeitos)
+        default:
+            // Preencher, Borda e sombra, Editar forma, Mascara, Animar, Velocidade:
+            // o painel completo, ja na aba certa.
+            sheet = .propriedadesAba(l.id, id)
+        }
+    }
+
+    /// Barra de baixo sem nada selecionado, como na captura do APK: Adicionar,
+    /// IA, Biblioteca, Legendas e Layout, de largura igual.
     private var bottomBar: some View {
         VStack(spacing: 0) {
             Rectangle().fill(NovaTheme.line).frame(height: 1)
@@ -692,59 +801,63 @@ public struct EditorView: View {
                         Label("Preset do After Effects (.ffx)".loc, systemImage: "wand.and.rays")
                     }
                 } label: {
-                    VStack(spacing: 3) {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(LinearGradient(colors: [NovaTheme.accent, Color(red: 0, green: 0.78, blue: 0.62)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .opacity(0.9)
-                            .frame(width: 36, height: 36)
-                            .overlay(Image(systemName: "plus").font(.system(size: 18, weight: .bold))
+                    VStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 13)
+                            .fill(NovaTheme.accent)
+                            .frame(width: 54, height: 42)
+                            .overlay(Image(systemName: "plus").font(.system(size: 22, weight: .bold))
                                         .foregroundStyle(Color.black))
-                        Text("Adicionar".loc).font(.system(size: 11)).foregroundStyle(NovaTheme.accent)
+                        Text("Adicionar".loc).font(.system(size: 13, weight: .medium)).foregroundStyle(NovaTheme.accent)
                     }
-                    .frame(width: 70)
+                    .frame(maxWidth: .infinity)
                 }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 0) {
-                        ForEach(ferramentas) { f in
-                            let habilitada = !f.precisaCamada || selectedLayer != nil
-                            FerramentaBotao(label: f.label.loc, icon: f.icon,
-                                            ativa: ferramentaAtiva == f.id, habilitada: habilitada) {
-                                tocarFerramenta(f.id)
-                            }
-                        }
+                Menu {
+                    ForEach(ferramentasIA, id: \.0) { f in
+                        Button { tocarFerramenta(f.0) } label: { Label(f.1.loc, systemImage: f.2) }
                     }
-                    .padding(.trailing, 8)
+                } label: {
+                    itemBarra("sparkles", "IA")
                 }
+                Button { showPicker = true } label: { itemBarra("icloud.and.arrow.down.fill", "Biblioteca") }
+                Button { tocarFerramenta("legendas") } label: { itemBarra("captions.bubble.fill", "Legendas") }
+                Button { sheet = .layout } label: { itemBarra("square.grid.2x2.fill", "Layout") }
             }
-            .frame(height: 76)
+            .buttonStyle(EncolheAoTocar())
+            .frame(height: 84)
             .background(NovaTheme.surface)
         }
     }
 
-    private var ferramentaAtiva: String? {
-        switch sheet {
-        case .efeitos: return "efeitos"
-        case .layout: return "layout"
-        case .propriedades: return "camada"
-        default: return nil
+    private func itemBarra(_ icone: String, _ nome: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icone).font(.system(size: 24))
+                .foregroundStyle(NovaTheme.text.opacity(0.72))
+                .frame(height: 36)
+            Text(nome.loc).font(.system(size: 13)).foregroundStyle(NovaTheme.text.opacity(0.72))
+                .lineLimit(1).minimumScaleFactor(0.8)
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Ferramentas de IA do APK (enum s22), no menu do botao IA.
+    private var ferramentasIA: [(String, String, String)] {
+        [("ia", "Assistente", "sparkles"),
+         ("removerFundo", "Remover BG", "person.crop.rectangle"),
+         ("separar", "Separar partes", "square.split.2x2"),
+         ("upscale", "Aumentar resolução", "sparkle.magnifyingglass"),
+         ("colorizar", "Colorizar", "paintpalette"),
+         ("profundidade", "Profundidade (nuvem)", "cube.transparent"),
+         ("link", "Link", "link"),
+         ("drive", "Drive", "externaldrive")]
     }
 
     private func tocarFerramenta(_ id: String) {
-        switch id {
-        case "camada", "animar":
-            if let s = selectedLayer { sheet = .propriedades(s) }
-        case "efeitos": sheet = .efeitos
-        case "layout": sheet = .layout
-        case "biblioteca": showPicker = true
-        default:
-            let precisaConta = ["ia", "legendas", "removerFundo", "separar", "upscale", "colorizar", "profundidade"]
-            sheet = .info(ferramentas.first { $0.id == id }?.label.loc ?? id,
-                          precisaConta.contains(id)
-                            ? "No Android esta ferramenta roda no servidor da Nova (com a sua conta). Entre em Perfil › Conta para usar.".loc
-                            : "Instale a extensão em Perfil › Extensões.".loc)
-        }
+        let precisaConta = ["ia", "legendas", "removerFundo", "separar", "upscale", "colorizar", "profundidade"]
+        let nome = ferramentasIA.first(where: { $0.0 == id })?.1 ?? (id == "legendas" ? "Legendas" : id)
+        sheet = .info(nome.loc,
+                      precisaConta.contains(id)
+                        ? "No Android esta ferramenta roda no servidor da Nova (com a sua conta). Entre em Perfil › Conta para usar.".loc
+                        : "Instale a extensão em Perfil › Extensões.".loc)
     }
 
     // MARK: janela pequena
@@ -771,12 +884,14 @@ public struct EditorView: View {
 enum EditorSheet: Identifiable {
     case efeitos, layout, exportar, agrupar
     case propriedades(UUID)
+    case propriedadesAba(UUID, String)
     case info(String, String)
     var id: String {
         switch self {
         case .efeitos: return "efeitos"; case .layout: return "layout"; case .agrupar: return "agrupar"
         case .exportar: return "exportar"; case .info(let t, _): return "info-\(t)"
         case .propriedades(let u): return "prop-\(u.uuidString)"
+        case .propriedadesAba(let u, let a): return "prop-\(u.uuidString)-\(a)"
         }
     }
 }

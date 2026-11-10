@@ -133,6 +133,8 @@ struct LayerPropertiesSheet: View {
     let manifests: [String: EffectManifest]
     let edit: LayerEdit
     var mediaRoot: URL? = nil
+    /// Aba aberta ao chegar (os ladrilhos do clipe: "borda", "forma", "animar"…).
+    var abaInicial: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     private var layer: Layer? { comp.layer(id: layerID) }
@@ -236,6 +238,7 @@ struct LayerPropertiesSheet: View {
             } }
         }
         .novaPainel()
+        .onAppear { if aba == nil { aba = abaInicial } }
         .presentationDetents([.fraction(0.45), .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.45)))
         .preferredColorScheme(.dark)
