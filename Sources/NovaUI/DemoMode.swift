@@ -53,6 +53,8 @@ public enum DemoMode {
         texto.transform.anchorPoint = Animated(texto.size! / 2)
         texto.transform.position = Animated(SIMD2(540, 1300))
         texto.duration = 8
+        // O Optical Flares (motor do APK em C) no texto: as capturas mostram o flare de verdade.
+        texto.effects.append(AppliedEffect(effectID: "nova.effect.aeopticalflares"))
 
         c.add(solido); c.add(forma); c.add(texto)
         let p = NovaProject(name: "Demonstração", composition: c)

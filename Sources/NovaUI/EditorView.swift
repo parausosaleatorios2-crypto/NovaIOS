@@ -21,6 +21,8 @@ public struct EditorView: View {
     @State private var project: NovaProject
     @State private var time: Float = 0
     @State private var playing = false
+    /// RAM Preview: os quadros ja montados (a faixa verde da timeline).
+    @StateObject private var cacheDeQuadros = CacheDeQuadros()
     @State private var selectedLayer: UUID?
     @State private var layout: EditorLayout = .nova
     @State private var sheet: EditorSheet?
@@ -131,7 +133,8 @@ public struct EditorView: View {
                     if !previaCheia {
                     TimelineView(composition: comp, time: $time, selected: $selectedLayer,
                                  editLayer: { id, save, change in editLayer(id, save, change) },
-                                 editComp: { change in editComp(change) })
+                                 editComp: { change in editComp(change) },
+                                 emCache: cacheDeQuadros.prontos)
                         .frame(height: alturaTimeline)
                     }
                 }
@@ -421,6 +424,20 @@ public struct EditorView: View {
     private func tocar() async {
         guard playing else { return }
         if time >= comp.duration { time = 0 }
+        // Como o RAM Preview do AE: enquanto falta quadro no cache, toca quadro a quadro
+        // (cada um espera ser montado e entra na faixa verde); com tudo pronto, toca em tempo real.
+        let fps = max(comp.frameRate, 1)
+        let total = max(1, Int((comp.duration * fps).rounded(.up)))
+        var q = CacheDeQuadros.quadro(time, fps: fps)
+        while playing && !Task.isCancelled && !cacheDeQuadros.completo(de: q, ate: total) {
+            time = Float(q) / fps
+            await cacheDeQuadros.esperar(q)
+            q += 1
+            if q >= total {
+                time = comp.duration; playing = false; return
+            }
+        }
+        guard playing, !Task.isCancelled else { return }
         // Som da previa: video e audio da composicao, a partir do cursor.
         var player: AVPlayer?
         if let item = await AudioMux.previewItem(composition: comp, mediaRoot: mediaRoot) {
@@ -540,7 +557,8 @@ public struct EditorView: View {
     private var preview: some View {
         ZStack(alignment: .bottomTrailing) {
             Color(red: 0x10/255, green: 0x11/255, blue: 0x18/255)
-            PreviewSurface(composition: comp, time: time, mediaRoot: mediaRoot, manifests: manifests)
+            PreviewSurface(composition: comp, time: time, mediaRoot: mediaRoot, manifests: manifests,
+                           cache: cacheDeQuadros)
                 .overlay {
                     TransformGizmo(comp: comp, time: time, selected: $selectedLayer,
                                    edit: { id, save, change in editLayer(id, save, change) })

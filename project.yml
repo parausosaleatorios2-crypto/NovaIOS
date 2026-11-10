@@ -32,6 +32,10 @@ settings:
       MTL_ENABLE_DEBUG_INFO: NO
       SWIFT_OPTIMIZATION_LEVEL: "-O"
       SWIFT_COMPILATION_MODE: wholemodule
+      # C (motor do Optical Flares) em -O3 sem fast-math (a conta fica igual) e LTO fino.
+      GCC_OPTIMIZATION_LEVEL: "3"
+      LLVM_LTO: YES_THIN
+      DEAD_CODE_STRIPPING: YES
 
 targets:
   NovaEditor:

@@ -22,6 +22,8 @@ public struct TimelineView: View {
     let editLayer: ((UUID, Bool, (inout Layer) -> Void) -> Void)?
     /// Mudanca na composicao inteira (dividir, duplicar, excluir). Grava.
     let editComp: (((inout Composition) -> Void) -> Void)?
+    /// Quadros no cache da previa: a faixa verde em cima da regua (como no AE).
+    let emCache: Set<Int>
 
     @State private var pixelsPerSecond: CGFloat = 60
     @State private var zoomBase: CGFloat = 60
@@ -50,7 +52,9 @@ public struct TimelineView: View {
 
     public init(composition: Composition, time: Binding<Float>, selected: Binding<UUID?>,
                 editLayer: ((UUID, Bool, (inout Layer) -> Void) -> Void)? = nil,
-                editComp: (((inout Composition) -> Void) -> Void)? = nil) {
+                editComp: (((inout Composition) -> Void) -> Void)? = nil,
+                emCache: Set<Int> = []) {
+        self.emCache = emCache
         self.composition = composition
         _time = time
         _selected = selected
@@ -161,6 +165,15 @@ public struct TimelineView: View {
                     }
                     n += 1
                     tt = Float(n) * sub
+                }
+                // Faixa verde: os quadros que a previa ja tem prontos.
+                let fps = CGFloat(max(composition.frameRate, 1))
+                for f in CacheDeQuadros.faixas(emCache) {
+                    let a = max(nameColumn, nameColumn + x(Float(CGFloat(f.lowerBound) / fps)))
+                    let b = min(size.width, nameColumn + x(Float(CGFloat(f.upperBound + 1) / fps)))
+                    guard b > a else { continue }
+                    ctx.fill(Path(CGRect(x: a, y: 0, width: b - a, height: 3)),
+                             with: .color(Color(red: 0.25, green: 0.85, blue: 0.35)))
                 }
                 let fx = nameColumn + x(composition.duration)
                 if fx >= nameColumn && fx <= size.width {

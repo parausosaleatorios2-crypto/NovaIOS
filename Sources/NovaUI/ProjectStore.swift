@@ -76,19 +76,41 @@ public final class ProjectStore: ObservableObject {
         Self.root.appendingPathComponent(safeName(p.name), isDirectory: true)
     }
 
+    /// Grava fora da thread principal (cada edicao gravava no disco e travava a tela).
+    /// Uma fila so, em ordem; se chegam varias versoes do mesmo projeto, grava a ultima.
+    private static let filaDeGravacao = DispatchQueue(label: "nova.projetos.gravar", qos: .utility)
+    private static let travaPendentes = NSLock()
+    nonisolated(unsafe) private static var pendentes: [UUID: (NovaProject, URL)] = [:]
+
     public func save(_ p: NovaProject) {
         let dir = Self.root.appendingPathComponent(safeName(p.name), isDirectory: true)
-        do {
-            try NovaProjectIO.saveFolder(p, to: dir)
-            if let i = projects.firstIndex(where: { $0.id == p.id }) { projects[i] = p }
-        } catch {
-            lastError = error.localizedDescription
+        if let i = projects.firstIndex(where: { $0.id == p.id }) { projects[i] = p }
+        Self.travaPendentes.lock()
+        let jaNaFila = Self.pendentes[p.id] != nil
+        Self.pendentes[p.id] = (p, dir)
+        Self.travaPendentes.unlock()
+        if jaNaFila { return }
+        Self.filaDeGravacao.async { [weak self] in
+            Self.travaPendentes.lock()
+            let item = Self.pendentes.removeValue(forKey: p.id)
+            Self.travaPendentes.unlock()
+            guard let (proj, pasta) = item else { return }
+            do {
+                try NovaProjectIO.saveFolder(proj, to: pasta)
+            } catch {
+                let m = error.localizedDescription
+                Task { @MainActor in self?.lastError = m }
+            }
         }
     }
 
     public func delete(_ p: NovaProject) {
         let dir = Self.root.appendingPathComponent(safeName(p.name), isDirectory: true)
-        try? FileManager.default.removeItem(at: dir)
+        Self.travaPendentes.lock()
+        Self.pendentes[p.id] = nil
+        Self.travaPendentes.unlock()
+        // Na mesma fila das gravacoes: nada gravado depois recria a pasta apagada.
+        Self.filaDeGravacao.async { try? FileManager.default.removeItem(at: dir) }
         projects.removeAll { $0.id == p.id }
     }
 
