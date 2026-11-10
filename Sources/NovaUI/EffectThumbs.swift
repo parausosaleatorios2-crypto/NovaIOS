@@ -75,19 +75,38 @@ final class EffectThumbs: ObservableObject {
         guard let img = Self.imagemBase(b)?.cgImage else { return nil }
         // reduz para o tamanho da miniatura antes de subir para a GPU
         let w = lado, h = max(1, Int(Double(lado) * Double(img.height) / Double(max(img.width, 1))))
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.interpolationQuality = .high
-        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let pequena = ctx.makeImage(),
-              let t = try? VideoDecoder.makeTexture(from: pequena, device: device) else { return nil }
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ok: Bool = px.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                      bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                                        | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            ctx.interpolationQuality = .high
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        // Como a sonda do CI: float16, leitura, escrita e alvo de desenho (varios
+        // efeitos usam a entrada tambem como "comp" e desenham nela).
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: w, height: h,
+                                                         mipmapped: false)
+        d.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        d.storageMode = .shared
+        guard let t = device.makeTexture(descriptor: d) else { return nil }
+        let meio = px.map { Float16(Float($0) / 255) }
+        meio.withUnsafeBytes { buf in
+            t.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0,
+                      withBytes: buf.baseAddress!, bytesPerRow: w * 8)
+        }
         bases[b] = t
         return t
     }
 
     private func renderizar(_ id: String, base: Base) async -> UIImage? {
-        guard let m = try? await EffectRegistry.shared.manifest(id: id) else { return nil }
+        // So o que passou limpo no teste da GPU do CI (os outros ficam na amostra).
+        guard EffectVerification.statusById[id] == "ok",
+              let m = try? await EffectRegistry.shared.manifest(id: id),
+              m.stage == nil || m.stage == "mblooks" else { return nil }
         do {
             if renderer == nil {
                 renderer = try EffectRenderer()

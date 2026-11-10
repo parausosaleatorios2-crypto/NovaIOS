@@ -210,6 +210,9 @@ jobs:
             xcrun simctl io "$UDID" screenshot "capturas/$(printf %02d $t)s.png"
           done
           xcrun simctl spawn "$UDID" log show --last 2m --predicate 'subsystem == "com.novavision.editor"' > capturas/log.txt 2>&1 || true
+          # Relatorio de falha do app no simulador (se ele fechou sozinho)
+          find ~/Library/Logs/DiagnosticReports -name "NovaEditor*" -mmin -10 -exec cp {} capturas/ \; 2>/dev/null || true
+          xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "NovaEditor" AND (messageType == fault OR messageType == error)' > capturas/erros.txt 2>&1 || true
           ls -la capturas
 
       - uses: actions/upload-artifact@v4
