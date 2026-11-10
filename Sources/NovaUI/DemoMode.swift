@@ -17,8 +17,10 @@
 //
 
 import SwiftUI
+import os
 
 public enum DemoMode {
+    static let log = Logger(subsystem: "com.novavision.editor", category: "Demo")
     public static var ativo: Bool { ProcessInfo.processInfo.environment["NOVA_DEMO"] == "1" }
 
     /// Projeto de teste numa pasta temporaria.

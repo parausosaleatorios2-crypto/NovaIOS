@@ -393,7 +393,14 @@ public struct EditorView: View {
 
     /// Roteiro das capturas do CI (tempos em DemoMode.swift).
     private func roteiroDemo() async {
-        func esperar(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        // Espera que nao some se a tarefa for cancelada (Task.sleep voltava na
+        // hora e o roteiro passava inteiro sem mostrar o navegador).
+        func esperar(_ s: Double) async {
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                DispatchQueue.main.asyncAfter(deadline: .now() + s) { c.resume() }
+            }
+        }
+        DemoMode.log.info("demo: roteiro comecou")
         try? await EffectRegistry.shared.load()
         let todos = await EffectRegistry.shared.all
         let efeito = todos.first { $0.id.lowercased().contains("gaussian") && EffectRenderer.isAvailable("fx_\($0.slug)") }
@@ -401,6 +408,7 @@ public struct EditorView: View {
         time = 1
         await esperar(4); selectedLayer = comp.layers.first?.id          // texto (camada de cima)
         await esperar(2); sheet = .efeitos                              // 6 s
+        DemoMode.log.info("demo: abriu o navegador")
         await esperar(6)                                                 // 12 s: deixa as miniaturas renderizarem e aplica
         if let efeito { aplicarEfeito(efeito); sheet = nil }
         await esperar(5); sheet = nil                                    // 14 s

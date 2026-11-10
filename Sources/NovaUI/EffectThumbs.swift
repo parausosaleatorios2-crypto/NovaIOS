@@ -63,7 +63,9 @@ final class EffectThumbs: ObservableObject {
     private func processar() async {
         while !fila.isEmpty {
             let (id, b) = fila.removeFirst()
-            let img = await renderizar(id, base: b) ?? Self.imagemBase(b)
+            let feita = await renderizar(id, base: b)
+            DemoMode.log.info("miniatura \(id, privacy: .public): \(feita == nil ? "amostra" : "renderizada", privacy: .public)")
+            let img = feita ?? Self.imagemBase(b)
             if let img { cache[chave(id, b)] = img }
             await Task.yield()
         }
