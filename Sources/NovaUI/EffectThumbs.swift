@@ -106,7 +106,9 @@ final class EffectThumbs: ObservableObject {
 
     private func renderizar(_ id: String, base: Base) async -> UIImage? {
         // So o que passou limpo no teste da GPU do CI (os outros ficam na amostra).
-        guard EffectVerification.statusById[id] == "ok",
+        // (sem o efeitos.json — build do simulador das capturas — tenta todos)
+        let status = EffectVerification.statusById
+        guard status.isEmpty || status[id] == "ok",
               let m = try? await EffectRegistry.shared.manifest(id: id),
               m.stage == nil || m.stage == "mblooks" else { return nil }
         do {

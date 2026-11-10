@@ -409,7 +409,8 @@ public struct EditorView: View {
         await esperar(4); selectedLayer = comp.layers.first?.id          // texto (camada de cima)
         await esperar(2); sheet = .efeitos                              // 6 s
         DemoMode.log.info("demo: abriu o navegador")
-        await esperar(6)                                                 // 12 s: deixa as miniaturas renderizarem e aplica
+        await esperar(14)                                                // fica aberto em varias capturas (cada uma leva segundos)
+        DemoMode.log.info("demo: aplica o efeito")
         if let efeito { aplicarEfeito(efeito); sheet = nil }
         await esperar(5); sheet = nil                                    // 14 s
         await esperar(4); sheet = .exportar                              // 18 s
