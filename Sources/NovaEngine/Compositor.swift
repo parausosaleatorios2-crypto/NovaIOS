@@ -323,6 +323,14 @@ public final class Compositor {
                 }
                 continue
             }
+            if m.stage == "glitchify" {
+                do {
+                    tex = try glitchify(fx, m, entrada: tex, time: time, comp: comp, cb: cb, guardar: &guardar)
+                } catch {
+                    lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+                }
+                continue
+            }
             if let st = m.stage, Self.estagiosDeTempo.contains(st) {
                 // Dentro de uma amostra de outro instante o efeito de tempo passa direto
                 // (como no AE, que nao aninha o Wide Time).
@@ -426,6 +434,42 @@ public final class Compositor {
         case .int(let i): return Float(i)
         default: return m.param(id)?.defaultValue.first ?? padrao
         }
+    }
+
+    // MARK: Glitchify (conta na CPU no meio da cadeia)
+
+    private static let ouvinteGlitchify = MTLSharedEventListener(
+        dispatchQueue: DispatchQueue(label: "nova.glitchify", qos: .userInitiated))
+
+    /// Como o PasseDoGlitchify do APK: le a camada em 8 bits, roda `Glitchify.aplicar` e
+    /// devolve. O command buffer para num MTLSharedEvent: a GPU sinaliza 1 depois de
+    /// copiar a entrada, a CPU faz a conta e sinaliza 2, e a GPU continua dali.
+    private func glitchify(_ fx: AppliedEffect, _ m: EffectManifest, entrada: MTLTexture, time: Float,
+                           comp: Composition, cb: MTLCommandBuffer,
+                           guardar: inout [MTLTexture]) throws -> MTLTexture {
+        let w = entrada.width, h = entrada.height
+        let d8 = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: w, height: h,
+                                                          mipmapped: false)
+        d8.usage = [.renderTarget, .shaderRead]
+        d8.storageMode = .shared
+        guard let leitura = device.makeTexture(descriptor: d8),
+              let escrita = device.makeTexture(descriptor: d8),
+              let evento = device.makeSharedEvent() else {
+            throw RenderError.textureAllocFailed(width: w, height: h)
+        }
+        try encodeCopy(entrada, to: leitura, in: cb)
+        let ctl = Glitchify.Controles(valores: fx.values(at: time, manifest: m), largura: w, altura: h)
+        let t = Glitchify.tempoDoAe(Double(time), Double(comp.frameDuration))
+        cb.encodeSignalEvent(evento, value: 1)
+        cb.encodeWaitForEvent(evento, value: 2)
+        evento.notify(Self.ouvinteGlitchify, atValue: 1) { ev, _ in
+            Glitchify.rodar(leitura: leitura, escrita: escrita, controles: ctl, tempo: t)
+            ev.signaledValue = 2
+        }
+        let saida = try pool.obtain(width: w, height: h, format: renderer.workingFormat)
+        guardar.append(saida)
+        try encodeCopy(escrita, to: saida, in: cb)
+        return saida
     }
 
     private func efeitoDeTempo(_ estagio: String, _ m: EffectManifest, _ fx: AppliedEffect, indice: Int,

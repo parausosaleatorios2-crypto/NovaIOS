@@ -110,7 +110,8 @@ final class EffectThumbs: ObservableObject {
         let status = EffectVerification.statusById
         guard status.isEmpty || status[id] == "ok",
               let m = try? await EffectRegistry.shared.manifest(id: id),
-              m.stage == nil || m.stage == "mblooks" else { return nil }
+              m.stage == nil || m.stage == "mblooks" || m.stage == "glitchify" else { return nil }
+        if m.stage == "glitchify" { return glitchifyNaCPU(id, m, base) }
         do {
             if renderer == nil {
                 renderer = try EffectRenderer()
@@ -147,6 +148,29 @@ final class EffectThumbs: ObservableObject {
         } catch {
             return nil
         }
+    }
+
+    /// O Glitchify e conta de CPU: roda direto nos pixels da amostra.
+    private func glitchifyNaCPU(_ id: String, _ m: EffectManifest, _ b: Base) -> UIImage? {
+        guard let img = Self.imagemBase(b)?.cgImage else { return nil }
+        let w = lado, h = max(1, Int(Double(lado) * Double(img.height) / Double(max(img.width, 1))))
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        let ok: Bool = px.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                      bytesPerRow: w * 4, space: cs, bitmapInfo: info) else { return false }
+            ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        let valores = AppliedEffect(effectID: id).values(at: 0.5, manifest: m)
+        let r = Glitchify.aplicarRGBA(px, w, h, Glitchify.Controles(valores: valores, largura: w, altura: h), 0.5)
+        guard let prov = CGDataProvider(data: Data(r) as CFData),
+              let cg = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                               space: cs, bitmapInfo: CGBitmapInfo(rawValue: info), provider: prov, decode: nil,
+                               shouldInterpolate: true, intent: .defaultIntent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     // MARK: recentes
