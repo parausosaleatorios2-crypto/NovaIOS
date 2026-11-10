@@ -433,7 +433,7 @@ struct PainelEfeitos: View {
                 }
                 .background(RoundedRectangle(cornerRadius: 10).fill(CoresPainel.pilula.opacity(0.55)))
             }
-        }
+        })
     }
 }
 
