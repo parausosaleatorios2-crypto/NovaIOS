@@ -722,7 +722,9 @@ public struct EditorView: View {
                                  manifest: l.effects.first(where: { $0.id == fx }).flatMap { manifests[$0.effectID] },
                                  time: time, edit: editar,
                                  onVoltar: { painel = PainelAberto(camada: l.id, tipo: .efeitos) },
-                                 onAbrirCompleto: { sheet = .propriedadesAba(l.id, "efeitos") })
+                                 onAbrirCompleto: { sheet = .propriedadesAba(l.id, "efeitos") },
+                                 manifests: manifests,
+                                 onAbrirEfeito: { f in painel = PainelAberto(camada: l.id, tipo: .efeito(f)) })
                     .frame(height: 300)
             case .some(.transformar):
                 PainelTransformar(layer: l, comp: comp, time: time, edit: editar, onVoltar: { painel = nil })

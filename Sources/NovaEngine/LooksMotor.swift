@@ -36,6 +36,30 @@ public struct LooksPasso {
 public enum LooksFerramentas {
     public static let cabeca = "nova.effect.mblooks"
 
+    /// Ordem do menu "Adicionar ferramenta": a do Looks (Subject, Matte, Lens, Camera, Post).
+    public static let ordem: [String] = [
+        "exposure", "scurve", "liftgammagain", "hslcolors", "huesaturation", "channelmixer", "mojo2",
+        "duotone", "pop", "spotexposure", "lut", "diffusion", "hazeflare", "edgesoftness",
+        "lensvignette", "chromab", "opticaldiffusion", "negbleachbypass", "printbleachbypass", "twostrip",
+    ].map { "nova.effect.mblooks." + $0 }
+
+    /// Nome da ferramenta sem o prefixo "Looks: ".
+    public static func nome(_ id: String, _ doManifesto: String?) -> String {
+        if let n = doManifesto {
+            return n.hasPrefix("Looks: ") ? String(n.dropFirst(7)) : n
+        }
+        let curtos: [String: String] = [
+            "exposure": "Exposure", "scurve": "S Curve", "liftgammagain": "Lift-Gamma-Gain",
+            "hslcolors": "HSL Colors", "huesaturation": "Hue/Saturation", "channelmixer": "Channel Mixer",
+            "mojo2": "Mojo II", "duotone": "Duotone", "pop": "Pop", "spotexposure": "Spot Exposure",
+            "lut": "LUT", "diffusion": "Diffusion", "hazeflare": "Haze/Flare", "edgesoftness": "Edge Softness",
+            "lensvignette": "Lens Vignette", "chromab": "Chromatic Aberration",
+            "opticaldiffusion": "Optical Diffusion", "negbleachbypass": "Neg Bleach Bypass",
+            "printbleachbypass": "Print Bleach Bypass", "twostrip": "2-Strip Process",
+        ]
+        return curtos[String(id.split(separator: ".").last ?? "")] ?? id
+    }
+
     /// manifesto -> (codigo, parametros na ordem do motor). De FerramentasDoLooks.
     public static let porManifesto: [String: (codigo: String, params: [String])] = {
         func cores(_ pre: [String]) -> [String] {

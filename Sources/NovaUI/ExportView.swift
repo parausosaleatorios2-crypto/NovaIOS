@@ -82,6 +82,15 @@ public struct ExportSheet: View {
             }
         }
         .interactiveDismissDisabled(phase == .running)
+        .task {
+            // Capturas do CI: exporta um PNG de verdade (era onde o app fechava).
+            if DemoMode.ativo {
+                formato = .png
+                DemoMode.log.info("demo: exporta PNG")
+                await runPNG()
+                DemoMode.log.info("demo: PNG \(String(describing: phase), privacy: .public)")
+            }
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -226,12 +235,19 @@ public struct ExportSheet: View {
         try c.encodeCopy(frame, to: target, in: cb)
         cb.commit(); cb.waitUntilCompleted()
         let w = target.width, h = target.height
-        var bytes = [UInt8](repeating: 0, count: w * h * 4)
-        target.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
-        let info = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
-        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: info),
-              let img = ctx.makeImage() else { throw RenderError.encoderFailed("imagem do quadro") }
+        // Os bytes vao num Data que o CGImage segura (antes o CGContext recebia um
+        // ponteiro temporario do array, que deixa de valer depois da chamada).
+        var dados = Data(count: w * h * 4)
+        dados.withUnsafeMutableBytes { buf in
+            target.getBytes(buf.baseAddress!, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        }
+        let info = CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue
+                                  | CGImageAlphaInfo.premultipliedFirst.rawValue)
+        guard let prov = CGDataProvider(data: dados as CFData),
+              let img = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: info, provider: prov,
+                                decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { throw RenderError.encoderFailed("imagem do quadro") }
         return img
     }
 
@@ -246,7 +262,7 @@ public struct ExportSheet: View {
             let (c, target) = try pipeline(width: w, height: h)
             let fps: Float = 15
             let n = max(1, Int(composition.duration * fps))
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(composition.name).gif")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(nomeSeguro).gif")
             try? FileManager.default.removeItem(at: url)
             guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, n, nil) else {
                 throw MediaError.writerFailed("GIF")
@@ -267,13 +283,18 @@ public struct ExportSheet: View {
         }
     }
 
+    private var nomeSeguro: String {
+        let n = composition.name.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>")).joined(separator: "-")
+        return n.isEmpty ? "NovaEditor" : n
+    }
+
     @MainActor
     private func runPNG() async {
         phase = .running; progress = 0
         do {
             let (c, target) = try pipeline(width: composition.width, height: composition.height)
             let img = try await image(c, target, at: time)
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(composition.name).png")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(nomeSeguro).png")
             try? FileManager.default.removeItem(at: url)
             guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
             else { throw MediaError.writerFailed("PNG") }

@@ -447,6 +447,9 @@ struct PainelParametros: View {
     let edit: LayerEdit
     let onVoltar: () -> Void
     let onAbrirCompleto: () -> Void
+    /// Para a cabeca do Magic Bullet Looks: nomes das ferramentas e abrir uma delas.
+    var manifests: [String: EffectManifest] = [:]
+    var onAbrirEfeito: ((UUID) -> Void)? = nil
 
     @State private var selecionado: String?
 
@@ -503,12 +506,85 @@ struct PainelParametros: View {
                         }
                         linha(i, fx, p)
                     }
+                    if fx.effectID == LooksFerramentas.cabeca {
+                        ferramentasDoLook(i)
+                    }
                 } else {
                     ProgressView().tint(NovaTheme.accent).frame(maxWidth: .infinity).padding(.top, 20)
                 }
             })
         } else {
             Color.clear.onAppear { onVoltar() }
+        }
+    }
+
+    // MARK: Magic Bullet Looks
+
+    /// As ferramentas logo depois da cabeca formam o Look (como no AE).
+    private func cadeiaDoLook(_ i: Int) -> Range<Int> {
+        var j = i + 1
+        while j < layer.effects.count, LooksFerramentas.porManifesto[layer.effects[j].effectID] != nil {
+            j += 1
+        }
+        return (i + 1)..<j
+    }
+
+    @ViewBuilder
+    private func ferramentasDoLook(_ i: Int) -> some View {
+        let faixa = cadeiaDoLook(i)
+        CabecalhoGrupo(texto: "Ferramentas do Look".loc)
+        if faixa.isEmpty {
+            Text("Sem ferramentas o Strength não muda nada. Adicione uma abaixo.".loc)
+                .font(.system(size: 12)).foregroundStyle(NovaTheme.dim2)
+                .padding(.horizontal, 4)
+        }
+        ForEach(Array(faixa), id: \.self) { k in
+            let t = layer.effects[k]
+            HStack(spacing: 6) {
+                Button {
+                    edit(layer.id, true) { $0.effects[k].enabled.toggle() }
+                } label: {
+                    Image(systemName: t.enabled ? "eye.fill" : "eye.slash")
+                        .font(.system(size: 15))
+                        .foregroundStyle(t.enabled ? NovaTheme.accent : NovaTheme.dim2)
+                        .frame(width: 40, height: 44)
+                }.buttonStyle(.plain)
+                Button { onAbrirEfeito?(t.id) } label: {
+                    HStack {
+                        Text(LooksFerramentas.nome(t.effectID, manifests[t.effectID]?.name))
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(t.enabled ? NovaTheme.text : NovaTheme.dim)
+                        Spacer()
+                        Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                            .foregroundStyle(NovaTheme.dim2)
+                    }.padding(.horizontal, 10).frame(height: 44)
+                }.buttonStyle(.plain)
+                Button {
+                    edit(layer.id, true) { $0.effects.remove(at: k) }
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(NovaTheme.dim).frame(width: 40, height: 44)
+                }.buttonStyle(.plain)
+            }
+            .background(RoundedRectangle(cornerRadius: 9).fill(CoresPainel.pilula.opacity(0.55)))
+        }
+        Menu {
+            ForEach(LooksFerramentas.ordem, id: \.self) { id in
+                Button(LooksFerramentas.nome(id, manifests[id]?.name)) {
+                    edit(layer.id, true) { l in
+                        let fim = min(faixa.upperBound, l.effects.count)
+                        l.effects.insert(AppliedEffect(effectID: id), at: fim)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus").font(.system(size: 14, weight: .bold))
+                Text("Adicionar ferramenta".loc).font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(Color.black)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(RoundedRectangle(cornerRadius: 10).fill(NovaTheme.accent))
         }
     }
 
