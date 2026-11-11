@@ -866,6 +866,22 @@ public struct EditorView: View {
             var mudou = false
             editComp { mudou = $0.mover(l.id, o) }
             if !mudou { aviso = (o == .frente || o == .subir ? "Já é a camada da frente." : "Já é a camada de trás.").loc }
+        case let v where v.hasPrefix("wiggle:"):
+            // wiggle:<prop>:<liga|freq|amp>:<numero>
+            let partes = v.split(separator: ":").map(String.init)
+            guard partes.count == 4, let n = Float(partes[3]) else { return }
+            let chave = partes[1]
+            editLayer(l.id, true) { c in
+                var d = c.transform.wiggles ?? [:]
+                var w = d[chave] ?? WiggleAE(freq: 2, amp: partes[2] == "liga" ? n : 20)
+                switch partes[2] {
+                case "liga": w.ligado = d[chave] == nil ? true : !w.ligado
+                case "freq": w.freq = n; w.ligado = true
+                default: w.amp = n; w.ligado = true
+                }
+                d[chave] = w
+                c.transform.wiggles = d
+            }
         case "3d":
             editLayer(l.id, true) { $0.is3D.toggle() }
             aviso = (comp.layer(id: l.id)?.is3D == true ? "Camada 3D: Posição Z e Rotação X/Y com perspectiva." : "Camada 2D.").loc

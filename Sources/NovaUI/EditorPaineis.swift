@@ -316,6 +316,7 @@ struct PainelClipe: View {
                 mini("arrow.up.square", "subir", "Subir uma camada")
                 mini("arrow.down.square", "descer", "Descer uma camada")
                 mini("square.3.layers.3d.bottom.filled", "tras", "Mandar para trás")
+                wiggle
                 Button { acao("3d") } label: {
                     Text("3D").font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(layer.is3D ? Color.black : NovaTheme.text.opacity(0.85))
@@ -369,6 +370,40 @@ struct PainelClipe: View {
                 .background(RoundedRectangle(cornerRadius: 10).fill(CoresPainel.ladrilho))
         }
         .accessibilityLabel(pai.map { "Vinculada a ".loc + $0.name } ?? "Vincular a um pai".loc)
+    }
+
+    /// wiggle(freq, amp) do After Effects em cada propriedade (liga, freq e amp).
+    private var wiggle: some View {
+        let ws = layer.transform.wiggles ?? [:]
+        let props: [(String, String, Float)] = [("posicao", "Posição", 50), ("escala", "Escala", 10),
+            ("rotacao", "Rotação", 15), ("opacidade", "Opacidade", 30), ("posicaoZ", "Posição Z", 100)]
+        return Menu {
+            ForEach(props, id: \.0) { p in
+                let w = ws[p.0]
+                Menu {
+                    Button(w?.ligado == true ? "Desligar".loc : "Ligar".loc) { acao("wiggle:\(p.0):liga:\(p.2)") }
+                    Menu("Frequência (por segundo)".loc) {
+                        ForEach([0.5, 1, 2, 3, 5, 8, 12], id: \.self) { n in
+                            Button(String(format: "%g", n)) { acao("wiggle:\(p.0):freq:\(n)") }
+                        }
+                    }
+                    Menu("Amplitude".loc) {
+                        ForEach([2, 5, 10, 20, 50, 100, 200, 400], id: \.self) { n in
+                            Button(String(format: "%g", n)) { acao("wiggle:\(p.0):amp:\(n)") }
+                        }
+                    }
+                } label: {
+                    Label(w?.ligado == true ? "\(p.1.loc): wiggle(\(formatarValor(w!.freq)), \(formatarValor(w!.amp)))" : p.1.loc,
+                          systemImage: w?.ligado == true ? "checkmark" : "waveform.path")
+                }
+            }
+        } label: {
+            Image(systemName: "waveform.path").font(.system(size: 19))
+                .foregroundStyle(ws.values.contains { $0.ligado } ? NovaTheme.accent : NovaTheme.text.opacity(0.85))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(RoundedRectangle(cornerRadius: 10).fill(CoresPainel.ladrilho))
+        }
+        .accessibilityLabel("Wiggle".loc)
     }
 
     /// Grupo (como no Blurrr): abrir, pre-renderizar e desagrupar.
@@ -993,10 +1028,6 @@ struct PainelTransformar: View {
                 linhaAE("Rotação", [("rz", 0.5)])
             }
             linhaAE("Opacidade", [("op", 0.5)], sufixo: "%")
-            CabecalhoGrupo(texto: "Wiggle (como no After Effects)")
-            ForEach([("posicao", "Posição", Float(50)), ("escala", "Escala", 10), ("rotacao", "Rotação", 15),
-                     ("opacidade", "Opacidade", 30)] + (layer.is3D ? [("posicaoZ", "Posição Z", 100)] : []),
-                    id: \.0) { w in linhaWiggle(w.0, w.1, ampPadrao: w.2) }
         })
         .alert("Valor".loc, isPresented: Binding(get: { editando != nil }, set: { if !$0 { editando = nil } })) {
             TextField("0", text: $texto).keyboardType(.numbersAndPunctuation)
@@ -1010,53 +1041,6 @@ struct PainelTransformar: View {
     }
 
     private func prop(_ id: String) -> Prop? { itens.first { $0.0 == id }?.3 }
-
-    /// wiggle(freq, amp): liga/desliga e os dois numeros (toque para digitar).
-    @ViewBuilder
-    private func linhaWiggle(_ chave: String, _ nome: String, ampPadrao: Float) -> some View {
-        let w = layer.transform.wiggles?[chave]
-        let ligado = w?.ligado == true
-        HStack(spacing: 8) {
-            Button {
-                edit(layer.id, true) { l in
-                    var d = l.transform.wiggles ?? [:]
-                    if var x = d[chave] { x.ligado.toggle(); d[chave] = x }
-                    else { d[chave] = WiggleAE(freq: 2, amp: ampPadrao) }
-                    l.transform.wiggles = d
-                }
-            } label: {
-                Image(systemName: ligado ? "waveform.path" : "waveform.path.badge.plus")
-                    .foregroundStyle(ligado ? NovaTheme.accent : NovaTheme.dim)
-                    .frame(width: 30, height: 34)
-            }.buttonStyle(.plain)
-            Text(nome.loc).font(.system(size: 13)).foregroundStyle(NovaTheme.text).frame(width: 82, alignment: .leading)
-            if let w, ligado {
-                campoWiggle(chave, "freq", w.freq) { $0.freq = $1 }
-                campoWiggle(chave, "amp", w.amp) { $0.amp = $1 }
-            } else {
-                Text("wiggle(freq, amp)").font(.system(size: 11, design: .monospaced)).foregroundStyle(NovaTheme.dim2)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func campoWiggle(_ chave: String, _ rotulo: String, _ v: Float,
-                             _ muda: @escaping (inout WiggleAE, Float) -> Void) -> some View {
-        Menu {
-            ForEach(rotulo == "freq" ? [0.5, 1, 2, 3, 5, 8, 12] : [2, 5, 10, 20, 50, 100, 200], id: \.self) { n in
-                Button(String(format: "%g", n)) {
-                    edit(layer.id, true) { l in
-                        if var x = l.transform.wiggles?[chave] { muda(&x, Float(n)); l.transform.wiggles?[chave] = x }
-                    }
-                }
-            }
-        } label: {
-            Text("\(rotulo) \(formatarValor(v))").font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(red: 0.35, green: 0.6, blue: 1))
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 6).fill(CoresPainel.pilula))
-        }
-    }
 
     /// Escala ligada (a corrente do AE): mudar X leva o Y na mesma proporcao.
     private func aplicar(_ id: String, _ p: Prop, _ v: Float, _ g: Bool) {
