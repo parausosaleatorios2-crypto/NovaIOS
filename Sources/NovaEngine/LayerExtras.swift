@@ -21,6 +21,7 @@ import CoreText
 import CoreImage
 import ImageIO
 import simd
+import UIKit
 
 // MARK: - Mascara
 
@@ -111,6 +112,9 @@ public enum TextAlign: String, Codable, Sendable, CaseIterable {
 /// (AnimadorDeTexto / SeletorDeFaixa). `progress` vai de 0 a 1 ao longo de `duration`.
 public enum TextAnimationPreset: String, Codable, Sendable, CaseIterable {
     case none, typewriter, fadeLetters, riseLetters, scaleLetters, fadeWords, riseWords
+    // Animacoes no estilo do Animation Composer (por letra, palavra ou linha)
+    case dropLetters, slideLeft, slideRight, popBounce, elastic, spinLetters, flipLetters
+    case zoomOut, trackingIn, randomFade, centerOut, swingLetters, shakeIn, riseLines, typewriterCursor
     public var label: String {
         switch self {
         case .none: return "Nenhuma"
@@ -120,6 +124,37 @@ public enum TextAnimationPreset: String, Codable, Sendable, CaseIterable {
         case .scaleLetters: return "Crescer por letra"
         case .fadeWords: return "Aparecer por palavra"
         case .riseWords: return "Subir por palavra"
+        case .dropLetters: return "Cair por letra"
+        case .slideLeft: return "Deslizar da direita"
+        case .slideRight: return "Deslizar da esquerda"
+        case .popBounce: return "Pop com quique"
+        case .elastic: return "Elástico"
+        case .spinLetters: return "Girar por letra"
+        case .flipLetters: return "Virar por letra"
+        case .zoomOut: return "Zoom (de grande)"
+        case .trackingIn: return "Espaçamento fechando"
+        case .randomFade: return "Aparecer embaralhado"
+        case .centerOut: return "Do centro para fora"
+        case .swingLetters: return "Balançar por letra"
+        case .shakeIn: return "Tremer e parar"
+        case .riseLines: return "Subir por linha"
+        case .typewriterCursor: return "Digitando com cursor"
+        }
+    }
+}
+
+/// Animacoes em laco do texto (rodam o tempo todo, depois da entrada).
+public enum TextLoopPreset: String, Codable, Sendable, CaseIterable {
+    case none, wave, jitter, float, flicker, pulse, rainbowWave
+    public var label: String {
+        switch self {
+        case .none: return "Nenhum"
+        case .wave: return "Onda"
+        case .jitter: return "Tremer"
+        case .float: return "Flutuar"
+        case .flicker: return "Piscar"
+        case .pulse: return "Pulsar"
+        case .rainbowWave: return "Onda de escala"
         }
     }
 }
@@ -137,6 +172,13 @@ public struct TextStyle: Codable, Sendable, Equatable {
     public var animation: TextAnimationPreset = .none
     /// Duracao da animacao de entrada, em segundos a partir do inicio da camada.
     public var animationDuration: Float = 1.2
+    /// Saida (a entrada tocada ao contrario no fim da camada), laco e velocidade do laco.
+    public var animationOut: TextAnimationPreset?
+    public var animationOutDuration: Float?
+    public var loop: TextLoopPreset?
+    public var loopSpeed: Float?
+    /// Eixos da fonte variavel (id do eixo em texto -> valor), ex. "2003265652" (wght) -> 700.
+    public var variation: [String: Float]?
     public init() {}
 }
 
@@ -171,6 +213,79 @@ public enum FontCatalog {
             }
         }
         bundled = Array(Set(names)).sorted()
+        registerInstalled()
+    }
+
+    /// Fontes que o usuario instalou (Documents/Fonts).
+    nonisolated(unsafe) public private(set) static var installed: [String] = []
+
+    public static var pastaInstaladas: URL {
+        let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Fonts")
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    private static func nomes(_ url: URL) -> [String] {
+        guard let descs = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] else { return [] }
+        return descs.compactMap { CTFontDescriptorCopyAttribute($0, kCTFontNameAttribute) as? String }
+    }
+
+    public static func registerInstalled() {
+        guard let fs = try? FileManager.default.contentsOfDirectory(at: pastaInstaladas, includingPropertiesForKeys: nil) else { return }
+        var n: [String] = []
+        for u in fs where ["ttf", "otf", "ttc"].contains(u.pathExtension.lowercased()) {
+            CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil)
+            n += nomes(u)
+        }
+        installed = Array(Set(n)).sorted()
+    }
+
+    /// Copia o arquivo para Documents/Fonts, registra e devolve os nomes novos.
+    @discardableResult
+    public static func install(_ url: URL) -> [String] {
+        let ok = url.startAccessingSecurityScopedResource()
+        defer { if ok { url.stopAccessingSecurityScopedResource() } }
+        let dest = pastaInstaladas.appendingPathComponent(url.lastPathComponent)
+        try? FileManager.default.removeItem(at: dest)
+        guard (try? FileManager.default.copyItem(at: url, to: dest)) != nil else { return [] }
+        CTFontManagerRegisterFontsForURL(dest as CFURL, .process, nil)
+        let n = nomes(dest)
+        installed = Array(Set(installed + n)).sorted()
+        return n
+    }
+
+    public struct Eixo: Hashable, Sendable {
+        public let id: String, nome: String
+        public let minimo: Float, maximo: Float, padrao: Float
+    }
+
+    /// Eixos de variacao da fonte (vazio se nao for variavel).
+    public static func eixos(_ name: String?) -> [Eixo] {
+        guard let name else { return [] }
+        let f = CTFontCreateWithName(name as CFString, 24, nil)
+        guard let arr = CTFontCopyVariationAxes(f) as? [[CFString: Any]] else { return [] }
+        return arr.compactMap { d in
+            guard let id = d[kCTFontVariationAxisIdentifierKey] as? NSNumber,
+                  let mn = d[kCTFontVariationAxisMinimumValueKey] as? NSNumber,
+                  let mx = d[kCTFontVariationAxisMaximumValueKey] as? NSNumber else { return nil }
+            let df = (d[kCTFontVariationAxisDefaultValueKey] as? NSNumber)?.floatValue ?? mn.floatValue
+            var nome = d[kCTFontVariationAxisNameKey] as? String ?? ""
+            if nome.isEmpty {
+                let v = id.uint32Value
+                nome = String(bytes: [24, 16, 8, 0].map { UInt8((v >> $0) & 0xFF) }, encoding: .ascii) ?? "\(v)"
+            }
+            return Eixo(id: id.stringValue, nome: nome, minimo: mn.floatValue, maximo: mx.floatValue, padrao: df)
+        }
+    }
+
+    /// A fonte com os eixos aplicados.
+    public static func aplicar(_ font: UIFont, _ v: [String: Float]?) -> UIFont {
+        guard let v, !v.isEmpty else { return font }
+        var m: [NSNumber: NSNumber] = [:]
+        for (k, x) in v { if let i = UInt32(k) { m[NSNumber(value: i)] = NSNumber(value: x) } }
+        let d = CTFontDescriptorCreateCopyWithAttributes(font.fontDescriptor as CTFontDescriptor,
+                                                          [kCTFontVariationAttribute: m] as CFDictionary)
+        return CTFontCreateWithFontDescriptor(d, font.pointSize, nil) as UIFont
     }
 }
 

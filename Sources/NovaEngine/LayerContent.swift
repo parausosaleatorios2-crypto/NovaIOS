@@ -139,21 +139,33 @@ public final class MediaContentProvider: LayerContentProvider {
         let size = CGFloat(layer.fontSize ?? 96)
         let color = layer.textColor ?? SIMD4(1, 1, 1, 1)
         let style = layer.textStyle ?? TextStyle()
-        // Animacao de entrada: progresso pelo tempo desde o inicio da camada.
+        // Entrada, saida e laco: progresso pelo tempo desde o inicio da camada.
+        let elapsed = (mediaTime - layer.mediaOffset) / max(layer.speed, 0.01)
+        var anim = style
+        var prog: Float = 1
+        var tempo: Float = -1
         if style.animation != .none {
-            let elapsed = (mediaTime - layer.mediaOffset) / max(layer.speed, 0.01)
-            let prog = min(1, max(0, elapsed / max(style.animationDuration, 0.05)))
-            if prog < 1 {
-                let q = (prog * 120).rounded() / 120
-                let key = "\(text)|\(size)|\(color)|\(layer.fontName ?? "")|\(style)|\(q)"
-                lock.lock(); let cached = animatedText; lock.unlock()
-                if let cached, cached.key == key { return cached.tex }
-                guard let cg = Self.renderText(text, fontName: layer.fontName, size: size, color: color,
-                                               style: style, progress: q) else { return nil }
-                let tex = try VideoDecoder.makeTexture(from: cg, device: device)
-                lock.lock(); animatedText = (key, tex); lock.unlock()
-                return tex
-            }
+            prog = min(1, max(0, elapsed / max(style.animationDuration, 0.05)))
+        }
+        if prog >= 1, let saida = style.animationOut, saida != .none {
+            let resta = (layer.duration - elapsed) / max(style.animationOutDuration ?? style.animationDuration, 0.05)
+            if resta < 1 { anim.animation = saida; prog = min(1, max(0, resta)) }
+        }
+        if prog >= 1, let lp = style.loop, lp != .none {
+            tempo = elapsed * (style.loopSpeed ?? 1)
+            anim.animation = .none
+        }
+        if prog < 1 || tempo >= 0 {
+            let q = (prog * 120).rounded() / 120
+            let tq = tempo >= 0 ? (tempo * 30).rounded() / 30 : -1
+            let key = "\(text)|\(size)|\(color)|\(layer.fontName ?? "")|\(anim)|\(q)|\(tq)"
+            lock.lock(); let cached = animatedText; lock.unlock()
+            if let cached, cached.key == key { return cached.tex }
+            guard let cg = Self.renderText(text, fontName: layer.fontName, size: size, color: color,
+                                           style: anim, progress: q, tempo: tq) else { return nil }
+            let tex = try VideoDecoder.makeTexture(from: cg, device: device)
+            lock.lock(); animatedText = (key, tex); lock.unlock()
+            return tex
         }
         let key = "\(text)|\(size)|\(color)|\(layer.fontName ?? "")|\(style)"
         lock.lock(); let cached = texts[key]; lock.unlock()
@@ -254,7 +266,7 @@ public final class MediaContentProvider: LayerContentProvider {
         }
         para.lineSpacing = CGFloat(style.lineSpacing)
         var a: [NSAttributedString.Key: Any] = [
-            .font: font(fontName, size), .foregroundColor: uiColor(color), .paragraphStyle: para,
+            .font: FontCatalog.aplicar(font(fontName, size), style.variation), .foregroundColor: uiColor(color), .paragraphStyle: para,
             .kern: CGFloat(style.letterSpacing)
         ]
         if style.strokeWidth > 0 {
@@ -274,7 +286,7 @@ public final class MediaContentProvider: LayerContentProvider {
 
     static func renderText(_ text: String, fontName: String?, size: CGFloat,
                            color: SIMD4<Float>, style: TextStyle = TextStyle(),
-                           progress: Float = 1) -> CGImage? {
+                           progress: Float = 1, tempo: Float = -1) -> CGImage? {
         let attr = attributed(text, fontName: fontName, size: size, color: color, style: style)
         let box = measureText(text, fontName: fontName, size: size, style: style)
         let fmt = UIGraphicsImageRendererFormat.default()
@@ -285,10 +297,11 @@ public final class MediaContentProvider: LayerContentProvider {
                                                 context: nil).width) / 2
         let rect = CGRect(x: pad, y: pad, width: box.width - pad * 2, height: box.height - pad * 2)
         let img = UIGraphicsImageRenderer(size: box, format: fmt).image { rc in
-            if style.animation == .none || progress >= 1 {
+            if (style.animation == .none || progress >= 1) && tempo < 0 {
                 attr.draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
             } else {
-                drawAnimated(attr, in: rect, box: box, ctx: rc.cgContext, style: style, progress: progress)
+                drawAnimated(attr, in: rect, box: box, ctx: rc.cgContext, style: style,
+                             progress: tempo >= 0 ? 1 : progress, tempo: tempo)
             }
         }
         return img.cgImage
@@ -297,7 +310,7 @@ public final class MediaContentProvider: LayerContentProvider {
     /// Desenha letra a letra (ou palavra a palavra) com a animacao de entrada.
     /// Cada unidade entra numa janela que se sobrepoe as vizinhas.
     static func drawAnimated(_ attr: NSAttributedString, in rect: CGRect, box: CGSize,
-                             ctx: CGContext, style: TextStyle, progress: Float) {
+                             ctx: CGContext, style: TextStyle, progress: Float, tempo: Float = -1) {
         let ns = attr.string as NSString
         // indice de palavra de cada caractere (UTF-16)
         var wordOf = [Int](repeating: 0, count: ns.length + 1)
@@ -309,12 +322,37 @@ public final class MediaContentProvider: LayerContentProvider {
             inWord = !space
             wordOf[i] = max(0, w - 1)
         }
+        // linha de cada caractere (para "Subir por linha")
+        var lineOf = [Int](repeating: 0, count: ns.length + 1)
+        var ln = 0
+        for i in 0..<ns.length { lineOf[i] = ln; if ns.character(at: i) == 10 { ln += 1 } }
         let byWord = style.animation == .fadeWords || style.animation == .riseWords
-        let units = max(1, byWord ? w : ns.length)
-        let overlap: Float = style.animation == .typewriter ? 0.001 : 3
+        let byLine = style.animation == .riseLines
+        let units = max(1, byLine ? ln + 1 : (byWord ? w : ns.length))
+        let instant = style.animation == .typewriter || style.animation == .typewriterCursor
+        let overlap: Float = instant ? 0.001 : 3
+        // ordem das letras: embaralhada (randomFade) ou do centro para fora (centerOut)
+        var ordem = Array(0..<units)
+        if style.animation == .randomFade {
+            var g: UInt64 = 0x9E3779B97F4A7C15
+            for i in stride(from: units - 1, to: 0, by: -1) {
+                g = g &* 6364136223846793005 &+ 1442695040888963407
+                ordem.swapAt(i, Int(g >> 33) % (i + 1))
+            }
+        } else if style.animation == .centerOut {
+            let c = Float(units - 1) / 2
+            let porDist = (0..<units).sorted { abs(Float($0) - c) < abs(Float($1) - c) }
+            for (k, u) in porDist.enumerated() { ordem[u] = k }
+        }
         func local(_ idx: Int) -> Float {
             let span = Float(units) + overlap
-            return min(1, max(0, (progress * span - Float(idx)) / max(overlap, 0.001)))
+            let k = Float(ordem[min(max(idx, 0), units - 1)])
+            return min(1, max(0, (progress * span - k) / max(overlap, 0.001)))
+        }
+        func ruido(_ i: Int, _ s: Int) -> CGFloat {
+            var h = UInt64(truncatingIfNeeded: i &* 73856093 ^ s &* 19349663)
+            h = (h ^ (h >> 13)) &* 0x5bd1e995
+            return CGFloat(h % 1000) / 500 - 1
         }
 
         // CoreText trabalha com origem embaixo: vira o contexto.
@@ -346,26 +384,59 @@ public final class MediaContentProvider: LayerContentProvider {
                     ?? CGColor(gray: 1, alpha: 1)
                 for g in 0..<n {
                     let ci = Int(idx[g])
-                    let u = byWord ? wordOf[min(ci, wordOf.count - 1)] : ci
+                    let u = byLine ? lineOf[min(ci, lineOf.count - 1)] : (byWord ? wordOf[min(ci, wordOf.count - 1)] : ci)
                     let p = local(u)
                     if p <= 0 { continue }
-                    var alpha: CGFloat = 1, dy: CGFloat = 0, sc: CGFloat = 1
+                    var alpha: CGFloat = 1, dy: CGFloat = 0, dx: CGFloat = 0, sc: CGFloat = 1, scx: CGFloat = 1, rot: CGFloat = 0
+                    let fsz = CTFontGetSize(ctFont)
+                    let pf = CGFloat(p)
                     let e = CGFloat(1 - pow(1 - p, 3))   // saida suave
+                    // quique (passa de 1 e volta) e elastico (oscila e assenta)
+                    let quique = 1 + 2.70158 * pow(pf - 1, 3) + 1.70158 * pow(pf - 1, 2)
+                    let elast = pf >= 1 ? 1 : pow(2, -10 * pf) * sin((pf * 10 - 0.75) * (2 * .pi / 3)) + 1
                     switch style.animation {
-                    case .typewriter: alpha = p > 0 ? 1 : 0
-                    case .fadeLetters, .fadeWords: alpha = e
-                    case .riseLetters, .riseWords: alpha = e; dy = (1 - e) * CTFontGetSize(ctFont) * 0.6
+                    case .typewriter, .typewriterCursor: alpha = 1
+                    case .fadeLetters, .fadeWords, .randomFade, .centerOut: alpha = e
+                    case .riseLetters, .riseWords, .riseLines: alpha = e; dy = (1 - e) * fsz * 0.6
                     case .scaleLetters: alpha = e; sc = max(0.01, e)
+                    case .dropLetters: alpha = e; dy = -(1 - e) * fsz * 0.9
+                    case .slideLeft: alpha = e; dx = (1 - e) * fsz * 1.5
+                    case .slideRight: alpha = e; dx = -(1 - e) * fsz * 1.5
+                    case .popBounce: alpha = min(1, pf * 3); sc = max(0.01, quique)
+                    case .elastic: alpha = min(1, pf * 4); sc = max(0.01, elast)
+                    case .spinLetters: alpha = e; rot = (1 - e) * .pi * 2; sc = max(0.01, e)
+                    case .flipLetters: alpha = min(1, pf * 2); scx = max(0.02, abs(cos((1 - e) * .pi / 2 * 1.0)) * e + 0.02)
+                    case .zoomOut: alpha = e; sc = 1 + (1 - e) * 2.5
+                    case .trackingIn: alpha = e; dx = (1 - e) * CGFloat(u - units / 2) * fsz * 0.45
+                    case .swingLetters: alpha = e; rot = (1 - elast) * .pi / 2.5
+                    case .shakeIn: alpha = e; dx = (1 - e) * ruido(u, Int(p * 40)) * fsz * 0.35; dy = (1 - e) * ruido(u + 7, Int(p * 40)) * fsz * 0.35
                     case .none: break
+                    }
+                    // lacos (depois da entrada)
+                    if tempo >= 0, let lp = style.loop {
+                        let fase = CGFloat(tempo) * 2 * .pi
+                        let k = CGFloat(u) * 0.55
+                        switch lp {
+                        case .wave: dy += sin(fase - k) * fsz * 0.18
+                        case .jitter: dx += ruido(u, Int(tempo * 15)) * fsz * 0.06; dy += ruido(u + 3, Int(tempo * 15)) * fsz * 0.06
+                        case .float: dy += sin(fase * 0.5 + k * 0.4) * fsz * 0.1; rot += sin(fase * 0.5 + k) * 0.06
+                        case .flicker: alpha *= ruido(u, Int(tempo * 12)) > -0.6 ? 1 : 0.15
+                        case .pulse: sc *= 1 + 0.12 * (0.5 + 0.5 * sin(fase))
+                        case .rainbowWave: sc *= 1 + 0.25 * max(0, sin(fase - k))
+                        case .none: break
+                        }
                     }
                     ctx.saveGState()
                     ctx.setAlpha(alpha)
                     let o = CGPoint(x: origins[li].x + ctRect.minX + pos[g].x,
                                     y: origins[li].y + ctRect.minY + pos[g].y - dy)
-                    ctx.translateBy(x: o.x, y: o.y)
-                    if sc != 1 {
+                    ctx.translateBy(x: o.x + dx, y: o.y)
+                    if sc != 1 || scx != 1 || rot != 0 {
                         let adv = CTFontGetSize(ctFont) * 0.3
-                        ctx.translateBy(x: adv, y: adv); ctx.scaleBy(x: sc, y: sc); ctx.translateBy(x: -adv, y: -adv)
+                        ctx.translateBy(x: adv, y: adv)
+                        ctx.rotate(by: -rot)
+                        ctx.scaleBy(x: sc * scx, y: sc)
+                        ctx.translateBy(x: -adv, y: -adv)
                     }
                     if style.strokeWidth > 0 {
                         ctx.setTextDrawingMode(.fillStroke)

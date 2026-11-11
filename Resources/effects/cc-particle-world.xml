@@ -52,7 +52,7 @@
         <slider id="radY" group="Producer" label="Radius Y" default="0.025" min="0.0" max="10000.0" step="0.001" />
         <slider id="radZ" group="Producer" label="Radius Z" default="0.025" min="0.0" max="10000.0" step="0.001" />
 
-        <selector id="animation" group="Physics" label="Animation" default="1"
+        <selector id="animation" group="Physics" label="Animation" default="0"
             options="Explosive|Direction Axis|Cone Axis|Viscouse|Twirl|Twirly|Vortex|Fire|Jet Sideways|Fractal Omni|Fractal Uni"
             values="1|2|3|5|6|7|8|9|11|13|14" />
         <slider id="velocity" group="Physics" label="Velocity" default="1.0" min="-1000.0" max="1000.0" step="0.01" />
@@ -62,11 +62,11 @@
         <slider id="extra" group="Physics" label="Extra" default="0.5" min="-1000.0" max="1000.0" step="0.01" />
         <slider id="extraAngle" group="Physics" label="Extra Angle" default="360.0" min="-36000.0" max="36000.0" step="1.0" type="angle" />
         <slider id="floorPosition" group="Floor" label="Floor Position" default="0.2" min="-1000.0" max="1000.0" step="0.01" />
-        <selector id="particleVisibility" group="Floor" label="Particle Visibility" default="1"
+        <selector id="particleVisibility" group="Floor" label="Particle Visibility" default="0"
             options="All|Above Floor|After Floor" values="1|2|3" />
-        <selector id="renderAnimation" group="Floor" label="Render Animation" default="1"
+        <selector id="renderAnimation" group="Floor" label="Render Animation" default="0"
             options="Normal|Reflected on Floor|Projected on Floor" values="1|2|3" />
-        <selector id="floorAction" group="Floor" label="Floor Action" default="1"
+        <selector id="floorAction" group="Floor" label="Floor Action" default="0"
             options="None|Ice|Glue|Bounce" values="1|2|3|4" />
         <slider id="bounciness" group="Floor" label="Bounciness" default="65.0" min="0.0" max="100.0" step="0.1" />
         <slider id="randomBounciness" group="Floor" label="Random Bounciness" default="25.0" min="0.0" max="100.0" step="0.1" />
@@ -78,23 +78,23 @@
         <slider id="gravityY" group="Gravity Vector" label="Gravity Y" default="1.0" min="-1.0" max="1.0" step="0.001" />
         <slider id="gravityZ" group="Gravity Vector" label="Gravity Z" default="0.0" min="-1.0" max="1.0" step="0.001" />
 
-        <selector id="particleType" group="Particle" label="Particle Type" default="1"
+        <selector id="particleType" group="Particle" label="Particle Type" default="0"
             options="Line|Star|Shaded Sphere|Faded Sphere|Darken &amp; Faded Sphere|Bubble|Motion Polygon|Motion Square|TriPolygon|QuadPolygon|Textured TriPolygon|Textured QuadPolygon|Tetrahedron|Cube|Lens Convex|Lens Concave|Lens Fade|Lens Darken Fade|Lens Bubble|Textured Square|Textured Disc|Textured Faded Disc"
             values="1|2|4|5|6|7|9|10|11|12|13|14|15|16|18|19|20|21|22|24|25|26" />
         <texture id="textureLayer" src="layer" group="Texture" label="Texture Layer" empty="transparent" />
         <slider id="scatter" group="Texture" label="Scatter" default="0.0" min="0.0" max="100.0" step="0.1" />
-        <selector id="textureTime" group="Texture" label="Texture Time" default="2"
+        <selector id="textureTime" group="Texture" label="Texture Time" default="1"
             options="Birth|Current|From Start" values="1|2|3" />
         <switch id="alignToDirection" group="Texture" label="Align To Direction" default="false" />
         <slider id="rotationSpeed" group="Particle" label="Rotation Speed" default="180.0" min="0.0" max="18000.0" step="1.0" />
         <slider id="initialRotation" group="Particle" label="Initial Rotation" default="360.0" min="0.0" max="18000.0" step="1.0" />
-        <selector id="rotationAxis" group="Particle" label="Rotation Axis" default="4"
+        <selector id="rotationAxis" group="Particle" label="Rotation Axis" default="3"
             options="X Axis|Y Axis|Z Axis|Any Axis" values="1|2|3|4" />
         <slider id="birthSize" group="Particle" label="Birth Size" default="0.25" min="0.0" max="100.0" step="0.001" />
         <slider id="deathSize" group="Particle" label="Death Size" default="0.25" min="0.0" max="100.0" step="0.001" />
         <slider id="sizeVariation" group="Particle" label="Size Variation" default="50.0" min="0.0" max="100.0" step="0.1" />
         <slider id="maxOpacity" group="Particle" label="Max Opacity" default="75.0" min="0.0" max="100.0" step="0.1" />
-        <selector id="colorMap" group="Particle" label="Color Map" default="2"
+        <selector id="colorMap" group="Particle" label="Color Map" default="1"
             options="Custom|Birth to Death|Origin to Death|Birth to Origin|Origin Constant" values="1|2|3|4|5" />
         <color id="birthColor" group="Particle" label="Birth Color" default="#FFFF50" />
         <color id="deathColor" group="Particle" label="Death Color" default="#C82828" />
@@ -104,7 +104,7 @@
         <color id="colorAt75" group="Custom Color Map" label="Color At 75%" default="#C05C14" />
         <color id="colorAtDeath" group="Custom Color Map" label="Color At Death" default="#800000" />
         <slider id="volumeShade" group="Particle" label="Volume Shade (approx.)" default="0.0" min="0.0" max="100.0" step="0.1" />
-        <selector id="transferMode" group="Particle" label="Transfer Mode" default="1"
+        <selector id="transferMode" group="Particle" label="Transfer Mode" default="0"
             options="Composite|Screen|Add|Black Matte" values="1|2|3|4" />
 
         <slider id="camDistance" group="Effect Camera" label="Distance" default="1.0" min="-1000.0" max="1000.0" step="0.01" />
@@ -112,7 +112,7 @@
         <slider id="camRotY" group="Effect Camera" label="Rotation Y" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" />
         <slider id="camRotZ" group="Effect Camera" label="Rotation Z" default="0.0" min="-36000.0" max="36000.0" step="1.0" type="angle" />
         <slider id="fov" group="Effect Camera" label="FOV" default="45.0" min="0.0" max="160.0" step="0.1" />
-        <selector id="depthCueType" group="Depth Cue" label="Type" default="1" options="None|Fade|Fog" values="1|2|3" />
+        <selector id="depthCueType" group="Depth Cue" label="Type" default="0" options="None|Fade|Fog" values="1|2|3" />
         <slider id="depthCueDistance" group="Depth Cue" label="Distance" default="2.0" min="0.0" max="100.0" step="0.01" />
         <color id="fogColor" group="Depth Cue" label="Fog Color" default="#808080" />
         <slider id="lightX" group="Light Direction" label="Light X" default="-0.5773468017578125" min="-1.0" max="1.0" step="0.001" />

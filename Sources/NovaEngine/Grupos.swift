@@ -206,6 +206,37 @@ extension Composition {
         return k * vista
     }
 
+    /// Da camada para a tela: 2D e a matriz do mundo; 3D passa pela camera (divida por w).
+    public func matrizNaTela(_ l: Layer, em t: Float) -> simd_float4x4 {
+        let m = worldMatrix(of: l, at: t)
+        return l.is3D ? projecao(em: t) * m : m
+    }
+
+    /// Distancia da camada a camera (para a ordem das camadas 3D).
+    public func profundidade(_ l: Layer, em t: Float) -> Float {
+        let a = l.transform.anchorPoint.value(at: t)
+        return (projecao(em: t) * worldMatrix(of: l, at: t) * SIMD4(a.x, a.y, 0, 1)).w
+    }
+
+    /// Como no AE: camadas 3D seguidas sao desenhadas da mais longe para a mais perto
+    /// (uma 2D no meio separa os blocos). Recebe de baixo para cima.
+    public func ordenarPorProfundidade(_ ls: [Layer], em t: Float) -> [Layer] {
+        guard ls.contains(where: \.is3D) else { return ls }
+        var out: [Layer] = [], bloco: [Layer] = []
+        func fechar() {
+            out += bloco.enumerated().sorted { a, b in
+                let da = profundidade(a.element, em: t), db = profundidade(b.element, em: t)
+                return da != db ? da > db : a.offset < b.offset
+            }.map(\.element)
+            bloco = []
+        }
+        for l in ls {
+            if l.is3D && l.kind != .adjustment { bloco.append(l) } else { fechar(); out.append(l) }
+        }
+        fechar()
+        return out
+    }
+
     /// Para uma camada 3D: a matriz que o shader usa para levar o pixel da tela ao pixel da
     /// camada (homografia invertida, com w); nil se a camada esta atras da camera.
     public func telaParaCamada3D(_ mundo: simd_float4x4, em t: Float) -> simd_float4x4? {

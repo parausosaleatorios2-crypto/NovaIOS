@@ -96,11 +96,12 @@ struct TransformGizmo: View {
 
     private func project(_ m: simd_float4x4, _ x: Float, _ y: Float, k: Float) -> CGPoint {
         let v = m * SIMD4(x, y, 0, 1)
-        return CGPoint(x: CGFloat(v.x / k), y: CGFloat(v.y / k))
+        let w = abs(v.w) > 1e-6 ? v.w : 1
+        return CGPoint(x: CGFloat(v.x / w / k), y: CGFloat(v.y / w / k))
     }
 
     private func corners(_ l: Layer, k: Float) -> [CGPoint] {
-        let m = comp.worldMatrix(of: l, at: time)
+        let m = comp.matrizNaTela(l, em: time)
         let s = size(l)
         return [project(m, 0, 0, k: k), project(m, s.x, 0, k: k),
                 project(m, s.x, s.y, k: k), project(m, 0, s.y, k: k)]
@@ -108,15 +109,17 @@ struct TransformGizmo: View {
 
     private func anchorPoint(_ l: Layer, k: Float) -> CGPoint {
         let a = l.transform.anchorPoint.value(at: time)
-        return project(comp.worldMatrix(of: l, at: time), a.x, a.y, k: k)
+        return project(comp.matrizNaTela(l, em: time), a.x, a.y, k: k)
     }
 
     /// Camada mais de cima que contem o ponto (em px da composicao).
     private func hit(_ p: SIMD2<Float>) -> UUID? {
         for l in comp.layers where l.isVisible(at: time) && l.kind.rendersPixels && !l.locked
             && l.kind != .adjustment {
-            let inv = comp.worldMatrix(of: l, at: time).inverse
-            let q = inv * SIMD4(p.x, p.y, 0, 1)
+            let w = comp.worldMatrix(of: l, at: time)
+            let inv = l.is3D ? (comp.telaParaCamada3D(w, em: time) ?? w.inverse) : w.inverse
+            var q = inv * SIMD4(p.x, p.y, 0, 1)
+            if l.is3D { guard q.w > 0 else { continue }; q /= q.w }
             let s = size(l)
             if q.x >= 0, q.y >= 0, q.x <= s.x, q.y <= s.y { return l.id }
         }

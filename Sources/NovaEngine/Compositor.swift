@@ -115,7 +115,7 @@ public final class Compositor {
         let backdrop = try pool.obtain(width: w, height: h, format: renderer.workingFormat)
         defer { pool.recycle(backdrop) }
 
-        for layer in comp.visibleLayers(at: time) {
+        for layer in comp.ordenarPorProfundidade(comp.visibleLayers(at: time), em: time) {
             do {
                 try await drawLayer(layer, comp: comp, time: time,
                                     into: output, backdrop: backdrop,
@@ -347,6 +347,18 @@ public final class Compositor {
                     let ctl = OpticalFlaresMotor.controles(v, largura: w, altura: h, tempo: time)
                     tex = try passeNaCPU(entrada: tex, cb: cb, guardar: &guardar) { leitura, escrita in
                         OpticalFlaresMotor.rodar(leitura: leitura, escrita: escrita, flare: flare, controles: ctl)
+                    }
+                } catch {
+                    lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")
+                }
+                continue
+            }
+            if m.stage == "particleworld" {
+                do {
+                    let ctl = ParticleWorld.Controles(valores: fx.values(at: time, manifest: m), fps: comp.frameRate)
+                    let lt = (time - layer.startTime) * max(layer.speed, 0.01)
+                    tex = try passeNaCPU(entrada: tex, cb: cb, guardar: &guardar) { leitura, escrita in
+                        ParticleWorld.rodar(leitura: leitura, escrita: escrita, controles: ctl, tempo: lt)
                     }
                 } catch {
                     lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")

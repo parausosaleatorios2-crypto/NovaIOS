@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 import UIKit
 import simd
 
@@ -211,6 +212,7 @@ struct ShapeSection: View {
 // MARK: - Texto
 
 struct TextSection: View {
+    @State private var instalandoFonte = false
     let layer: Layer
     let time: Float
     let edit: LayerEdit
@@ -226,9 +228,33 @@ struct TextSection: View {
                 edit(layer.id, true) { l in l.fontName = f.isEmpty ? nil : f; Self.remeasure(&l, time) }
             })) {
                 Text("Sistema (negrito)".loc).tag("")
+                ForEach(FontCatalog.installed, id: \.self) { n in Text(n).font(.custom(n, size: 14)).tag(n) }
                 ForEach(FontCatalog.bundled, id: \.self) { n in Text(n).font(.custom(n, size: 14)).tag(n) }
                 ForEach(Self.systemFonts, id: \.self) { n in Text(n).font(.custom(n, size: 14)).tag(n) }
             }.pickerStyle(.navigationLink)
+            Button { instalandoFonte = true } label: {
+                Label("Instalar fonte (.ttf/.otf, variável)".loc, systemImage: "plus.circle")
+            }
+            .sheet(isPresented: $instalandoFonte) {
+                SeletorDeArquivos(tipos: [.font, UTType(filenameExtension: "ttf") ?? .font,
+                                          UTType(filenameExtension: "otf") ?? .font,
+                                          UTType(filenameExtension: "ttc") ?? .font], varios: true) { urls in
+                    instalandoFonte = false
+                    var primeira: String?
+                    for u in urls { let n = FontCatalog.install(u); if primeira == nil { primeira = n.first } }
+                    if let f = primeira {
+                        edit(layer.id, true) { l in l.fontName = f; Self.remeasure(&l, time) }
+                    }
+                }
+            }
+            ForEach(FontCatalog.eixos(layer.fontName), id: \.self) { e in
+                AnimSlider(title: e.nome, value: st.variation?[e.id] ?? e.padrao, range: e.minimo...max(e.maximo, e.minimo + 0.01),
+                           animated: false, hasKey: false, onKey: nil,
+                           onChange: { v, save in edit(layer.id, save) { l in
+                               var s = l.textStyle ?? TextStyle()
+                               var m = s.variation ?? [:]; m[e.id] = v; s.variation = m
+                               l.textStyle = s; Self.remeasure(&l, time) } })
+            }
             Picker("Alinhamento".loc, selection: bind(\.align)) {
                 Image(systemName: "text.alignleft").tag(TextAlign.left)
                 Image(systemName: "text.aligncenter").tag(TextAlign.center)
@@ -249,6 +275,24 @@ struct TextSection: View {
                 ForEach(TextAnimationPreset.allCases, id: \.self) { Text($0.label.loc).tag($0) }
             }
             if st.animation != .none { num("Duração da animação", \.animationDuration, st, 0.1...10) }
+            Picker("Animação de saída".loc, selection: Binding(get: { st.animationOut ?? .none },
+                                                                set: { v in set(\.animationOut, v == .none ? nil : v) })) {
+                ForEach(TextAnimationPreset.allCases, id: \.self) { Text($0.label.loc).tag($0) }
+            }
+            if (st.animationOut ?? .none) != .none {
+                Stepper(String(format: "Duração da saída: %.1fs".loc, st.animationOutDuration ?? st.animationDuration),
+                        value: Binding(get: { Double(st.animationOutDuration ?? st.animationDuration) },
+                                       set: { v in set(\.animationOutDuration, Float(v)) }), in: 0.1...10, step: 0.1)
+            }
+            Picker("Laço".loc, selection: Binding(get: { st.loop ?? .none },
+                                                  set: { v in set(\.loop, v == .none ? nil : v) })) {
+                ForEach(TextLoopPreset.allCases, id: \.self) { Text($0.label.loc).tag($0) }
+            }
+            if (st.loop ?? .none) != .none {
+                Stepper(String(format: "Velocidade do laço: %.1fx".loc, st.loopSpeed ?? 1),
+                        value: Binding(get: { Double(st.loopSpeed ?? 1) }, set: { v in set(\.loopSpeed, Float(v)) }),
+                        in: 0.1...5, step: 0.1)
+            }
         }.font(.system(size: 12))
     }
 
