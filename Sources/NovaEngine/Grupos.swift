@@ -142,6 +142,39 @@ extension Composition {
         layers.insert(n, at: i + 1)
     }
 
+    public enum OrdemNaPilha { case subir, descer, frente, tras }
+
+    /// Muda a camada de lugar na pilha (frente = desenhada por cima), entre as do mesmo nivel
+    /// (o topo da composicao ou o mesmo grupo). Devolve false quando ja esta na ponta.
+    @discardableResult
+    public mutating func mover(_ id: UUID, _ o: OrdemNaPilha) -> Bool {
+        guard let l = layer(id: id) else { return false }
+        let irmas = layers.indices.filter { layers[$0].groupID == l.groupID }
+        guard let k = irmas.firstIndex(where: { layers[$0].id == id }) else { return false }
+        let alvoK: Int
+        switch o {
+        case .subir: alvoK = k - 1
+        case .descer: alvoK = k + 1
+        case .frente: alvoK = 0
+        case .tras: alvoK = irmas.count - 1
+        }
+        guard alvoK != k, irmas.indices.contains(alvoK) else { return false }
+        let referencia = layers[irmas[alvoK]].id
+        let camada = layers.remove(at: irmas[k])
+        guard let r = layers.firstIndex(where: { $0.id == referencia }) else { layers.insert(camada, at: irmas[k]); return false }
+        // subir/frente: entra logo acima da referencia; descer/tras: logo abaixo (depois dela e
+        // do conteudo dela, se for um grupo)
+        if alvoK < k {
+            layers.insert(camada, at: r)
+        } else {
+            var fim = r
+            let dentro = Set(descendentes(de: referencia).map(\.id))
+            while fim + 1 < layers.count, dentro.contains(layers[fim + 1].id) { fim += 1 }
+            layers.insert(camada, at: fim + 1)
+        }
+        return true
+    }
+
     /// Camadas que podem ser pai de `filho` sem criar ciclo (mesmo nivel de grupo).
     public func paisPossiveis(para filho: UUID) -> [Layer] {
         guard let f = layer(id: filho) else { return [] }

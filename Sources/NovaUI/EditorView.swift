@@ -42,7 +42,6 @@ public struct EditorView: View {
     @State private var undoStack: [NovaProject] = []
     @State private var importandoFFX = false
     /// Qual arquivo o seletor esta pedindo (guardado ate a resposta chegar).
-    @State private var seletorFFX = false
     /// Muda a cada batida marcada (vibra).
     @State private var batidaPiscando = false
     /// "Vista da previa" do APK: so a previa, sem a timeline.
@@ -185,16 +184,22 @@ public struct EditorView: View {
             guard !items.isEmpty else { return }
             Task { await importar(items) }
         }
-        .fileImporter(isPresented: Binding(get: { importandoAudio || importandoFFX },
-                                           set: { if !$0 { importandoAudio = false; importandoFFX = false } }),
-                      allowedContentTypes: seletorFFX ? AEImportador.tipos : [.audio],
-                      allowsMultipleSelection: !seletorFFX) { r in
-            let eraFFX = seletorFFX
-            importandoAudio = false; importandoFFX = false
+        .fileImporter(isPresented: $importandoAudio, allowedContentTypes: [.audio],
+                      allowsMultipleSelection: true) { r in
+            importandoAudio = false
             guard case .success(let urls) = r, !urls.isEmpty else { return }
-            if eraFFX { Task { await aplicarFFX(urls[0]) } }
-            else { Task { await importarAudio(urls) } }
+            Task { await importarAudio(urls) }
         }
+        // .ffx: o seletor de documentos do iOS (o fileImporter dividido com o audio abria
+        // filtrando so audio e os presets vinham cinza).
+        .background(Color.clear.sheet(isPresented: $importandoFFX) {
+            SeletorDeArquivos(tipos: AEImportador.tiposDoSeletor) { urls in
+                importandoFFX = false
+                guard let u = urls.first else { return }
+                Task { await aplicarFFX(u) }
+            }
+            .ignoresSafeArea()
+        })
         .alert("Nome da camada".loc, isPresented: $renomeando) {
             TextField("Nome".loc, text: $nomeNovo)
             Button("Cancelar".loc, role: .cancel) {}
@@ -208,8 +213,6 @@ public struct EditorView: View {
             Button("Cancelar".loc, role: .cancel) {}
             Button("Adicionar".loc) { adicionarTexto(novoTexto) }
         }
-        .onChange(of: importandoFFX) { _, v in if v { seletorFFX = true } }
-        .onChange(of: importandoAudio) { _, v in if v { seletorFFX = false } }
         .task(id: playing) { await tocar() }
         .task { if demo { await roteiroDemo() } }
         .task(id: effectIDs) { await carregarManifestos() }
@@ -838,6 +841,11 @@ public struct EditorView: View {
             let t = time
             editComp { $0.vincular(l.id, a: alvo, em: t) }
             if let a = alvo, let p = comp.layer(id: a) { aviso = String(format: "Vinculada a %@.".loc, p.name) }
+        case "frente", "subir", "descer", "tras":
+            let o: Composition.OrdemNaPilha = id == "frente" ? .frente : id == "subir" ? .subir : id == "descer" ? .descer : .tras
+            var mudou = false
+            editComp { mudou = $0.mover(l.id, o) }
+            if !mudou { aviso = (o == .frente || o == .subir ? "Já é a camada da frente." : "Já é a camada de trás.").loc }
         case "entrarGrupo":
             grupoAberto = l.id
             selectedLayer = nil

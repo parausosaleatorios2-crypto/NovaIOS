@@ -836,10 +836,13 @@ struct ImportarAEBotao: View {
             .font(.system(size: 12, weight: .medium)).foregroundStyle(NovaTheme.accent)
         }
         .disabled(trabalhando)
-        .fileImporter(isPresented: $escolhendo, allowedContentTypes: AEImportador.tipos,
-                      allowsMultipleSelection: true) { r in
-            guard case .success(let urls) = r, !urls.isEmpty else { return }
-            Task { await importar(urls) }
+        .sheet(isPresented: $escolhendo) {
+            SeletorDeArquivos(tipos: AEImportador.tiposDoSeletor, varios: true) { urls in
+                escolhendo = false
+                guard !urls.isEmpty else { return }
+                Task { await importar(urls) }
+            }
+            .ignoresSafeArea()
         }
         .alert("After Effects", isPresented: Binding(get: { aviso != nil }, set: { if !$0 { aviso = nil } })) {
             Button("OK") { aviso = nil }

@@ -311,6 +311,12 @@ struct PainelClipe: View {
                      habilitado: temSom)
                 vincular
             }
+            HStack(spacing: 8) {
+                mini("square.3.layers.3d.top.filled", "frente", "Trazer para a frente")
+                mini("arrow.up.square", "subir", "Subir uma camada")
+                mini("arrow.down.square", "descer", "Descer uma camada")
+                mini("square.3.layers.3d.bottom.filled", "tras", "Mandar para trás")
+            }
             if layer.kind == .group { linhaDoGrupo }
             HStack(spacing: 8) {
                 ladrilho(primeiro.2, primeiro.1, primeiro.0)
