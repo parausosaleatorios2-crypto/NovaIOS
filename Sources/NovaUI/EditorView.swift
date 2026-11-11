@@ -21,6 +21,9 @@ public struct EditorView: View {
     @State private var project: NovaProject
     @State private var time: Float = 0
     @State private var playing = false
+    /// Grupo aberto na timeline (como no Blurrr) e o pre-render em andamento.
+    @State private var grupoAberto: UUID?
+    @State private var preRenderando: (UUID, Double)?
     /// RAM Preview: os quadros ja montados (a faixa verde da timeline).
     @StateObject private var cacheDeQuadros = CacheDeQuadros()
     @State private var selectedLayer: UUID?
@@ -134,7 +137,8 @@ public struct EditorView: View {
                     TimelineView(composition: comp, time: $time, selected: $selectedLayer,
                                  editLayer: { id, save, change in editLayer(id, save, change) },
                                  editComp: { change in editComp(change) },
-                                 emCache: cacheDeQuadros.prontos)
+                                 emCache: cacheDeQuadros.prontos,
+                                 grupoAberto: $grupoAberto)
                         .frame(height: alturaTimeline)
                     }
                 }
@@ -235,7 +239,7 @@ public struct EditorView: View {
             return
         }
         editComp { c in
-            for l in r.layers { c.add(l) }
+            for l in r.layers { c.add(l, em: grupoAberto) }
             // «A composicao termina onde a ultima camada termina» (Alight Motion).
             let fim = c.layers.map(\.endTime).max() ?? c.duration
             c.duration = max(c.duration, fim)
@@ -268,7 +272,7 @@ public struct EditorView: View {
         l.startTime = time
         l.duration = max(1, min(5, comp.duration - time))
         novoTexto = ""
-        editComp { $0.add(l) }
+        editComp { $0.add(l, em: grupoAberto) }
         selectedLayer = l.id
     }
 
@@ -299,7 +303,7 @@ public struct EditorView: View {
         }
         guard !novas.isEmpty else { return }
         editComp { c in
-            for l in novas { c.add(l) }
+            for l in novas { c.add(l, em: grupoAberto) }
             c.duration = max(c.duration, c.layers.map(\.endTime).max() ?? c.duration)
         }
         selectedLayer = novas.last?.id
@@ -315,7 +319,7 @@ public struct EditorView: View {
         l.transform.position = Animated(comp.size / 2)
         l.startTime = time
         l.duration = max(1, comp.duration - time)
-        editComp { $0.add(l) }
+        editComp { $0.add(l, em: grupoAberto) }
         selectedLayer = l.id
     }
 
@@ -326,7 +330,7 @@ public struct EditorView: View {
         l.transform.position = Animated(comp.size / 2)
         l.startTime = 0
         l.duration = comp.duration
-        editComp { $0.add(l) }
+        editComp { $0.add(l, em: grupoAberto) }
         selectedLayer = l.id
     }
 
@@ -335,7 +339,7 @@ public struct EditorView: View {
         l.size = comp.size
         l.startTime = time
         l.duration = max(1, comp.duration - time)
-        editComp { $0.add(l) }
+        editComp { $0.add(l, em: grupoAberto) }
         selectedLayer = l.id
         aviso = "Aplique efeitos nesta camada: valem para tudo que está embaixo.".loc
     }
@@ -356,7 +360,7 @@ public struct EditorView: View {
         l.transform.position = Animated(comp.size / 2)
         l.startTime = time
         l.duration = max(1, comp.duration - time)
-        editComp { $0.add(l) }
+        editComp { $0.add(l, em: grupoAberto) }
         selectedLayer = l.id
     }
 
@@ -429,11 +433,20 @@ public struct EditorView: View {
         let fps = max(comp.frameRate, 1)
         let total = max(1, Int((comp.duration * fps).rounded(.up)))
         var q = CacheDeQuadros.quadro(time, fps: fps)
+        var proximo = Date()
         while playing && !Task.isCancelled && !cacheDeQuadros.completo(de: q, ate: total) {
             time = Float(q) / fps
-            await cacheDeQuadros.esperar(q)
-            // Quadro que nao pode ficar no cache (efeito com aviso): toca em tempo real daqui.
-            if !cacheDeQuadros.temQuadro(q) { break }
+            if cacheDeQuadros.temQuadro(q) {
+                // Ja renderizado (verde): passa no ritmo real, sem esperar nada.
+                proximo = proximo.addingTimeInterval(1 / Double(fps))
+                let falta = proximo.timeIntervalSinceNow
+                if falta > 0 { try? await Task.sleep(nanoseconds: UInt64(falta * 1_000_000_000)) }
+            } else {
+                await cacheDeQuadros.esperar(q)
+                // Quadro que nao pode ficar no cache (efeito com aviso): toca em tempo real daqui.
+                if !cacheDeQuadros.temQuadro(q) { break }
+                proximo = Date()
+            }
             q += 1
             if q >= total {
                 time = comp.duration; playing = false; return
@@ -687,14 +700,10 @@ public struct EditorView: View {
 
     /// "Copiar e colar camada" do APK: duplica a camada selecionada logo acima.
     private func duplicarSelecionada() {
-        guard let id = selectedLayer, let l = comp.layer(id: id) else { return }
-        var copia = l
-        copia.id = UUID()
-        copia.name = l.name + " " + "cópia".loc
-        editComp { c in
-            if let i = c.layers.firstIndex(where: { $0.id == id }) { c.layers.insert(copia, at: i) }
-        }
-        selectedLayer = copia.id
+        guard let id = selectedLayer, comp.layer(id: id) != nil else { return }
+        var nova: UUID?
+        editComp { c in nova = c.duplicar(id, sufixo: "cópia".loc) }
+        selectedLayer = nova ?? id
     }
 
     private func botao(_ icon: String, _ a: @escaping () -> Void) -> some View {
@@ -753,10 +762,32 @@ public struct EditorView: View {
                 PainelOpacidade(layer: l, time: time, edit: editar, onVoltar: { painel = nil })
                     .frame(height: 300)
             case .none:
-                PainelClipe(layer: l) { acaoClipe($0, l) }
+                PainelClipe(layer: l, comp: comp,
+                            preRender: preRenderando?.0 == l.id ? preRenderando?.1 : nil) { acaoClipe($0, l) }
             }
         } else {
             bottomBar
+        }
+    }
+
+    /// Grava o conteudo do grupo num video (como o "pre-render" do Blurrr); a previa passa a
+    /// tocar o video ate algo mudar dentro do grupo.
+    private func preRenderizar(_ g: UUID) {
+        guard preRenderando == nil else { return }
+        playing = false
+        preRenderando = (g, 0)
+        let c = comp, raiz = mediaRoot, ms = manifests
+        Task { @MainActor in
+            do {
+                let pr = try await PreRender.gerar(grupo: g, comp: c, mediaRoot: raiz, manifests: ms) { p in
+                    Task { @MainActor in if preRenderando?.0 == g { preRenderando = (g, p) } }
+                }
+                editLayer(g, true) { $0.prerender = pr }
+                aviso = "Pré-render pronto: o grupo toca leve agora.".loc
+            } catch {
+                aviso = String(format: "O pré-render falhou: %@".loc, error.localizedDescription)
+            }
+            preRenderando = nil
         }
     }
 
@@ -780,6 +811,13 @@ public struct EditorView: View {
             editLayer(l.id, true) { $0.duration = t - $0.startTime }
         case "dividir":
             guard dentro else { aviso = "Ponha o cursor dentro do clipe.".loc; return }
+            if l.kind == .group {
+                var n: UUID?
+                let t = time
+                editComp { n = $0.dividirGrupo(l.id, em: t) }
+                selectedLayer = n ?? l.id
+                return
+            }
             var b = l
             b.id = UUID()
             let d = time - l.startTime
@@ -795,6 +833,22 @@ public struct EditorView: View {
             selectedLayer = b.id
         case "som":
             editLayer(l.id, true) { $0.muted = !($0.muted ?? false) }
+        case let v where v.hasPrefix("vincular:"):
+            let alvo = UUID(uuidString: String(v.dropFirst(9)))
+            let t = time
+            editComp { $0.vincular(l.id, a: alvo, em: t) }
+            if let a = alvo, let p = comp.layer(id: a) { aviso = String(format: "Vinculada a %@.".loc, p.name) }
+        case "entrarGrupo":
+            grupoAberto = l.id
+            selectedLayer = nil
+        case "desagrupar":
+            editComp { $0.ungroup(l.id) }
+            if grupoAberto == l.id { grupoAberto = l.groupID }
+            selectedLayer = nil
+        case "removerPrerender":
+            editLayer(l.id, true) { $0.prerender = nil }
+        case "prerender":
+            preRenderizar(l.id)
         case "transformar":
             painel = PainelAberto(camada: l.id, tipo: .transformar)
         case "opacidade":

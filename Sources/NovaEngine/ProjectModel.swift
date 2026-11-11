@@ -242,6 +242,8 @@ public struct Layer: Codable, Sendable, Identifiable, Equatable {
     /// Grupo (pre-comp) a que a camada pertence: o `groupId` do APK. A camada
     /// some da lista de cima e e desenhada dentro do grupo.
     public var groupID: UUID?
+    /// Grupo pre-renderizado num video (o botao "Pre-renderizar" do grupo, como no Blurrr).
+    public var prerender: PreRenderDoGrupo?
 
     public var endTime: Float { startTime + duration }
 
@@ -288,14 +290,30 @@ public struct Composition: Codable, Sendable, Identifiable, Equatable {
     /// Camadas visiveis num instante, da de baixo para a de cima (ordem de composicao).
     /// `layers` guarda de cima para baixo, como a timeline mostra.
     public func visibleLayers(at t: Float) -> [Layer] {
-        let soloed = layers.filter(\.solo)
-        let pool = soloed.isEmpty ? layers : soloed
-        return pool.filter { $0.groupID == nil && $0.isVisible(at: t) && $0.kind.rendersPixels }.reversed()
+        let ok = permitidasPeloSolo()
+        return layers.filter { $0.groupID == nil && $0.isVisible(at: t) && $0.kind.rendersPixels
+            && (ok == nil || ok!.contains($0.id)) }.reversed()
     }
 
     /// As camadas de dentro de um grupo, visiveis em `t`, de baixo para cima.
     public func visibleChildren(of group: UUID, at t: Float) -> [Layer] {
-        layers.filter { $0.groupID == group && $0.isVisible(at: t) && $0.kind.rendersPixels }.reversed()
+        let ok = permitidasPeloSolo()
+        return layers.filter { $0.groupID == group && $0.isVisible(at: t) && $0.kind.rendersPixels
+            && (ok == nil || ok!.contains($0.id)) }.reversed()
+    }
+
+    /// Solo: as camadas em solo, os grupos que as contem e o que esta dentro de um grupo em
+    /// solo. nil = nenhuma em solo. (Antes um solo dentro de um grupo apagava tudo.)
+    private func permitidasPeloSolo() -> Set<UUID>? {
+        let solo = layers.filter(\.solo)
+        guard !solo.isEmpty else { return nil }
+        var ok = Set(solo.map(\.id))
+        for s in solo {
+            var g = s.groupID, n = 0
+            while let id = g, n < 32 { ok.insert(id); g = layer(id: id)?.groupID; n += 1 }
+            if s.kind == .group { for d in descendentes(de: s.id) { ok.insert(d.id) } }
+        }
+        return ok
     }
 
     /// As camadas de dentro de um grupo (de cima para baixo).

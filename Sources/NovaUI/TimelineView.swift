@@ -24,6 +24,8 @@ public struct TimelineView: View {
     let editComp: (((inout Composition) -> Void) -> Void)?
     /// Quadros no cache da previa: a faixa verde em cima da regua (como no AE).
     let emCache: Set<Int>
+    /// Grupo aberto (como no Blurrr): a timeline mostra o que tem dentro dele. nil = o topo.
+    @Binding var grupoAberto: UUID?
 
     @State private var pixelsPerSecond: CGFloat = 60
     @State private var zoomBase: CGFloat = 60
@@ -53,8 +55,9 @@ public struct TimelineView: View {
     public init(composition: Composition, time: Binding<Float>, selected: Binding<UUID?>,
                 editLayer: ((UUID, Bool, (inout Layer) -> Void) -> Void)? = nil,
                 editComp: (((inout Composition) -> Void) -> Void)? = nil,
-                emCache: Set<Int> = []) {
+                emCache: Set<Int> = [], grupoAberto: Binding<UUID?> = .constant(nil)) {
         self.emCache = emCache
+        _grupoAberto = grupoAberto
         self.composition = composition
         _time = time
         _selected = selected
@@ -70,10 +73,11 @@ public struct TimelineView: View {
     public var body: some View {
         VStack(spacing: 0) {
             if selecionada != nil && editComp != nil { acoes }
+            if let g = grupoAberto.flatMap({ composition.layer(id: $0) }) { barraDoGrupo(g) }
             ruler
             ScrollView([.vertical], showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(composition.layers) { layer in
+                    ForEach(composition.layers.filter { $0.groupID == nivel }) { layer in
                         row(layer)
                     }
                     if composition.layers.isEmpty {
@@ -104,6 +108,36 @@ public struct TimelineView: View {
             .onChanged { v in pixelsPerSecond = min(600, max(6, zoomBase * v)); limitarRolagem() }
             .onEnded { _ in zoomBase = pixelsPerSecond })
         .onChange(of: time) { _, t in seguirCursor(t) }
+    }
+
+    // MARK: grupo aberto
+
+    /// O grupo aberto, se ele ainda existe (apagado ou desagrupado, volta ao topo).
+    private var nivel: UUID? { grupoAberto.flatMap { composition.layer(id: $0)?.id } }
+
+    /// "‹ Grupo X": dentro de um grupo, como no Blurrr; tocar volta um nivel.
+    private func barraDoGrupo(_ g: Layer) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                selected = g.id
+                grupoAberto = g.groupID
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold))
+                    Text("Sair do grupo".loc).font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Capsule().fill(NovaTheme.accent))
+            }.buttonStyle(.plain)
+            Image(systemName: "folder.fill").font(.system(size: 12)).foregroundStyle(NovaTheme.accent)
+            Text(g.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(NovaTheme.text).lineLimit(1)
+            Text(String(format: "%d camadas".loc, composition.children(of: g.id).count))
+                .font(.system(size: 11)).foregroundStyle(NovaTheme.dim)
+            Spacer()
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(NovaTheme.background)
     }
 
     // MARK: rolagem
@@ -404,7 +438,25 @@ public struct TimelineView: View {
                 .strokeBorder(sel ? NovaTheme.accent : Color.white.opacity(0.06), lineWidth: sel ? 1.6 : 1))
             .overlay(alignment: .leading) { if sel { alca(layer, .entrada) } }
             .overlay(alignment: .trailing) { if sel { alca(layer, .saida) } }
+            .overlay(alignment: .trailing) {
+                if layer.kind == .group {
+                    // grupo: quantas camadas tem e o botao de abrir (ou dois toques no clipe)
+                    Button { selected = nil; grupoAberto = layer.id } label: {
+                        HStack(spacing: 3) {
+                            Text("\(composition.children(of: layer.id).count)").font(.system(size: 9, weight: .bold))
+                            Image(systemName: "arrow.down.right.square.fill").font(.system(size: 12))
+                        }
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 5).frame(height: h)
+                        .background(Color.black.opacity(0.25))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, sel ? alcaLargura : 0)
+                    .opacity(w > 50 ? 1 : 0)
+                }
+            }
             .contentShape(Rectangle())
+            .onTapGesture(count: 2) { if layer.kind == .group { selected = nil; grupoAberto = layer.id } }
             .onTapGesture { selected = layer.id }
             .highPriorityGesture(arrastar(layer, .corpo),
                                  including: sel && editLayer != nil && !layer.locked ? .all : .subviews)
@@ -493,7 +545,16 @@ public struct TimelineView: View {
                 }
             }
             .onEnded { _ in
-                if let gs = gesto { el(gs.0, true) { _ in } }
+                if let gs = gesto {
+                    // grupo andando no tempo leva o conteudo junto
+                    if gs.1 == .corpo, gs.2.kind == .group, let agora = composition.layer(id: gs.0),
+                       agora.startTime != gs.2.startTime {
+                        let dt = agora.startTime - gs.2.startTime
+                        ec { $0.deslocarConteudo(doGrupo: gs.0, por: dt) }
+                    } else {
+                        el(gs.0, true) { _ in }
+                    }
+                }
                 gesto = nil
                 guia = nil
             }
@@ -562,6 +623,12 @@ public struct TimelineView: View {
         guard let l = selecionada else { return }
         guard dentro(l) else { avisar("Ponha o cursor dentro do clipe para dividir"); return }
         let t = time
+        if l.kind == .group {
+            var n: UUID?
+            ec { c in n = c.dividirGrupo(l.id, em: t) }
+            selected = n ?? l.id
+            return
+        }
         var nova = l
         nova.id = UUID()
         nova.startTime = t
@@ -627,12 +694,9 @@ public struct TimelineView: View {
 
     private func duplicar() {
         guard let l = selecionada else { return }
-        var c2 = l
-        c2.id = UUID()
-        ec { c in
-            if let i = c.layers.firstIndex(where: { $0.id == l.id }) { c.layers.insert(c2, at: i) }
-        }
-        selected = c2.id
+        var nova: UUID?
+        ec { c in nova = c.duplicar(l.id, sufixo: "cópia".loc) }
+        selected = nova ?? l.id
     }
 
     private func excluir(puxar: Bool) {

@@ -200,6 +200,17 @@ public final class Compositor {
                               profundidade: Int, emOutroTempo: Bool = false,
                               guardar: inout [MTLTexture]) async throws -> (MTLTexture, SIMD2<Float>)? {
         guard let provider = contentProvider else { return nil }
+        if layer.kind == .group, let pr = comp.preRenderValido(layer) {
+            // Grupo pre-renderizado (como no Blurrr): o video do conteudo no lugar das camadas.
+            var v = Layer(name: layer.name, kind: .video)
+            v.mediaPath = pr.arquivo
+            v.startTime = layer.startTime
+            v.duration = layer.duration
+            v.size = comp.size
+            if let t = try await provider.texture(for: v, at: v.mediaTimeAdjusted(at: time), device: device) {
+                return (t, comp.size)
+            }
+        }
         if layer.kind == .group {
             // Grupo (pre-comp): as camadas de dentro montadas num buffer limpo do
             // tamanho da composicao; depois o grupo segue como uma camada qualquer

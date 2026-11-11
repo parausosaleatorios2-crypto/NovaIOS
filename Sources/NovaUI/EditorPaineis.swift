@@ -282,7 +282,12 @@ struct CabecalhoGrupo: View {
 
 struct PainelClipe: View {
     let layer: Layer
+    var comp: Composition? = nil
+    /// Progresso do pre-render deste grupo (nil = parado).
+    var preRender: Double? = nil
     let acao: (String) -> Void
+
+    private var pai: Layer? { layer.parentID.flatMap { comp?.layer(id: $0) } }
 
     private var temSom: Bool { layer.kind == .video || layer.kind == .audio }
 
@@ -304,7 +309,9 @@ struct PainelClipe: View {
                 mini("square.righthalf.filled", "aparaFim", "Aparar o fim até o cursor")
                 mini(layer.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill", "som", "Som",
                      habilitado: temSom)
+                vincular
             }
+            if layer.kind == .group { linhaDoGrupo }
             HStack(spacing: 8) {
                 ladrilho(primeiro.2, primeiro.1, primeiro.0)
                 ladrilho("square.dashed", "Borda e sombra", "borda")
@@ -323,6 +330,54 @@ struct PainelClipe: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 10)
         .background(NovaTheme.background)
+    }
+
+    /// Vincular a um pai (o pick whip do AE): a camada passa a seguir o nulo (ou outra camada)
+    /// sem sair do lugar.
+    private var vincular: some View {
+        Menu {
+            Button { acao("vincular:nenhum") } label: {
+                Label("Sem vínculo".loc, systemImage: layer.parentID == nil ? "checkmark" : "link.badge.plus")
+            }
+            if let c = comp {
+                let nulos = c.paisPossiveis(para: layer.id)
+                ForEach(nulos.sorted { ($0.kind == .null ? 0 : 1) < ($1.kind == .null ? 0 : 1) }) { p in
+                    Button { acao("vincular:" + p.id.uuidString) } label: {
+                        Label(p.name, systemImage: p.id == layer.parentID ? "checkmark"
+                              : (p.kind == .null ? "arrow.up.and.down.and.arrow.left.and.right" : "square.on.square"))
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: layer.parentID == nil ? "link" : "link.circle.fill").font(.system(size: 19))
+                .foregroundStyle(layer.parentID == nil ? NovaTheme.text.opacity(0.85) : NovaTheme.accent)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(RoundedRectangle(cornerRadius: 10).fill(CoresPainel.ladrilho))
+        }
+        .accessibilityLabel(pai.map { "Vinculada a ".loc + $0.name } ?? "Vincular a um pai".loc)
+    }
+
+    /// Grupo (como no Blurrr): abrir, pre-renderizar e desagrupar.
+    private var linhaDoGrupo: some View {
+        let valido = comp?.preRenderValido(layer) != nil
+        let tem = layer.prerender != nil
+        return HStack(spacing: 8) {
+            ladrilho("arrow.down.right.square", "Abrir grupo", "entrarGrupo")
+            if let p = preRender {
+                VStack(spacing: 5) {
+                    ProgressView(value: p).tint(NovaTheme.accent).padding(.horizontal, 10)
+                    Text(String(format: "Pré-render %d%%".loc, Int(p * 100))).font(.system(size: 12.5))
+                        .foregroundStyle(NovaTheme.text.opacity(0.9))
+                }
+                .frame(maxWidth: .infinity, minHeight: 62)
+                .background(RoundedRectangle(cornerRadius: 10).fill(CoresPainel.ladrilho))
+            } else if valido {
+                ladrilho("checkmark.seal.fill", "Pré-render pronto", "removerPrerender")
+            } else {
+                ladrilho(tem ? "arrow.clockwise.circle" : "film.stack", tem ? "Pré-render desatualizado" : "Pré-renderizar", "prerender")
+            }
+            ladrilho("rectangle.stack.badge.minus", "Desagrupar", "desagrupar")
+        }
     }
 
     private func mini(_ icone: String, _ id: String, _ nome: String, habilitado: Bool = true) -> some View {
