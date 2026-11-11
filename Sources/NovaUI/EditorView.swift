@@ -478,6 +478,8 @@ public struct EditorView: View {
         // Som da previa: video e audio da composicao, a partir do cursor.
         var player: AVPlayer?
         if let item = await AudioMux.previewItem(composition: comp, mediaRoot: mediaRoot) {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            try? AVAudioSession.sharedInstance().setActive(true)
             let p = AVPlayer(playerItem: item)
             await p.seek(to: CMTime(seconds: Double(time), preferredTimescale: 600),
                          toleranceBefore: .zero, toleranceAfter: .zero)

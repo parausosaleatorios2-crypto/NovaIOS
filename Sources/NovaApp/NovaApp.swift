@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 import os
 
 @main
@@ -15,6 +16,10 @@ struct NovaEditorApp: App {
     init() {
         // As 47 fontes do APK (Resources/fonts) ficam disponiveis para o texto.
         FontCatalog.registerBundled()
+        // Som da previa: categoria de reproducao (o padrao, soloAmbient, fica mudo com a
+        // chave do silencioso; editor de video toca o som da mesma forma que um player).
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+        try? AVAudioSession.sharedInstance().setActive(true)
         // Aquece o catalogo de efeitos fora da thread principal: sao 1.490 XMLs.
         Task.detached(priority: .utility) {
             do { try await EffectRegistry.shared.load() }

@@ -211,6 +211,8 @@ struct PainelComTrilho<Conteudo: View, Mais: View>: View {
     /// Curva do quadro-chave no cursor (nil quando nao ha chave aqui).
     var easing: Easing? = nil
     var onEasing: ((Easing) -> Void)? = nil
+    /// false: o conteudo ocupa a area inteira sem rolar (o painel de transformar tem gestos).
+    var rolar = true
     @ViewBuilder let mais: () -> Mais
     @ViewBuilder let conteudo: () -> Conteudo
 
@@ -255,10 +257,17 @@ struct PainelComTrilho<Conteudo: View, Mais: View>: View {
             .frame(width: 70)
             .background(CoresPainel.trilho)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) { conteudo() }
-                    .padding(.horizontal, 8).padding(.vertical, 8)
+            Group {
+                if rolar {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) { conteudo() }
+                            .padding(.horizontal, 8).padding(.vertical, 8)
+                    }
+                } else {
+                    conteudo()
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(CoresPainel.fundo)
         }
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18))
@@ -897,6 +906,11 @@ struct PainelTransformar: View {
 
     @State private var selecionado = "px"
     @State private var escalaLigada = true
+    /// Os 4 modos do trilho da direita (como no APK): mover, girar, escala e inclinacao.
+    @State private var modo = 0
+    @State private var eixoRot = "rz"
+    @State private var giro: (angulo: Float, total: Float)?
+    @State private var movendo: SIMD2<Float>?
     @State private var editando: String?
     @State private var texto = ""
     @State private var arrasto: (String, Float)?
@@ -1002,7 +1016,7 @@ struct PainelTransformar: View {
                         onChave: acaoChave(atual),
                         temChave: inf?.chave ?? false,
                         easing: inf?.easing,
-                        onEasing: acaoEasing(atual, inf?.easing), mais: {
+                        onEasing: acaoEasing(atual, inf?.easing), rolar: false, mais: {
             Button {
                 edit(layer.id, true) { MediaImporter.fit(&$0, in: comp) }
             } label: { Label("Centralizar e caber na tela".loc, systemImage: "arrow.up.left.and.arrow.down.right") }
@@ -1013,22 +1027,13 @@ struct PainelTransformar: View {
                 }
             } label: { Label("Zerar rotação e inclinação".loc, systemImage: "arrow.counterclockwise") }
         }, conteudo: {
-            // Como o Transform do After Effects: cronometro, valores azuis que se arrastam
-            // (ou se digitam) e as setas/losango de quadro-chave em cada propriedade.
-            if layer.kind == .camera { linhaAE("Zoom", [("zm", 1)]) }
-            linhaAE("Ponto de ancoragem", [("ax", 1), ("ay", 1)])
-            linhaAE("Posição", layer.is3D ? [("px", 1), ("py", 1), ("pz", 1)] : [("px", 1), ("py", 1)])
-            if !layer.is3D { linhaAE("Posição Z", [("pz", 1)]) }
-            linhaAE("Escala", [("ex", 0.5), ("ey", 0.5)], ligacao: true)
-            if layer.is3D {
-                linhaAE("Rotação X", [("rx", 0.5)])
-                linhaAE("Rotação Y", [("ry", 0.5)])
-                linhaAE("Rotação Z", [("rz", 0.5)])
-            } else {
-                linhaAE("Rotação", [("rz", 0.5)])
+            HStack(spacing: 0) {
+                moldura { centro }
+                trilhoDosModos
             }
-            linhaAE("Opacidade", [("op", 0.5)], sufixo: "%")
         })
+        .onChange(of: modo) { _, m in selecionado = ["px", eixoRot, "ex", "ix"][m] }
+        .onChange(of: eixoRot) { _, e in if modo == 1 { selecionado = e } }
         .alert("Valor".loc, isPresented: Binding(get: { editando != nil }, set: { if !$0 { editando = nil } })) {
             TextField("0", text: $texto).keyboardType(.numbersAndPunctuation)
             Button("Cancelar".loc, role: .cancel) { editando = nil }
@@ -1037,6 +1042,214 @@ struct PainelTransformar: View {
                    let v = Float(texto.replacingOccurrences(of: ",", with: ".")) { aplicar(id, p, v, true) }
                 editando = nil
             }
+        }
+    }
+
+    // MARK: modos (o layout do APK)
+
+    /// Trilho da direita: mover, girar, escala e inclinacao.
+    private var trilhoDosModos: some View {
+        let icones = ["arrow.up.and.down.and.arrow.left.and.right", "arrow.triangle.2.circlepath",
+                      "arrow.up.left.and.arrow.down.right.square", "parallelogram"]
+        return VStack(spacing: 14) {
+            ForEach(0..<4, id: \.self) { i in
+                Button { modo = i } label: {
+                    Image(systemName: icones[i]).font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(modo == i ? NovaTheme.accent : NovaTheme.text)
+                        .frame(width: 54, height: 50)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(modo == i ? CoresPainel.pilula : Color.clear))
+                }.buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 10)
+        .frame(width: 70)
+        .background(CoresPainel.trilho)
+    }
+
+    /// Os cantos em L em volta da area de controle.
+    private func moldura<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        c()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                GeometryReader { g in
+                    let w = g.size.width, h = g.size.height, l: CGFloat = 16, m: CGFloat = 8
+                    Path { p in
+                        p.move(to: CGPoint(x: m, y: m + l)); p.addLine(to: CGPoint(x: m, y: m)); p.addLine(to: CGPoint(x: m + l, y: m))
+                        p.move(to: CGPoint(x: w - m - l, y: m)); p.addLine(to: CGPoint(x: w - m, y: m)); p.addLine(to: CGPoint(x: w - m, y: m + l))
+                        p.move(to: CGPoint(x: m, y: h - m - l)); p.addLine(to: CGPoint(x: m, y: h - m)); p.addLine(to: CGPoint(x: m + l, y: h - m))
+                        p.move(to: CGPoint(x: w - m - l, y: h - m)); p.addLine(to: CGPoint(x: w - m, y: h - m)); p.addLine(to: CGPoint(x: w - m, y: h - m - l))
+                    }
+                    .stroke(NovaTheme.text.opacity(0.55), lineWidth: 2)
+                }
+                .allowsHitTesting(false)
+            }
+    }
+
+    @ViewBuilder
+    private var centro: some View {
+        VStack(spacing: 6) {
+            chips.padding(.top, 14)
+            switch modo {
+            case 0:
+                almofada
+                if layer.kind == .camera { reguaEixo("Zoom", "zm", 50...8000).padding(.bottom, 8) }
+            case 1: dial
+            case 2: escalaControles
+            default: inclinacaoControles
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+    }
+
+    /// Os valores no topo: X e Y numa pilula, Z noutra. Tocar edita o numero; no modo girar,
+    /// tocar escolhe o eixo do dial.
+    private var chips: some View {
+        let ids: [(String, String)]
+        switch modo {
+        case 0: ids = [("px", "X"), ("py", "Y"), ("pz", "Z")]
+        case 1: ids = [("rx", "X"), ("ry", "Y"), ("rz", "Z")]
+        case 2: ids = [("ex", "X"), ("ey", "Y")]
+        default: ids = [("ix", "X"), ("iy", "Y")]
+        }
+        let dois = Array(ids.prefix(2))
+        let z: (String, String)? = ids.count > 2 ? ids[2] : nil
+        return HStack(spacing: 10) {
+            HStack(spacing: 0) { ForEach(dois, id: \.0) { c in chip(c.0, c.1) } }
+                .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
+            if let z {
+                chip(z.0, z.1)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
+            }
+        }
+        .padding(.bottom, 14)
+    }
+
+    private func chip(_ id: String, _ eixo: String) -> some View {
+        let v = prop(id).map { valor($0) } ?? 0
+        let ativo = modo == 1 && eixoRot == id
+        return Button {
+            if modo == 1 && eixoRot != id { eixoRot = id; return }
+            texto = formatarValor(v)
+            editando = id
+        } label: {
+            Text(formatarValor(v)).font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(NovaTheme.accent.opacity(ativo ? 1 : 0.85))
+                .frame(minWidth: 62).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 8).fill(ativo ? NovaTheme.accent.opacity(0.22) : Color.clear))
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .bottom) {
+            Text(eixo).font(.system(size: 9)).foregroundStyle(NovaTheme.dim2).offset(y: 15)
+        }
+    }
+
+    /// Mover: arrastar aqui anda com a camada (X e Y); o Z se digita no chip.
+    private var almofada: some View {
+        let pos = layer.transform.position.value(at: time)
+        let k = max(comp.size.x, comp.size.y) / 380
+        return Text("Deslize aqui para mover a camada".loc)
+            .font(.system(size: 14)).foregroundStyle(NovaTheme.dim)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 1)
+                .onChanged { g in
+                    if movendo == nil { movendo = pos }
+                    let b = movendo ?? pos
+                    let nv = b + SIMD2(Float(g.translation.width), Float(g.translation.height)) * k
+                    let t = time
+                    edit(layer.id, false) { $0.transform.position.set(nv, at: t) }
+                }
+                .onEnded { _ in movendo = nil; edit(layer.id, true) { _ in } })
+    }
+
+    /// Girar: o dial (arrastar em volta, somando voltas); o eixo vem do chip (Z de inicio).
+    private var dial: some View {
+        let p = prop(eixoRot) ?? .f(\.rotationZ)
+        let v = valor(p)
+        return GeometryReader { g in
+            let lado = max(40, min(g.size.width, g.size.height) - 8)
+            let c = CGPoint(x: g.size.width / 2, y: g.size.height / 2)
+            let r = lado / 2
+            ZStack {
+                Circle().stroke(NovaTheme.text.opacity(0.75), lineWidth: 2).frame(width: lado, height: lado)
+                ForEach(0..<24, id: \.self) { i in
+                    Rectangle().fill(NovaTheme.text.opacity(0.7))
+                        .frame(width: i % 6 == 0 ? 2 : 1.2, height: i % 6 == 0 ? 10 : 6)
+                        .offset(y: -r + (i % 6 == 0 ? 9 : 7))
+                        .rotationEffect(.degrees(Double(i) * 15))
+                }
+                Rectangle().fill(NovaTheme.accent).frame(width: 2, height: r * 0.35)
+                    .offset(y: -r + r * 0.35 / 2 + 11)
+                    .rotationEffect(.degrees(Double(v)))
+                Circle().strokeBorder(NovaTheme.accent, lineWidth: 4)
+                    .background(Circle().fill(CoresPainel.fundo))
+                    .frame(width: 22, height: 22)
+                    .offset(y: -r)
+                    .rotationEffect(.degrees(Double(v)))
+                Text(formatarValor(v) + "°").font(.system(size: 22, weight: .medium)).foregroundStyle(NovaTheme.text)
+            }
+            .frame(width: g.size.width, height: g.size.height)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { d in
+                    let a = Float(atan2(d.location.x - c.x, -(d.location.y - c.y)) * 180 / .pi)
+                    if giro == nil { giro = (a, v) }
+                    guard var gr = giro else { return }
+                    var delta = a - gr.angulo
+                    if delta > 180 { delta -= 360 } else if delta < -180 { delta += 360 }
+                    gr.total += delta
+                    gr.angulo = a
+                    giro = gr
+                    aplicar(eixoRot, p, gr.total, false)
+                }
+                .onEnded { _ in
+                    if let gr = giro { aplicar(eixoRot, p, gr.total, true) }
+                    giro = nil
+                })
+        }
+        .padding(.bottom, 8)
+    }
+
+    /// Escala: Proporcional (uma regua XY) ou Eixos livres (X e Y).
+    private var escalaControles: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { escalaLigada.toggle() } label: {
+                Label(escalaLigada ? "Proporcional".loc : "Eixos livres".loc,
+                      systemImage: escalaLigada ? "link" : "link.badge.plus")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(escalaLigada ? NovaTheme.accent : NovaTheme.text)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(escalaLigada ? NovaTheme.accent.opacity(0.18) : CoresPainel.pilula))
+            }.buttonStyle(.plain)
+            if escalaLigada {
+                reguaEixo("XY", "ex", 0...400)
+            } else {
+                reguaEixo("X", "ex", 0...400)
+                reguaEixo("Y", "ey", 0...400)
+            }
+        }
+    }
+
+    private var inclinacaoControles: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            reguaEixo("X", "ix", -80...80)
+            reguaEixo("Y", "iy", -80...80)
+        }
+    }
+
+    private func reguaEixo(_ nome: String, _ id: String, _ faixa: ClosedRange<Float>) -> some View {
+        let p = prop(id)
+        let v = p.map { valor($0) } ?? 0
+        return HStack(spacing: 8) {
+            Text(nome).font(.system(size: 12, weight: .medium)).foregroundStyle(NovaTheme.dim).frame(width: 22)
+            Regua(valor: v, faixa: faixa) { nv, fim in
+                if let p { aplicar(id, p, nv, fim) }
+            }
+            .frame(height: 40)
+            .background(RoundedRectangle(cornerRadius: 9).fill(CoresPainel.pilula.opacity(0.55)))
         }
     }
 
