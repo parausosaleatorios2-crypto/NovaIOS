@@ -58,8 +58,17 @@ public struct Transform: Codable, Sendable, Equatable {
     public var skew: Animated<SIMD2<Float>>?
     /// Camera: zoom em px (como no AE; 50 mm = 1,389 x a largura). Opcional (projetos antigos).
     public var zoom: Animated<Float>?
+    /// wiggle(freq, amp) do After Effects por propriedade: "posicao", "posicaoZ", "escala",
+    /// "rotacao", "opacidade". Soma em cima do valor (e das chaves).
+    public var wiggles: [String: WiggleAE]?
 
     public init() {}
+
+    /// O deslocamento do wiggle da propriedade em `t` (zero sem wiggle).
+    public func tremor(_ chave: String, _ t: Float, eixo: Int = 0) -> Float {
+        guard let w = wiggles?[chave], w.ligado else { return 0 }
+        return w.valor(t, eixo: eixo)
+    }
 
     /// Matriz 4x4 da camada no instante dado, igual a
     /// com.novaeditor.model.Transform.buildMatrix do APK (conferido com o REA):
@@ -67,12 +76,13 @@ public struct Transform: Codable, Sendable, Equatable {
     /// Aplicada a um ponto da camada: tira a ancora, escala, inclina, gira, posiciona.
     public func matrix(at t: Float) -> simd_float4x4 {
         let a = anchorPoint.value(at: t)
-        let p = position.value(at: t)
-        let z = positionZ.value(at: t)
-        let s = scale.value(at: t) / 100
+        let p = position.value(at: t) + SIMD2(tremor("posicao", t, eixo: 0), tremor("posicao", t, eixo: 1))
+        let z = positionZ.value(at: t) + tremor("posicaoZ", t)
+        let ws = tremor("escala", t)
+        let s = (scale.value(at: t) + SIMD2(ws, ws)) / 100
         let rx = rotationX.value(at: t) * .pi / 180
         let ry = rotationY.value(at: t) * .pi / 180
-        let rz = rotationZ.value(at: t) * .pi / 180
+        let rz = (rotationZ.value(at: t) + tremor("rotacao", t)) * .pi / 180
         let k = skew?.value(at: t) ?? .zero
 
         var m = Self.translation(p.x, p.y, z)
@@ -90,7 +100,7 @@ public struct Transform: Codable, Sendable, Equatable {
         return m
     }
 
-    public func alpha(at t: Float) -> Float { min(max(opacity.value(at: t) / 100, 0), 1) }
+    public func alpha(at t: Float) -> Float { min(max((opacity.value(at: t) + tremor("opacidade", t)) / 100, 0), 1) }
 
     public var isAnimated: Bool {
         anchorPoint.isAnimated || position.isAnimated || positionZ.isAnimated ||
@@ -413,6 +423,32 @@ public struct NovaProject: Codable, Sendable, Identifiable, Equatable {
 }
 
 // MARK: - Inclinacao sempre presente para a interface
+
+/// O wiggle(freq, amp) do After Effects: ruido suave (1 oitava) entre -amp e +amp,
+/// `freq` mudancas por segundo; cada eixo com a sua sequencia, a semente fixa por camada.
+public struct WiggleAE: Codable, Sendable, Equatable {
+    public var ligado = true
+    public var freq: Float = 2
+    public var amp: Float = 50
+    public var semente: UInt32 = UInt32.random(in: 1...UInt32.max)
+
+    public init(freq: Float, amp: Float) { self.freq = freq; self.amp = amp }
+
+    private func aleatorio(_ i: Int32, _ eixo: Int) -> Float {
+        var h = UInt32(bitPattern: i) &* 0x9E3779B1 ^ semente &+ UInt32(eixo) &* 0x85EBCA77
+        h ^= h >> 15; h = h &* 0x2C1B3C6D; h ^= h >> 12; h = h &* 0x297A2D39; h ^= h >> 15
+        return Float(h) / Float(UInt32.max) * 2 - 1
+    }
+
+    public func valor(_ t: Float, eixo: Int) -> Float {
+        let x = t * max(freq, 0)
+        let i = floor(x), f = x - i
+        let a = aleatorio(Int32(truncatingIfNeeded: Int(i)), eixo)
+        let b = aleatorio(Int32(truncatingIfNeeded: Int(i) + 1), eixo)
+        let s = f * f * (3 - 2 * f)
+        return (a + (b - a) * s) * amp
+    }
+}
 
 public extension Transform {
     /// `skew` com valor padrao zero, para editar sem tratar o opcional.
