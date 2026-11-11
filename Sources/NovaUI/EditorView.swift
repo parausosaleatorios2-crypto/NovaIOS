@@ -326,6 +326,21 @@ public struct EditorView: View {
         selectedLayer = l.id
     }
 
+    /// Camera 3D (como a do AE): vista padrao, lente de 50 mm; camadas 3D ganham perspectiva.
+    private func adicionarCamera() {
+        var l = Layer(name: "Câmera 3D".loc, kind: .camera)
+        l.size = SIMD2(100, 100)
+        l.transform.anchorPoint = Animated(SIMD2(0, 0))
+        l.transform.position = Animated(comp.size / 2)
+        l.transform.positionZ = Animated(-comp.zoomPadrao)
+        l.transform.zoom = Animated(comp.zoomPadrao)
+        l.startTime = 0
+        l.duration = comp.duration
+        editComp { $0.add(l, em: grupoAberto) }
+        selectedLayer = l.id
+        aviso = "Câmera 3D: ligue o 3D nas camadas (botão 3D) e mexa na Posição Z.".loc
+    }
+
     private func adicionarNulo() {
         var l = Layer(name: "Nulo".loc, kind: .null)
         l.size = SIMD2(100, 100)
@@ -846,6 +861,9 @@ public struct EditorView: View {
             var mudou = false
             editComp { mudou = $0.mover(l.id, o) }
             if !mudou { aviso = (o == .frente || o == .subir ? "Já é a camada da frente." : "Já é a camada de trás.").loc }
+        case "3d":
+            editLayer(l.id, true) { $0.is3D.toggle() }
+            aviso = (comp.layer(id: l.id)?.is3D == true ? "Camada 3D: Posição Z e Rotação X/Y com perspectiva." : "Camada 2D.").loc
         case "entrarGrupo":
             grupoAberto = l.id
             selectedLayer = nil
@@ -889,6 +907,7 @@ public struct EditorView: View {
                     Button { importandoAudio = true } label: { Label("Áudio".loc, systemImage: "music.note") }
                     Button { adicionarAjuste() } label: { Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle") }
                     Button { adicionarNulo() } label: { Label("Nulo".loc, systemImage: "scope") }
+                    Button { adicionarCamera() } label: { Label("Câmera 3D".loc, systemImage: "video.fill") }
                     Divider()
                     Button { importandoFFX = true } label: {
                         Label("Preset do After Effects (.ffx)".loc, systemImage: "wand.and.rays")

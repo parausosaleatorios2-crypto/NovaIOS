@@ -456,7 +456,6 @@ public struct TimelineView: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { if layer.kind == .group { selected = nil; grupoAberto = layer.id } }
             .onTapGesture { selected = layer.id }
             .highPriorityGesture(arrastar(layer, .corpo),
                                  including: sel && editLayer != nil && !layer.locked ? .all : .subviews)

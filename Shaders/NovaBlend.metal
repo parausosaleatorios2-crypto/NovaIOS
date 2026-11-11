@@ -77,7 +77,9 @@ fragment float4 nova_blend_fragment(
     // Leva o pixel da tela para o espaco da camada.
     float2 screenPx = in.uv * u.screenSize;
     float4 local = u.layerToScreen * float4(screenPx, 0.0, 1.0);
-    float2 uv = local.xy / max(u.layerSize, float2(1.0));
+    // camada 3D: homografia (w muda por pixel); 2D: w = 1 e a conta e a de sempre
+    if (local.w <= 0.0) { return bp; }
+    float2 uv = (local.xy / local.w) / max(u.layerSize, float2(1.0));
     if (any(uv < 0.0) || any(uv > 1.0)) { return bp; }
 
     float4 s = src.sample(smp, uv);

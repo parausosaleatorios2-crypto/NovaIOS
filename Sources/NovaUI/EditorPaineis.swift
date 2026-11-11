@@ -316,6 +316,14 @@ struct PainelClipe: View {
                 mini("arrow.up.square", "subir", "Subir uma camada")
                 mini("arrow.down.square", "descer", "Descer uma camada")
                 mini("square.3.layers.3d.bottom.filled", "tras", "Mandar para trás")
+                Button { acao("3d") } label: {
+                    Text("3D").font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(layer.is3D ? Color.black : NovaTheme.text.opacity(0.85))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(layer.is3D ? NovaTheme.accent : CoresPainel.ladrilho))
+                }
+                .buttonStyle(EncolheAoTocar())
+                .accessibilityLabel("Camada 3D".loc)
             }
             if layer.kind == .group { linhaDoGrupo }
             HStack(spacing: 8) {
@@ -862,9 +870,10 @@ struct PainelTransformar: View {
         let big = max(comp.size.x, comp.size.y) * 2
         let s = layer.size ?? comp.size
         let a = max(s.x, s.y)
-        return [
+        var lista: [(String, String, ClosedRange<Float>, Prop)] = [
             ("px", "Posição X", -big...big, .v(\.position, 0)),
             ("py", "Posição Y", -big...big, .v(\.position, 1)),
+            ("pz", "Posição Z", -big * 4...big * 4, .f(\.positionZ)),
             ("es", "Escala", 0...400, .v(\.scale, 2)),
             ("ex", "Escala X", 0...400, .v(\.scale, 0)),
             ("ey", "Escala Y", 0...400, .v(\.scale, 1)),
@@ -877,6 +886,10 @@ struct PainelTransformar: View {
             ("rx", "Rotação X", -180...180, .f(\.rotationX)),
             ("ry", "Rotação Y", -180...180, .f(\.rotationY)),
         ]
+        if layer.kind == .camera {
+            lista.insert(("zm", "Zoom da câmera", 50...big * 4, .f(\.zoomValue)), at: 0)
+        }
+        return lista
     }
 
     private func valor(_ p: Prop) -> Float {
@@ -889,7 +902,13 @@ struct PainelTransformar: View {
     }
 
     private func mudar(_ p: Prop, _ nv: Float, _ gravar: Bool) {
+        let liga3D: Bool
+        if case .f(let kp) = p, kp == \Transform.positionZ || kp == \Transform.rotationX || kp == \Transform.rotationY {
+            liga3D = true
+        } else { liga3D = false }
         edit(layer.id, gravar) { l in
+            // mexer em Z ou na rotacao X/Y liga a camada 3D (como a chave do cubo no AE)
+            if liga3D && l.kind != .camera { l.is3D = true }
             switch p {
             case .f(let kp): l.transform[keyPath: kp].set(nv, at: time)
             case .v(let kp, let e):

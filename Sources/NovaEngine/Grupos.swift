@@ -175,6 +175,54 @@ extension Composition {
         return true
     }
 
+    // MARK: 3D
+
+    /// Zoom da camera padrao do AE (lente de 50 mm): 1,389 x a largura da comp.
+    public var zoomPadrao: Float { Float(width) * 1.3888889 }
+
+    /// A camera ativa em `t`: a camada Camera de cima que esta visivel (como no AE).
+    public func cameraAtiva(em t: Float) -> Layer? {
+        layers.first { $0.kind == .camera && $0.enabled && t >= $0.startTime && t < $0.endTime }
+    }
+
+    /// Projecao da camera: leva um ponto da comp (x, y, z) para (x*w, y*w, w) na tela.
+    /// Sem camera, a padrao do AE: no centro, a `zoom` px na frente do plano z = 0.
+    public func projecao(em t: Float) -> simd_float4x4 {
+        let c = SIMD2<Float>(Float(width), Float(height)) / 2
+        var zoom = zoomPadrao
+        var vista = matrix_identity_float4x4
+        if let cam = cameraAtiva(em: t) {
+            zoom = max(1, cam.transform.zoom?.value(at: t) ?? zoomPadrao)
+            vista = worldMatrix(of: cam, at: t).inverse
+        } else {
+            vista = Transform.translation(-c.x, -c.y, zoom)
+        }
+        // K: (xc, yc, zc) -> (cx*zc + zoom*xc, cy*zc + zoom*yc, zc)
+        var k = matrix_identity_float4x4
+        k.columns.0 = SIMD4(zoom, 0, 0, 0)
+        k.columns.1 = SIMD4(0, zoom, 0, 0)
+        k.columns.2 = SIMD4(c.x, c.y, 0, 1)
+        k.columns.3 = SIMD4(0, 0, 0, 0)
+        return k * vista
+    }
+
+    /// Para uma camada 3D: a matriz que o shader usa para levar o pixel da tela ao pixel da
+    /// camada (homografia invertida, com w); nil se a camada esta atras da camera.
+    public func telaParaCamada3D(_ mundo: simd_float4x4, em t: Float) -> simd_float4x4? {
+        let m = projecao(em: t) * mundo
+        // (u, v, 0, 1) -> colunas 0, 1 e 3; linhas x, y e w (a 4a linha de K e w)
+        let h = simd_float3x3(SIMD3(m.columns.0.x, m.columns.0.y, m.columns.0.w),
+                              SIMD3(m.columns.1.x, m.columns.1.y, m.columns.1.w),
+                              SIMD3(m.columns.3.x, m.columns.3.y, m.columns.3.w))
+        guard abs(h.determinant) > 1e-9 else { return nil }
+        let i = h.inverse
+        var r = simd_float4x4(0)
+        r.columns.0 = SIMD4(i.columns.0.x, i.columns.0.y, 0, i.columns.0.z)
+        r.columns.1 = SIMD4(i.columns.1.x, i.columns.1.y, 0, i.columns.1.z)
+        r.columns.3 = SIMD4(i.columns.2.x, i.columns.2.y, 0, i.columns.2.z)
+        return r
+    }
+
     /// Camadas que podem ser pai de `filho` sem criar ciclo (mesmo nivel de grupo).
     public func paisPossiveis(para filho: UUID) -> [Layer] {
         guard let f = layer(id: filho) else { return [] }

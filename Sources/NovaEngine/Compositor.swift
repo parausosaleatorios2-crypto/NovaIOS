@@ -155,6 +155,12 @@ public final class Compositor {
         let mask = try contentProvider?.maskTexture(for: layer, at: time, device: device)
         let worldMatrix = layer.kind == .adjustment ? matrix_identity_float4x4
                                                     : comp.worldMatrix(of: layer, at: time)
+        // Camada 3D: perspectiva da camera (Position Z, Rotacao X/Y); atras da camera nao aparece.
+        var telaParaCamada = worldMatrix.inverse
+        if layer.is3D && layer.kind != .adjustment {
+            guard let h = comp.telaParaCamada3D(worldMatrix, em: time) else { return }
+            telaParaCamada = h
+        }
         let tex = try await cadeia(layer, comp: comp, time: time, inicial: base, layerSize: layerSize,
                                    limite: layer.effects.count, output: output, cb: cb, manifests: manifests,
                                    profundidade: profundidade, guardar: &guardar, doRenderer: &doRenderer)
@@ -181,7 +187,7 @@ public final class Compositor {
         u.mode = Int32(BlendMode.allCases.firstIndex(of: layer.blendMode) ?? 0)
         u.opacity = layer.transform.alpha(at: time)
         // O shader leva o pixel da TELA para a camada: precisa da inversa.
-        u.layerToScreen = worldMatrix.inverse
+        u.layerToScreen = telaParaCamada
         u.layerSize = layerSize
         u.screenSize = comp.size
         withUnsafeBytes(of: u) { enc.setFragmentBytes($0.baseAddress!, length: MemoryLayout<BlendUniforms>.stride, index: 0) }
@@ -506,6 +512,35 @@ public final class Compositor {
         return saida
     }
 
+    // MARK: amostras de tempo guardadas entre quadros
+
+    private struct AmostraDeTempo { let camada: Layer; let textura: MTLTexture }
+    private var amostrasDeTempo: [String: AmostraDeTempo] = [:]
+    private var ordemDasAmostras: [String] = []
+    /// No maximo umas 24 amostras (~3 quadros de Wide Time com 3+3 passos e folga).
+    private let maxAmostrasDeTempo = 24
+
+    private func usarAmostraDeTempo(_ chave: String) {
+        if let i = ordemDasAmostras.firstIndex(of: chave) { ordemDasAmostras.remove(at: i) }
+        ordemDasAmostras.append(chave)
+    }
+
+    /// Copia a amostra para uma textura propria (a do pool volta para o pool no fim do quadro).
+    private func guardarAmostraDeTempo(_ chave: String, _ camada: Layer, _ t: MTLTexture, _ cb: MTLCommandBuffer) {
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: t.pixelFormat, width: t.width, height: t.height,
+                                                         mipmapped: false)
+        d.usage = [.shaderRead, .renderTarget]
+        d.storageMode = .private
+        guard let copia = device.makeTexture(descriptor: d), let blit = cb.makeBlitCommandEncoder() else { return }
+        blit.copy(from: t, to: copia)
+        blit.endEncoding()
+        amostrasDeTempo[chave] = AmostraDeTempo(camada: camada, textura: copia)
+        usarAmostraDeTempo(chave)
+        while ordemDasAmostras.count > maxAmostrasDeTempo {
+            amostrasDeTempo[ordemDasAmostras.removeFirst()] = nil
+        }
+    }
+
     private func efeitoDeTempo(_ estagio: String, _ m: EffectManifest, _ fx: AppliedEffect, indice: Int,
                                layer: Layer, comp: Composition, time: Float, atual: MTLTexture,
                                output: MTLTexture, cb: MTLCommandBuffer, manifests: [String: EffectManifest],
@@ -544,9 +579,22 @@ public final class Compositor {
             if abs(t - time) < fd * 0.25 { return atual }
             if let c = cache[q] { return c }
             let lim = max(0, min(t, comp.duration))
+            // Amostra guardada de um quadro anterior (a camada nao mudou): o quadro seguinte do
+            // Wide Time reaproveita quase todas as do anterior em vez de montar tudo de novo.
+            let chave = "\(layer.id.uuidString)|\(indice)|\(Int((lim * 10000).rounded()))"
+            // (ajuste e grupo dependem de outras camadas: nao guardam)
+            let guarda = layer.kind != .adjustment && layer.kind != .group
+            if guarda, let g = amostrasDeTempo[chave], g.camada == layer {
+                usarAmostraDeTempo(chave)
+                cache[q] = g.textura
+                return g.textura
+            }
             let r = try await amostra(layer, comp: comp, t: lim, indice: indice, output: output, cb: cb,
                                       manifests: manifests, guardar: &meus)
-            if let r { cache[q] = r }
+            if let r {
+                cache[q] = r
+                if guarda { guardarAmostraDeTempo(chave, layer, r, cb) }
+            }
             return r
         }
 

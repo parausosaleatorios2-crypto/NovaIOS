@@ -56,6 +56,8 @@ public struct Transform: Codable, Sendable, Equatable {
     public var opacity     = Animated<Float>(100)                      // percentual
     /// Inclinacao em graus (x, y). Opcional para abrir projetos antigos.
     public var skew: Animated<SIMD2<Float>>?
+    /// Camera: zoom em px (como no AE; 50 mm = 1,389 x a largura). Opcional (projetos antigos).
+    public var zoom: Animated<Float>?
 
     public init() {}
 
@@ -417,5 +419,10 @@ public extension Transform {
     var skewValue: Animated<SIMD2<Float>> {
         get { skew ?? Animated(.zero) }
         set { skew = newValue }
+    }
+    /// Zoom da camera (padrao 1500 px, o da lente de 50 mm numa comp de 1080).
+    var zoomValue: Animated<Float> {
+        get { zoom ?? Animated(1500) }
+        set { zoom = newValue }
     }
 }

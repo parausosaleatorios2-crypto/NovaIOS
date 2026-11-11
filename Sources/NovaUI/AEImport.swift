@@ -662,16 +662,28 @@ enum AEImportador {
         let cat = await catalogo()
         var avisos: [String] = []
         var semEquivalente = Set<String>()
-        var idsAE: [UInt32: UUID] = [:]
-        var pais: [(UUID, UInt32)] = []
         var porNome: [String: URL] = [:]
         for m in midias { porNome[m.lastPathComponent.lowercased()] = m }
 
+        var compsPorID: [UInt32: AEChunk] = [:]
+        for c in comps { compsPorID[c.id] = c.item }
+        func tamanhoDaComp(_ c: AEChunk) -> SIMD2<Float> {
+            guard let cd = c.filho("cdta") else { return tamComp }
+            let w = Float(arq.u16(cd, 140)), h = Float(arq.u16(cd, 142))
+            return w > 0 && h > 0 ? SIMD2(w, h) : tamComp
+        }
+        var importadas = 0
+
+        /// As camadas de uma comp, em ordem; uma pre-comp vira um GRUPO com as camadas dela
+        /// dentro (recursivo), no tempo da comp de cima (`deslocamento`).
+        func montar(_ item: AEChunk, deslocamento: Double, grupo: UUID?, prof: Int, visitadas: Set<UInt32>) async -> [Layer] {
+        var idsAE: [UInt32: UUID] = [:]
+        var pais: [(UUID, UInt32)] = []
         var camadas: [Layer] = []
         for (n, ly) in item.filhos("LIST", "Layr").enumerated() {
             guard let ld = ly.filho("ldta") else { continue }
             let base = Double(max(arq.u32(ld, 16), 1))
-            let inicio = Double(arq.s32(ld, 12)) / base
+            let inicio = Double(arq.s32(ld, 12)) / base + deslocamento
             let entrada = Double(arq.s32(ld, 20)) / Double(max(arq.u32(ld, 24), 1))
             let saida = Double(arq.s32(ld, 28)) / Double(max(arq.u32(ld, 32), 1))
             let fonteID = arq.u32(ld, 40), paiID = arq.u32(ld, 132), idAE = arq.u32(ld, 0)
@@ -719,8 +731,13 @@ enum AEImportador {
                 }
                 l.size = f.tamanho ?? tamComp
             } else if let f = fonte, f.ehComp {
-                kind = .solid; l.solidColor = SIMD4(0.2, 0.2, 0.28, 1); l.size = tamComp
-                avisos.append(String(format: "Pré-composição \"%@\" virou um sólido.".loc, f.nome))
+                if let pc = compsPorID[fonteID], prof < 12, !visitadas.contains(fonteID) {
+                    kind = .group
+                    l.size = tamanhoDaComp(pc)
+                } else {
+                    kind = .solid; l.solidColor = SIMD4(0.2, 0.2, 0.28, 1); l.size = tamComp
+                    avisos.append(String(format: "Pré-composição \"%@\" virou um sólido.".loc, f.nome))
+                }
             } else {
                 kind = .null; l.size = SIMD2(100, 100)
             }
@@ -792,12 +809,23 @@ enum AEImportador {
             }
             idsAE[idAE] = l.id
             if paiID != 0 { pais.append((l.id, paiID)) }
+            l.groupID = grupo
             camadas.append(l)
+            importadas += 1
+            // pre-comp: o conteudo dela entra logo abaixo do grupo
+            if kind == .group, let pc = compsPorID[fonteID] {
+                camadas += await montar(pc, deslocamento: inicio, grupo: l.id, prof: prof + 1,
+                                        visitadas: visitadas.union([fonteID]))
+            }
         }
         for (filho, pai) in pais {
             if let alvo = idsAE[pai], let i = camadas.firstIndex(where: { $0.id == filho }) { camadas[i].parentID = alvo }
         }
-        comp.layers = camadas          // a ordem do AE: a de cima primeiro, como na Nova
+        return camadas
+        }
+
+        comp.layers = await montar(item, deslocamento: 0, grupo: nil, prof: 0, visitadas: [principal.id])
+        // a ordem do AE: a de cima primeiro, como na Nova
         if !semEquivalente.isEmpty {
             avisos.append(String(format: "Efeitos sem equivalente na Nova: %@".loc, semEquivalente.sorted().joined(separator: ", ")))
         }
