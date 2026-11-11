@@ -184,12 +184,16 @@ public struct EditorView: View {
             guard !items.isEmpty else { return }
             Task { await importar(items) }
         }
-        .fileImporter(isPresented: $importandoAudio, allowedContentTypes: [.audio],
-                      allowsMultipleSelection: true) { r in
-            importandoAudio = false
-            guard case .success(let urls) = r, !urls.isEmpty else { return }
-            Task { await importarAudio(urls) }
-        }
+        // Musica: o seletor de documentos do iOS (o fileImporter dividia a tela com os outros
+        // seletores e nao abria; e os arquivos vem copiados, sem permissao que expira).
+        .background(Color.clear.sheet(isPresented: $importandoAudio) {
+            SeletorDeArquivos(tipos: [.audio, .mp3, .mpeg4Audio, .wav, .aiff, .movie], varios: true) { urls in
+                importandoAudio = false
+                guard !urls.isEmpty else { return }
+                Task { await importarAudio(urls) }
+            }
+            .ignoresSafeArea()
+        })
         // .ffx: o seletor de documentos do iOS (o fileImporter dividido com o audio abria
         // filtrando so audio e os presets vinham cinza).
         .background(Color.clear.sheet(isPresented: $importandoFFX) {
@@ -774,7 +778,8 @@ public struct EditorView: View {
                                  onAbrirEfeito: { f in painel = PainelAberto(camada: l.id, tipo: .efeito(f)) })
                     .frame(height: 300)
             case .some(.transformar):
-                PainelTransformar(layer: l, comp: comp, time: time, edit: editar, onVoltar: { painel = nil })
+                PainelTransformar(layer: l, comp: comp, time: time, edit: editar, onVoltar: { painel = nil },
+                                  irPara: { t in playing = false; time = t })
                     .frame(height: 300)
             case .some(.opacidade):
                 PainelOpacidade(layer: l, time: time, edit: editar, onVoltar: { painel = nil })

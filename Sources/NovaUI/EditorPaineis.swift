@@ -857,8 +857,14 @@ struct PainelTransformar: View {
     let time: Float
     let edit: LayerEdit
     let onVoltar: () -> Void
+    /// Pula o cursor (as setas de quadro-chave, como no AE).
+    var irPara: ((Float) -> Void)? = nil
 
     @State private var selecionado = "px"
+    @State private var escalaLigada = true
+    @State private var editando: String?
+    @State private var texto = ""
+    @State private var arrasto: (String, Float)?
 
     /// (id, titulo, faixa, propriedade de 1 ou 2 eixos, eixo)
     private enum Prop {
@@ -972,14 +978,155 @@ struct PainelTransformar: View {
                 }
             } label: { Label("Zerar rotação e inclinação".loc, systemImage: "arrow.counterclockwise") }
         }, conteudo: {
-            ForEach(itens, id: \.0) { it in
-                let inf = info(it.3)
-                LinhaRegua(titulo: it.1.loc, selecionado: selecionado == it.0,
-                           animado: inf.animado, temChave: inf.chave,
-                           valor: valor(it.3), faixa: it.2,
-                           onSelecionar: { selecionado = it.0 }) { v, g in mudar(it.3, v, g) }
+            // Como o Transform do After Effects: cronometro, valores azuis que se arrastam
+            // (ou se digitam) e as setas/losango de quadro-chave em cada propriedade.
+            if layer.kind == .camera { linhaAE("Zoom", [("zm", 1)]) }
+            linhaAE("Ponto de ancoragem", [("ax", 1), ("ay", 1)])
+            linhaAE("Posição", layer.is3D ? [("px", 1), ("py", 1), ("pz", 1)] : [("px", 1), ("py", 1)])
+            if !layer.is3D { linhaAE("Posição Z", [("pz", 1)]) }
+            linhaAE("Escala", [("ex", 0.5), ("ey", 0.5)], ligacao: true)
+            if layer.is3D {
+                linhaAE("Rotação X", [("rx", 0.5)])
+                linhaAE("Rotação Y", [("ry", 0.5)])
+                linhaAE("Rotação Z", [("rz", 0.5)])
+            } else {
+                linhaAE("Rotação", [("rz", 0.5)])
             }
+            linhaAE("Opacidade", [("op", 0.5)], sufixo: "%")
         })
+        .alert("Valor".loc, isPresented: Binding(get: { editando != nil }, set: { if !$0 { editando = nil } })) {
+            TextField("0", text: $texto).keyboardType(.numbersAndPunctuation)
+            Button("Cancelar".loc, role: .cancel) { editando = nil }
+            Button("OK") {
+                if let id = editando, let p = prop(id),
+                   let v = Float(texto.replacingOccurrences(of: ",", with: ".")) { aplicar(id, p, v, true) }
+                editando = nil
+            }
+        }
+    }
+
+    private func prop(_ id: String) -> Prop? { itens.first { $0.0 == id }?.3 }
+
+    /// Escala ligada (a corrente do AE): mudar X leva o Y na mesma proporcao.
+    private func aplicar(_ id: String, _ p: Prop, _ v: Float, _ g: Bool) {
+        if escalaLigada, id == "ex" || id == "ey" {
+            let s = layer.transform.scale.value(at: time)
+            let atual = id == "ex" ? s.x : s.y
+            let k = atual != 0 ? v / atual : 1
+            let t = time
+            edit(layer.id, g) { l in
+                l.transform.scale.set(atual != 0 ? s * k : SIMD2(v, v), at: t)
+            }
+            return
+        }
+        mudar(p, v, g)
+    }
+
+    private func linhaAE(_ nome: String, _ campos: [(String, Float)], ligacao: Bool = false, sufixo: String = "") -> some View {
+        let p0 = prop(campos[0].0)
+        let inf = p0.map { info($0) }
+        return HStack(spacing: 6) {
+            Button {
+                selecionado = campos[0].0
+                if let p0 { cronometro(p0) }
+            } label: {
+                Image(systemName: inf?.animado == true ? "stopwatch.fill" : "stopwatch")
+                    .font(.system(size: 15))
+                    .foregroundStyle(inf?.animado == true ? NovaTheme.accent : NovaTheme.dim)
+                    .frame(width: 26, height: 34)
+            }.buttonStyle(.plain)
+            Text(nome.loc).font(.system(size: 12.5)).foregroundStyle(NovaTheme.text.opacity(0.9))
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: 92, alignment: .leading)
+            if ligacao {
+                Button { escalaLigada.toggle() } label: {
+                    Image(systemName: escalaLigada ? "link" : "link.badge.plus")
+                        .font(.system(size: 11)).foregroundStyle(escalaLigada ? NovaTheme.accent : NovaTheme.dim2)
+                }.buttonStyle(.plain)
+            }
+            ForEach(campos, id: \.0) { c in numero(c.0, passo: c.1, sufixo: sufixo) }
+            Spacer(minLength: 2)
+            if inf?.animado == true, let p0 {
+                Button { pular(p0, frente: false) } label: {
+                    Image(systemName: "arrowtriangle.left.fill").font(.system(size: 9)).foregroundStyle(NovaTheme.dim)
+                        .frame(width: 18, height: 34)
+                }.buttonStyle(.plain)
+            }
+            Button {
+                selecionado = campos[0].0
+                if let p0 { alternar(p0) }
+            } label: {
+                Image(systemName: inf?.chave == true ? "diamond.fill" : "diamond")
+                    .font(.system(size: 12)).foregroundStyle(inf?.chave == true ? NovaTheme.accent : NovaTheme.dim)
+                    .frame(width: 22, height: 34)
+            }.buttonStyle(.plain)
+            if inf?.animado == true, let p0 {
+                Button { pular(p0, frente: true) } label: {
+                    Image(systemName: "arrowtriangle.right.fill").font(.system(size: 9)).foregroundStyle(NovaTheme.dim)
+                        .frame(width: 18, height: 34)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 6)
+        .background(RoundedRectangle(cornerRadius: 8)
+            .fill(campos.contains { $0.0 == selecionado } ? CoresPainel.pilula.opacity(0.7) : CoresPainel.pilula.opacity(0.3)))
+    }
+
+    /// Numero azul do AE: arrastar para os lados muda (passo por ponto), tocar digita.
+    private func numero(_ id: String, passo: Float, sufixo: String) -> some View {
+        let p = prop(id)
+        let v = p.map { valor($0) } ?? 0
+        let azul = Color(red: 0.35, green: 0.62, blue: 1)
+        return Text(formatarValor(v) + sufixo)
+            .font(.system(size: 13, weight: .medium).monospacedDigit())
+            .foregroundStyle(azul)
+            .underline(true, color: azul.opacity(0.35))
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .padding(.horizontal, 3).frame(minWidth: 44, minHeight: 34)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selecionado = id
+                texto = formatarValor(v).replacingOccurrences(of: ",", with: ".")
+                editando = id
+            }
+            .gesture(DragGesture(minimumDistance: 3).onChanged { g in
+                guard let p else { return }
+                selecionado = id
+                if arrasto?.0 != id { arrasto = (id, v) }
+                let base = arrasto?.1 ?? v
+                aplicar(id, p, base + Float(g.translation.width) * passo, false)
+            }.onEnded { g in
+                guard let p, let a = arrasto else { return }
+                aplicar(id, p, a.1 + Float(g.translation.width) * passo, true)
+                arrasto = nil
+            })
+    }
+
+    /// Cronometro do AE: liga a animacao (chave no cursor) ou desliga (fica o valor de agora).
+    private func cronometro(_ p: Prop) {
+        let t = time
+        edit(layer.id, true) { l in
+            switch p {
+            case .f(let kp):
+                var a = l.transform[keyPath: kp]
+                if a.keyframes.isEmpty { toggleKeyframe(&a, at: t) } else { a.clearKeyframes(keepingValueAt: t) }
+                l.transform[keyPath: kp] = a
+            case .v(let kp, _):
+                var a = l.transform[keyPath: kp]
+                if a.keyframes.isEmpty { toggleKeyframe(&a, at: t) } else { a.clearKeyframes(keepingValueAt: t) }
+                l.transform[keyPath: kp] = a
+            }
+        }
+    }
+
+    private func pular(_ p: Prop, frente: Bool) {
+        let tempos: [Float]
+        switch p {
+        case .f(let kp): tempos = layer.transform[keyPath: kp].keyframes.map(\.time)
+        case .v(let kp, _): tempos = layer.transform[keyPath: kp].keyframes.map(\.time)
+        }
+        let alvo = frente ? tempos.filter { $0 > time + 1e-4 }.min() : tempos.filter { $0 < time - 1e-4 }.max()
+        if let alvo { irPara?(alvo) }
     }
 
     private func acaoChave(_ p: Prop?) -> (() -> Void)? {
