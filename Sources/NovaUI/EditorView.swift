@@ -432,6 +432,8 @@ public struct EditorView: View {
         while playing && !Task.isCancelled && !cacheDeQuadros.completo(de: q, ate: total) {
             time = Float(q) / fps
             await cacheDeQuadros.esperar(q)
+            // Quadro que nao pode ficar no cache (efeito com aviso): toca em tempo real daqui.
+            if !cacheDeQuadros.temQuadro(q) { break }
             q += 1
             if q >= total {
                 time = comp.duration; playing = false; return

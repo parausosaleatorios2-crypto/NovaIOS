@@ -62,6 +62,9 @@ public struct PreviewSurface: UIViewRepresentable {
         /// Quadro do cache na tela (nao e do pool do Compositor: nao se devolve).
         private var doCache: MTLTexture?
         var cache: CacheDeQuadros?
+        /// Ultimo quadro pedido pela tela: um quadro montado depois que a tela ja foi para
+        /// outro (do cache) entra no cache mas nao volta para a tela.
+        private var alvo: Int?
         private var rendering = false
         private var pending: (Composition, Float)?
         private var manifests: [String: EffectManifest] = [:]
@@ -87,6 +90,7 @@ public struct PreviewSurface: UIViewRepresentable {
             if let cache {
                 cache.validar(comp, efeitos: manifests.keys.sorted())
                 let q = CacheDeQuadros.quadro(time, fps: comp.frameRate)
+                alvo = q
                 if let t = cache.textura(q) {
                     // Quadro pronto: sai na hora, sem montar.
                     doCache = t
@@ -117,16 +121,21 @@ public struct PreviewSurface: UIViewRepresentable {
                     let q = CacheDeQuadros.quadro(time, fps: comp.frameRate)
                     let tq = cache != nil ? Float(q) / max(comp.frameRate, 1) : time
                     let tex = try await compositor.renderFrame(comp, at: tq, manifests: manifests)
-                    if let old = frame { compositor.release(old) }
-                    frame = tex
-                    doCache = nil
+                    let completo = compositor.lastFrameWarnings.isEmpty
                     lastWarning = compositor.lastFrameWarnings.first
-                    view?.setNeedsDisplay()
+                    if cache == nil || alvo == nil || alvo == q {
+                        if let old = frame { compositor.release(old) }
+                        frame = tex
+                        doCache = nil
+                        view?.setNeedsDisplay()
+                    }
                     if let cache {
                         cache.validar(comp, efeitos: manifests.keys.sorted())
-                        if let c = copiaParaCache(tex, compositor) { cache.guardar(q, c, perto: q) }
+                        // Quadro com aviso (efeito ainda carregando, camada que falhou) nao fica no cache.
+                        if completo, let c = copiaParaCache(tex, compositor, comp: comp) { cache.guardar(q, c, perto: alvo ?? q) }
                         else { cache.mostrou(q) }
                     }
+                    if frame !== tex { compositor.release(tex) }
                 }
             } catch {
                 lastWarning = error.localizedDescription
@@ -142,10 +151,17 @@ public struct PreviewSurface: UIViewRepresentable {
 
         /// Copia o quadro para uma textura bgra8 do tamanho da tela (no maximo o da composicao).
         @MainActor
-        private func copiaParaCache(_ tex: MTLTexture, _ c: Compositor) -> MTLTexture? {
-            guard let device, let view else { return nil }
+        private func copiaParaCache(_ tex: MTLTexture, _ c: Compositor, comp: Composition) -> MTLTexture? {
+            guard let device, let view, let cache else { return nil }
             let ds = view.drawableSize
-            let k = min(1, min(Double(max(ds.width, 1)) / Double(tex.width), Double(max(ds.height, 1)) / Double(tex.height)))
+            var k = min(1, min(Double(max(ds.width, 1)) / Double(tex.width), Double(max(ds.height, 1)) / Double(tex.height)))
+            // Como a resolucao da previa do AE: tamanho em que a composicao INTEIRA cabe no cache
+            // (senao o comeco sai do cache enquanto o fim entra e o play nunca fica em tempo real).
+            let quadros = max(1, Double(comp.duration) * Double(max(comp.frameRate, 1)))
+            let porQuadro = Double(cache.orcamento) / quadros / 4
+            let kCabe = (porQuadro / Double(tex.width * tex.height)).squareRoot()
+            let kMin = 360.0 / Double(max(tex.width, tex.height))
+            k = min(k, max(kCabe, kMin))
             let w = max(2, Int(Double(tex.width) * k)), h = max(2, Int(Double(tex.height) * k))
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
             d.usage = [.renderTarget, .shaderRead]

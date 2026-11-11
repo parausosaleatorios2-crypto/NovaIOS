@@ -25,7 +25,7 @@ public final class CacheDeQuadros: ObservableObject {
     private var avisoDeMemoria: NSObjectProtocol?
 
     /// Teto de memoria: um sexto da RAM do aparelho, no maximo 768 MB.
-    private let orcamento: Int = {
+    let orcamento: Int = {
         let ram = Int(clamping: ProcessInfo.processInfo.physicalMemory)
         return max(96 << 20, min(768 << 20, ram / 6))
     }()
@@ -56,7 +56,21 @@ public final class CacheDeQuadros: ObservableObject {
 
     public func limpar() {
         texturas.removeAll()
-        if !prontos.isEmpty { prontos = [] }
+        publicar()
+    }
+
+    /// A faixa verde muda fora da atualizacao da tela (o pedido de quadro vem de dentro
+    /// dela, e o SwiftUI nao aceita @Published mudando ali); varias mudancas viram uma.
+    private var publicacaoMarcada = false
+    private func publicar() {
+        guard !publicacaoMarcada else { return }
+        publicacaoMarcada = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.publicacaoMarcada = false
+            let s = Set(self.texturas.keys)
+            if s != self.prontos { self.prontos = s }
+        }
     }
 
     func textura(_ q: Int) -> MTLTexture? { texturas[q] }
@@ -78,7 +92,7 @@ public final class CacheDeQuadros: ObservableObject {
             guard let longe = texturas.keys.max(by: { abs($0 - atual) < abs($1 - atual) }) else { break }
             texturas[longe] = nil
         }
-        prontos = Set(texturas.keys)
+        publicar()
         avisar(q)
     }
 
