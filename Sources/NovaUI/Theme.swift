@@ -63,13 +63,14 @@ public enum NovaTheme {
 /// A string original: «troca o layout (Nova, CapCut, Motion, After Effects)
 /// com o jeito de editar de cada um».
 public enum EditorLayout: String, CaseIterable, Identifiable, Codable, Sendable {
-    case nova, capcut, motion, afterEffects
+    case nova, capcut, blurrr, motion, afterEffects
 
     public var id: String { rawValue }
     public var label: String {
         switch self {
         case .nova:         return "Nova"
         case .capcut:       return "CapCut"
+        case .blurrr:       return "Blurrr"
         case .motion:       return "Motion"
         case .afterEffects: return "After Effects"
         }
@@ -78,6 +79,7 @@ public enum EditorLayout: String, CaseIterable, Identifiable, Codable, Sendable 
         switch self {
         case .nova:         return "O layout de sempre do app"
         case .capcut:       return "As barras e o botão de transição do CapCut"
+        case .blurrr:       return "A barra de baixo e os botões do Blurrr"
         case .motion:       return "Os painéis do AE, compactos"
         case .afterEffects: return "Os painéis do AE. Pede tela grande e deitada."
         }

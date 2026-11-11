@@ -27,7 +27,10 @@ public struct EditorView: View {
     /// RAM Preview: os quadros ja montados (a faixa verde da timeline).
     @StateObject private var cacheDeQuadros = CacheDeQuadros()
     @State private var selectedLayer: UUID?
-    @State private var layout: EditorLayout = .nova
+    @State private var layout: EditorLayout = EditorLayout(rawValue: UserDefaults.standard.string(forKey: "nova.layoutDoEditor") ?? "") ?? .nova
+    /// O menu "Layout" aberto na previa e a transicao "Montando o layout".
+    @State private var menuDeLayout = false
+    @State private var montando: EditorLayout?
     @State private var sheet: EditorSheet?
     @State private var installedExtensions: Set<String> = []   // vazio: nenhuma instalada
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -145,7 +148,22 @@ public struct EditorView: View {
                 areaDeBaixo
             }
             .background(NovaTheme.background)
+            .overlay(alignment: .topTrailing) {
+                if menuDeLayout {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001).ignoresSafeArea()
+                            .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { menuDeLayout = false } }
+                        MenuDeLayout(atual: layout, telaGrande: geo.size.width >= EditorLayout.afterEffects.minimumSize.width,
+                                     escolher: { l in trocarLayout(l) },
+                                     maisOpcoes: { menuDeLayout = false; sheet = .layout })
+                            .padding(.top, 96).padding(.trailing, 10)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
+                    }
+                }
+            }
+            .overlay { if let m = montando { TransicaoDeLayout(layout: m).id(m) } }
         }
+        .onChange(of: layout) { _, l in UserDefaults.standard.set(l.rawValue, forKey: "nova.layoutDoEditor") }
         .navigationBarHidden(true)
         .preferredColorScheme(.dark)
         .sheet(item: $sheet) { s in
@@ -503,7 +521,16 @@ public struct EditorView: View {
     /// alteracoes nesta sessao), diamante da Nova Pro e o menu redondo.
     private var camadaSelecionada: Layer? { selectedLayer.flatMap { comp.layer(id: $0) } }
 
+    @ViewBuilder
     private var topBar: some View {
+        switch layout {
+        case .capcut: topoCapCut
+        case .blurrr: topoBlurrr
+        default: topoNova
+        }
+    }
+
+    private var topoNova: some View {
         HStack(spacing: 14) {
             Button {
                 if painelAtual != nil { painel = nil }
@@ -581,6 +608,242 @@ public struct EditorView: View {
         .background(NovaTheme.surface)
     }
 
+    // MARK: troca de layout
+
+    /// Troca o layout com a transicao "Montando o layout" (as barras mudam no meio dela).
+    private func trocarLayout(_ l: EditorLayout) {
+        withAnimation(.easeOut(duration: 0.15)) { menuDeLayout = false }
+        guard l != layout else { return }
+        montando = l
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 380_000_000)
+            painel = nil
+            layout = l
+            try? await Task.sleep(nanoseconds: 620_000_000)
+            withAnimation(.easeOut(duration: 0.25)) { if montando == l { montando = nil } }
+        }
+    }
+
+    // MARK: layout CapCut
+
+    private var topoCapCut: some View {
+        HStack(spacing: 18) {
+            Button {
+                if painelAtual != nil { painel = nil } else if selectedLayer != nil { selectedLayer = nil } else { dismiss() }
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 20, weight: .medium)).foregroundStyle(NovaTheme.text)
+            }
+            Button { sheet = .efeitos } label: {
+                Image(systemName: "magnifyingglass").font(.system(size: 19, weight: .medium)).foregroundStyle(NovaTheme.text)
+            }
+            Spacer()
+            Button { sheet = .exportar } label: {
+                HStack(spacing: 4) {
+                    Text("\(min(comp.width, comp.height))p").font(.system(size: 14, weight: .semibold))
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(NovaTheme.text)
+            }
+            Button { sheet = .exportar } label: {
+                Text("Exportar".loc).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.black)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(red: 0.36, green: 0.85, blue: 0.95)))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 56)
+        .background(NovaTheme.background)
+    }
+
+    private var faixaCapCut: some View {
+        HStack(spacing: 0) {
+            botaoFaixa(previaCheia ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") {
+                withAnimation(.easeInOut(duration: 0.2)) { previaCheia.toggle() }
+            }
+            Text(String(format: "%02d:%02d / %02d:%02d", Int(time) / 60, Int(time) % 60,
+                        Int(comp.duration) / 60, Int(comp.duration) % 60))
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(NovaTheme.dim)
+                .frame(maxWidth: .infinity)
+            Button { playing.toggle() } label: {
+                Image(systemName: playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 24)).foregroundStyle(NovaTheme.text)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(maxWidth: .infinity)
+            botaoFaixa("diamond", habilitado: selectedLayer != nil) {
+                if let l = camadaSelecionada { painel = PainelAberto(camada: l.id, tipo: .transformar) }
+            }
+            botaoFaixa("arrow.uturn.backward", habilitado: !undoStack.isEmpty) { desfazer() }
+            botaoFaixa("arrow.uturn.forward", habilitado: !redoStack.isEmpty) { refazer() }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 46)
+        .background(NovaTheme.background)
+    }
+
+    private var baixoCapCut: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(NovaTheme.line).frame(height: 1)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    Button {
+                        if let v = comp.layers.first(where: { $0.kind == .video || $0.kind == .image }) ?? comp.layers.first {
+                            selectedLayer = v.id
+                        } else { aviso = "Adicione um vídeo ou uma foto.".loc }
+                    } label: { itemCapCut("scissors", "Editar") }
+                    Button { importandoAudio = true } label: { itemCapCut("music.note", "Áudio") }
+                    Button { pedindoTexto = true } label: { itemCapCut("textformat", "Texto") }
+                    Button { sheet = .efeitos } label: { itemCapCut("star", "Efeitos") }
+                    Button { showPicker = true } label: { itemCapCut("square.on.square", "Camada") }
+                    Button { tocarFerramenta("legendas") } label: { itemCapCut("captions.bubble", "Legendas") }
+                    Menu {
+                        Button { adicionarSolido() } label: { Label("Sólido".loc, systemImage: "square.fill") }
+                        Button { adicionarForma(.rectangle) } label: { Label("Forma".loc, systemImage: "square.on.circle") }
+                        Button { adicionarAjuste() } label: { Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle") }
+                        Button { adicionarNulo() } label: { Label("Nulo".loc, systemImage: "scope") }
+                        Button { adicionarCamera() } label: { Label("Câmera 3D".loc, systemImage: "video.fill") }
+                        Button { importandoFFX = true } label: { Label("Preset do After Effects (.ffx)".loc, systemImage: "wand.and.rays") }
+                    } label: { itemCapCut("plus.square", "Mais") }
+                }
+                .padding(.horizontal, 6)
+            }
+            .buttonStyle(EncolheAoTocar())
+            .frame(height: 74)
+            .background(NovaTheme.background)
+        }
+    }
+
+    private func itemCapCut(_ icone: String, _ nome: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icone).font(.system(size: 21)).foregroundStyle(NovaTheme.text.opacity(0.9)).frame(height: 26)
+            Text(nome.loc).font(.system(size: 11.5)).foregroundStyle(NovaTheme.text.opacity(0.85))
+                .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+        }
+        .frame(width: 66)
+    }
+
+    /// Clipe selecionado no CapCut: a fileira de ferramentas que rola, com "<" para voltar.
+    private func ferramentasCapCut(_ l: Layer) -> some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(NovaTheme.line).frame(height: 1)
+            HStack(spacing: 0) {
+                Button { selectedLayer = nil } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(NovaTheme.text).frame(width: 34, height: 60)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(NovaTheme.surface2))
+                }
+                .padding(.leading, 6)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        Button { acaoClipe("dividir", l) } label: { itemCapCut("scissors", "Dividir") }
+                        Button { acaoClipe("animar", l) } label: { itemCapCut("play.rectangle", "Animações") }
+                        Button { acaoClipe("efeitos", l) } label: { itemCapCut("star", "Efeitos") }
+                        Button { excluirSelecionada() } label: { itemCapCut("trash", "Excluir") }
+                        Button { acaoClipe("mascara", l) } label: { itemCapCut("crop", "Recortar") }
+                        Button { sheet = .efeitos } label: { itemCapCut("camera.filters", "Filtros") }
+                        Button { tocarFerramenta("removerFundo") } label: { itemCapCut("person.crop.rectangle", "Remover plano de fundo") }
+                        Button { acaoClipe("opacidade", l) } label: { itemCapCut("drop", "Opacidade") }
+                        Button { acaoClipe("mascara", l) } label: { itemCapCut("circle.circle", "Mascarar") }
+                        Button { acaoClipe("transformar", l) } label: { itemCapCut("arrow.up.and.down.and.arrow.left.and.right", "Transformar") }
+                        Button { duplicarSelecionada() } label: { itemCapCut("plus.square.on.square", "Duplicar") }
+                    }
+                }
+            }
+            .buttonStyle(EncolheAoTocar())
+            .frame(height: 74)
+            .background(NovaTheme.background)
+        }
+    }
+
+    // MARK: layout Blurrr
+
+    private var topoBlurrr: some View {
+        HStack(spacing: 16) {
+            Button {
+                if painelAtual != nil { painel = nil } else if selectedLayer != nil { selectedLayer = nil } else { dismiss() }
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 20, weight: .medium)).foregroundStyle(NovaTheme.text)
+            }
+            Spacer()
+            Button { sheet = .info("Proporção".loc, String(format: "%d × %d".loc, comp.width, comp.height)) } label: {
+                Image(systemName: "iphone").font(.system(size: 19)).foregroundStyle(NovaTheme.text)
+            }
+            Button { sheet = .exportar } label: {
+                HStack(spacing: 4) {
+                    Text("\(min(comp.width, comp.height))P").font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(NovaTheme.text)
+            }
+            Button { sheet = .exportar } label: {
+                Image(systemName: "arrow.down.to.line").font(.system(size: 17, weight: .bold)).foregroundStyle(Color.black)
+                    .frame(width: 40, height: 34)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(Color(red: 0.8, green: 1, blue: 0.3)))
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 56)
+        .background(NovaTheme.background)
+    }
+
+    private var faixaBlurrr: some View {
+        HStack(spacing: 0) {
+            botaoFaixa("arrow.uturn.backward", habilitado: !undoStack.isEmpty) { desfazer() }
+            botaoFaixa("arrow.uturn.forward", habilitado: !redoStack.isEmpty) { refazer() }
+            botaoFaixa("captions.bubble") { tocarFerramenta("legendas") }
+            Button { playing.toggle() } label: {
+                Image(systemName: playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 24)).foregroundStyle(NovaTheme.text)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(maxWidth: .infinity)
+            botaoFaixa(previaCheia ? "arrow.down.right.and.arrow.up.left" : "pip") {
+                withAnimation(.easeInOut(duration: 0.2)) { previaCheia.toggle() }
+            }
+            botaoFaixa("square.grid.3x3") { previaPreenche.toggle() }
+            botaoFaixa("bookmark") { adicionarMarcador() }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 46)
+        .background(NovaTheme.background)
+    }
+
+    private var baixoBlurrr: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(NovaTheme.line).frame(height: 1)
+            HStack(spacing: 8) {
+                Button { showPicker = true } label: { itemBlurrr("play.rectangle", "Vídeo/Foto") }
+                Button { importandoAudio = true } label: { itemBlurrr("music.note", "Música") }
+                Button { sheet = .efeitos } label: { itemBlurrr("sparkles", "Efeitos") }
+                Button { pedindoTexto = true } label: { itemBlurrr("textformat", "Texto") }
+                Menu {
+                    Button { adicionarForma(.rectangle) } label: { Label("Retângulo".loc, systemImage: "rectangle") }
+                    Button { adicionarForma(.ellipse) } label: { Label("Elipse".loc, systemImage: "circle") }
+                    Button { adicionarForma(.star) } label: { Label("Estrela".loc, systemImage: "star") }
+                    Button { adicionarForma(.polygon) } label: { Label("Polígono".loc, systemImage: "hexagon") }
+                    Divider()
+                    Button { adicionarSolido() } label: { Label("Sólido".loc, systemImage: "square.fill") }
+                    Button { adicionarNulo() } label: { Label("Nulo".loc, systemImage: "scope") }
+                    Button { adicionarCamera() } label: { Label("Câmera 3D".loc, systemImage: "video.fill") }
+                    Button { adicionarAjuste() } label: { Label("Camada de ajuste".loc, systemImage: "slider.horizontal.below.rectangle") }
+                    Button { importandoFFX = true } label: { Label("Preset do After Effects (.ffx)".loc, systemImage: "wand.and.rays") }
+                } label: { itemBlurrr("triangle.circle", "Formas") }
+            }
+            .buttonStyle(EncolheAoTocar())
+            .padding(.horizontal, 8).padding(.vertical, 8)
+            .background(NovaTheme.background)
+        }
+    }
+
+    private func itemBlurrr(_ icone: String, _ nome: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icone).font(.system(size: 21)).foregroundStyle(NovaTheme.text)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(RoundedRectangle(cornerRadius: 12).fill(NovaTheme.surface2))
+            Text(nome.loc).font(.system(size: 11)).foregroundStyle(NovaTheme.dim).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+
     /// Divisoria entre a previa e a faixa, com a alca no meio (como no APK).
     private var alcaDivisoria: some View {
         ZStack {
@@ -608,6 +871,11 @@ public struct EditorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(previaPreenche ? 0 : 6)
                 .clipped()
+            ChipDoLayout(layout: layout) {
+                withAnimation(.easeOut(duration: 0.15)) { menuDeLayout.toggle() }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             Button { previaPreenche.toggle() } label: {
                 Text(previaPreenche ? "Fill" : "Full")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(NovaTheme.text)
@@ -623,7 +891,16 @@ public struct EditorView: View {
     /// Faixa de transporte do APK (x02.E): 52 dp, cor de superficie, botoes de
     /// largura igual — Desfazer, Refazer, Ponto anterior (J), Reproduzir/Pausar,
     /// Proximo ponto (K), Copiar e colar camada, Vista da previa / acoes.
+    @ViewBuilder
     private var transport: some View {
+        switch layout {
+        case .capcut: faixaCapCut
+        case .blurrr: faixaBlurrr
+        default: faixaNova
+        }
+    }
+
+    private var faixaNova: some View {
         HStack(spacing: 0) {
             botaoFaixa("arrow.uturn.backward", habilitado: !undoStack.isEmpty) { desfazer() }
             botaoFaixa("arrow.uturn.forward", habilitado: !redoStack.isEmpty) { refazer() }
@@ -786,6 +1063,8 @@ public struct EditorView: View {
             case .some(.opacidade):
                 PainelOpacidade(layer: l, time: time, edit: editar, onVoltar: { painel = nil })
                     .frame(height: 300)
+            case .none where layout == .capcut:
+                ferramentasCapCut(l)
             case .none:
                 PainelClipe(layer: l, comp: comp,
                             preRender: preRenderando?.0 == l.id ? preRenderando?.1 : nil) { acaoClipe($0, l) }
@@ -913,7 +1192,16 @@ public struct EditorView: View {
 
     /// Barra de baixo sem nada selecionado, como na captura do APK: Adicionar,
     /// IA, Biblioteca, Legendas e Layout, de largura igual.
+    @ViewBuilder
     private var bottomBar: some View {
+        switch layout {
+        case .capcut: baixoCapCut
+        case .blurrr: baixoBlurrr
+        default: baixoNova
+        }
+    }
+
+    private var baixoNova: some View {
         VStack(spacing: 0) {
             Rectangle().fill(NovaTheme.line).frame(height: 1)
             HStack(spacing: 0) {
