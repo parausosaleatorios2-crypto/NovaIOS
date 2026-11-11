@@ -1,91 +1,179 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Nebulosidade: nebulosa, galáxia, nuvem e fumaça volumétricas.
+  Nebulosity — o painel do plugin da Irrealix para o After Effects (aescripts), com a conta nossa.
 
-  Mesma ideia do plugin Nebulosity (Irrealix) para o After Effects, mas a conta é nossa: um raio sai da
-  câmera por pixel e atravessa um volume; a densidade em cada passo é ruído 3D em camadas (fBm) com o
-  espaço torcido por outro ruído (domain warp), recortada por uma forma (esfera achatada, disco de
-  galáxia ou camada infinita). A cor vem de uma rampa de três cores pela densidade, com emissão no
-  miolo, e a luz é uma segunda amostra na direção dela (sombra própria). Composição de frente para trás.
+  O plugin nao esta no APK. Os controles e a ordem deles vem da documentacao publica da Irrealix
+  (irrealix.com/docs/nebulosity/overview e as capturas do painel): Preset, Base Form (Box/Sphere,
+  Width/Height/Depth/Diameter, Density Feather Ramp), Transform (Rotation, Position, Scale),
+  Scattering (Density, Absorption Color, Emission Source Color/Gradient, Emission Multiplier,
+  Emission Gradient com base Density/Radial/Noise, Emission Noise), Noise 1..3 (Enabled, Type
+  Volume/Spiral/Worley/Inverted FBM, Complexity, Density Offset, Density Contrast, Scale e Scale
+  X/Y/Z, Offset X/Y/Z, Evolution, Limit Maximum Value, Operation Add/Subtract/Multiply), Lights
+  (Stars Count/Intensity/Falloff/Color/Random Seed e Fast Stars), Post Effects (Mosaic, Density
+  Contrast, Distortion Spiral) e Render (Max Steps, Steps Jittering, Density Preview).
+
+  A conta (nao e o codigo do plugin, que e fechado): o raio sai da camera padrao do AE (lente de
+  50 mm: zoom = 1,389 x largura) e atravessa a forma base. Densidade por ponto = Density + os
+  noises, cada um somado, subtraido ou multiplicado, como o "Operation" do painel; a borda vem da
+  rampa de feather. Absorcao por canal: a luz que atravessa perde exp(-d * (1 - Absorption Color)),
+  entao a cor de absorcao e a que NAO se ve; a emissao (cor, gradiente ou o proprio fundo) soma na
+  frente para tras. Estrelas sao pontos de luz espalhados no volume que iluminam a nuvem perto deles.
+  Masking por camada, Z Depth e as luzes da comp do AE nao entram (o app nao tem esse acesso).
 -->
 <effect
     id="nova.effect.nebulosity"
-    name="Nebulosidade"
+    name="Nebulosity"
     name-en="Nebulosity"
-    desc="Nebulosa, galáxia, nuvem ou fumaça em volume 3D (raymarching de ruído), com luz, cor por densidade e evolução."
-    desc-en="Volumetric nebulae, galaxies, clouds and smoke (raymarched noise) with lighting, density colouring and evolution."
+    desc="Nuvens, nebulosas e galáxias volumétricas (raymarching), com os controles do plugin Nebulosity do After Effects: forma base, 3 noises, absorção, emissão, estrelas e pós-efeitos."
+    desc-en="Volumetric clouds, nebulae and galaxies (raymarching) with the controls of the Nebulosity After Effects plugin: base form, 3 noises, absorption, emission, stars and post effects."
     category="procedural"
     blend="mode"
-    tags="nebulosity,nebulosa,galáxia,volume,raymarching,nuvem,fumaça,espaço,céu">
+    tags="nebulosity,nebulosa,irrealix,volume,raymarching,nuvem,fumaça,galáxia,espaço,céu,stars">
 
     <params>
         <texture id="inputImg" src="content" />
 
-        <selector id="shape" label="Forma" default="0" options="Nuvem esférica|Disco de galáxia|Camada infinita" />
-        <slider id="density" label="Densidade" default="1.2" min="0.0" max="5.0" step="0.01" />
-        <slider id="coverage" label="Recorte" default="0.35" min="0.0" max="1.0" step="0.01" />
-        <slider id="size" label="Tamanho" default="1.0" min="0.2" max="3.0" step="0.01" />
 
-        <!-- ============================= Ruído ============================= -->
-        <slider id="noiseScale" group="Ruído" label="Escala" default="1.6" min="0.2" max="8.0" step="0.01" />
-        <slider id="octaves" group="Ruído" label="Detalhe" default="5" min="1" max="7" step="1" type="integer" />
-        <slider id="warp" group="Ruído" label="Torção" default="0.8" min="0.0" max="3.0" step="0.01" />
-        <slider id="evolution" group="Ruído" label="Evolução" default="0.08" min="0.0" max="1.0" step="0.001" snap="0.0" />
-        <slider id="seed" group="Ruído" label="Semente" default="0" min="0" max="100" step="1" type="integer" />
+        <!-- ============================ Base Form ============================ -->
+        <selector id="shape" group="Base Form" label="Shape" default="0" options="Box|Sphere" />
+        <slider id="width" group="Base Form" label="Width" default="1000.0" min="1.0" max="10000.0" step="1.0" />
+        <slider id="height" group="Base Form" label="Height" default="1000.0" min="1.0" max="10000.0" step="1.0" />
+        <slider id="depth" group="Base Form" label="Depth" default="1000.0" min="1.0" max="10000.0" step="1.0" />
+        <slider id="diameter" group="Base Form" label="Diameter" default="1000.0" min="1.0" max="10000.0" step="1.0" />
+        <slider id="featherStart" group="Base Form" label="Density Feather Start" default="0.6" min="0.0" max="1.0" step="0.01" />
+        <slider id="featherEnd" group="Base Form" label="Density Feather End" default="1.0" min="0.0" max="1.0" step="0.01" />
 
-        <!-- ============================= Câmera ============================ -->
-        <slider id="rotation" group="Câmera" label="Giro" default="0.0" min="-180.0" max="180.0" step="1.0" type="angle" />
-        <slider id="tilt" group="Câmera" label="Inclinação" default="20.0" min="-90.0" max="90.0" step="1.0" type="angle" />
-        <slider id="spin" group="Câmera" label="Rotação no tempo" default="4.0" min="-90.0" max="90.0" step="0.1" snap="0.0" />
-        <slider id="zoom" group="Câmera" label="Distância" default="1.0" min="0.3" max="3.0" step="0.01" />
-        <point id="center" group="Câmera" label="Centro" defaultX="0.5" defaultY="0.5" />
+        <!-- ============================= Transform ============================ -->
+        <slider id="rotX" group="Transform" label="Rotation X" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" />
+        <slider id="rotY" group="Transform" label="Rotation Y" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" />
+        <slider id="rotZ" group="Transform" label="Rotation Z" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" />
+        <point id="position" group="Transform" label="Position" defaultX="0.5" defaultY="0.5" />
+        <slider id="positionZ" group="Transform" label="Position Z" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="scale" group="Transform" label="Scale" default="100.0" min="1.0" max="1000.0" step="1.0" />
 
-        <!-- ============================== Luz ============================== -->
-        <slider id="lightAngle" group="Luz" label="Ângulo da luz" default="45.0" min="0.0" max="360.0" step="1.0" type="angle" />
-        <slider id="lightIntensity" group="Luz" label="Intensidade" default="1.4" min="0.0" max="5.0" step="0.01" />
-        <slider id="absorption" group="Luz" label="Absorção" default="1.0" min="0.0" max="4.0" step="0.01" />
-        <slider id="emission" group="Luz" label="Brilho do miolo" default="1.2" min="0.0" max="5.0" step="0.01" />
+        <!-- ============================= Scattering =========================== -->
+        <slider id="density" group="Scattering" label="Density" default="0.0" min="-100.0" max="100.0" step="0.1" />
+        <color id="absorption" group="Scattering" label="Absorption Color" default="#FFE6B98A" />
+        <selector id="emissionSource" group="Scattering" label="Emission Source" default="0" options="Color|Gradient|Layer" />
+        <slider id="emissionMul" group="Scattering" label="Emission Multiplier" default="1.0" min="0.0" max="20.0" step="0.01" />
+        <color id="emissionColor" group="Scattering" label="Emission Color" default="#FFE52A10" />
+        <color id="gradA" group="Scattering" label="Emission Gradient Start" default="#FFAC20F0" />
+        <color id="gradB" group="Scattering" label="Emission Gradient End" default="#FF2E76F2" />
+        <selector id="gradBase" group="Scattering" label="Emission Gradient Base" default="0" options="Density|Radial|Noise" />
+        <slider id="gradScale" group="Scattering" label="Emission Gradient Scale" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="emNoiseAmp" group="Emission Noise" label="Emission Noise Amplitude" default="0.0" min="0.0" max="10.0" step="0.01" />
+        <slider id="emNoiseScale" group="Emission Noise" label="Emission Noise Scale" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="emNoiseEvo" group="Emission Noise" label="Emission Noise Evolution" default="0.0" min="-1000.0" max="1000.0" step="0.01" />
 
-        <!-- ============================== Cor ============================== -->
-        <color id="colorThin" group="Cor" label="Cor da borda" default="#FF1B3A8C" />
-        <color id="colorMid" group="Cor" label="Cor do meio" default="#FFB0307A" />
-        <color id="colorCore" group="Cor" label="Cor do miolo" default="#FFFFC27A" />
-        <slider id="stars" group="Cor" label="Estrelas" default="0.6" min="0.0" max="2.0" step="0.01" />
-        <switch id="overInput" group="Cor" label="Sobre a imagem" default="true" />
+        <!-- ============================== Noise 1 ============================= -->
+        <switch id="n1On" group="Noise 1" label="Noise 1 Enabled" default="true" />
+        <selector id="n1Type" group="Noise 1" label="Noise 1 Type" default="0" options="Volume Noise|Spiral Noise|Worley Noise|Inverted FBM Noise" />
+        <slider id="n1Cx" group="Noise 1" label="Noise 1 Complexity" default="5" min="1" max="8" step="1" type="integer" />
+        <slider id="n1Off" group="Noise 1" label="Noise 1 Density Offset" default="0.0" min="-10.0" max="10.0" step="0.01" />
+        <slider id="n1Con" group="Noise 1" label="Noise 1 Density Contrast" default="100.0" min="0.0" max="1000.0" step="1.0" />
+        <slider id="n1Sc" group="Noise 1" label="Noise 1 Scale" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n1SX" group="Noise 1" label="Noise 1 Scale X" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n1SY" group="Noise 1" label="Noise 1 Scale Y" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n1SZ" group="Noise 1" label="Noise 1 Scale Z" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n1OX" group="Noise 1" label="Noise 1 Offset X" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n1OY" group="Noise 1" label="Noise 1 Offset Y" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n1OZ" group="Noise 1" label="Noise 1 Offset Z" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n1Evo" group="Noise 1" label="Noise 1 Evolution" default="0.0" min="-1000.0" max="1000.0" step="0.01" />
+        <switch id="n1Lim" group="Noise 1" label="Noise 1 Limit Maximum Value" default="false" />
+        <selector id="n1Op" group="Noise 1" label="Noise 1 Operation" default="0" options="Add|Subtract|Multiply" />
 
-        <slider id="quality" group="Qualidade" label="Passos" default="48" min="16" max="96" step="1" type="integer" />
+        <!-- ============================== Noise 2 ============================= -->
+        <switch id="n2On" group="Noise 2" label="Noise 2 Enabled" default="false" />
+        <selector id="n2Type" group="Noise 2" label="Noise 2 Type" default="2" options="Volume Noise|Spiral Noise|Worley Noise|Inverted FBM Noise" />
+        <slider id="n2Cx" group="Noise 2" label="Noise 2 Complexity" default="3" min="1" max="8" step="1" type="integer" />
+        <slider id="n2Off" group="Noise 2" label="Noise 2 Density Offset" default="0.0" min="-10.0" max="10.0" step="0.01" />
+        <slider id="n2Con" group="Noise 2" label="Noise 2 Density Contrast" default="100.0" min="0.0" max="1000.0" step="1.0" />
+        <slider id="n2Sc" group="Noise 2" label="Noise 2 Scale" default="50.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n2SX" group="Noise 2" label="Noise 2 Scale X" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n2SY" group="Noise 2" label="Noise 2 Scale Y" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n2SZ" group="Noise 2" label="Noise 2 Scale Z" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n2OX" group="Noise 2" label="Noise 2 Offset X" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n2OY" group="Noise 2" label="Noise 2 Offset Y" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n2OZ" group="Noise 2" label="Noise 2 Offset Z" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n2Evo" group="Noise 2" label="Noise 2 Evolution" default="0.0" min="-1000.0" max="1000.0" step="0.01" />
+        <switch id="n2Lim" group="Noise 2" label="Noise 2 Limit Maximum Value" default="false" />
+        <selector id="n2Op" group="Noise 2" label="Noise 2 Operation" default="2" options="Add|Subtract|Multiply" />
+
+        <!-- ============================== Noise 3 ============================= -->
+        <switch id="n3On" group="Noise 3" label="Noise 3 Enabled" default="false" />
+        <selector id="n3Type" group="Noise 3" label="Noise 3 Type" default="3" options="Volume Noise|Spiral Noise|Worley Noise|Inverted FBM Noise" />
+        <slider id="n3Cx" group="Noise 3" label="Noise 3 Complexity" default="4" min="1" max="8" step="1" type="integer" />
+        <slider id="n3Off" group="Noise 3" label="Noise 3 Density Offset" default="0.0" min="-10.0" max="10.0" step="0.01" />
+        <slider id="n3Con" group="Noise 3" label="Noise 3 Density Contrast" default="100.0" min="0.0" max="1000.0" step="1.0" />
+        <slider id="n3Sc" group="Noise 3" label="Noise 3 Scale" default="200.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n3SX" group="Noise 3" label="Noise 3 Scale X" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n3SY" group="Noise 3" label="Noise 3 Scale Y" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n3SZ" group="Noise 3" label="Noise 3 Scale Z" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="n3OX" group="Noise 3" label="Noise 3 Offset X" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n3OY" group="Noise 3" label="Noise 3 Offset Y" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n3OZ" group="Noise 3" label="Noise 3 Offset Z" default="0.0" min="-10000.0" max="10000.0" step="1.0" />
+        <slider id="n3Evo" group="Noise 3" label="Noise 3 Evolution" default="0.0" min="-1000.0" max="1000.0" step="0.01" />
+        <switch id="n3Lim" group="Noise 3" label="Noise 3 Limit Maximum Value" default="false" />
+        <selector id="n3Op" group="Noise 3" label="Noise 3 Operation" default="0" options="Add|Subtract|Multiply" />
+
+        <!-- =============================== Lights ============================= -->
+        <switch id="negLight" group="Lights" label="Lights Allow Negative Intensity" default="true" />
+        <slider id="starsCount" group="Lights" label="Stars Count" default="0" min="0" max="16" step="1" type="integer" />
+        <slider id="starsIntensity" group="Lights" label="Stars Intensity" default="100.0" min="0.0" max="1000.0" step="1.0" />
+        <slider id="starsFalloff" group="Lights" label="Stars Falloff" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <color id="starsColor" group="Lights" label="Stars Color" default="#FFFFFFFF" />
+        <slider id="starsSeed" group="Lights" label="Random Seed" default="0" min="0" max="10000" step="1" type="integer" />
+        <switch id="fastOn" group="Lights" label="Fast Stars Enabled" default="false" />
+        <slider id="fastVis" group="Lights" label="Fast Stars Visibility" default="100.0" min="0.0" max="100.0" step="1.0" />
+        <slider id="fastScale" group="Lights" label="Fast Stars Scale" default="100.0" min="1.0" max="1000.0" step="1.0" />
+        <slider id="fastIntensity" group="Lights" label="Fast Stars Intensity" default="100.0" min="0.0" max="1000.0" step="1.0" />
+        <slider id="fastRand" group="Lights" label="Fast Stars Randomize Intensity" default="0.0" min="0.0" max="100.0" step="1.0" />
+        <color id="fastColor" group="Lights" label="Fast Stars Color" default="#FFFFFFFF" />
+
+        <!-- ============================ Post Effects ========================== -->
+        <switch id="mosaicOn" group="Post Effects" label="Mosaic Enabled" default="false" />
+        <slider id="mosaicSize" group="Post Effects" label="Mosaic Size" default="250.0" min="1.0" max="5000.0" step="1.0" />
+        <slider id="mosaicBlend" group="Post Effects" label="Mosaic Blend" default="1.0" min="0.0" max="1.0" step="0.01" />
+        <slider id="densFactor" group="Post Effects" label="Density Factor" default="1.0" min="0.0" max="20.0" step="0.01" />
+        <slider id="alphaFactor" group="Post Effects" label="Density Alpha Factor" default="1.0" min="0.0" max="20.0" step="0.01" />
+        <slider id="spiralX" group="Post Effects" label="Distortion Spiral Angle X" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" />
+        <slider id="spiralY" group="Post Effects" label="Distortion Spiral Angle Y" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" />
+        <slider id="spiralZ" group="Post Effects" label="Distortion Spiral Angle Z" default="0.0" min="-3600.0" max="3600.0" step="1.0" type="angle" />
+        <slider id="spiralExp" group="Post Effects" label="Distortion Spiral Exp" default="1.0" min="0.1" max="10.0" step="0.01" />
+
+        <!-- =============================== Render ============================= -->
+        <slider id="maxSteps" group="Render" label="Render Max Steps" default="64" min="8" max="256" step="1" type="integer" />
+        <switch id="jitter" group="Render" label="Render Steps Jittering Enabled" default="true" />
+        <switch id="densPreview" group="Render" label="Render Density Preview" default="false" />
     </params>
 
     <presets>
-        <preset id="galaxia" name="🌌 Galáxia" name-en="🌌 Galaxy">
-            <value param="shape" value="1" />
-            <value param="density" value="1.6" />
-            <value param="coverage" value="0.3" />
-            <value param="warp" value="1.4" />
-            <value param="tilt" value="55.0" />
-            <value param="spin" value="8.0" />
-            <value param="colorThin" value="#FF2A4DB8" />
-            <value param="colorMid" value="#FF9A5BD6" />
-            <value param="colorCore" value="#FFFFE6B0" />
+        <preset id="nebulaRed" name="Nebula Red" name-en="Nebula Red">
+            <value param="density" value="5.0" />
+            <value param="n2On" value="1" /><value param="n2Op" value="2" />
+            <value param="emissionMul" value="2.0" /><value param="emissionColor" value="#FFE5341A" />
+            <value param="absorption" value="#FFE6B98A" />
+            <value param="starsCount" value="3" /><value param="fastOn" value="1" />
         </preset>
-        <preset id="fumaca" name="💨 Fumaça" name-en="💨 Smoke">
-            <value param="shape" value="2" />
-            <value param="density" value="0.8" />
-            <value param="coverage" value="0.45" />
-            <value param="evolution" value="0.25" />
-            <value param="emission" value="0.0" />
-            <value param="stars" value="0.0" />
-            <value param="colorThin" value="#FF5A5A5A" />
-            <value param="colorMid" value="#FFA0A0A0" />
-            <value param="colorCore" value="#FFE8E8E8" />
+        <preset id="nebulaBlue" name="Nebula Blue" name-en="Nebula Blue">
+            <value param="density" value="4.0" /><value param="emissionSource" value="1" />
+            <value param="gradA" value="#FF6A1FD6" /><value param="gradB" value="#FF29A6FF" />
+            <value param="emissionMul" value="2.5" /><value param="absorption" value="#FF9CC6FF" />
+            <value param="n3On" value="1" /><value param="fastOn" value="1" />
         </preset>
-        <preset id="nebulosaQuente" name="🔥 Nebulosa quente" name-en="🔥 Hot nebula">
-            <value param="density" value="2.0" />
-            <value param="warp" value="1.8" />
-            <value param="colorThin" value="#FF5A0E1E" />
-            <value param="colorMid" value="#FFE0461E" />
-            <value param="colorCore" value="#FFFFE08A" />
-            <value param="emission" value="2.2" />
+        <preset id="galaxy" name="Galaxy Arm" name-en="Galaxy Arm">
+            <value param="shape" value="1" /><value param="n1Type" value="1" /><value param="density" value="6.0" />
+            <value param="rotX" value="60.0" /><value param="emissionSource" value="1" /><value param="gradBase" value="1" />
+            <value param="gradA" value="#FFFFE2B0" /><value param="gradB" value="#FF3B5BFF" />
+            <value param="emissionMul" value="3.0" /><value param="fastOn" value="1" />
+        </preset>
+        <preset id="smoke" name="Smoke" name-en="Smoke">
+            <value param="density" value="2.0" /><value param="n1Type" value="3" /><value param="emissionMul" value="0.4" />
+            <value param="emissionColor" value="#FFB0B0B0" /><value param="absorption" value="#FF808080" />
+        </preset>
+        <preset id="worley" name="Worley Cells" name-en="Worley Cells">
+            <value param="density" value="3.0" /><value param="n1Type" value="2" /><value param="emissionMul" value="1.5" />
+            <value param="emissionColor" value="#FF3AD7FF" />
         </preset>
     </presets>
 
@@ -99,8 +187,7 @@ float hash3(vec3 p) {
     return fract((p.x + p.y) * p.z);
 }
 
-/** Ruído de valor 3D com interpolação suave. */
-float ruido3(vec3 p) {
+float vnoise(vec3 p) {
     vec3 i = floor(p);
     vec3 f = fract(p);
     vec3 s = f * f * (3.0 - 2.0 * f);
@@ -116,132 +203,229 @@ float ruido3(vec3 p) {
                mix(mix(e, g, s.x), mix(h, k, s.x), s.y), s.z);
 }
 
-float fbm3(vec3 p, int n) {
+float worley(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    float m = 1.0;
+    for (int z = -1; z <= 1; z++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+                vec3 c = vec3(float(x), float(y), float(z));
+                vec3 o = vec3(hash3(i + c), hash3(i + c + 17.1), hash3(i + c + 31.7));
+                m = min(m, length(c + o - f));
+            }
+        }
+    }
+    return 1.0 - clamp(m, 0.0, 1.0);
+}
+
+vec3 girar(vec3 p, vec3 a) {
+    float cx = cos(a.x); float sx = sin(a.x);
+    float cy = cos(a.y); float sy = sin(a.y);
+    float cz = cos(a.z); float sz = sin(a.z);
+    p = vec3(p.x, cx * p.y - sx * p.z, sx * p.y + cx * p.z);
+    p = vec3(cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z);
+    p = vec3(cz * p.x - sz * p.y, sz * p.x + cz * p.y, p.z);
+    return p;
+}
+
+/** Um noise do painel: tipo, complexidade (oitavas) e evolucao (anda no 4o eixo). */
+float noiseTipo(vec3 p, float tipo, float cx, float evo) {
+    int t = int(tipo + 0.5);
+    int n = clamp(int(cx + 0.5), 1, 8);
+    if (t == 1) {
+        // Spiral: o espaco gira em torno de Y conforme o raio
+        float r = length(p.xz);
+        float ang = r * 0.7 + evo * 0.15;
+        p.xz = vec2(cos(ang) * p.x - sin(ang) * p.z, sin(ang) * p.x + cos(ang) * p.z);
+    }
     float soma = 0.0;
     float peso = 0.0;
     float amp = 1.0;
-    for (int i = 0; i < 7; i++) {
+    vec3 q = p + vec3(evo * 0.11, evo * 0.07, evo * 0.13);
+    for (int i = 0; i < 8; i++) {
         if (i >= n) break;
-        soma += ruido3(p) * amp;
+        float v;
+        if (t == 2) v = worley(q);
+        else if (t == 3) v = 1.0 - abs(vnoise(q) * 2.0 - 1.0);
+        else v = vnoise(q);
+        soma += v * amp;
         peso += amp;
         amp *= 0.5;
-        p = p * 2.03 + vec3(1.7, 9.2, 4.1);
+        q = q * 2.02 + vec3(3.1, 7.7, 1.3);
     }
-    return soma / max(peso, 1e-4);
+    float r = soma / max(peso, 1e-4);
+    if (t == 3) r = r * r;
+    return r;
 }
 
-vec3 girarY(vec3 p, float a) {
-    float c = cos(a);
-    float s = sin(a);
-    return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
+/** Densidade do noise i com Offset/Contrast/Scale/Evolution/Limit como no painel. */
+float umNoise(vec3 p, float tipo, float cx, float off, float con, float sc, vec3 sxyz, vec3 o, float evo, float lim) {
+    vec3 q = (p + o) / (max(sc, 1.0) * 0.01 * max(sxyz * 0.01, vec3(0.01)) * 300.0);
+    float v = noiseTipo(q, tipo, cx, evo);
+    v = (v - 0.5) * (con * 0.01) + 0.5 + off * 0.1;
+    if (lim > 0.5) v = min(v, 1.0);
+    return v;
 }
 
-vec3 girarX(vec3 p, float a) {
-    float c = cos(a);
-    float s = sin(a);
-    return vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z);
+float aplica(float d, float v, float op) {
+    int o = int(op + 0.5);
+    if (o == 1) return d - v;
+    if (o == 2) return d * v;
+    return d + v;
 }
 
-/** Forma que recorta o ruído: 1 dentro, 0 fora, macia na borda. */
-float forma(vec3 p) {
-    int f = int(shape + 0.5);
-    if (f == 1) {
-        float r = length(p.xz);
-        float braco = 0.5 + 0.5 * sin(atan(p.z, p.x) * 2.0 - r * 6.0);
-        float disco = exp(-abs(p.y) * 7.0 / max(size, 0.05)) * smoothstep(size * 1.1, 0.0, r);
-        return disco * mix(0.55, 1.0, braco);
+/** Rampa de feather: 1 dentro, cai ate 0 na borda (Density Feather Ramp). */
+float pena(float x) {
+    return 1.0 - smoothstep(featherStart, max(featherEnd, featherStart + 1e-3), x);
+}
+
+float densidade(vec3 p, vec3 lp) {
+    float borda;
+    if (int(shape + 0.5) == 1) {
+        borda = length(lp) / max(diameter * 0.5, 1.0);
+    } else {
+        vec3 h = vec3(width, height, depth) * 0.5;
+        vec3 a = abs(lp) / max(h, vec3(1.0));
+        borda = max(a.x, max(a.y, a.z));
     }
-    if (f == 2) {
-        return smoothstep(1.0, 0.2, abs(p.y));
+    if (borda >= 1.0) return 0.0;
+    float d = density * 0.05;
+    if (n1On > 0.5) d = aplica(d, umNoise(lp, n1Type, n1Cx, n1Off, n1Con, n1Sc, vec3(n1SX, n1SY, n1SZ), vec3(n1OX, n1OY, n1OZ), n1Evo, n1Lim), n1Op);
+    if (n2On > 0.5) d = aplica(d, umNoise(lp, n2Type, n2Cx, n2Off, n2Con, n2Sc, vec3(n2SX, n2SY, n2SZ), vec3(n2OX, n2OY, n2OZ), n2Evo, n2Lim), n2Op);
+    if (n3On > 0.5) d = aplica(d, umNoise(lp, n3Type, n3Cx, n3Off, n3Con, n3Sc, vec3(n3SX, n3SY, n3SZ), vec3(n3OX, n3OY, n3OZ), n3Evo, n3Lim), n3Op);
+    d = max(d, 0.0) * pena(borda);
+    return d * densFactor;
+}
+
+vec3 posEstrela(int i) {
+    float s = float(i) * 13.17 + starsSeed * 3.71;
+    vec3 r = vec3(hash3(vec3(s, 1.0, 2.0)), hash3(vec3(3.0, s, 4.0)), hash3(vec3(5.0, 6.0, s))) - 0.5;
+    if (int(shape + 0.5) == 1) return r * diameter * 0.8;
+    return r * vec3(width, height, depth) * 0.8;
+}
+
+vec3 emissao(float d, vec3 lp, vec2 uv) {
+    int src = int(emissionSource + 0.5);
+    vec3 c = emissionColor.rgb;
+    if (src == 1) {
+        float x;
+        int b = int(gradBase + 0.5);
+        float esc = max(gradScale, 1.0) * 0.01;
+        if (b == 1) {
+            float raio = int(shape + 0.5) == 1 ? diameter * 0.5 : max(width, max(height, depth)) * 0.5;
+            x = length(lp) / max(raio * esc, 1.0);
+        } else if (b == 2) {
+            x = vnoise(lp / (300.0 * esc) + vec3(0.0, 0.0, emNoiseEvo * 0.1));
+        } else {
+            x = d / esc;
+        }
+        if (emNoiseAmp > 0.0) {
+            x += (vnoise(lp / (3.0 * max(emNoiseScale, 1.0)) + vec3(emNoiseEvo * 0.1)) - 0.5) * emNoiseAmp;
+        }
+        c = mix(gradA.rgb, gradB.rgb, clamp(x, 0.0, 1.0));
+    } else if (src == 2) {
+        c = texture(inputImg, uv).rgb;
     }
-    return smoothstep(size, size * 0.35, length(p));
-}
-
-float densidade(vec3 p, float t, int n) {
-    vec3 q = p * noiseScale + vec3(seed * 7.13, seed * 3.71, seed * 5.37);
-    vec3 torto = vec3(fbm3(q + vec3(0.0, t, 0.0), 3),
-                      fbm3(q + vec3(5.2, 1.3, t), 3),
-                      fbm3(q + vec3(t, 2.8, 9.1), 3));
-    float v = fbm3(q + (torto - 0.5) * warp * 2.0 + vec3(0.0, 0.0, t * 0.5), n);
-    v = (v - coverage) / max(1.0 - coverage, 1e-3);
-    return max(v, 0.0) * forma(p) * density;
-}
-
-vec3 rampa(float d) {
-    vec3 a = colorThin.rgb;
-    vec3 b = colorMid.rgb;
-    vec3 c = colorCore.rgb;
-    float x = clamp(d, 0.0, 1.0);
-    return x < 0.5 ? mix(a, b, x * 2.0) : mix(b, c, (x - 0.5) * 2.0);
-}
-
-float estrelas(vec2 p) {
-    vec2 g = floor(p);
-    vec2 f = fract(p) - 0.5;
-    float h = hash3(vec3(g, 7.0));
-    vec2 o = vec2(hash3(vec3(g, 1.0)), hash3(vec3(g, 2.0))) - 0.5;
-    float d = length(f - o * 0.7);
-    float liga = step(0.92, h);
-    return liga * smoothstep(0.06, 0.0, d) * (0.5 + 0.5 * hash3(vec3(g, 3.0)));
+    return c * emissionMul;
 }
 
 void main() {
-    vec4 original = texture(inputImg, acScreenNorm);
+    vec2 tam = acResolution;
+    vec4 fundo = texture(inputImg, acScreenNorm);
+    vec2 px = vec2(acScreenNorm.x * tam.x, (1.0 - acScreenNorm.y) * tam.y);
 
-    vec2 uv = (acScreenNorm - center) * 2.0;
-    uv.x *= acAspect;
+    // Camera padrao do AE (50 mm): no centro, olhando para +Z, zoom = 1,389 x largura.
+    float zoom = tam.x * 1.38889;
+    vec3 ro = vec3(tam * 0.5, -zoom);
+    vec3 rd = normalize(vec3(px, 0.0) - ro);
 
-    float t = acTime * evolution;
-    int n = clamp(int(octaves + 0.5), 1, 7);
-    int passos = clamp(int(quality + 0.5), 16, 96);
+    vec3 centro = vec3(position.x * tam.x, (1.0 - position.y) * tam.y, positionZ);
+    float esc = max(scale, 1.0) * 0.01;
+    vec3 ang = vec3(rotX, rotY, rotZ) * (PI / 180.0);
 
-    // Câmera olhando para a origem; o volume gira, a câmera fica.
-    vec3 ro = vec3(0.0, 0.0, -2.6 * zoom);
-    vec3 rd = normalize(vec3(uv, 1.6));
-    float giro = (rotation + spin * acTime) * PI / 180.0;
-    float incl = tilt * PI / 180.0;
+    // Distorcao Spiral: torce o espaco local em torno de cada eixo, mais forte longe do centro.
+    float raioForma = int(shape + 0.5) == 1 ? diameter * 0.5 : length(vec3(width, height, depth)) * 0.5;
 
-    float la = lightAngle * PI / 180.0;
-    vec3 luz = normalize(vec3(cos(la), sin(la), -0.6));
-
-    // Faixa do raio que atravessa a caixa |p| < 1.6.
-    float perto = max(0.0, 2.6 * zoom - 1.6 * size - 0.2);
-    float longe = 2.6 * zoom + 1.6 * size + 0.2;
-    float dt = (longe - perto) / float(passos);
-    // Começo do passo embaralhado por pixel: tira as faixas do raymarching.
-    float s0 = hash3(vec3(acScreenNorm * 913.0, 1.0)) * dt;
-
+    // Faixa do raio dentro da esfera que envolve a forma.
+    vec3 oc = ro - centro;
+    float R = raioForma * esc * 1.05;
+    float b = dot(oc, rd);
+    float c = dot(oc, oc) - R * R;
+    float h = b * b - c;
     vec3 cor = vec3(0.0);
-    float transm = 1.0;
-    for (int i = 0; i < 96; i++) {
-        if (i >= passos || transm < 0.01) break;
-        float s = perto + s0 + float(i) * dt;
-        vec3 p = girarY(girarX(ro + rd * s, incl), giro);
-        float d = densidade(p, t, n);
-        if (d > 0.002) {
-            // sombra própria: uma amostra na direção da luz
-            vec3 pl = p + girarY(girarX(luz, incl), giro) * 0.18;
-            float dl = densidade(pl, t, max(n - 2, 1));
-            float sombra = exp(-dl * absorption * 2.0);
-            vec3 c = rampa(d * 0.6);
-            vec3 brilho = c * (0.25 + lightIntensity * sombra) + colorCore.rgb * emission * d * d * 0.35;
-            float a = 1.0 - exp(-d * absorption * dt * 3.0);
-            cor += transm * a * brilho;
-            transm *= 1.0 - a;
+    vec3 trans = vec3(1.0);
+    float dens = 0.0;
+    if (h > 0.0) {
+        float t0 = max(-b - sqrt(h), 0.0);
+        float t1 = -b + sqrt(h);
+        int passos = clamp(int(maxSteps + 0.5), 8, 256);
+        float dt = (t1 - t0) / float(passos);
+        float jit = jitter > 0.5 ? hash3(vec3(acScreenNorm * 911.0, acTime)) : 0.5;
+        vec3 absorve = vec3(1.0) - absorption.rgb;
+        int nEst = clamp(int(starsCount + 0.5), 0, 16);
+        for (int i = 0; i < 256; i++) {
+            if (i >= passos) break;
+            float t = t0 + (float(i) + jit) * dt;
+            vec3 p = ro + rd * t;
+            vec3 lp = girar((p - centro) / esc, -ang);
+            if (spiralX != 0.0 || spiralY != 0.0 || spiralZ != 0.0) {
+                float k = pow(clamp(length(lp) / max(raioForma, 1.0), 0.0, 1.0), spiralExp);
+                lp = girar(lp, vec3(spiralX, spiralY, spiralZ) * (PI / 180.0) * k);
+            }
+            if (mosaicOn > 0.5) {
+                vec3 m = floor(lp / max(mosaicSize, 1.0) + 0.5) * max(mosaicSize, 1.0);
+                lp = mix(lp, m, mosaicBlend);
+            }
+            float d = densidade(p, lp);
+            if (d <= 0.0005) continue;
+            float passo = d * dt * 0.004;
+            dens += passo;
+            vec3 e = emissao(d, lp, acScreenNorm);
+            // estrelas: pontos de luz no volume que acendem a nuvem perto delas
+            vec3 luz = vec3(0.0);
+            for (int k = 0; k < 16; k++) {
+                if (k >= nEst) break;
+                float dist = length(lp - posEstrela(k));
+                float f = starsIntensity * 0.01 / (1.0 + pow(dist / max(starsFalloff, 1.0), 2.0));
+                if (negLight < 0.5) f = max(f, 0.0);
+                luz += starsColor.rgb * f;
+            }
+            cor += trans * (e + luz) * passo;
+            trans *= exp(-absorve * passo * 4.0);
+            if (max(trans.r, max(trans.g, trans.b)) < 0.005) break;
+        }
+        // as estrelas aparecem como pontos brilhantes
+        for (int k = 0; k < 16; k++) {
+            if (k >= nEst) break;
+            vec3 sp = centro + girar(posEstrela(k), ang) * esc;
+            vec3 v = sp - ro;
+            float tp = dot(v, rd);
+            float dl = length(v - rd * tp);
+            cor += starsColor.rgb * starsIntensity * 0.01 * exp(-dl * dl / 18.0) * trans;
         }
     }
 
-    float alfa = 1.0 - transm;
-    float st = estrelas(acScreenNorm * vec2(acAspect, 1.0) * 160.0) * stars * transm;
-    cor += vec3(st);
-    alfa = max(alfa, min(st, 1.0));
-
-    vec4 neb = vec4(cor, alfa);
-    if (overInput > 0.5) {
-        fragColor = vec4(neb.rgb + original.rgb * (1.0 - neb.a), neb.a + original.a * (1.0 - neb.a));
-    } else {
-        fragColor = neb;
+    // Fast Stars: campo de estrelas pequenas no fundo, sem custo de raymarching
+    if (fastOn > 0.5) {
+        vec2 g = px / (6.0 * max(fastScale, 1.0) * 0.01);
+        vec2 cel = floor(g);
+        vec2 f = fract(g) - 0.5;
+        float hh = hash3(vec3(cel, 7.0 + starsSeed));
+        float vis = step(1.0 - fastVis * 0.01 * 0.06, hh);
+        vec2 o = vec2(hash3(vec3(cel, 1.0)), hash3(vec3(cel, 2.0))) - 0.5;
+        float s = smoothstep(0.12, 0.0, length(f - o * 0.6));
+        float it = fastIntensity * 0.01 * mix(1.0, hash3(vec3(cel, 3.0)), fastRand * 0.01);
+        cor += fastColor.rgb * s * vis * it * trans;
     }
+
+    float alfa = clamp((1.0 - (trans.r + trans.g + trans.b) / 3.0) * alphaFactor, 0.0, 1.0);
+    if (densPreview > 0.5) {
+        fragColor = vec4(vec3(clamp(dens, 0.0, 1.0)), 1.0);
+        return;
+    }
+    vec3 atras = fundo.rgb * trans;
+    fragColor = vec4(cor + atras, max(fundo.a, alfa));
 }
     ]]></shader>
 </effect>
