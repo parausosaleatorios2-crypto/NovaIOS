@@ -30,6 +30,8 @@ public struct EditorView: View {
     @State private var layout: EditorLayout = EditorLayout(rawValue: UserDefaults.standard.string(forKey: "nova.layoutDoEditor") ?? "") ?? .nova
     /// O menu "Layout" aberto na previa e a transicao "Montando o layout".
     @State private var menuDeLayout = false
+    /// CapCut: "Mais" na fileira de ferramentas abre o painel completo do clipe (wiggle, 3D...).
+    @State private var painelCompletoNoCapCut = false
     @State private var montando: EditorLayout?
     @State private var sheet: EditorSheet?
     @State private var installedExtensions: Set<String> = []   // vazio: nenhuma instalada
@@ -164,6 +166,7 @@ public struct EditorView: View {
             .overlay { if let m = montando { TransicaoDeLayout(layout: m).id(m) } }
         }
         .onChange(of: layout) { _, l in UserDefaults.standard.set(l.rawValue, forKey: "nova.layoutDoEditor") }
+        .onChange(of: selectedLayer) { _, _ in painelCompletoNoCapCut = false }
         .navigationBarHidden(true)
         .preferredColorScheme(.dark)
         .sheet(item: $sheet) { s in
@@ -745,6 +748,7 @@ public struct EditorView: View {
                         Button { acaoClipe("mascara", l) } label: { itemCapCut("circle.circle", "Mascarar") }
                         Button { acaoClipe("transformar", l) } label: { itemCapCut("arrow.up.and.down.and.arrow.left.and.right", "Transformar") }
                         Button { duplicarSelecionada() } label: { itemCapCut("plus.square.on.square", "Duplicar") }
+                        Button { painelCompletoNoCapCut = true } label: { itemCapCut("ellipsis.circle", "Mais (wiggle, 3D, ordem)") }
                     }
                 }
             }
@@ -1063,7 +1067,7 @@ public struct EditorView: View {
             case .some(.opacidade):
                 PainelOpacidade(layer: l, time: time, edit: editar, onVoltar: { painel = nil })
                     .frame(height: 300)
-            case .none where layout == .capcut:
+            case .none where layout == .capcut && !painelCompletoNoCapCut:
                 ferramentasCapCut(l)
             case .none:
                 PainelClipe(layer: l, comp: comp,
