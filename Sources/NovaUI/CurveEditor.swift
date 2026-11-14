@@ -328,7 +328,7 @@ struct CurveEditorSheet: View {
 
     /// A bolinha que anda com a curva (como a previa do Alight Motion), em loop.
     private var previa: some View {
-        TimelineView(.animation) { ctx in
+        SwiftUI.TimelineView(.animation) { ctx in
             let ciclo = 1.6, pausa = 0.35
             let t = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: ciclo + pausa)
             let x = Float(min(t / ciclo, 1))
