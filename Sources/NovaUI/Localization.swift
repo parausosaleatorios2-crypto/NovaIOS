@@ -8,7 +8,6 @@
 //
 
 import Foundation
-import NovaEngine
 import os
 
 public final class Loc {
