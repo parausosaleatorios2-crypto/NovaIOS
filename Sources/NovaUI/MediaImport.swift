@@ -102,7 +102,7 @@ enum MediaImporter {
         let shown = natural.applying(tf)
         let seconds = Float(try await asset.load(.duration).seconds)
 
-        var l = Layer(name: "Vídeo \(index + 1)".loc, kind: .video)
+        var l = Layer(name: "Vídeo".loc + " \(index + 1)", kind: .video)
         l.mediaPath = name
         l.size = SIMD2(Float(abs(shown.width)), Float(abs(shown.height)))
         l.duration = max(0.1, seconds)
@@ -125,7 +125,7 @@ enum MediaImporter {
             try? FileManager.default.removeItem(at: dst)
             throw MediaImportError.unreadable("Este formato de imagem não abre no aparelho".loc)
         }
-        var l = Layer(name: "Foto \(index + 1)".loc, kind: .image)
+        var l = Layer(name: "Foto".loc + " \(index + 1)", kind: .image)
         l.mediaPath = name
         l.size = SIMD2(Float(cg.width), Float(cg.height))
         l.duration = 5

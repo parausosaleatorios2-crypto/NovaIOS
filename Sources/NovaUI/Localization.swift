@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import NovaEngine
 import os
 
 public final class Loc {
@@ -17,9 +18,14 @@ public final class Loc {
     private let log = Logger(subsystem: "com.novavision.editor", category: "Loc")
 
     private init() {
-        useEnglish = !(Locale.current.language.languageCode?.identifier.hasPrefix("pt") ?? false)
+        // O app inteiro em ingles, qualquer que seja o idioma do aparelho.
+        // UserDefaults "nova.idioma" = "pt" volta para o portugues.
+        useEnglish = UserDefaults.standard.string(forKey: "nova.idioma") != "pt"
         load()
     }
+
+    /// true quando a UI esta em ingles.
+    public var isEnglish: Bool { useEnglish }
 
     private func load() {
         guard let url = Bundle.main.url(forResource: "en", withExtension: "json",
@@ -46,6 +52,19 @@ public final class Loc {
     }
 
     public var count: Int { map.count }
+}
+
+/// Nome do efeito e rotulo do parametro no idioma da UI (o XML traz name-en / label-en).
+public extension EffectManifest {
+    var titulo: String { Loc.shared.isEnglish ? (nameEn ?? name.loc) : name }
+}
+public extension EffectIndexEntry {
+    var titulo: String { Loc.shared.isEnglish ? (nameEn ?? name.loc) : name }
+}
+public extension EffectParam {
+    var titulo: String {
+        Loc.shared.isEnglish ? (labelEn ?? label?.loc ?? id) : (label ?? labelEn ?? id)
+    }
 }
 
 /// Atalho: `"Camadas".loc`

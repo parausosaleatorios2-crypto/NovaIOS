@@ -152,7 +152,7 @@ struct LooksProntosGaleria: View {
                                         Image(systemName: "camera.filters").font(.system(size: 13, weight: .semibold))
                                             .foregroundStyle(.white.opacity(0.85)).padding(7)
                                     }
-                                Text(l.nome).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(NovaTheme.text)
+                                Text(l.nome.loc).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(NovaTheme.text)
                                     .lineLimit(1)
                                 Text(l.ferramentas.map { nomeDaFerramenta($0.0) }.joined(separator: " · "))
                                     .font(.system(size: 9)).foregroundStyle(NovaTheme.dim2).lineLimit(2)

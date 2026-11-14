@@ -112,7 +112,7 @@ struct PilulaNome: View {
 
     var body: some View {
         Button(action: acao) {
-            Text(titulo)
+            Text(titulo.loc)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(selecionado ? NovaTheme.accent : NovaTheme.text.opacity(0.88))
                 .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.75)
@@ -217,6 +217,7 @@ struct PainelComTrilho<Conteudo: View, Mais: View>: View {
     @ViewBuilder let conteudo: () -> Conteudo
 
     @State private var curvaAberta = false
+    @State private var semTrecho = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -236,7 +237,7 @@ struct PainelComTrilho<Conteudo: View, Mais: View>: View {
                     .opacity(onChave == nil ? 0.3 : 1)
                 }
                 .disabled(onChave == nil)
-                Button { curvaAberta = true } label: {
+                Button { if onEasing == nil { semTrecho = true } else { curvaAberta = true } } label: {
                     CurveGlyph(easing: easing ?? .named("easeInOut"))
                         .stroke(NovaTheme.text, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
                         .frame(width: 26, height: 26)
@@ -246,7 +247,6 @@ struct PainelComTrilho<Conteudo: View, Mais: View>: View {
                         .frame(width: 52, height: 40)
                         .opacity(onEasing == nil ? 0.3 : 1)
                 }
-                .disabled(onEasing == nil)
                 Menu { mais() } label: {
                     Image(systemName: "ellipsis").font(.system(size: 20, weight: .bold))
                         .foregroundStyle(NovaTheme.text).frame(width: 52, height: 40)
@@ -273,6 +273,11 @@ struct PainelComTrilho<Conteudo: View, Mais: View>: View {
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18))
         .sheet(isPresented: $curvaAberta) {
             CurveEditorSheet(initial: easing ?? .linear) { e in onEasing?(e) }
+        }
+        .alert("Curva do trecho".loc, isPresented: $semTrecho) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Coloque o cursor da timeline entre duas chaves e toque aqui para mudar a curva desse trecho.".loc)
         }
     }
 }
@@ -507,7 +512,7 @@ struct PainelEfeitos: View {
                     .buttonStyle(.plain)
                     Button { onAbrir(fx.id) } label: {
                         HStack {
-                            Text(manifests[fx.effectID]?.name ?? fx.effectID)
+                            Text(manifests[fx.effectID]?.titulo ?? fx.effectID)
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(fx.enabled ? NovaTheme.text : NovaTheme.dim)
                                 .lineLimit(1)
@@ -603,7 +608,7 @@ struct PainelParametros: View {
                 } label: { Label("Remover efeito".loc, systemImage: "trash") }
             }, conteudo: {
                 HStack {
-                    Text(manifest?.name ?? fx.effectID)
+                    Text(manifest?.titulo ?? fx.effectID)
                         .font(.system(size: 14, weight: .semibold)).foregroundStyle(NovaTheme.dim)
                         .lineLimit(1)
                     Spacer()
@@ -793,7 +798,7 @@ struct PainelParametros: View {
 
     @ViewBuilder
     private func linha(_ i: Int, _ fx: AppliedEffect, _ p: EffectParam) -> some View {
-        let titulo = p.label ?? p.labelEn ?? p.id
+        let titulo = p.titulo
         let sel = selecionado == p.id
         let selecionar = { selecionado = p.id }
         switch p.kind {
@@ -843,7 +848,7 @@ struct PainelParametros: View {
                         Button {
                             edit(layer.id, true) { $0.effects[i].ints[p.id] = Int32(o.offset) }
                         } label: {
-                            if o.offset == cur { Label(o.element, systemImage: "checkmark") } else { Text(o.element) }
+                            if o.offset == cur { Label(o.element.loc, systemImage: "checkmark") } else { Text(o.element.loc) }
                         }
                     }
                 } label: {
@@ -1418,7 +1423,7 @@ struct PainelOpacidade: View {
                 ForEach(BlendMode.allCases, id: \.self) { b in
                     let ativo = layer.blendMode == b
                     Button { edit(layer.id, true) { $0.blendMode = b } } label: {
-                        Text(b.label).font(.system(size: 13, weight: ativo ? .semibold : .regular))
+                        Text(b.label.loc).font(.system(size: 13, weight: ativo ? .semibold : .regular))
                             .foregroundStyle(ativo ? Color.black : NovaTheme.text.opacity(0.88))
                             .lineLimit(1).minimumScaleFactor(0.7)
                             .frame(maxWidth: .infinity, minHeight: 40)

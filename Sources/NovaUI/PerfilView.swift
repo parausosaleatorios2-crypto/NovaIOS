@@ -121,7 +121,7 @@ struct PerfilView: View {
         VStack(alignment: .leading, spacing: 4) {
             Image(systemName: icone).font(.system(size: 12)).foregroundStyle(NovaTheme.accent)
             Text(valor).font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
-            Text(rotulo).font(.system(size: 10)).foregroundStyle(NovaTheme.dim).lineLimit(1)
+            Text(rotulo.loc).font(.system(size: 10)).foregroundStyle(NovaTheme.dim).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)

@@ -42,7 +42,7 @@ struct AnimSlider: View {
                     }.buttonStyle(.plain)
                 }
                 Text(title.loc).font(.system(size: 11.5))
-                if hasKey, let onEasing { EasingMenu(current: easing, onPick: onEasing) }
+                if easing != nil, let onEasing { EasingMenu(current: easing, onPick: onEasing) }
                 Spacer()
                 Text(String(format: format, value) + unit)
                     .font(.system(size: 10, design: .monospaced)).foregroundStyle(NovaTheme.dim)

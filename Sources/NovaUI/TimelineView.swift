@@ -93,7 +93,7 @@ public struct TimelineView: View {
         .overlay(alignment: .topLeading) { cursor }
         .overlay(alignment: .bottom) {
             if let aviso {
-                Text(aviso).font(.system(size: 10.5)).foregroundStyle(NovaTheme.text)
+                Text(aviso.loc).font(.system(size: 10.5)).foregroundStyle(NovaTheme.text)
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Capsule().fill(NovaTheme.button))
                     .padding(.bottom, 6)

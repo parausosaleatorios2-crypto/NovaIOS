@@ -282,7 +282,7 @@ struct LayerPropertiesSheet: View {
                     }
                 }
                 Text(title.loc).font(.system(size: 12))
-                if a.hasKeyframe(at: time) {
+                if a.easing(at: time) != nil {
                     EasingMenu(current: a.easing(at: time)) { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
                 }
                 Spacer()
@@ -310,7 +310,7 @@ struct LayerPropertiesSheet: View {
                     }
                 }
                 Text(title.loc).font(.system(size: 12))
-                if a.hasKeyframe(at: time) {
+                if a.easing(at: time) != nil {
                     EasingMenu(current: a.easing(at: time)) { e in edit(l.id, true) { $0.transform[keyPath: kp].setEasing(at: time, e) } }
                 }
                 Spacer()
@@ -372,7 +372,7 @@ struct LayerPropertiesSheet: View {
                     HStack {
                         Toggle(isOn: Binding(get: { fx.enabled },
                                              set: { on in edit(l.id, true) { $0.effects[i].enabled = on } })) {
-                            Text(manifests[fx.effectID]?.name ?? fx.effectID)
+                            Text(manifests[fx.effectID]?.titulo ?? fx.effectID)
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         Button(role: .destructive) {
@@ -400,7 +400,7 @@ struct LayerPropertiesSheet: View {
 
     @ViewBuilder
     private func paramRow(_ l: Layer, _ i: Int, _ fx: AppliedEffect, _ p: EffectParam) -> some View {
-        let title = p.label ?? p.labelEn ?? p.id
+        let title = p.titulo
         switch p.kind {
         case .slider, .spinner, .float, .hueDisc:
             let def = p.defaultValue.first ?? 0
@@ -519,7 +519,7 @@ struct LayerPropertiesSheet: View {
             }
             Picker("Mesclagem".loc, selection: Binding(get: { l.blendMode },
                                                        set: { b in edit(l.id, true) { $0.blendMode = b } })) {
-                ForEach(BlendMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                ForEach(BlendMode.allCases, id: \.self) { Text($0.label.loc).tag($0) }
             }
             HStack {
                 Text("Duração".loc).font(.system(size: 12))

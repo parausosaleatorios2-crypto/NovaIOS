@@ -1330,13 +1330,13 @@ struct InfoSheet: View {
         NavigationStack {
             VStack(spacing: 14) {
                 Spacer()
-                Text(mensagem).font(.system(size: 13)).foregroundStyle(NovaTheme.dim)
+                Text(mensagem.loc).font(.system(size: 13)).foregroundStyle(NovaTheme.dim)
                     .multilineTextAlignment(.center).padding(.horizontal, 30)
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(NovaTheme.background)
-            .navigationTitle(titulo).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(titulo.loc).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) {
                 Button("Fechar".loc) { dismiss() } } }
         }
@@ -1413,7 +1413,7 @@ struct FerramentaBotao: View {
                         .stroke(NovaTheme.accent.opacity(ativa ? 0.9 : 0), lineWidth: ativa ? 0.9 : 0))
                     .frame(width: 46, height: 34)
                     .overlay(Image(systemName: icon).font(.system(size: 19)).foregroundStyle(cor))
-                Text(label).font(.system(size: 11)).foregroundStyle(cor)
+                Text(label.loc).font(.system(size: 11)).foregroundStyle(cor)
                     .lineLimit(1).minimumScaleFactor(0.8)
                     .padding(.horizontal, 2)
             }

@@ -156,7 +156,7 @@ public struct EffectBrowserView: View {
         return Button { fonte = id } label: {
             HStack(spacing: 7) {
                 if let cor { Circle().fill(cor).frame(width: 9, height: 9) }
-                Text(nome).font(.system(size: 15, weight: ativo ? .semibold : .medium))
+                Text(nome.loc).font(.system(size: 15, weight: ativo ? .semibold : .medium))
                 Text("\(n)").font(.system(size: 14))
                     .foregroundStyle(ativo ? Color.black.opacity(0.6) : NovaTheme.dim2)
             }
@@ -208,7 +208,7 @@ public struct EffectBrowserView: View {
                                         MiniaturaEfeito(id: e.id, dividida: true)
                                             .frame(width: 100, height: 100)
                                             .clipShape(RoundedRectangle(cornerRadius: 14))
-                                        Text(e.name).font(.system(size: 13)).foregroundStyle(NovaTheme.text)
+                                        Text(e.titulo).font(.system(size: 13)).foregroundStyle(NovaTheme.text)
                                             .multilineTextAlignment(.center).lineLimit(2)
                                             .frame(width: 104)
                                     }
@@ -237,7 +237,7 @@ public struct EffectBrowserView: View {
     private func titulo(_ icone: String, _ t: String) -> some View {
         HStack(spacing: 7) {
             Image(systemName: icone).font(.system(size: 14))
-            Text(t).font(.system(size: 16, weight: .medium))
+            Text(t.loc).font(.system(size: 16, weight: .medium))
         }
         .foregroundStyle(NovaTheme.dim)
         .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 10)
@@ -249,7 +249,7 @@ public struct EffectBrowserView: View {
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(3)
-            Text(e.name).font(.system(size: 14, weight: .medium)).foregroundStyle(NovaTheme.text)
+            Text(e.titulo).font(.system(size: 14, weight: .medium)).foregroundStyle(NovaTheme.text)
                 .lineLimit(1)
                 .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
         }
@@ -348,7 +348,7 @@ public struct EffectBrowserView: View {
                         MiniaturaEfeito(id: e.id)
                             .aspectRatio(1, contentMode: .fit)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                        Text(e.name).font(.system(size: 12.5)).foregroundStyle(NovaTheme.text)
+                        Text(e.titulo).font(.system(size: 12.5)).foregroundStyle(NovaTheme.text)
                             .multilineTextAlignment(.center).lineLimit(2)
                             .frame(maxWidth: .infinity)
                     }

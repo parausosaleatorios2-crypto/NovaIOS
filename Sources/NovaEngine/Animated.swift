@@ -214,14 +214,29 @@ public struct Animated<T: Interpolatable>: Codable, Sendable, Equatable {
         else { setKeyframe(time: time, value: value) }
     }
 
-    /// Interpolacao da chave que esta neste instante (nil se nao ha chave ali).
-    public func easing(at time: Float, tolerance: Float = 1e-3) -> Easing? {
-        keyframes.first { abs($0.time - time) < tolerance }?.easing
+    /// O trecho (como no Alight Motion): indice da chave da esquerda do trecho em que o cursor
+    /// esta, k[i].time <= t < k[i+1].time. Em cima da ultima chave vale o trecho que chega nela.
+    /// nil fora das chaves ou com menos de duas.
+    public func segmentIndex(at time: Float, tolerance: Float = 1e-3) -> Int? {
+        guard keyframes.count >= 2, let a = keyframes.first?.time, let b = keyframes.last?.time,
+              time >= a - tolerance, time <= b + tolerance else { return nil }
+        return indexBefore(time + tolerance)
     }
 
-    /// Muda a interpolacao da chave que esta neste instante.
+    /// Inicio e fim (tempo) do trecho no cursor.
+    public func segmentTimes(at time: Float) -> (Float, Float)? {
+        guard let i = segmentIndex(at: time) else { return nil }
+        return (keyframes[i].time, keyframes[i + 1].time)
+    }
+
+    /// Curva do trecho em que o cursor esta (nil se o cursor nao esta entre duas chaves).
+    public func easing(at time: Float, tolerance: Float = 1e-3) -> Easing? {
+        segmentIndex(at: time, tolerance: tolerance).map { keyframes[$0].easing }
+    }
+
+    /// Muda a curva do trecho em que o cursor esta (a curva fica no trecho, nao em cada chave).
     public mutating func setEasing(at time: Float, _ e: Easing, tolerance: Float = 1e-3) {
-        if let i = keyframes.firstIndex(where: { abs($0.time - time) < tolerance }) { keyframes[i].easing = e }
+        if let i = segmentIndex(at: time, tolerance: tolerance) { keyframes[i].easing = e }
     }
 
     /// Ha uma chave exatamente neste instante?
