@@ -33,6 +33,13 @@ void *pw_novo(size_t tam);
 
 void pw_falha(const char *motivo);
 
+/* nomes proprios: o OFCore (Optical Flares) tem funcoes com os mesmos nomes no mesmo app */
+#define J2I pw_J2I
+#define J2L pw_J2L
+#define JDIV32 pw_JDIV32
+#define JREM32 pw_JREM32
+#define JDIV64 pw_JDIV64
+#define JREM64 pw_JREM64
 int32_t J2I(double x);
 int64_t J2L(double x);
 int32_t JDIV32(int32_t a, int32_t b);
