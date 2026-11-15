@@ -347,6 +347,7 @@ enum AEImportador {
         "ADBE Glo": "Glow", "S_Shake": "S_Shake", "S_Glow": "S_Glow", "S_Sharpen": "S_Sharpen",
         "MB LookSuite3": "Magic Bullet Looks", "Looks": "Magic Bullet Looks",
         "CSpice Glitchify": "Glitchify", "ADBE 4ColorGradient": "4-Color Gradient",
+        "CC Particle World": "CC Particle World", "PEDG2": "Deep Glow 2",
     ]
 
     enum TipoAE { case num, bool, menu([Int]), ponto, inteiro, direcao }
@@ -354,6 +355,41 @@ enum AEImportador {
     /// Parametros pelo nome interno do AE (sufixo de "<match>-0001"), como a tabela do
     /// conversor do APK: os nomes visiveis do Glitchify se repetem entre os grupos.
     static let porParametro: [String: [String: (String, TipoAE)]] = [
+        // CC Particle World pelo indice do AE (nao pelo nome: ha dois "Distance" e os menus
+        // pulam numeros, ex. Animation 11 = Jet Sideways). Os menus usam os values do XML.
+        "CC Particle World": [
+            "0004": ("birthRate", .num), "0005": ("longevity", .num),
+            "0007": ("posX", .num), "0008": ("posY", .num), "0009": ("posZ", .num),
+            "0010": ("radX", .num), "0011": ("radY", .num), "0012": ("radZ", .num),
+            "0015": ("animation", .menu([1, 2, 3, 5, 6, 7, 8, 9, 11, 13, 14])),
+            "0016": ("velocity", .num), "0017": ("inheritVelocity", .num), "0018": ("gravity", .num),
+            "0041": ("resistance", .num), "0019": ("extra", .num), "0020": ("extraAngle", .num),
+            "0003": ("floorPosition", .num), "0064": ("particleVisibility", .menu([1, 2, 3])),
+            "0065": ("renderAnimation", .menu([1, 2, 3])), "0066": ("floorAction", .menu([1, 2, 3, 4])),
+            "0067": ("bounciness", .num), "0068": ("randomBounciness", .num), "0069": ("bounceSpread", .num),
+            "0095": ("axisX", .num), "0096": ("axisY", .num), "0097": ("axisZ", .num),
+            "0100": ("gravityX", .num), "0101": ("gravityY", .num), "0102": ("gravityZ", .num),
+            "0023": ("particleType", .menu([1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26])),
+            "0046": ("scatter", .num), "0047": ("textureTime", .menu([1, 2, 3])), "0049": ("alignToDirection", .bool),
+            "0043": ("rotationSpeed", .num), "0042": ("initialRotation", .num),
+            "0071": ("rotationAxis", .menu([1, 2, 3, 4])),
+            "0024": ("birthSize", .num), "0025": ("deathSize", .num), "0026": ("sizeVariation", .num),
+            "0027": ("maxOpacity", .num), "0028": ("colorMap", .menu([1, 2, 3, 4, 5])),
+            "0029": ("birthColor", .num), "0030": ("deathColor", .num),
+            "0074": ("colorAtBirth", .num), "0075": ("colorAt25", .num), "0076": ("colorAt50", .num),
+            "0077": ("colorAt75", .num), "0078": ("colorAtDeath", .num),
+            "0040": ("volumeShade", .num), "0039": ("transferMode", .menu([1, 2, 3, 4])),
+            "0033": ("camDistance", .num), "0034": ("camRotX", .num), "0035": ("camRotY", .num),
+            "0036": ("camRotZ", .num), "0037": ("fov", .num),
+            "0082": ("depthCueType", .menu([1, 2, 3])), "0083": ("depthCueDistance", .num), "0084": ("fogColor", .num),
+            "0087": ("lightX", .num), "0088": ("lightY", .num), "0089": ("lightZ", .num),
+            "0091": ("holdParticleRelease", .num), "0092": ("compositeWithOriginal", .bool),
+            "0104": ("randomSeed", .inteiro),
+        ],
+        "PEDG2": [
+            "0017": ("radius", .num), "0018": ("exposure", .num),
+            "0020": ("threshold", .num), "0021": ("thresholdSmooth", .num),
+        ],
         "CSpice Glitchify": [
             "0001": ("amount", .num), "0002": ("speed", .num), "0003": ("seed", .inteiro),
             "0005": ("completion", .num), "0006": ("softness", .num),
