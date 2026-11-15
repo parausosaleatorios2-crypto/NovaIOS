@@ -132,6 +132,38 @@ enum MediaImporter {
         return l
     }
 
+    /// Troca a midia de `l` pela de `nova` (camada recem-importada) e guarda o resto.
+    static func substituirMidia(_ l: inout Layer, por nova: Layer) {
+        let velho = l.size ?? nova.size ?? SIMD2(1, 1)
+        let natural = nova.size ?? velho
+        // Cabe na caixa antiga mantendo a proporcao da midia nova.
+        let k = min(velho.x / max(natural.x, 1), velho.y / max(natural.y, 1))
+        let novo = natural * k
+        // O canto de cima da caixa muda; o ancora anda junto para o centro ficar no lugar.
+        let d = (novo - velho) / 2
+        l.transform.anchorPoint = deslocar(l.transform.anchorPoint, d)
+        l.kind = nova.kind
+        l.mediaPath = nova.mediaPath
+        l.size = novo
+        l.mediaOffset = 0
+        if nova.kind == .video {
+            l.sourceDuration = nova.sourceDuration
+            if let src = nova.sourceDuration, src > 0.05 {
+                // Nao passa do fim do video novo.
+                l.duration = min(l.duration, src / max(l.speed, 0.01))
+            }
+        } else {
+            l.sourceDuration = nil
+        }
+    }
+
+    private static func deslocar(_ a: Animated<SIMD2<Float>>, _ d: SIMD2<Float>) -> Animated<SIMD2<Float>> {
+        guard d != .zero else { return a }
+        if a.keyframes.isEmpty { return Animated(a.staticValue + d) }
+        let ks = a.keyframes.map { k -> Keyframe<SIMD2<Float>> in var k = k; k.value += d; return k }
+        return Animated(a.staticValue + d, keyframes: ks)
+    }
+
     /// Centraliza e cabe inteira na composicao, mantendo a proporcao.
     static func fit(_ l: inout Layer, in comp: Composition) {
         let size = l.size ?? comp.size

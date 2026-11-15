@@ -343,6 +343,9 @@ struct PainelClipe: View {
             if layer.kind == .group { linhaDoGrupo }
             HStack(spacing: 8) {
                 ladrilho(primeiro.2, primeiro.1, primeiro.0)
+                if layer.kind == .video || layer.kind == .image {
+                    ladrilho("arrow.triangle.2.circlepath", "Substituir", "substituir")
+                }
                 ladrilho("square.dashed", "Borda e sombra", "borda")
                 ladrilho("drop.halffull", "Opacidade e mesclagem", "opacidade")
             }

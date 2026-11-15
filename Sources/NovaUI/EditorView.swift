@@ -37,6 +37,10 @@ public struct EditorView: View {
     @State private var installedExtensions: Set<String> = []   // vazio: nenhuma instalada
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPicker = false
+    /// Substituir a midia de uma camada (video/foto), mantendo efeitos, chaves e tudo mais.
+    @State private var substituindo: UUID?
+    @State private var substituirAberto = false
+    @State private var substituirItens: [PhotosPickerItem] = []
     @State private var importing = false
     @State private var aviso: String?
     @State private var novoTexto = ""
@@ -201,6 +205,13 @@ public struct EditorView: View {
                       maxSelectionCount: nil, selectionBehavior: .ordered,
                       matching: .any(of: [.images, .videos]),
                       preferredItemEncoding: .current)
+        .photosPicker(isPresented: $substituirAberto, selection: $substituirItens,
+                      maxSelectionCount: 1, matching: .any(of: [.images, .videos]),
+                      preferredItemEncoding: .current)
+        .onChange(of: substituirItens) { _, items in
+            guard let item = items.first, let id = substituindo else { return }
+            Task { await substituir(id, item) }
+        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await importar(items) }
@@ -254,6 +265,26 @@ public struct EditorView: View {
     }
 
     // MARK: acoes
+
+    /// Replace: troca so a midia da camada. Efeitos, mascaras, chaves, transformacao,
+    /// mesclagem, vinculo, grupo, nome e tempo ficam como estavam. A midia nova cabe
+    /// (sem distorcer) na mesma caixa da antiga, no mesmo centro.
+    private func substituir(_ id: UUID, _ item: PhotosPickerItem) async {
+        importing = true
+        let r = await MediaImporter.importItems([item], into: mediaRoot, composition: comp, start: 0)
+        substituirItens = []
+        substituindo = nil
+        importing = false
+        guard let nova = r.layers.first, comp.layer(id: id) != nil else {
+            aviso = r.failures.first ?? "Nada foi adicionado".loc
+            return
+        }
+        editLayer(id, true) { l in
+            MediaImporter.substituirMidia(&l, por: nova)
+        }
+        cacheDeQuadros.limpar()
+        aviso = "Mídia substituída: os efeitos e as chaves ficaram.".loc
+    }
 
     private func importar(_ items: [PhotosPickerItem]) async {
         importing = true
@@ -758,6 +789,9 @@ public struct EditorView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
                         Button { acaoClipe("dividir", l) } label: { itemCapCut("scissors", "Dividir") }
+                        if l.kind == .video || l.kind == .image {
+                            Button { acaoClipe("substituir", l) } label: { itemCapCut("arrow.triangle.2.circlepath", "Substituir") }
+                        }
                         Button { acaoClipe("animar", l) } label: { itemCapCut("play.rectangle", "Animações") }
                         Button { acaoClipe("efeitos", l) } label: { itemCapCut("star", "Efeitos") }
                         Button { excluirSelecionada() } label: { itemCapCut("trash", "Excluir") }
@@ -1122,6 +1156,11 @@ public struct EditorView: View {
     private func acaoClipe(_ id: String, _ l: Layer) {
         let dentro = time > l.startTime + 0.01 && time < l.endTime - 0.01
         switch id {
+        case "substituir":
+            guard l.kind == .video || l.kind == .image else { return }
+            substituindo = l.id
+            substituirItens = []
+            substituirAberto = true
         case "restaurar":
             editLayer(l.id, true) { MediaImporter.fit(&$0, in: comp) }
         case "aparaInicio":

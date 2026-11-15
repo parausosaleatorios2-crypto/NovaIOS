@@ -7081,5 +7081,7 @@
   "Subexpor": "Color dodge",
   "Pré-multiplicação luminescente": "Luminescent premul",
   "Pré-composição": "Pre-composition",
-  "Foto": "Photo"
+  "Foto": "Photo",
+  "Substituir": "Replace",
+  "Mídia substituída: os efeitos e as chaves ficaram.": "Media replaced: effects and keyframes were kept."
 }
