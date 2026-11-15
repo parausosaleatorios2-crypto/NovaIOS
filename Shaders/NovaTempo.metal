@@ -46,6 +46,18 @@ fragment float4 nova_tempo_fragment(NovaVertexOut in [[stage_in]],
             w = (floor(g) == u.indice) ? 1.0 : 0.0;
         }
         if (u.opacidade == 0) c = float4(c.rgb, 1.0);
+    } else if (u.modo == 2) {
+        // Time Slice do Node Video: k = numero de fatias, indice = esta fatia, base = suavizacao,
+        // aspecto = largura / altura, (cosseno, seno) = direcao com y para baixo.
+        float n = u.k;
+        float2 p = float2((in.uv.x - 0.5) * u.aspecto, in.uv.y - 0.5);
+        float pos = n * (dot(float2(u.cosseno, u.seno), p) + 0.5);
+        float s = clamp(floor(pos), 0.0, n - 1.0);
+        float fr = clamp(pos - s, 0.0, 1.0);
+        float a = (u.base > 0.0 && s < n - 1.0) ? smoothstep(1.0 - u.base, 1.0, fr) : 0.0;
+        if (s == u.indice) w = 1.0 - a;
+        else if (s + 1.0 == u.indice) w = a;
+        else w = 0.0;
     }
     return c * w;
 }

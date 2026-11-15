@@ -392,9 +392,16 @@ public struct EditorView: View {
         l.transform.zoom = Animated(comp.zoomPadrao)
         l.startTime = 0
         l.duration = comp.duration
-        editComp { $0.add(l, em: grupoAberto) }
+        editComp { c in
+            // Como no Blurrr: com a camera, as camadas ja entram em 3D (a vista inicial e igual a 2D).
+            for i in c.layers.indices where c.layers[i].kind.canBe3D && c.layers[i].kind != .adjustment {
+                c.layers[i].is3D = true
+            }
+            c.add(l, em: grupoAberto)
+        }
         selectedLayer = l.id
-        aviso = "Câmera 3D: ligue o 3D nas camadas (botão 3D) e mexa na Posição Z.".loc
+        painel = PainelAberto(camada: l.id, tipo: .transformar)
+        aviso = "Câmera 3D pronta: arraste para orbitar, a pinça aproxima.".loc
     }
 
     private func adicionarNulo() {
@@ -1113,6 +1120,9 @@ public struct EditorView: View {
                                  onAbrirCompleto: { sheet = .propriedadesAba(l.id, "efeitos") },
                                  manifests: manifests,
                                  onAbrirEfeito: { f in painel = PainelAberto(camada: l.id, tipo: .efeito(f)) })
+                    .frame(height: 300)
+            case .some(.transformar) where l.kind == .camera:
+                PainelCamera(layer: l, comp: comp, time: time, edit: editar, onVoltar: { painel = nil })
                     .frame(height: 300)
             case .some(.transformar):
                 PainelTransformar(layer: l, comp: comp, time: time, edit: editar, onVoltar: { painel = nil },

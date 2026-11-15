@@ -1052,7 +1052,9 @@ struct PainelTransformar: View {
             } label: { Label("Zerar rotação e inclinação".loc, systemImage: "arrow.counterclockwise") }
         }, conteudo: {
             HStack(spacing: 0) {
-                moldura { centro }
+                moldura { centro.frame(minWidth: 0, maxWidth: .infinity) }
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .clipped()
                 trilhoDosModos
             }
         })
@@ -1137,19 +1139,13 @@ struct PainelTransformar: View {
         case 2: ids = [("ex", "X"), ("ey", "Y")]
         default: ids = [("ix", "X"), ("iy", "Y")]
         }
-        let dois = Array(ids.prefix(2))
-        let z: (String, String)? = ids.count > 2 ? ids[2] : nil
-        return HStack(spacing: 10) {
-            HStack(spacing: 0) { ForEach(dois, id: \.0) { c in chip(c.0, c.1) } }
-                .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
-            if let z {
-                chip(z.0, z.1)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
-            }
-            if let w = chaveDoWiggle {
-                BotaoWiggle(ligado: layer.transform.wiggles?[w.0]?.ligado == true) { wiggleAberto = w.0 }
-            }
+        // Cabe sempre na largura do painel: se a fileira inteira nao cabe, os valores
+        // encolhem e o Wiggle vira so o icone (antes ela empurrava o editor para fora da tela).
+        return ViewThatFits(in: .horizontal) {
+            linhaDeChips(ids, compacto: false)
+            linhaDeChips(ids, compacto: true)
         }
+        .frame(maxWidth: .infinity)
         .padding(.bottom, 14)
         .sheet(item: Binding(get: { wiggleAberto.map { IdWiggle(id: $0) } }, set: { wiggleAberto = $0?.id })) { k in
             let info = chaveDoWiggle
@@ -1164,7 +1160,24 @@ struct PainelTransformar: View {
         }
     }
 
-    private func chip(_ id: String, _ eixo: String) -> some View {
+    private func linhaDeChips(_ ids: [(String, String)], compacto: Bool) -> some View {
+        let dois = Array(ids.prefix(2))
+        let z: (String, String)? = ids.count > 2 ? ids[2] : nil
+        return HStack(spacing: compacto ? 6 : 10) {
+            HStack(spacing: 0) { ForEach(dois, id: \.0) { c in chip(c.0, c.1, compacto: compacto) } }
+                .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
+            if let z {
+                chip(z.0, z.1, compacto: compacto)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
+            }
+            if let w = chaveDoWiggle {
+                BotaoWiggle(ligado: layer.transform.wiggles?[w.0]?.ligado == true, compacto: compacto) { wiggleAberto = w.0 }
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func chip(_ id: String, _ eixo: String, compacto: Bool = false) -> some View {
         let v = prop(id).map { valor($0) } ?? 0
         let ativo = modo == 1 && eixoRot == id
         return Button {
@@ -1172,9 +1185,10 @@ struct PainelTransformar: View {
             texto = formatarValor(v)
             editando = id
         } label: {
-            Text(formatarValor(v)).font(.system(size: 14, weight: .medium, design: .rounded))
+            Text(formatarValor(v)).font(.system(size: compacto ? 12.5 : 14, weight: .medium, design: .rounded))
+                .lineLimit(1)
                 .foregroundStyle(NovaTheme.accent.opacity(ativo ? 1 : 0.85))
-                .frame(minWidth: 62).padding(.vertical, 7)
+                .frame(minWidth: compacto ? 46 : 62).padding(.vertical, 7).padding(.horizontal, compacto ? 2 : 0)
                 .background(RoundedRectangle(cornerRadius: 8).fill(ativo ? NovaTheme.accent.opacity(0.22) : Color.clear))
         }
         .buttonStyle(.plain)

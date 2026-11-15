@@ -287,7 +287,7 @@ public final class Compositor {
 
     // MARK: efeitos de tempo (CC Wide Time, S_TimeSlice)
 
-    private static let estagiosDeTempo: Set<String> = ["widetime", "timeslice"]
+    private static let estagiosDeTempo: Set<String> = ["widetime", "timeslice", "nodetimeslice"]
 
     /// Aplica os efeitos [0..<limite] da camada sobre `inicial`.
     private func cadeia(_ layer: Layer, comp: Composition, time: Float, inicial: MTLTexture,
@@ -628,6 +628,29 @@ public final class Compositor {
                 let t = time + d * fd
                 guard let q = try await quadro(k * 1000 + Int((d * 100).rounded()), t) else { continue }
                 var u = TempoUniforms(); u.peso = peso; u.modo = 0
+                try somar(q, u)
+            }
+            return destino
+        }
+
+        if estagio == "nodetimeslice" {
+            // Time Slice do Node Video (DataTimeSlice): c fatias; a fatia k e a camada no instante
+            // t + (offset + intervalo x (k + 1 - c)) quadros (a ultima e a de agora). A faixa do
+            // pixel e floor(c x (dot(direcao, (uv - 0,5) x proporcao) + 0,5)); a suavizacao mistura
+            // o fim de cada fatia com a seguinte.
+            let c = max(2, min(30, Int(numero(v, "_slice_count", m, 6).rounded())))
+            let intervalo = max(1, Int(numero(v, "_frame_interval", m, 2).rounded()))
+            let offset = Int(numero(v, "_frame_offset", m, 0).rounded())
+            let suave = min(max(numero(v, "_feather", m, 0), 0), 1)
+            let ang = Double(numero(v, "_slice_angle", m, 90)) * .pi / 180
+            let proporcao = Float(atual.width) / Float(max(atual.height, 1))
+            let q0 = Int((time / fd).rounded())
+            for k in 0..<c {
+                let dq = offset + intervalo * (k + 1 - c)
+                guard let q = try await quadro(q0 + dq, time + Float(dq) * fd) else { continue }
+                var u = TempoUniforms()
+                u.modo = 2; u.cosseno = Float(cos(ang)); u.seno = Float(-sin(ang))
+                u.k = Float(c); u.indice = Float(k); u.aspecto = proporcao; u.base = suave
                 try somar(q, u)
             }
             return destino

@@ -30,7 +30,7 @@
     desc="A camada em faixas, cada uma num instante diferente: o corte no tempo do Node Video."
     desc-en="The layer cut in bands, each one from a different moment in time (Node Video)."
     category="nodevideo"
-    stage="screen"
+    stage="nodetimeslice"
     tags="nodevideo,nv,unity,tempo,time,slice,fatias,faixas">
 
     <params>

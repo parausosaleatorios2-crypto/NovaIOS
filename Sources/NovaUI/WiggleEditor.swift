@@ -15,6 +15,8 @@ struct IdWiggle: Identifiable { let id: String }
 /// O botao pequeno ao lado dos valores: aceso quando o wiggle esta ligado.
 struct BotaoWiggle: View {
     let ligado: Bool
+    /// So o icone (quando a fileira esta apertada).
+    var compacto = false
     let tocar: () -> Void
     var body: some View {
         Button(action: tocar) {
@@ -22,13 +24,17 @@ struct BotaoWiggle: View {
                 OndaWiggle().stroke(ligado ? Color.black : NovaTheme.accent,
                                     style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                     .frame(width: 18, height: 10)
-                Text("Wiggle").font(.system(size: 12.5, weight: .semibold))
+                if !compacto {
+                    Text("Wiggle").font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                }
             }
             .foregroundStyle(ligado ? Color.black : NovaTheme.text)
-            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(height: 18)
+            .padding(.horizontal, compacto ? 9 : 10).padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 8).fill(ligado ? NovaTheme.accent : CoresPainel.pilula.opacity(0.8)))
         }
         .buttonStyle(.plain)
+        .fixedSize()
         .accessibilityLabel("Wiggle".loc)
     }
 }
