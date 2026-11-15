@@ -1,0 +1,44 @@
+name: Motor do CC Particle World
+
+on:
+  push:
+    paths:
+      - 'Sources/PWCore/**'
+      - 'Tools/pwcore/**'
+      - '.github/workflows/motor-pw.yml'
+  workflow_dispatch:
+
+jobs:
+  # O motor do CC Particle World (Sources/PWCore, gerado do smali do APK) compilado e rodado no
+  # Linux: desenha os padroes e o preset Stars e guarda as imagens. Rapido, para pegar erro cedo.
+  motor-pw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar e desenhar
+        run: |
+          set -o pipefail
+          clang --version | head -1
+          mkdir -p pw-saida
+          clang -std=gnu11 -O2 -ffp-contract=off -fwrapv -Wno-unused-label -Wno-unused-variable \
+            -Wno-unused-but-set-variable -Wno-unused-function -I Sources/PWCore/include -I Sources/PWCore \
+            Sources/PWCore/*.c Tools/pwcore/pw_teste.c -lm -lpthread -o pw-saida/pw_teste 2>&1 | tee pw-saida/compilacao.txt | grep -E "error" | head -80 || true
+          test -x pw-saida/pw_teste
+          time ./pw-saida/pw_teste pw-saida | tee pw-saida/saida.txt
+          python3 - <<'EOF'
+          import zlib, struct, glob
+          for p in glob.glob('pw-saida/*.ppm'):
+              d = open(p, 'rb').read().split(b'\n', 3)
+              w, h = map(int, d[1].split()); px = d[3]
+              raw = b''.join(b'\0' + px[y*w*3:(y+1)*w*3] for y in range(h))
+              def ch(t, b):
+                  c = struct.pack('>I', len(b)) + t + b
+                  return c + struct.pack('>I', zlib.crc32(t + b) & 0xffffffff)
+              open(p[:-4] + '.png', 'wb').write(b'\x89PNG\r\n\x1a\n' + ch(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + ch(b'IDAT', zlib.compress(raw)) + ch(b'IEND', b''))
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motor-pw
+          path: pw-saida
