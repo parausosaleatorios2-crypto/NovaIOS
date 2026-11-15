@@ -614,6 +614,14 @@ public struct EditorView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer(minLength: 8)
+                if l.kind == .video || l.kind == .image {
+                    // Replace: troca o video/foto e guarda efeitos, chaves e tudo mais.
+                    Button { acaoClipe("substituir", l) } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(NovaTheme.accent)
+                    }
+                    .accessibilityLabel("Substituir".loc)
+                }
                 Button { duplicarSelecionada() } label: {
                     Image(systemName: "square.on.square.dashed").font(.system(size: 19))
                         .foregroundStyle(NovaTheme.text.opacity(0.85))
@@ -650,6 +658,9 @@ public struct EditorView: View {
                     Divider()
                     Button { sheet = .propriedades(id) } label: { Label("Propriedades".loc, systemImage: "slider.horizontal.3") }
                     Button { duplicarSelecionada() } label: { Label("Duplicar camada".loc, systemImage: "plus.square.on.square") }
+                    if let c = comp.layer(id: id), c.kind == .video || c.kind == .image {
+                        Button { acaoClipe("substituir", c) } label: { Label("Substituir".loc, systemImage: "arrow.triangle.2.circlepath") }
+                    }
                     if comp.layer(id: id)?.kind == .group {
                         Button { editComp { $0.ungroup(id) }; selectedLayer = nil } label: {
                             Label("Desagrupar".loc, systemImage: "rectangle.stack.badge.minus")
