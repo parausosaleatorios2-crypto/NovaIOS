@@ -78,10 +78,11 @@ public struct Transform: Codable, Sendable, Equatable {
         let a = anchorPoint.value(at: t)
         let p = position.value(at: t) + SIMD2(tremor("posicao", t, eixo: 0), tremor("posicao", t, eixo: 1))
         let z = positionZ.value(at: t) + tremor("posicaoZ", t)
-        let ws = tremor("escala", t)
-        let s = (scale.value(at: t) + SIMD2(ws, ws)) / 100
-        let rx = rotationX.value(at: t) * .pi / 180
-        let ry = rotationY.value(at: t) * .pi / 180
+        let wsx = tremor("escala", t, eixo: 0)
+        let wsy = (wiggles?["escala"]?.uniforme ?? true) ? wsx : tremor("escala", t, eixo: 1)
+        let s = (scale.value(at: t) + SIMD2(wsx, wsy)) / 100
+        let rx = (rotationX.value(at: t) + tremor("rotacaoX", t)) * .pi / 180
+        let ry = (rotationY.value(at: t) + tremor("rotacaoY", t)) * .pi / 180
         let rz = (rotationZ.value(at: t) + tremor("rotacao", t)) * .pi / 180
         let k = skew?.value(at: t) ?? .zero
 
@@ -432,6 +433,15 @@ public struct WiggleAE: Codable, Sendable, Equatable {
     public var amp: Float = 50
     public var semente: UInt32 = UInt32.random(in: 1...UInt32.max)
 
+    /// Oitavas do wiggle(freq, amp, octaves, amp_mult) do AE (nil = 1). Cada oitava tem o dobro
+    /// da frequencia e `ampMult` (nil = 0,5) da amplitude da anterior: mais "detalhe".
+    public var oitavas: Int?
+    public var ampMult: Float?
+    /// So para posicao: nil/0 = X e Y, 1 = so X, 2 = so Y.
+    public var eixos: Int?
+    /// So para escala: true (nil) = X e Y juntos (mantem a proporcao); false = cada eixo o seu.
+    public var uniforme: Bool?
+
     public init(freq: Float, amp: Float) { self.freq = freq; self.amp = amp }
 
     private func aleatorio(_ i: Int32, _ eixo: Int) -> Float {
@@ -441,12 +451,25 @@ public struct WiggleAE: Codable, Sendable, Equatable {
     }
 
     public func valor(_ t: Float, eixo: Int) -> Float {
-        let x = t * max(freq, 0)
+        if eixos == 1 && eixo == 1 { return 0 }
+        if eixos == 2 && eixo == 0 { return 0 }
+        let n = min(max(oitavas ?? 1, 1), 6)
+        let mult = ampMult ?? 0.5
+        var soma: Float = 0, a: Float = 1, fq = max(freq, 0)
+        for o in 0..<n {
+            soma += ruido(t * fq, eixo + o * 7) * a
+            a *= mult; fq *= 2
+        }
+        return soma * amp
+    }
+
+    /// Ruido suave entre -1 e 1 (uma oitava).
+    private func ruido(_ x: Float, _ canal: Int) -> Float {
         let i = floor(x), f = x - i
-        let a = aleatorio(Int32(truncatingIfNeeded: Int(i)), eixo)
-        let b = aleatorio(Int32(truncatingIfNeeded: Int(i) + 1), eixo)
-        let s = f * f * (3 - 2 * f)
-        return (a + (b - a) * s) * amp
+        let a = aleatorio(Int32(truncatingIfNeeded: Int(i)), canal)
+        let b = aleatorio(Int32(truncatingIfNeeded: Int(i) + 1), canal)
+        let s = f * f * f * (f * (f * 6 - 15) + 10)
+        return a + (b - a) * s
     }
 }
 

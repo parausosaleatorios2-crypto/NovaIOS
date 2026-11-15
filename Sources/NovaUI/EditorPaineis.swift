@@ -922,6 +922,22 @@ struct PainelTransformar: View {
     @State private var editando: String?
     @State private var texto = ""
     @State private var arrasto: (String, Float)?
+    @State private var wiggleAberto: String?
+
+    /// A chave do wiggle do modo atual (nil na inclinacao).
+    private var chaveDoWiggle: (String, String, String)? {
+        switch modo {
+        case 0: return ("posicao", "Posição", "px")
+        case 1:
+            switch eixoRot {
+            case "rx": return ("rotacaoX", "Rotação X", "°")
+            case "ry": return ("rotacaoY", "Rotação Y", "°")
+            default: return ("rotacao", "Rotação", "°")
+            }
+        case 2: return ("escala", "Escala", "%")
+        default: return nil
+        }
+    }
 
     /// (id, titulo, faixa, propriedade de 1 ou 2 eixos, eixo)
     private enum Prop {
@@ -1130,8 +1146,22 @@ struct PainelTransformar: View {
                 chip(z.0, z.1)
                     .background(RoundedRectangle(cornerRadius: 8).fill(CoresPainel.pilula.opacity(0.8)))
             }
+            if let w = chaveDoWiggle {
+                BotaoWiggle(ligado: layer.transform.wiggles?[w.0]?.ligado == true) { wiggleAberto = w.0 }
+            }
         }
         .padding(.bottom, 14)
+        .sheet(item: Binding(get: { wiggleAberto.map { IdWiggle(id: $0) } }, set: { wiggleAberto = $0?.id })) { k in
+            let info = chaveDoWiggle
+            WiggleSheet(chave: k.id, titulo: info?.1 ?? k.id, unidade: info?.2 ?? "",
+                        inicial: layer.transform.wiggles?[k.id]) { w in
+                edit(layer.id, true) { l in
+                    var d = l.transform.wiggles ?? [:]
+                    d[k.id] = w
+                    l.transform.wiggles = d
+                }
+            }
+        }
     }
 
     private func chip(_ id: String, _ eixo: String) -> some View {
@@ -1403,6 +1433,7 @@ struct PainelOpacidade: View {
     let time: Float
     let edit: LayerEdit
     let onVoltar: () -> Void
+    @State private var wiggleOpacidade = false
 
     var body: some View {
         let a = layer.transform.opacity
@@ -1420,6 +1451,20 @@ struct PainelOpacidade: View {
                        animado: !a.keyframes.isEmpty, temChave: a.hasKeyframe(at: time),
                        valor: a.value(at: time), faixa: 0...100, onSelecionar: {}) { v, g in
                 edit(layer.id, g) { $0.transform.opacity.set(v, at: time) }
+            }
+            HStack {
+                Spacer()
+                BotaoWiggle(ligado: layer.transform.wiggles?["opacidade"]?.ligado == true) { wiggleOpacidade = true }
+            }
+            .sheet(isPresented: $wiggleOpacidade) {
+                WiggleSheet(chave: "opacidade", titulo: "Opacidade", unidade: "%",
+                            inicial: layer.transform.wiggles?["opacidade"]) { w in
+                    edit(layer.id, true) { l in
+                        var d = l.transform.wiggles ?? [:]
+                        d["opacidade"] = w
+                        l.transform.wiggles = d
+                    }
+                }
             }
             CabecalhoGrupo(texto: "Mesclagem".loc)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {

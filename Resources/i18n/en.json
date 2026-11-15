@@ -7083,5 +7083,18 @@
   "Pré-composição": "Pre-composition",
   "Foto": "Photo",
   "Substituir": "Replace",
-  "Mídia substituída: os efeitos e as chaves ficaram.": "Media replaced: effects and keyframes were kept."
+  "Mídia substituída: os efeitos e as chaves ficaram.": "Media replaced: effects and keyframes were kept.",
+  "Faz a propriedade tremer sozinha, sem keyframes, em cima do valor e das chaves.": "Makes the property shake on its own, without keyframes, on top of its value and keyframes.",
+  "Quantas vezes por segundo ela muda de direção": "How many times per second it changes direction",
+  "O quanto ela pode se afastar do valor normal": "How far it can move away from its normal value",
+  "Mais detalhe = tremor mais nervoso, com pequenas variações por cima": "More detail = a jumpier shake, with small variations on top",
+  "Médio": "Medium",
+  "Áspero": "Rough",
+  "Para onde ela treme": "Which way it shakes",
+  "X e Y": "X and Y",
+  "Só X (lados)": "X only (sideways)",
+  "Só Y (cima/baixo)": "Y only (up/down)",
+  "Manter a proporção (X e Y juntos)": "Keep proportions (X and Y together)",
+  "Sortear outro tremor": "Randomize shake",
+  "No After Effects": "In After Effects"
 }

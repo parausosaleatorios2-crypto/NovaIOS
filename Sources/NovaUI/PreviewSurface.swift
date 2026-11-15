@@ -68,6 +68,8 @@ public struct PreviewSurface: UIViewRepresentable {
         private var rendering = false
         private var pending: (Composition, Float)?
         private var manifests: [String: EffectManifest] = [:]
+        /// Os ids dos efeitos carregados, ordenados uma vez (nao a cada quadro).
+        private var idsDosEfeitos: [String] = []
         private let log = Logger(subsystem: "com.novavision.editor", category: "Preview")
 
         /// Ultimo aviso do Compositor (camada que falhou), para a tela mostrar.
@@ -82,13 +84,14 @@ public struct PreviewSurface: UIViewRepresentable {
         func request(_ comp: Composition, time: Float, mediaRoot: URL,
                      manifests: [String: EffectManifest]) {
             guard let device else { return }
+            if manifests.count != self.manifests.count { idsDosEfeitos = manifests.keys.sorted() }
             self.manifests = manifests
             if provider?.mediaRoot != mediaRoot {
                 provider = MediaContentProvider(mediaRoot: mediaRoot, device: device)
                 compositor?.contentProvider = provider
             }
             if let cache {
-                cache.validar(comp, efeitos: manifests.keys.sorted())
+                cache.validar(comp, efeitos: idsDosEfeitos)
                 let q = CacheDeQuadros.quadro(time, fps: comp.frameRate)
                 alvo = q
                 if let t = cache.textura(q) {
@@ -130,7 +133,7 @@ public struct PreviewSurface: UIViewRepresentable {
                         view?.setNeedsDisplay()
                     }
                     if let cache {
-                        cache.validar(comp, efeitos: manifests.keys.sorted())
+                        cache.validar(comp, efeitos: idsDosEfeitos)
                         // Quadro com aviso (efeito ainda carregando, camada que falhou) nao fica no cache.
                         if completo, let c = copiaParaCache(tex, compositor, comp: comp) { cache.guardar(q, c, perto: alvo ?? q) }
                         else { cache.mostrou(q) }

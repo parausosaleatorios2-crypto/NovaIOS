@@ -24,10 +24,11 @@ public final class CacheDeQuadros: ObservableObject {
     private var esperando: [Int: [CheckedContinuation<Void, Never>]] = [:]
     private var avisoDeMemoria: NSObjectProtocol?
 
-    /// Teto de memoria: um sexto da RAM do aparelho, no maximo 768 MB.
+    /// Teto de memoria: um oitavo da RAM do aparelho, no maximo 512 MB (deixa folga para o
+    /// motor e os videos; os quadros encolhem para a composicao inteira caber mesmo assim).
     let orcamento: Int = {
         let ram = Int(clamping: ProcessInfo.processInfo.physicalMemory)
-        return max(96 << 20, min(768 << 20, ram / 6))
+        return max(96 << 20, min(512 << 20, ram / 8))
     }()
 
     public init() {
@@ -61,13 +62,19 @@ public final class CacheDeQuadros: ObservableObject {
 
     /// A faixa verde muda fora da atualizacao da tela (o pedido de quadro vem de dentro
     /// dela, e o SwiftUI nao aceita @Published mudando ali); varias mudancas viram uma.
+    /// No maximo ~7 vezes por segundo: cada publicacao redesenha o editor, e a faixa verde
+    /// nao precisa andar quadro a quadro.
     private var publicacaoMarcada = false
+    private var ultimaPublicacao = Date.distantPast
     private func publicar() {
         guard !publicacaoMarcada else { return }
         publicacaoMarcada = true
+        let espera = max(0, 0.15 - Date().timeIntervalSince(ultimaPublicacao))
         Task { @MainActor [weak self] in
+            if espera > 0 { try? await Task.sleep(nanoseconds: UInt64(espera * 1_000_000_000)) }
             guard let self else { return }
             self.publicacaoMarcada = false
+            self.ultimaPublicacao = Date()
             let s = Set(self.texturas.keys)
             if s != self.prontos { self.prontos = s }
         }
