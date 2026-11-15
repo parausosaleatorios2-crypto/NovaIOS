@@ -357,8 +357,14 @@ public final class Compositor {
                 do {
                     let ctl = ParticleWorld.Controles(valores: fx.values(at: time, manifest: m), fps: comp.frameRate)
                     let lt = (time - layer.startTime) * max(layer.speed, 0.01)
+                    let inicio = layer.startTime, vel = max(layer.speed, 0.01), fps = comp.frameRate
+                    let efeito = fx
                     tex = try passeNaCPU(entrada: tex, cb: cb, guardar: &guardar) { leitura, escrita in
-                        ParticleWorld.rodar(leitura: leitura, escrita: escrita, controles: ctl, tempo: lt)
+                        // O motor exato do APK (o que bate com o AE); a versao aproximada so se ele falhar.
+                        if !ParticleWorldExato.rodar(leitura: leitura, escrita: escrita, fx: efeito, manifest: m,
+                                                     tempoDaCamada: lt, inicioDaCamada: inicio, velocidade: vel, fps: fps) {
+                            ParticleWorld.rodar(leitura: leitura, escrita: escrita, controles: ctl, tempo: lt)
+                        }
                     }
                 } catch {
                     lastFrameWarnings.append("\(m.name): \(error.localizedDescription)")

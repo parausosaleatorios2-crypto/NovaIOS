@@ -19,9 +19,14 @@ let package = Package(
             name: "OFCore",
             path: "Sources/OFCore",
             cSettings: [.unsafeFlags(["-fwrapv", "-ffp-contract=off", "-Wno-unused-label"])]),
+        // Motor do CC Particle World do APK em C (gerado do smali).
+        .target(
+            name: "PWCore",
+            path: "Sources/PWCore",
+            cSettings: [.unsafeFlags(["-fwrapv", "-ffp-contract=off", "-Wno-unused-label"])]),
         .target(
             name: "NovaEngine",
-            dependencies: ["OFCore"],
+            dependencies: ["OFCore", "PWCore"],
             path: "Sources/NovaEngine"),
         // Sonda do CI: aplica cada efeito numa imagem de teste e mede o resultado.
         .executableTarget(
