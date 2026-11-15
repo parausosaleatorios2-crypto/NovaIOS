@@ -471,6 +471,30 @@ public struct EditorView: View {
     private func tocar() async {
         guard playing else { return }
         if time >= comp.duration { time = 0 }
+        // Som da previa: o audio de todas as camadas com som (video e musica) num player so.
+        // Ele toca sempre que a previa anda em tempo real (quadros verdes ou sem cache) e
+        // pausa enquanto um quadro esta sendo montado; ao voltar, pula para o cursor.
+        let item = await AudioMux.previewItem(composition: comp, mediaRoot: mediaRoot)
+        let player = item.map { AVPlayer(playerItem: $0) }
+        player?.automaticallyWaitsToMinimizeStalling = false
+        if player != nil {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
+        var somTocando = false
+        func somEm(_ t: Float) {
+            guard let player, !somTocando else { return }
+            player.seek(to: CMTime(seconds: Double(t), preferredTimescale: 600),
+                        toleranceBefore: .zero, toleranceAfter: .zero)
+            player.play()
+            somTocando = true
+        }
+        func pausarSom() {
+            guard somTocando else { return }
+            player?.pause(); somTocando = false
+        }
+        defer { player?.pause() }
+
         // Como o RAM Preview do AE: enquanto falta quadro no cache, toca quadro a quadro
         // (cada um espera ser montado e entra na faixa verde); com tudo pronto, toca em tempo real.
         let fps = max(comp.frameRate, 1)
@@ -480,11 +504,13 @@ public struct EditorView: View {
         while playing && !Task.isCancelled && !cacheDeQuadros.completo(de: q, ate: total) {
             time = Float(q) / fps
             if cacheDeQuadros.temQuadro(q) {
-                // Ja renderizado (verde): passa no ritmo real, sem esperar nada.
+                // Ja renderizado (verde): passa no ritmo real, com som.
+                somEm(time)
                 proximo = proximo.addingTimeInterval(1 / Double(fps))
                 let falta = proximo.timeIntervalSinceNow
                 if falta > 0 { try? await Task.sleep(nanoseconds: UInt64(falta * 1_000_000_000)) }
             } else {
+                pausarSom()
                 await cacheDeQuadros.esperar(q)
                 // Quadro que nao pode ficar no cache (efeito com aviso): toca em tempo real daqui.
                 if !cacheDeQuadros.temQuadro(q) { break }
@@ -496,23 +522,17 @@ public struct EditorView: View {
             }
         }
         guard playing, !Task.isCancelled else { return }
-        // Som da previa: video e audio da composicao, a partir do cursor.
-        var player: AVPlayer?
-        if let item = await AudioMux.previewItem(composition: comp, mediaRoot: mediaRoot) {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
-            try? AVAudioSession.sharedInstance().setActive(true)
-            let p = AVPlayer(playerItem: item)
-            await p.seek(to: CMTime(seconds: Double(time), preferredTimescale: 600),
-                         toleranceBefore: .zero, toleranceAfter: .zero)
-            p.play()
-            player = p
-        }
-        defer { player?.pause() }
+        // Tempo real: o relogio segue o som quando ha som (sem deriva entre imagem e audio).
+        somEm(time)
         let inicio = Date()
         let t0 = time
         while playing && !Task.isCancelled {
             try? await Task.sleep(nanoseconds: UInt64(1_000_000_000 / max(comp.frameRate, 1)))
-            let t = t0 + Float(Date().timeIntervalSince(inicio))
+            var t = t0 + Float(Date().timeIntervalSince(inicio))
+            if let player, player.timeControlStatus == .playing {
+                let ts = Float(player.currentTime().seconds)
+                if ts.isFinite, abs(ts - t) < 0.5 { t = ts }
+            }
             if t >= comp.duration { time = comp.duration; playing = false; break }
             time = t
         }
